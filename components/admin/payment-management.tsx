@@ -127,11 +127,15 @@ export function PaymentManagement() {
         const response = await fetch("/api/payments/records", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: paymentId,
-            status: hasAccess ? "completed" : "pending",
-            accessGranted: hasAccess,
-          }),
+        body: JSON.stringify({
+          id: paymentId,
+          status: hasAccess ? "completed" : "pending",
+          accessGranted: hasAccess,
+          metadata: {
+            accessUpdatedBy: "admin",
+            accessUpdateReason: hasAccess ? "manual-grant" : "manual-revoke",
+          },
+        }),
         })
 
         if (!response.ok) {

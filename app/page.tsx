@@ -951,6 +951,7 @@ function ParentDashboard({ user }: { user: User }) {
         onClose={() => setShowPaymentModal(false)}
         onPaymentSuccess={handlePaymentSuccess}
         studentName={studentData.name}
+        studentId={studentData.id}
         amount={50000}
       />
     </div>
