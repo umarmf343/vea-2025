@@ -1,12 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { BookOpen, Search, Plus, Users, Calendar, AlertTriangle } from "lucide-react"
+import { dbManager } from "@/lib/database-manager"
+import { useToast } from "@/hooks/use-toast"
 
 interface LibrarianDashboardProps {
   librarian: {
@@ -16,197 +18,199 @@ interface LibrarianDashboardProps {
   }
 }
 
+type BorrowStatus = "active" | "overdue" | "returned"
+type RequestStatus = "pending" | "approved" | "rejected" | "fulfilled"
+
+interface InventoryBook {
+  id: string
+  title: string
+  author: string
+  isbn: string
+  copies: number
+  available: number
+  category: string
+  tags?: string[]
+  description?: string | null
+  shelfLocation?: string | null
+  coverImage?: string | null
+}
+
+interface BorrowedBookRecord {
+  id: string
+  bookId: string
+  bookTitle: string
+  studentId: string
+  studentName: string
+  studentClass: string
+  borrowDate: string
+  dueDate: string
+  status: BorrowStatus
+  returnedDate: string | null
+  returnedTo: string | null
+}
+
+interface BookRequestRecord {
+  id: string
+  bookId: string | null
+  bookTitle: string
+  studentId: string
+  studentName: string
+  studentClass: string
+  requestDate: string
+  status: RequestStatus
+  approvedBy?: string | null
+  rejectedBy?: string | null
+  notes?: string | null
+}
+
 export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
   const [selectedTab, setSelectedTab] = useState("overview")
   const [searchTerm, setSearchTerm] = useState("")
-  const [books, setBooks] = useState<any[]>([])
-  const [borrowedBooks, setBorrowedBooks] = useState<any[]>([])
-  const [requests, setRequests] = useState<any[]>([])
+  const [books, setBooks] = useState<InventoryBook[]>([])
+  const [borrowedBooks, setBorrowedBooks] = useState<BorrowedBookRecord[]>([])
+  const [requests, setRequests] = useState<BookRequestRecord[]>([])
   const [loading, setLoading] = useState(true)
+
+  const { toast } = useToast()
+
+  const loadLibraryData = useCallback(async () => {
+    try {
+      setLoading(true)
+      const [booksData, borrowedData, requestsData] = await Promise.all([
+        dbManager.getBooks(),
+        dbManager.getBorrowedBooks(),
+        dbManager.getBookRequests(),
+      ])
+
+      setBooks(booksData)
+      setBorrowedBooks(borrowedData)
+      setRequests(requestsData)
+    } catch (error) {
+      console.error("Error loading library data:", error)
+      toast({
+        variant: "destructive",
+        title: "Library data unavailable",
+        description: "We were unable to load the latest library information.",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }, [toast])
 
   useEffect(() => {
     loadLibraryData()
 
-    // const unsubscribeBooks = dbManager.subscribe("books", (data) => {
-    //   setBooks(data || [])
-    // })
-
-    // const unsubscribeBorrowed = dbManager.subscribe("borrowedBooks", (data) => {
-    //   setBorrowedBooks(data || [])
-    // })
-
-    // const unsubscribeRequests = dbManager.subscribe("bookRequests", (data) => {
-    //   setRequests(data || [])
-    // })
-
-    // return () => {
-    //   unsubscribeBooks()
-    //   unsubscribeBorrowed()
-    //   unsubscribeRequests()
-    // }
-  }, [])
-
-  const loadLibraryData = async () => {
-    try {
-      setLoading(true)
-      // const booksData = await dbManager.getBooks()
-      // const borrowedData = await dbManager.getBorrowedBooks()
-      // const requestsData = await dbManager.getBookRequests()
-
-      const mockBooks = [
-        {
-          id: "1",
-          title: "Mathematics Textbook",
-          author: "John Smith",
-          isbn: "978-123456789",
-          copies: 50,
-          available: 45,
-          category: "Mathematics",
-        },
-        {
-          id: "2",
-          title: "English Grammar",
-          author: "Jane Doe",
-          isbn: "978-987654321",
-          copies: 30,
-          available: 28,
-          category: "English",
-        },
-        {
-          id: "3",
-          title: "Physics Fundamentals",
-          author: "Dr. Brown",
-          isbn: "978-456789123",
-          copies: 25,
-          available: 20,
-          category: "Physics",
-        },
-      ]
-
-      const mockBorrowed = [
-        {
-          id: "1",
-          bookTitle: "Mathematics Textbook",
-          studentName: "John Doe",
-          studentClass: "JSS 1A",
-          borrowDate: "2025-01-01",
-          dueDate: "2025-01-15",
-          status: "active",
-        },
-        {
-          id: "2",
-          bookTitle: "English Grammar",
-          studentName: "Jane Smith",
-          studentClass: "JSS 2B",
-          borrowDate: "2024-12-20",
-          dueDate: "2025-01-03",
-          status: "active",
-        },
-      ]
-
-      const mockRequests = [
-        {
-          id: "1",
-          bookTitle: "Chemistry Basics",
-          studentName: "Mike Johnson",
-          studentClass: "JSS 3A",
-          requestDate: "2025-01-08",
-          status: "pending",
-        },
-        {
-          id: "2",
-          bookTitle: "Biology Guide",
-          studentName: "Sarah Wilson",
-          studentClass: "SS 1B",
-          requestDate: "2025-01-07",
-          status: "approved",
-        },
-      ]
-
-      setBooks(mockBooks)
-      setBorrowedBooks(mockBorrowed)
-      setRequests(mockRequests)
-    } catch (error) {
-      console.error("Error loading library data:", error)
-    } finally {
-      setLoading(false)
+    const handleUpdates = () => {
+      void loadLibraryData()
     }
-  }
 
-  const handleAddBook = async (bookData: any) => {
+    dbManager.on("libraryInventoryUpdated", handleUpdates)
+    dbManager.on("libraryBorrowUpdated", handleUpdates)
+    dbManager.on("libraryBooksUpdated", handleUpdates)
+    dbManager.on("libraryRequestUpdated", handleUpdates)
+
+    return () => {
+      dbManager.off("libraryInventoryUpdated", handleUpdates)
+      dbManager.off("libraryBorrowUpdated", handleUpdates)
+      dbManager.off("libraryBooksUpdated", handleUpdates)
+      dbManager.off("libraryRequestUpdated", handleUpdates)
+    }
+  }, [loadLibraryData])
+
+  const handleAddBook = async (bookData: Omit<InventoryBook, "id" | "available" | "copies"> & { copies: number; available?: number }) => {
     try {
-      const newBook = {
+      await dbManager.addBook({
         ...bookData,
-        id: Date.now().toString(),
+        copies: bookData.copies,
+        available: bookData.available ?? bookData.copies,
         addedBy: librarian.id,
-        addedDate: new Date().toISOString(),
-      }
-      setBooks((prev) => [...prev, newBook])
-      // await dbManager.addBook(newBook)
+      })
+      toast({
+        title: "Book added",
+        description: `${bookData.title} has been added to the library inventory.`,
+      })
+      await loadLibraryData()
     } catch (error) {
       console.error("Error adding book:", error)
+      toast({
+        variant: "destructive",
+        title: "Unable to add book",
+        description: "Please check the book details and try again.",
+      })
     }
   }
 
   const handleApproveRequest = async (requestId: string) => {
     try {
-      setRequests((prev) =>
-        prev.map((req) =>
-          req.id === requestId
-            ? { ...req, status: "approved", approvedBy: librarian.id, approvedDate: new Date().toISOString() }
-            : req,
-        ),
-      )
-      // await dbManager.updateBookRequest(requestId, {
-      //   status: "approved",
-      //   approvedBy: librarian.id,
-      //   approvedDate: new Date().toISOString(),
-      // })
+      await dbManager.updateBookRequest(requestId, {
+        status: "approved",
+        approvedBy: librarian.id,
+      })
+      toast({
+        title: "Request approved",
+        description: "The student has been notified and the book has been issued.",
+      })
+      await loadLibraryData()
     } catch (error) {
       console.error("Error approving request:", error)
+      toast({
+        variant: "destructive",
+        title: "Approval failed",
+        description: "We couldn't approve this request. Please try again.",
+      })
     }
   }
 
   const handleRejectRequest = async (requestId: string) => {
     try {
-      setRequests((prev) =>
-        prev.map((req) =>
-          req.id === requestId
-            ? { ...req, status: "rejected", rejectedBy: librarian.id, rejectedDate: new Date().toISOString() }
-            : req,
-        ),
-      )
-      // await dbManager.updateBookRequest(requestId, {
-      //   status: "rejected",
-      //   rejectedBy: librarian.id,
-      //   rejectedDate: new Date().toISOString(),
-      // })
+      await dbManager.updateBookRequest(requestId, {
+        status: "rejected",
+        rejectedBy: librarian.id,
+      })
+      toast({
+        title: "Request rejected",
+        description: "The student will be notified of the rejection.",
+      })
+      await loadLibraryData()
     } catch (error) {
       console.error("Error rejecting request:", error)
+      toast({
+        variant: "destructive",
+        title: "Rejection failed",
+        description: "We couldn't reject this request. Please try again.",
+      })
     }
   }
 
   const handleReturnBook = async (borrowId: string) => {
     try {
-      setBorrowedBooks((prev) =>
-        prev.map((book) =>
-          book.id === borrowId
-            ? { ...book, status: "returned", returnedDate: new Date().toISOString(), returnedTo: librarian.id }
-            : book,
-        ),
-      )
-      // await dbManager.returnBook(borrowId, {
-      //   returnedDate: new Date().toISOString(),
-      //   returnedTo: librarian.id,
-      // })
+      await dbManager.returnBook(borrowId, {
+        returnedTo: librarian.id,
+      })
+      toast({
+        title: "Book returned",
+        description: "The inventory has been updated.",
+      })
+      await loadLibraryData()
     } catch (error) {
       console.error("Error returning book:", error)
+      toast({
+        variant: "destructive",
+        title: "Return failed",
+        description: "We couldn't mark this book as returned. Please try again.",
+      })
     }
   }
 
   const overdueBooks = borrowedBooks.filter((book) => {
+    if (book.status === "returned") {
+      return false
+    }
+    if (book.status === "overdue") {
+      return true
+    }
     const dueDate = new Date(book.dueDate)
-    return dueDate < new Date() && book.status === "active"
+    return dueDate < new Date()
   })
 
   if (loading) {
@@ -373,13 +377,27 @@ export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
                       const category = prompt("Enter category:")
 
                       if (title && author && isbn && copies && category) {
-                        handleAddBook({
+                        const parsedCopies = Number.parseInt(copies, 10)
+                        if (Number.isNaN(parsedCopies) || parsedCopies <= 0) {
+                          toast({
+                            variant: "destructive",
+                            title: "Invalid quantity",
+                            description: "Please provide a valid number of copies.",
+                          })
+                          return
+                        }
+
+                        void handleAddBook({
                           title,
                           author,
                           isbn,
-                          copies: Number.parseInt(copies),
-                          available: Number.parseInt(copies),
+                          copies: parsedCopies,
+                          available: parsedCopies,
                           category,
+                          description: null,
+                          shelfLocation: null,
+                          coverImage: null,
+                          tags: [],
                         })
                       }
                     }}
@@ -448,16 +466,8 @@ export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
                       </p>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Badge
-                        variant={
-                          new Date(record.dueDate) < new Date() && record.status === "active"
-                            ? "destructive"
-                            : "default"
-                        }
-                      >
-                        {new Date(record.dueDate) < new Date() && record.status === "active"
-                          ? "overdue"
-                          : record.status}
+                      <Badge variant={record.status === "overdue" ? "destructive" : "default"}>
+                        {record.status}
                       </Badge>
                       {record.status === "active" && (
                         <Button
