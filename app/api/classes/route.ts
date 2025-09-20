@@ -1,11 +1,12 @@
 export const runtime = "nodejs"
 
 import { type NextRequest, NextResponse } from "next/server"
-import { dbManager } from "@/lib/database-manager"
+import { createClassRecord, getAllClassesFromDb, updateClassRecord } from "@/lib/database"
+import { sanitizeInput } from "@/lib/security"
 
 export async function GET() {
   try {
-    const classes = await dbManager.getClasses()
+    const classes = await getAllClassesFromDb()
     return NextResponse.json({ classes })
   } catch (error) {
     console.error("Failed to fetch classes:", error)
@@ -18,13 +19,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { name, level, capacity, classTeacherId, subjects } = body
 
-    const newClass = await dbManager.createClass({
-      name,
-      level,
-      capacity: capacity || 30,
-      classTeacherId,
-      subjects: subjects || [],
+    if (!name || !level) {
+      return NextResponse.json({ error: "Class name and level are required" }, { status: 400 })
+    }
+
+    const newClass = await createClassRecord({
+      name: sanitizeInput(name),
+      level: sanitizeInput(level),
+      capacity: typeof capacity === "number" ? capacity : undefined,
+      classTeacherId: classTeacherId ? String(classTeacherId) : null,
       status: "active",
+      subjects: Array.isArray(subjects) ? subjects.map((subject: string) => sanitizeInput(subject)) : undefined,
     })
 
     return NextResponse.json({
@@ -40,9 +45,37 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, ...updateData } = body
+    const { id, classTeacherId, subjects, ...updateData } = body
 
-    const updatedClass = await dbManager.updateClass(id, updateData)
+    if (!id) {
+      return NextResponse.json({ error: "Class ID is required" }, { status: 400 })
+    }
+
+    const sanitizedUpdate: Record<string, any> = {}
+
+    Object.entries(updateData).forEach(([key, value]) => {
+      if (typeof value === "string") {
+        sanitizedUpdate[key] = sanitizeInput(value)
+      } else {
+        sanitizedUpdate[key] = value
+      }
+    })
+
+    if (classTeacherId !== undefined) {
+      sanitizedUpdate.classTeacherId = classTeacherId ? String(classTeacherId) : null
+    }
+
+    if (subjects !== undefined) {
+      sanitizedUpdate.subjects = Array.isArray(subjects)
+        ? subjects.map((subject: string) => sanitizeInput(subject))
+        : undefined
+    }
+
+    const updatedClass = await updateClassRecord(id, sanitizedUpdate)
+
+    if (!updatedClass) {
+      return NextResponse.json({ error: "Class not found" }, { status: 404 })
+    }
 
     return NextResponse.json({
       class: updatedClass,
