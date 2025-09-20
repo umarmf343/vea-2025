@@ -24,6 +24,8 @@ import { saveTeacherMarks } from "@/lib/report-card-data"
 import { InternalMessaging } from "@/components/internal-messaging"
 import { safeStorage } from "@/lib/safe-storage"
 import { dbManager } from "@/lib/database-manager"
+import { logger } from "@/lib/logger"
+import { useToast } from "@/hooks/use-toast"
 
 interface TeacherDashboardProps {
   teacher: {
@@ -56,13 +58,41 @@ interface TeacherTimetableSlot {
   location?: string | null
 }
 
+interface MarksRecord {
+  studentId: number
+  studentName: string
+  firstCA: number
+  secondCA: number
+  noteAssignment: number
+  caTotal: number
+  exam: number
+  grandTotal: number
+  totalMarksObtainable: number
+  totalMarksObtained: number
+  averageScore: number
+  position: number
+  grade: string
+  teacherRemark: string
+}
+
+interface AssignmentSummary {
+  id: number
+  title: string
+  subject: string
+  class: string
+  dueDate: string
+  submissions: number
+  totalStudents: number
+}
+
 export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
+  const { toast } = useToast()
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showProfile, setShowProfile] = useState(false)
   const [showMarksEntry, setShowMarksEntry] = useState(false)
   const [showCreateAssignment, setShowCreateAssignment] = useState(false)
   const [showSubmissions, setShowSubmissions] = useState(false)
-  const [selectedAssignment, setSelectedAssignment] = useState<any>(null)
+  const [selectedAssignment, setSelectedAssignment] = useState<AssignmentSummary | null>(null)
   const [selectedClass, setSelectedClass] = useState(teacher.classes[0] ?? "")
   const [selectedSubject, setSelectedSubject] = useState(teacher.subjects[0] ?? "")
   const [selectedTerm, setSelectedTerm] = useState("first")
@@ -142,7 +172,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
         setTeacherExams(relevantExams)
       } catch (error) {
-        console.error("Failed to load teacher exams", error)
+        logger.error("Failed to load teacher exams", { error })
       } finally {
         if (isMounted) {
           setIsExamLoading(false)
@@ -178,11 +208,46 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
       try {
         setIsTeacherTimetableLoading(true)
-        const slots = await dbManager.getTimetable(selectedClass)
+        const response = await fetch(`/api/timetable?className=${encodeURIComponent(selectedClass)}`)
         if (!isMounted) return
-        setTeacherTimetable(slots)
+
+        if (response.ok) {
+          const data: unknown = await response.json()
+          const slots = Array.isArray((data as Record<string, unknown>)?.timetable)
+            ? ((data as Record<string, unknown>).timetable as unknown[])
+            : []
+          setTeacherTimetable(
+            slots.map((slot) => {
+              if (!slot || typeof slot !== "object") {
+                return {
+                  id: `slot_${Math.random().toString(36).slice(2)}`,
+                  day: "Monday",
+                  time: "8:00 AM - 8:45 AM",
+                  subject: "",
+                  teacher: "",
+                  location: null,
+                }
+              }
+
+              const record = slot as Record<string, unknown>
+              return {
+                id: typeof record.id === "string" ? record.id : String(record.id ?? `slot_${Date.now()}`),
+                day: typeof record.day === "string" ? record.day : "Monday",
+                time: typeof record.time === "string" ? record.time : String(record.startTime ?? "8:00 AM - 8:45 AM"),
+                subject: typeof record.subject === "string" ? record.subject : "",
+                teacher: typeof record.teacher === "string" ? record.teacher : "",
+                location: typeof record.location === "string" ? record.location : null,
+              }
+            }),
+          )
+        } else {
+          setTeacherTimetable([])
+        }
       } catch (error) {
-        console.error("Failed to load teacher timetable", error)
+        logger.error("Failed to load teacher timetable", { error })
+        if (isMounted) {
+          setTeacherTimetable([])
+        }
       } finally {
         if (isMounted) {
           setIsTeacherTimetableLoading(false)
@@ -190,23 +255,14 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       }
     }
 
-    loadTimetable()
-
-    const handleTimetableUpdate = (payload: { className: string; slots: TeacherTimetableSlot[] }) => {
-      if (payload?.className === selectedClass) {
-        setTeacherTimetable(payload.slots)
-      }
-    }
-
-    dbManager.on("timetableUpdated", handleTimetableUpdate)
+    void loadTimetable()
 
     return () => {
       isMounted = false
-      dbManager.off("timetableUpdated", handleTimetableUpdate)
     }
   }, [selectedClass])
 
-  const [marksData, setMarksData] = useState([
+  const [marksData, setMarksData] = useState<MarksRecord[]>([
     {
       studentId: 1,
       studentName: "John Doe",
@@ -257,7 +313,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     },
   ])
 
-  const calculatePositionsAndAverages = (data: any[]) => {
+  const calculatePositionsAndAverages = (data: MarksRecord[]) => {
     // Sort by grand total descending to determine positions
     const sorted = [...data].sort((a, b) => b.grandTotal - a.grandTotal)
 
@@ -277,7 +333,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     })
   }
 
-  const mockAssignments = [
+  const mockAssignments: AssignmentSummary[] = [
     {
       id: 1,
       title: "Quadratic Equations",
@@ -350,33 +406,39 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     return "F"
   }
 
-  const handleMarksUpdate = (studentId: number, field: string, value: any) => {
+  const handleMarksUpdate = (studentId: number, field: string, value: unknown) => {
     setMarksData((prev) => {
       const updated = prev.map((student) => {
-        if (student.studentId === studentId) {
-          const updatedStudent = { ...student, [field]: value }
-
-          // Auto-calculate totals when individual scores change
-          if (field === "firstCA" || field === "secondCA" || field === "noteAssignment") {
-            updatedStudent.caTotal =
-              (updatedStudent.firstCA || 0) + (updatedStudent.secondCA || 0) + (updatedStudent.noteAssignment || 0)
-            updatedStudent.grandTotal = updatedStudent.caTotal + (updatedStudent.exam || 0)
-            updatedStudent.grade = calculateGrade(updatedStudent.grandTotal)
-            updatedStudent.totalMarksObtained = updatedStudent.grandTotal
-          } else if (field === "exam") {
-            updatedStudent.grandTotal = (updatedStudent.caTotal || 0) + (updatedStudent.exam || 0)
-            updatedStudent.grade = calculateGrade(updatedStudent.grandTotal)
-            updatedStudent.totalMarksObtained = updatedStudent.grandTotal
-          } else if (field === "totalMarksObtainable") {
-            updatedStudent.averageScore =
-              updatedStudent.totalMarksObtained > 0 && updatedStudent.totalMarksObtainable > 0
-                ? Math.round((updatedStudent.totalMarksObtained / updatedStudent.totalMarksObtainable) * 100)
-                : 0
-          }
-
-          return updatedStudent
+        if (student.studentId !== studentId) {
+          return student
         }
-        return student
+
+        if (field === "teacherRemark") {
+          return { ...student, teacherRemark: typeof value === "string" ? value : student.teacherRemark }
+        }
+
+        const numericValue = typeof value === "number" ? value : Number(value)
+        const safeValue = Number.isFinite(numericValue) ? numericValue : 0
+        const updatedStudent: MarksRecord = { ...student, [field]: safeValue }
+
+        if (field === "firstCA" || field === "secondCA" || field === "noteAssignment") {
+          updatedStudent.caTotal =
+            (updatedStudent.firstCA || 0) + (updatedStudent.secondCA || 0) + (updatedStudent.noteAssignment || 0)
+          updatedStudent.grandTotal = updatedStudent.caTotal + (updatedStudent.exam || 0)
+          updatedStudent.grade = calculateGrade(updatedStudent.grandTotal)
+          updatedStudent.totalMarksObtained = updatedStudent.grandTotal
+        } else if (field === "exam") {
+          updatedStudent.grandTotal = (updatedStudent.caTotal || 0) + safeValue
+          updatedStudent.grade = calculateGrade(updatedStudent.grandTotal)
+          updatedStudent.totalMarksObtained = updatedStudent.grandTotal
+        } else if (field === "totalMarksObtainable") {
+          updatedStudent.averageScore =
+            updatedStudent.totalMarksObtained > 0 && updatedStudent.totalMarksObtainable > 0
+              ? Math.round((updatedStudent.totalMarksObtained / updatedStudent.totalMarksObtainable) * 100)
+              : 0
+        }
+
+        return updatedStudent
       })
 
       return calculatePositionsAndAverages(updated)
@@ -398,7 +460,10 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
     safeStorage.setItem("reportCardStatus", JSON.stringify(newStatus))
 
-    alert("Report card sent for admin approval!")
+    toast({
+      title: "Report card submitted",
+      description: "The report card has been sent for administrative approval.",
+    })
   }
 
   const getCurrentStatus = () => {
@@ -416,7 +481,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const handleSaveMarks = async () => {
     try {
       if (!selectedClass || !selectedSubject) {
-        alert("Please select both a class and a subject before saving marks.")
+        toast({
+          variant: "destructive",
+          title: "Selection required",
+          description: "Please choose both a class and a subject before saving marks.",
+        })
         return
       }
 
@@ -444,14 +513,25 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         setReportCardStatus(newStatus)
         safeStorage.setItem("reportCardStatus", JSON.stringify(newStatus))
 
-        alert("Marks saved successfully and will appear on student report cards!")
+        toast({
+          title: "Marks saved",
+          description: "Marks have been recorded and will reflect on student report cards.",
+        })
         setShowMarksEntry(false)
       } else {
-        alert(result.message)
+        toast({
+          variant: "destructive",
+          title: "Unable to save marks",
+          description: result.message,
+        })
       }
     } catch (error) {
-      console.error("Error saving marks:", error)
-      alert("Error saving marks. Please try again.")
+      logger.error("Error saving marks", { error })
+      toast({
+        variant: "destructive",
+        title: "Error saving marks",
+        description: "Please try again or contact the administrator if the issue persists.",
+      })
     }
   }
 
@@ -468,7 +548,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     })
   }
 
-  const handleViewSubmissions = (assignment: any) => {
+  const handleViewSubmissions = (assignment: AssignmentSummary) => {
     setSelectedAssignment(assignment)
     setShowSubmissions(true)
   }
@@ -476,7 +556,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const handleSaveBehavioralAssessment = async () => {
     try {
       if (!selectedClass || !selectedSubject) {
-        alert("Please select both a class and a subject before saving assessments.")
+        toast({
+          variant: "destructive",
+          title: "Selection required",
+          description: "Please choose both a class and a subject before saving assessments.",
+        })
         return
       }
 
@@ -497,17 +581,28 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       existingData[key] = behavioralData
       safeStorage.setItem("behavioralAssessments", JSON.stringify(existingData))
 
-      alert("Behavioral assessment saved successfully!")
+      toast({
+        title: "Behavioral assessment saved",
+        description: "Affective and psychomotor records have been updated for this class.",
+      })
     } catch (error) {
-      console.error("Error saving behavioral assessment:", error)
-      alert("Failed to save behavioral assessment")
+      logger.error("Error saving behavioral assessment", { error })
+      toast({
+        variant: "destructive",
+        title: "Failed to save assessment",
+        description: "Please try again or contact the administrator if the issue persists.",
+      })
     }
   }
 
   const handleSaveAttendancePosition = async () => {
     try {
       if (!selectedClass || !selectedSubject) {
-        alert("Please select both a class and a subject before saving attendance.")
+        toast({
+          variant: "destructive",
+          title: "Selection required",
+          description: "Please choose both a class and a subject before saving attendance records.",
+        })
         return
       }
 
@@ -528,17 +623,28 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       existingData[key] = attendanceData
       safeStorage.setItem("attendancePositions", JSON.stringify(existingData))
 
-      alert("Attendance and position data saved successfully!")
+      toast({
+        title: "Attendance saved",
+        description: "Attendance and class position data have been updated for this class.",
+      })
     } catch (error) {
-      console.error("Error saving attendance/position:", error)
-      alert("Failed to save attendance and position data")
+      logger.error("Error saving attendance/position", { error })
+      toast({
+        variant: "destructive",
+        title: "Failed to save attendance",
+        description: "Please try again or contact the administrator if the issue persists.",
+      })
     }
   }
 
   const handleSaveClassTeacherRemarks = async () => {
     try {
       if (!selectedClass || !selectedSubject) {
-        alert("Please select both a class and a subject before saving class teacher remarks.")
+        toast({
+          variant: "destructive",
+          title: "Selection required",
+          description: "Please choose both a class and a subject before saving teacher remarks.",
+        })
         return
       }
 
@@ -558,10 +664,17 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       existingData[key] = remarksData
       safeStorage.setItem("classTeacherRemarks", JSON.stringify(existingData))
 
-      alert("Class teacher remarks saved successfully!")
+      toast({
+        title: "Remarks saved",
+        description: "Class teacher remarks have been updated for this class.",
+      })
     } catch (error) {
-      console.error("Error saving class teacher remarks:", error)
-      alert("Failed to save class teacher remarks")
+      logger.error("Error saving class teacher remarks", { error })
+      toast({
+        variant: "destructive",
+        title: "Failed to save remarks",
+        description: "Please try again or contact the administrator if the issue persists.",
+      })
     }
   }
 

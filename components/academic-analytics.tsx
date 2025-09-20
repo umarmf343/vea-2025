@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,7 +23,185 @@ import {
   Radar,
 } from "recharts"
 import { TrendingUp, Users, Award, Download, Printer, Target, Loader2 } from "lucide-react"
-import { dbManager } from "@/lib/database-manager"
+import { logger } from "@/lib/logger"
+import { useToast } from "@/hooks/use-toast"
+
+interface ClassPerformanceEntry {
+  class: string
+  average: number
+  students: number
+  topScore: number
+  lowScore: number
+}
+
+interface SubjectPerformanceEntry {
+  subject: string
+  average: number
+  passRate: number
+  excellentRate?: number
+  teacher?: string | null
+}
+
+interface TermComparisonEntry {
+  term: string
+  average: number
+  passRate: number
+  attendance: number
+}
+
+interface TopPerformerEntry {
+  name: string
+  class: string
+  subjects: number
+  average: number
+}
+
+interface PerformanceRadarEntry {
+  subject: string
+  average: number
+  passRate: number
+  excellenceRate: number
+}
+
+interface SummaryStats {
+  overallAverage: number
+  totalStudents: number
+  passRate: number
+  excellenceRate: number
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+
+  return fallback
+}
+
+function parseClassPerformance(entries: unknown): ClassPerformanceEntry[] {
+  if (!Array.isArray(entries)) {
+    return []
+  }
+
+  return entries.map((entry) => {
+    if (!isRecord(entry)) {
+      return {
+        class: "Class",
+        average: 0,
+        students: 0,
+        topScore: 0,
+        lowScore: 0,
+      }
+    }
+
+    return {
+      class: typeof entry.class === "string" ? entry.class : "Class",
+      average: asNumber(entry.average),
+      students: asNumber(entry.students),
+      topScore: asNumber(entry.topScore),
+      lowScore: asNumber(entry.lowScore),
+    }
+  })
+}
+
+function parseSubjectPerformance(entries: unknown): SubjectPerformanceEntry[] {
+  if (!Array.isArray(entries)) {
+    return []
+  }
+
+  return entries.map((entry) => {
+    if (!isRecord(entry)) {
+      return { subject: "Subject", average: 0, passRate: 0, excellentRate: 0, teacher: null }
+    }
+
+    return {
+      subject: typeof entry.subject === "string" ? entry.subject : "Subject",
+      average: asNumber(entry.average),
+      passRate: asNumber(entry.passRate),
+      excellentRate: asNumber(entry.excellentRate),
+      teacher: typeof entry.teacher === "string" ? entry.teacher : null,
+    }
+  })
+}
+
+function parseTermComparison(entries: unknown): TermComparisonEntry[] {
+  if (!Array.isArray(entries)) {
+    return []
+  }
+
+  return entries.map((entry) => {
+    if (!isRecord(entry)) {
+      return { term: "Term", average: 0, passRate: 0, attendance: 0 }
+    }
+
+    return {
+      term: typeof entry.term === "string" ? entry.term : "Term",
+      average: asNumber(entry.average),
+      passRate: asNumber(entry.passRate),
+      attendance: asNumber(entry.attendance),
+    }
+  })
+}
+
+function parseTopPerformers(entries: unknown): TopPerformerEntry[] {
+  if (!Array.isArray(entries)) {
+    return []
+  }
+
+  return entries.map((entry) => {
+    if (!isRecord(entry)) {
+      return { name: "Student", class: "Class", subjects: 0, average: 0 }
+    }
+
+    return {
+      name: typeof entry.name === "string" ? entry.name : "Student",
+      class: typeof entry.class === "string" ? entry.class : "Class",
+      subjects: asNumber(entry.subjects),
+      average: asNumber(entry.average),
+    }
+  })
+}
+
+function parseRadarData(entries: unknown): PerformanceRadarEntry[] {
+  if (!Array.isArray(entries)) {
+    return []
+  }
+
+  return entries.map((entry) => {
+    if (!isRecord(entry)) {
+      return { subject: "Subject", average: 0, passRate: 0, excellenceRate: 0 }
+    }
+
+    return {
+      subject: typeof entry.subject === "string" ? entry.subject : "Subject",
+      average: asNumber(entry.average),
+      passRate: asNumber(entry.passRate),
+      excellenceRate: asNumber(entry.excellenceRate),
+    }
+  })
+}
+
+function parseSummaryStats(value: unknown): SummaryStats {
+  if (!isRecord(value)) {
+    return { overallAverage: 0, totalStudents: 0, passRate: 0, excellenceRate: 0 }
+  }
+
+  return {
+    overallAverage: asNumber(value.overallAverage),
+    totalStudents: Math.max(0, Math.round(asNumber(value.totalStudents))),
+    passRate: asNumber(value.passRate),
+    excellenceRate: asNumber(value.excellenceRate),
+  }
+}
 
 interface AcademicAnalyticsProps {
   userRole: string
@@ -36,71 +214,105 @@ export function AcademicAnalytics({ userRole }: AcademicAnalyticsProps) {
   const [error, setError] = useState<string | null>(null)
 
   // Real-time data states
-  const [classPerformance, setClassPerformance] = useState<any[]>([])
-  const [subjectPerformance, setSubjectPerformance] = useState<any[]>([])
-  const [termComparison, setTermComparison] = useState<any[]>([])
-  const [topPerformers, setTopPerformers] = useState<any[]>([])
-  const [performanceRadarData, setPerformanceRadarData] = useState<any[]>([])
-  const [summaryStats, setSummaryStats] = useState({
+  const [classPerformance, setClassPerformance] = useState<ClassPerformanceEntry[]>([])
+  const [subjectPerformance, setSubjectPerformance] = useState<SubjectPerformanceEntry[]>([])
+  const [termComparison, setTermComparison] = useState<TermComparisonEntry[]>([])
+  const [topPerformers, setTopPerformers] = useState<TopPerformerEntry[]>([])
+  const [performanceRadarData, setPerformanceRadarData] = useState<PerformanceRadarEntry[]>([])
+  const [summaryStats, setSummaryStats] = useState<SummaryStats>({
     overallAverage: 0,
     totalStudents: 0,
     passRate: 0,
     excellenceRate: 0,
   })
+  const { toast } = useToast()
+  const normalizedRole = userRole.toLowerCase()
+  const canExportReports = !["student", "parent"].includes(normalizedRole)
 
-  useEffect(() => {
-    loadAcademicData()
-
-    // Real-time listeners for data updates
-    const handleDataUpdate = () => {
-      loadAcademicData()
-    }
-
-    dbManager.on("academicDataUpdated", handleDataUpdate)
-    dbManager.on("reportCardUpdated", handleDataUpdate)
-    dbManager.on("marksUpdated", handleDataUpdate)
-
-    return () => {
-      dbManager.off("academicDataUpdated", handleDataUpdate)
-      dbManager.off("reportCardUpdated", handleDataUpdate)
-      dbManager.off("marksUpdated", handleDataUpdate)
-    }
-  }, [selectedTerm, selectedClass])
-
-  const loadAcademicData = async () => {
+  const loadAcademicData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
 
-      // Load academic analytics data from database
-      const analytics = await dbManager.getAcademicAnalytics(selectedTerm, selectedClass)
+      const params = new URLSearchParams({ term: selectedTerm, class: selectedClass })
+      const response = await fetch(`/api/analytics?${params.toString()}`, { cache: "no-store" })
 
-      setClassPerformance(analytics.classPerformance || [])
-      setSubjectPerformance(analytics.subjectPerformance || [])
-      setTermComparison(analytics.termComparison || [])
-      setTopPerformers(analytics.topPerformers || [])
-      setPerformanceRadarData(analytics.performanceRadarData || [])
-      setSummaryStats(
-        analytics.summaryStats || {
-          overallAverage: 0,
-          totalStudents: 0,
-          passRate: 0,
-          excellenceRate: 0,
-        },
-      )
+      if (!response.ok) {
+        throw new Error(`Failed to fetch analytics (${response.status})`)
+      }
+
+      const data: unknown = await response.json()
+      const analyticsRaw = isRecord(data) ? data.analytics : undefined
+      const analytics = isRecord(analyticsRaw) ? analyticsRaw : {}
+
+      setClassPerformance(parseClassPerformance(analytics.classPerformance))
+      setSubjectPerformance(parseSubjectPerformance(analytics.subjectPerformance))
+      setTermComparison(parseTermComparison(analytics.termComparison))
+      setTopPerformers(parseTopPerformers(analytics.topPerformers))
+      setPerformanceRadarData(parseRadarData(analytics.performanceRadarData))
+      setSummaryStats(parseSummaryStats(analytics.summaryStats))
     } catch (err) {
-      console.error("Error loading academic data:", err)
+      logger.error("Error loading academic analytics data", { error: err })
       setError("Failed to load academic analytics data")
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedClass, selectedTerm])
+
+  useEffect(() => {
+    void loadAcademicData()
+  }, [loadAcademicData])
 
   const handlePrint = () => {
-    window.print()
+    if (!canExportReports) {
+      toast({
+        variant: "destructive",
+        title: "Export restricted",
+        description: "Only staff accounts can print analytics reports.",
+      })
+      return
+    }
+
+    const win =
+      typeof globalThis !== "undefined" && typeof (globalThis as Window & { print?: () => void }).print === "function"
+        ? (globalThis as Window & { print: () => void })
+        : null
+
+    if (!win) {
+      toast({
+        variant: "destructive",
+        title: "Print unavailable",
+        description: "Printing is only supported within the browser environment.",
+      })
+      return
+    }
+
+    win.print()
   }
 
   const handleDownload = async () => {
+    if (!canExportReports) {
+      toast({
+        variant: "destructive",
+        title: "Export restricted",
+        description: "Only staff accounts can export analytics reports.",
+      })
+      return
+    }
+
+    const doc =
+      typeof globalThis !== "undefined" && "document" in globalThis
+        ? (globalThis as typeof globalThis & { document: Document }).document
+        : null
+    if (!doc) {
+      toast({
+        variant: "destructive",
+        title: "Download unavailable",
+        description: "Analytics export is only available within the browser environment.",
+      })
+      return
+    }
+
     try {
       const reportData = {
         term: selectedTerm,
@@ -113,21 +325,43 @@ export function AcademicAnalytics({ userRole }: AcademicAnalyticsProps) {
         generatedAt: new Date().toISOString(),
       }
 
-      await dbManager.saveAnalyticsReport(reportData)
+      const response = await fetch("/api/analytics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          term: selectedTerm,
+          class: selectedClass,
+          payload: reportData,
+        }),
+      })
 
-      // Generate and download PDF
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
+        const message = typeof payload.error === "string" ? payload.error : "Unable to persist analytics report"
+        throw new Error(message)
+      }
+
       const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: "application/json" })
       const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `academic-analytics-${selectedTerm}-${selectedClass}-${Date.now()}.json`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+      const anchor = doc.createElement("a")
+      anchor.href = url
+      anchor.download = `academic-analytics-${selectedTerm}-${selectedClass}-${Date.now()}.json`
+      doc.body.appendChild(anchor)
+      anchor.click()
+      doc.body.removeChild(anchor)
       URL.revokeObjectURL(url)
+
+      toast({
+        title: "Analytics export ready",
+        description: "The analytics report has been saved to your downloads as a JSON file.",
+      })
     } catch (err) {
-      console.error("Error downloading report:", err)
-      alert("Failed to download analytics report")
+      logger.error("Error downloading analytics report", { error: err })
+      toast({
+        variant: "destructive",
+        title: "Failed to export analytics",
+        description: err instanceof Error ? err.message : "Failed to download analytics report",
+      })
     }
   }
 
@@ -192,11 +426,22 @@ export function AcademicAnalytics({ userRole }: AcademicAnalyticsProps) {
             </SelectContent>
           </Select>
           <div className="flex gap-2">
-            <Button onClick={handlePrint} size="sm" variant="outline" className="flex-1 sm:flex-none bg-transparent">
+            <Button
+              onClick={handlePrint}
+              size="sm"
+              variant="outline"
+              className="flex-1 sm:flex-none bg-transparent"
+              disabled={!canExportReports}
+            >
               <Printer className="h-4 w-4 mr-2" />
               Print
             </Button>
-            <Button onClick={handleDownload} size="sm" className="bg-[#b29032] hover:bg-[#8a6b25] flex-1 sm:flex-none">
+            <Button
+              onClick={handleDownload}
+              size="sm"
+              className="bg-[#b29032] hover:bg-[#8a6b25] flex-1 sm:flex-none"
+              disabled={!canExportReports}
+            >
               <Download className="h-4 w-4 mr-2" />
               Export
             </Button>

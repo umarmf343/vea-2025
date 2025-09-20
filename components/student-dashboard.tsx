@@ -21,6 +21,59 @@ import { BookOpen, Calendar, FileText, User, Clock, Trophy, Upload, CheckCircle 
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
 import { dbManager } from "@/lib/database-manager"
+import { logger } from "@/lib/logger"
+
+interface TimetableSlotSummary {
+  id: string
+  day: string
+  time: string
+  subject: string
+  teacher: string
+  location: string | null
+}
+
+interface IdentifiedRecord {
+  id: string
+  [key: string]: unknown
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function toIdentifiedRecord(value: unknown, prefix: string): IdentifiedRecord | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  const record = value
+  const idSource =
+    record.id ?? record.ID ?? record._id ?? record.reference ?? record.slug ?? record.email ?? record.name ?? null
+
+  let id: string
+  if (typeof idSource === "string" && idSource.trim().length > 0) {
+    id = idSource
+  } else if (typeof idSource === "number") {
+    id = String(idSource)
+  } else {
+    id =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${prefix}_${Math.random().toString(36).slice(2)}`
+  }
+
+  return { id, ...record }
+}
+
+function normalizeIdentifiedCollection(values: unknown, prefix: string): IdentifiedRecord[] {
+  if (!Array.isArray(values)) {
+    return []
+  }
+
+  return values
+    .map((item) => toIdentifiedRecord(item, prefix))
+    .filter((record): record is IdentifiedRecord => record !== null)
+}
 
 interface StudentDashboardProps {
   student: {
@@ -35,18 +88,18 @@ interface StudentDashboardProps {
 export function StudentDashboard({ student }: StudentDashboardProps) {
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
-  const [selectedAssignment, setSelectedAssignment] = useState<any>(null)
+  const [selectedAssignment, setSelectedAssignment] = useState<IdentifiedRecord | null>(null)
   const [submissionForm, setSubmissionForm] = useState({
     file: null as File | null,
     comment: "",
   })
 
-  const [subjects, setSubjects] = useState<any[]>([])
-  const [timetable, setTimetable] = useState<any[]>([])
-  const [assignments, setAssignments] = useState<any[]>([])
-  const [libraryBooks, setLibraryBooks] = useState<any[]>([])
+  const [subjects, setSubjects] = useState<IdentifiedRecord[]>([])
+  const [timetable, setTimetable] = useState<TimetableSlotSummary[]>([])
+  const [assignments, setAssignments] = useState<IdentifiedRecord[]>([])
+  const [libraryBooks, setLibraryBooks] = useState<IdentifiedRecord[]>([])
   const [attendance, setAttendance] = useState({ present: 0, total: 0, percentage: 0 })
-  const [upcomingEvents, setUpcomingEvents] = useState<any[]>([])
+  const [upcomingEvents, setUpcomingEvents] = useState<IdentifiedRecord[]>([])
   const [studentProfile, setStudentProfile] = useState(student)
   const [showProfileEdit, setShowProfileEdit] = useState(false)
   const [profileForm, setProfileForm] = useState({
@@ -66,26 +119,59 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
 
         // Load subjects and grades
         const gradesResponse = await fetch(`/api/grades?studentId=${student.id}`)
-        const gradesData = await gradesResponse.json()
-        setSubjects(gradesData.grades || [])
+        if (gradesResponse.ok) {
+          const gradesData: unknown = await gradesResponse.json()
+          const grades = isRecord(gradesData) ? gradesData.grades : undefined
+          setSubjects(normalizeIdentifiedCollection(grades, "grade"))
+        } else {
+          setSubjects([])
+        }
 
         // Load assignments
         const assignmentsData = await dbManager.getAssignments({ studentId: student.id })
-        setAssignments(assignmentsData)
+        setAssignments(normalizeIdentifiedCollection(assignmentsData, "assignment"))
 
         // Load timetable
-        const timetableData = await dbManager.getTimetable(student.class)
-        setTimetable(timetableData)
+        const timetableResponse = await fetch(`/api/timetable?className=${encodeURIComponent(student.class)}`)
+        if (timetableResponse.ok) {
+          const timetableJson = await timetableResponse.json()
+          const timetableData = Array.isArray(timetableJson.timetable) ? timetableJson.timetable : []
+          setTimetable(
+            timetableData.map((slot) => {
+              if (!isRecord(slot)) {
+                return {
+                  id: `slot_${Math.random().toString(36).slice(2)}`,
+                  day: "Monday",
+                  time: "8:00 AM - 8:45 AM",
+                  subject: "",
+                  teacher: "",
+                  location: null,
+                }
+              }
+
+              return {
+                id: typeof slot.id === "string" ? slot.id : String(slot.id ?? `slot_${Date.now()}`),
+                day: typeof slot.day === "string" ? slot.day : "Monday",
+                time: typeof slot.time === "string" ? slot.time : String(slot.startTime ?? "8:00 AM - 8:45 AM"),
+                subject: typeof slot.subject === "string" ? slot.subject : "",
+                teacher: typeof slot.teacher === "string" ? slot.teacher : "",
+                location: typeof slot.location === "string" ? slot.location : null,
+              }
+            }),
+          )
+        } else {
+          setTimetable([])
+        }
 
         // Load library books
         const libraryData = await dbManager.getLibraryBooks(student.id)
-        setLibraryBooks(libraryData)
+        setLibraryBooks(normalizeIdentifiedCollection(libraryData, "book"))
 
         const attendanceData = await dbManager.getStudentAttendance(student.id)
         setAttendance(attendanceData)
 
         const eventsData = await dbManager.getUpcomingEvents(student.class)
-        setUpcomingEvents(eventsData)
+        setUpcomingEvents(normalizeIdentifiedCollection(eventsData, "event"))
 
         const profileData = await dbManager.getStudentProfile(student.id)
         if (profileData) {
@@ -99,7 +185,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
           })
         }
       } catch (error) {
-        console.error("Failed to load student data:", error)
+        logger.error("Failed to load student data", { error })
       } finally {
         setLoading(false)
       }
@@ -107,35 +193,48 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
 
     loadStudentData()
 
-    const handleGradesUpdate = (data: any) => {
-      if (data.studentId === student.id) {
-        setSubjects((prev) => prev.map((subject) => (subject.id === data.id ? { ...subject, ...data } : subject)))
+    const handleGradesUpdate = (payload: unknown) => {
+      const record = toIdentifiedRecord(payload, "grade")
+      if (!record || record.studentId !== student.id) {
+        return
+      }
+
+      setSubjects((prev) => prev.map((subject) => (subject.id === record.id ? { ...subject, ...record } : subject)))
+    }
+
+    const handleAssignmentsUpdate = (payload: unknown) => {
+      const record = toIdentifiedRecord(payload, "assignment")
+      if (!record || record.studentId !== student.id) {
+        return
+      }
+
+      setAssignments((prev) => prev.map((assignment) => (assignment.id === record.id ? { ...assignment, ...record } : assignment)))
+    }
+
+    const handleAttendanceUpdate = (payload: unknown) => {
+      if (isRecord(payload) && payload.studentId === student.id) {
+        setAttendance((prev) => ({
+          present: Number(payload.present ?? prev.present),
+          total: Number(payload.total ?? prev.total),
+          percentage: Number(payload.percentage ?? prev.percentage),
+        }))
       }
     }
 
-    const handleAssignmentsUpdate = (data: any) => {
-      if (data.studentId === student.id) {
-        setAssignments((prev) =>
-          prev.map((assignment) => (assignment.id === data.id ? { ...assignment, ...data } : assignment)),
-        )
+    const handleEventsUpdate = (payload: unknown) => {
+      if (isRecord(payload) && payload.class === student.class) {
+        setUpcomingEvents(normalizeIdentifiedCollection(payload.events, "event"))
       }
     }
 
-    const handleAttendanceUpdate = (data: any) => {
-      if (data.studentId === student.id) {
-        setAttendance(data)
-      }
-    }
-
-    const handleEventsUpdate = (data: any) => {
-      if (data.class === student.class) {
-        setUpcomingEvents(data.events)
-      }
-    }
-
-    const handleProfileUpdate = (data: any) => {
-      if (data.id === student.id) {
-        setStudentProfile(data)
+    const handleProfileUpdate = (payload: unknown) => {
+      const record = toIdentifiedRecord(payload, "profile")
+      if (record && record.id === student.id) {
+        setStudentProfile((prev) => ({
+          ...prev,
+          ...record,
+          id: prev.id,
+        }))
       }
     }
 
@@ -167,7 +266,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       setStudentProfile(updatedProfile)
       setShowProfileEdit(false)
     } catch (error) {
-      console.error("Failed to save profile:", error)
+      logger.error("Failed to save profile", { error })
     } finally {
       setSaving(false)
     }
@@ -179,7 +278,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       const updatedBooks = await dbManager.getLibraryBooks(student.id)
       setLibraryBooks(updatedBooks)
     } catch (error) {
-      console.error("Failed to renew book:", error)
+      logger.error("Failed to renew book", { error })
     }
   }
 
@@ -210,7 +309,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       setSelectedAssignment(null)
       setSubmissionForm({ file: null, comment: "" })
     } catch (error) {
-      console.error("Failed to submit assignment:", error)
+      logger.error("Failed to submit assignment", { error })
     }
   }
 
