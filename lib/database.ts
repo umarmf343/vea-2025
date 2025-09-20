@@ -37,6 +37,36 @@ export interface ClassRecord extends CollectionRecord {
   [key: string]: any
 }
 
+export interface SubjectRecord extends CollectionRecord {
+  name: string
+  code: string
+  description?: string | null
+  classes: string[]
+  teachers: string[]
+}
+
+export interface StudentRecord extends CollectionRecord {
+  name: string
+  email: string
+  class: string
+  section: string
+  admissionNumber: string
+  parentName: string
+  parentEmail: string
+  paymentStatus: "paid" | "pending" | "overdue"
+  status: "active" | "inactive"
+  dateOfBirth: string
+  address: string
+  phone: string
+  guardianPhone: string
+  bloodGroup: string
+  admissionDate: string
+  subjects: string[]
+  attendance: { present: number; total: number }
+  grades: { subject: string; ca1: number; ca2: number; exam: number; total: number; grade: string }[]
+  photoUrl?: string | null
+}
+
 export interface GradeRecord extends CollectionRecord {
   studentId: string
   subject: string
@@ -105,6 +135,16 @@ export interface ReportCardRecord extends CollectionRecord {
   headTeacherRemark?: string | null
 }
 
+export interface ReportCardColumnRecord {
+  id: string
+  name: string
+  type: string
+  maxScore: number
+  weight: number
+  isRequired: boolean
+  order: number
+}
+
 export type ReportCardSubjectInput =
   | ReportCardSubjectRecord
   | (Omit<ReportCardSubjectRecord, "total" | "grade"> & {
@@ -167,6 +207,20 @@ export interface CreateClassPayload {
 
 export interface UpdateClassPayload extends Partial<Omit<ClassRecord, "id" | "createdAt" | "updatedAt">> {}
 
+export interface CreateSubjectPayload {
+  name: string
+  code: string
+  description?: string | null
+  classes?: string[]
+  teachers?: string[]
+}
+
+export interface UpdateSubjectPayload extends Partial<Omit<SubjectRecord, "id" | "createdAt" | "updatedAt">> {}
+
+export interface CreateStudentPayload extends Omit<StudentRecord, "id" | "createdAt" | "updatedAt"> {}
+
+export interface UpdateStudentPayload extends Partial<Omit<StudentRecord, "id" | "createdAt" | "updatedAt">> {}
+
 export interface CreateGradePayload {
   studentId: string
   subject: string
@@ -198,10 +252,13 @@ export interface PaymentInitializationPayload {
 const STORAGE_KEYS = {
   USERS: "vea_users",
   CLASSES: "vea_classes",
+  SUBJECTS: "vea_subjects",
+  STUDENTS: "vea_students",
   GRADES: "vea_grades",
   MARKS: "vea_marks",
   PAYMENTS: "vea_payment_initializations",
   REPORT_CARDS: "reportCards",
+  REPORT_CARD_CONFIG: "reportCardConfig",
   BRANDING: "schoolBranding",
   SYSTEM_SETTINGS: "systemSettings",
 } as const
@@ -330,6 +387,113 @@ function createDefaultClasses(): ClassRecord[] {
       updatedAt: timestamp,
     },
   ]
+}
+
+function createDefaultSubjects(): SubjectRecord[] {
+  const timestamp = new Date().toISOString()
+
+  return [
+    {
+      id: "subject_mathematics",
+      name: "Mathematics",
+      code: "MATH",
+      description: "Core Mathematics curriculum",
+      classes: ["JSS 1A"],
+      teachers: ["Mr. John Smith"],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: "subject_english",
+      name: "English Language",
+      code: "ENG",
+      description: "English Language and Literature",
+      classes: ["JSS 1A"],
+      teachers: ["Mrs. Sarah Johnson"],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  ]
+}
+
+function createDefaultStudents(): StudentRecord[] {
+  const timestamp = new Date().toISOString()
+
+  return [
+    {
+      id: "student_john_doe",
+      name: "John Doe",
+      email: "john.doe@student.vea.edu.ng",
+      class: "JSS 1A",
+      section: "A",
+      admissionNumber: "VEA2025001",
+      parentName: "Jane Doe",
+      parentEmail: "jane.doe@example.com",
+      paymentStatus: "paid",
+      status: "active",
+      dateOfBirth: "2008-05-15",
+      address: "123 Main Street, Lagos, Nigeria",
+      phone: "+2348012345678",
+      guardianPhone: "+2348012345670",
+      bloodGroup: "O+",
+      admissionDate: "2021-09-10",
+      subjects: ["Mathematics", "English", "Basic Science"],
+      attendance: { present: 115, total: 120 },
+      grades: [
+        { subject: "Mathematics", ca1: 18, ca2: 19, exam: 55, total: 92, grade: "A" },
+        { subject: "English", ca1: 16, ca2: 17, exam: 42, total: 75, grade: "B" },
+      ],
+      photoUrl: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: "student_alice_smith",
+      name: "Alice Smith",
+      email: "alice.smith@student.vea.edu.ng",
+      class: "JSS 2B",
+      section: "B",
+      admissionNumber: "VEA2025002",
+      parentName: "Robert Smith",
+      parentEmail: "robert.smith@example.com",
+      paymentStatus: "pending",
+      status: "active",
+      dateOfBirth: "2007-11-23",
+      address: "45 School Road, Abuja, Nigeria",
+      phone: "+2348023456789",
+      guardianPhone: "+2348023456780",
+      bloodGroup: "A-",
+      admissionDate: "2020-09-12",
+      subjects: ["Mathematics", "English", "Physics"],
+      attendance: { present: 110, total: 120 },
+      grades: [
+        { subject: "Mathematics", ca1: 15, ca2: 17, exam: 48, total: 80, grade: "B" },
+        { subject: "Physics", ca1: 14, ca2: 16, exam: 50, total: 80, grade: "B" },
+      ],
+      photoUrl: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  ]
+}
+
+interface ReportCardConfigState extends CollectionRecord {
+  columns: ReportCardColumnRecord[]
+}
+
+function createDefaultReportCardConfigRecord(): ReportCardConfigState {
+  const timestamp = new Date().toISOString()
+
+  return {
+    id: "report_card_config_default",
+    columns: [
+      { id: "column_ca1", name: "1st Test", type: "test", maxScore: 20, weight: 20, isRequired: true, order: 1 },
+      { id: "column_ca2", name: "2nd Test", type: "test", maxScore: 20, weight: 20, isRequired: true, order: 2 },
+      { id: "column_exam", name: "Exam", type: "exam", maxScore: 60, weight: 60, isRequired: true, order: 3 },
+    ],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
 }
 
 function createDefaultBrandingRecord(): BrandingRecord {
@@ -626,6 +790,214 @@ export async function deleteClassRecord(id: string): Promise<boolean> {
   classes.splice(index, 1)
   persistCollection(STORAGE_KEYS.CLASSES, classes)
   return true
+}
+
+export async function listSubjectRecords(): Promise<SubjectRecord[]> {
+  const subjects = ensureCollection<SubjectRecord>(STORAGE_KEYS.SUBJECTS, createDefaultSubjects)
+  return deepClone(subjects)
+}
+
+export async function createSubjectRecord(payload: CreateSubjectPayload): Promise<SubjectRecord> {
+  const subjects = ensureCollection<SubjectRecord>(STORAGE_KEYS.SUBJECTS, createDefaultSubjects)
+
+  if (subjects.some((subject) => subject.code.toLowerCase() === payload.code.toLowerCase())) {
+    throw new Error("Subject with this code already exists")
+  }
+
+  const timestamp = new Date().toISOString()
+  const record: SubjectRecord = {
+    id: generateId("subject"),
+    name: payload.name,
+    code: payload.code,
+    description: payload.description ?? null,
+    classes: payload.classes ? payload.classes.map(String) : [],
+    teachers: payload.teachers ? payload.teachers.map(String) : [],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  subjects.push(record)
+  persistCollection(STORAGE_KEYS.SUBJECTS, subjects)
+  return deepClone(record)
+}
+
+export async function updateSubjectRecord(
+  id: string,
+  updates: UpdateSubjectPayload,
+): Promise<SubjectRecord | null> {
+  const subjects = ensureCollection<SubjectRecord>(STORAGE_KEYS.SUBJECTS, createDefaultSubjects)
+  const index = subjects.findIndex((subject) => subject.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const existing = subjects[index]
+
+  if (updates.code) {
+    const normalizedCode = updates.code.toLowerCase()
+    if (subjects.some((subject, idx) => idx !== index && subject.code.toLowerCase() === normalizedCode)) {
+      throw new Error("Subject with this code already exists")
+    }
+    existing.code = updates.code
+  }
+
+  if (updates.name !== undefined) {
+    existing.name = updates.name
+  }
+
+  if (updates.description !== undefined) {
+    existing.description = updates.description ?? null
+  }
+
+  if (updates.classes !== undefined) {
+    existing.classes = Array.isArray(updates.classes) ? updates.classes.map(String) : []
+  }
+
+  if (updates.teachers !== undefined) {
+    existing.teachers = Array.isArray(updates.teachers) ? updates.teachers.map(String) : []
+  }
+
+  existing.updatedAt = new Date().toISOString()
+  subjects[index] = existing
+  persistCollection(STORAGE_KEYS.SUBJECTS, subjects)
+  return deepClone(existing)
+}
+
+export async function deleteSubjectRecord(id: string): Promise<boolean> {
+  const subjects = ensureCollection<SubjectRecord>(STORAGE_KEYS.SUBJECTS, createDefaultSubjects)
+  const index = subjects.findIndex((subject) => subject.id === id)
+
+  if (index === -1) {
+    return false
+  }
+
+  subjects.splice(index, 1)
+  persistCollection(STORAGE_KEYS.SUBJECTS, subjects)
+  return true
+}
+
+export async function listStudentRecords(): Promise<StudentRecord[]> {
+  const students = ensureCollection<StudentRecord>(STORAGE_KEYS.STUDENTS, createDefaultStudents)
+  return deepClone(students)
+}
+
+export async function createStudentRecord(payload: CreateStudentPayload): Promise<StudentRecord> {
+  const students = ensureCollection<StudentRecord>(STORAGE_KEYS.STUDENTS, createDefaultStudents)
+
+  if (students.some((student) => student.admissionNumber === payload.admissionNumber)) {
+    throw new Error("Student with this admission number already exists")
+  }
+
+  const timestamp = new Date().toISOString()
+  const record: StudentRecord = {
+    id: generateId("student"),
+    ...payload,
+    subjects: payload.subjects ? payload.subjects.map(String) : [],
+    attendance: payload.attendance ?? { present: 0, total: 0 },
+    grades: payload.grades ? payload.grades.map((grade) => ({ ...grade })) : [],
+    photoUrl: payload.photoUrl ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  students.push(record)
+  persistCollection(STORAGE_KEYS.STUDENTS, students)
+  return deepClone(record)
+}
+
+export async function updateStudentRecord(
+  id: string,
+  updates: UpdateStudentPayload,
+): Promise<StudentRecord | null> {
+  const students = ensureCollection<StudentRecord>(STORAGE_KEYS.STUDENTS, createDefaultStudents)
+  const index = students.findIndex((student) => student.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const existing = students[index]
+
+  if (updates.admissionNumber && updates.admissionNumber !== existing.admissionNumber) {
+    if (students.some((student, idx) => idx !== index && student.admissionNumber === updates.admissionNumber)) {
+      throw new Error("Student with this admission number already exists")
+    }
+    existing.admissionNumber = updates.admissionNumber
+  }
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === undefined || key === "admissionNumber") {
+      continue
+    }
+
+    if (key === "subjects" && Array.isArray(value)) {
+      existing.subjects = value.map(String)
+    } else if (key === "grades" && Array.isArray(value)) {
+      existing.grades = value.map((grade) => ({ ...grade }))
+    } else if (key === "attendance" && value && typeof value === "object") {
+      existing.attendance = { ...(value as StudentRecord["attendance"]) }
+    } else if (key === "photoUrl") {
+      existing.photoUrl = value ?? null
+    } else if (key !== "id" && key !== "createdAt" && key !== "updatedAt") {
+      ;(existing as any)[key] = value
+    }
+  }
+
+  existing.updatedAt = new Date().toISOString()
+  students[index] = existing
+  persistCollection(STORAGE_KEYS.STUDENTS, students)
+  return deepClone(existing)
+}
+
+export async function deleteStudentRecord(id: string): Promise<boolean> {
+  const students = ensureCollection<StudentRecord>(STORAGE_KEYS.STUDENTS, createDefaultStudents)
+  const index = students.findIndex((student) => student.id === id)
+
+  if (index === -1) {
+    return false
+  }
+
+  students.splice(index, 1)
+  persistCollection(STORAGE_KEYS.STUDENTS, students)
+  return true
+}
+
+export async function getReportCardConfigColumns(): Promise<ReportCardColumnRecord[]> {
+  const record = ensureSingletonRecord<ReportCardConfigState>(
+    STORAGE_KEYS.REPORT_CARD_CONFIG,
+    createDefaultReportCardConfigRecord,
+  )
+
+  return deepClone(record.columns)
+}
+
+export async function updateReportCardConfigColumns(
+  columns: ReportCardColumnRecord[],
+): Promise<ReportCardColumnRecord[]> {
+  const existing = ensureSingletonRecord<ReportCardConfigState>(
+    STORAGE_KEYS.REPORT_CARD_CONFIG,
+    createDefaultReportCardConfigRecord,
+  )
+
+  const timestamp = new Date().toISOString()
+  const normalized = columns
+    .map((column, index) => ({
+      ...column,
+      id: column.id ?? generateId("column"),
+      order: typeof column.order === "number" ? column.order : index + 1,
+    }))
+    .sort((a, b) => a.order - b.order)
+    .map((column, index) => ({ ...column, order: index + 1 }))
+
+  const updated: ReportCardConfigState = {
+    ...existing,
+    columns: normalized,
+    updatedAt: timestamp,
+  }
+
+  persistCollection(STORAGE_KEYS.REPORT_CARD_CONFIG, [updated])
+  return deepClone(updated.columns)
 }
 
 // Branding helpers
@@ -1002,6 +1374,63 @@ export async function recordPaymentInitialization(
 export async function listPaymentInitializations(): Promise<PaymentInitializationRecord[]> {
   const payments = ensureCollection<PaymentInitializationRecord>(STORAGE_KEYS.PAYMENTS, defaultEmptyCollection)
   return deepClone(payments)
+}
+
+export interface UpdatePaymentRecordPayload
+  extends Partial<Omit<PaymentInitializationRecord, "id" | "createdAt" | "updatedAt">> {
+  metadata?: Record<string, any>
+}
+
+export async function updatePaymentRecord(
+  id: string,
+  updates: UpdatePaymentRecordPayload,
+): Promise<PaymentInitializationRecord | null> {
+  const payments = ensureCollection<PaymentInitializationRecord>(STORAGE_KEYS.PAYMENTS, defaultEmptyCollection)
+  const index = payments.findIndex((payment) => payment.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const existing = payments[index]
+
+  if (updates.reference !== undefined) {
+    existing.reference = String(updates.reference)
+  }
+
+  if (updates.amount !== undefined) {
+    existing.amount = Number(updates.amount)
+  }
+
+  if (updates.studentId !== undefined) {
+    existing.studentId = updates.studentId ? String(updates.studentId) : null
+  }
+
+  if (updates.paymentType !== undefined) {
+    existing.paymentType = String(updates.paymentType)
+  }
+
+  if (updates.email !== undefined) {
+    existing.email = String(updates.email)
+  }
+
+  if (updates.status !== undefined) {
+    existing.status = updates.status as PaymentInitializationRecord["status"]
+  }
+
+  if (updates.paystackReference !== undefined) {
+    existing.paystackReference = updates.paystackReference ? String(updates.paystackReference) : null
+  }
+
+  if (updates.metadata !== undefined) {
+    const currentMetadata = existing.metadata ?? {}
+    existing.metadata = { ...currentMetadata, ...updates.metadata }
+  }
+
+  existing.updatedAt = new Date().toISOString()
+  payments[index] = existing
+  persistCollection(STORAGE_KEYS.PAYMENTS, payments)
+  return deepClone(existing)
 }
 
 // Transaction helper for real database operations

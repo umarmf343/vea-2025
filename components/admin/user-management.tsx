@@ -1,13 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -17,164 +18,301 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Users, UserPlus, Edit, Trash2, UserCheck, Shield, Key, Eye } from "lucide-react"
+import { Key, Edit, Eye, Shield, Trash2, UserCheck, UserPlus } from "lucide-react"
+
+interface ApiUser {
+  id: string
+  name: string
+  email: string
+  role: string
+  status?: string
+  createdAt?: string
+  updatedAt?: string
+  lastLogin?: string | null
+  studentIds?: string[]
+  subjects?: string[]
+  metadata?: Record<string, any> | null
+  isActive?: boolean
+}
 
 type UserRole = "super-admin" | "admin" | "teacher" | "student" | "parent" | "librarian" | "accountant"
+
+type UserStatus = "active" | "inactive" | "suspended"
 
 interface User {
   id: string
   name: string
   email: string
   role: UserRole
-  status: "active" | "suspended" | "inactive"
+  status: UserStatus
   createdAt: string
   lastLogin?: string
-  assignedClasses?: string[]
-  assignedSubjects?: string[]
-  parentId?: string
-  studentIds?: string[]
+  studentIds: string[]
+  subjects: string[]
+  metadata: Record<string, any>
+}
+
+const ROLE_OPTIONS: { value: UserRole; label: string; api: string }[] = [
+  { value: "super-admin", label: "Super Admin", api: "Super Admin" },
+  { value: "admin", label: "Admin", api: "Admin" },
+  { value: "teacher", label: "Teacher", api: "Teacher" },
+  { value: "student", label: "Student", api: "Student" },
+  { value: "parent", label: "Parent", api: "Parent" },
+  { value: "librarian", label: "Librarian", api: "Librarian" },
+  { value: "accountant", label: "Accountant", api: "Accountant" },
+]
+
+const STATUS_BADGE: Record<UserStatus, string> = {
+  active: "bg-green-100 text-green-800",
+  inactive: "bg-gray-100 text-gray-800",
+  suspended: "bg-red-100 text-red-800",
+}
+
+const ROLE_BADGE: Record<UserRole, string> = {
+  "super-admin": "bg-red-100 text-red-800",
+  admin: "bg-blue-100 text-blue-800",
+  teacher: "bg-green-100 text-green-800",
+  student: "bg-purple-100 text-purple-800",
+  parent: "bg-orange-100 text-orange-800",
+  librarian: "bg-cyan-100 text-cyan-800",
+  accountant: "bg-yellow-100 text-yellow-800",
+}
+
+function normalizeRole(role: string): UserRole {
+  const normalized = role.toLowerCase().replace(" ", "-")
+  if (
+    normalized === "super-admin" ||
+    normalized === "admin" ||
+    normalized === "teacher" ||
+    normalized === "student" ||
+    normalized === "parent" ||
+    normalized === "librarian" ||
+    normalized === "accountant"
+  ) {
+    return normalized
+  }
+  return "teacher"
+}
+
+function normalizeStatus(status?: string, isActive?: boolean): UserStatus {
+  if (!status) {
+    return isActive === false ? "inactive" : "active"
+  }
+
+  const normalized = status.toLowerCase()
+  if (normalized === "inactive" || normalized === "suspended") {
+    return normalized
+  }
+  return "active"
+}
+
+function mapUser(apiUser: ApiUser): User {
+  return {
+    id: apiUser.id,
+    name: apiUser.name,
+    email: apiUser.email,
+    role: normalizeRole(apiUser.role),
+    status: normalizeStatus(apiUser.status, apiUser.isActive),
+    createdAt: apiUser.createdAt ? new Date(apiUser.createdAt).toLocaleDateString() : "—",
+    lastLogin: apiUser.lastLogin ?? undefined,
+    studentIds: apiUser.studentIds ?? [],
+    subjects: apiUser.subjects ?? [],
+    metadata: apiUser.metadata ?? {},
+  }
+}
+
+interface NewUserState {
+  name: string
+  email: string
+  role: UserRole
+  password: string
+  studentIds: string[]
+}
+
+const INITIAL_USER_STATE: NewUserState = {
+  name: "",
+  email: "",
+  role: "teacher",
+  password: "",
+  studentIds: [],
 }
 
 export function UserManagement() {
-  const [users, setUsers] = useState<User[]>([
-    {
-      id: "1",
-      name: "John Admin",
-      email: "admin@vea.edu.ng",
-      role: "admin",
-      status: "active",
-      createdAt: "2024-01-15",
-      lastLogin: "2024-12-08",
-    },
-    {
-      id: "2",
-      name: "Sarah Teacher",
-      email: "sarah@vea.edu.ng",
-      role: "teacher",
-      status: "active",
-      createdAt: "2024-02-20",
-      lastLogin: "2024-12-07",
-      assignedClasses: ["JSS1A", "JSS2B"],
-      assignedSubjects: ["Mathematics", "Physics"],
-    },
-    {
-      id: "3",
-      name: "Mike Parent",
-      email: "mike@parent.com",
-      role: "parent",
-      status: "active",
-      createdAt: "2024-03-10",
-      lastLogin: "2024-12-06",
-      studentIds: ["4", "5"],
-    },
-  ])
+  const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const [newUser, setNewUser] = useState({
-    name: "",
-    email: "",
-    role: "teacher" as UserRole,
-    password: "",
-    studentIds: [] as string[], // Changed from studentId to studentIds array for multiple assignment
-  })
-
-  const [editingUser, setEditingUser] = useState<User | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-  const [isPasswordResetOpen, setIsPasswordResetOpen] = useState(false)
-  const [isProfileViewOpen, setIsProfileViewOpen] = useState(false)
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false)
+  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false)
+
+  const [newUser, setNewUser] = useState<NewUserState>(INITIAL_USER_STATE)
+  const [editingUser, setEditingUser] = useState<User | null>(null)
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [newPassword, setNewPassword] = useState("")
 
-  const availableClasses = [
-    "JSS1A",
-    "JSS1B",
-    "JSS2A",
-    "JSS2B",
-    "JSS3A",
-    "JSS3B",
-    "SS1A",
-    "SS1B",
-    "SS2A",
-    "SS2B",
-    "SS3A",
-    "SS3B",
-  ]
-  const availableSubjects = [
-    "Mathematics",
-    "English",
-    "Physics",
-    "Chemistry",
-    "Biology",
-    "Geography",
-    "History",
-    "Economics",
-  ]
-  const availableParents = users.filter((u) => u.role === "parent")
-  const availableStudents = users.filter((u) => u.role === "student")
+  const loadUsers = useCallback(async () => {
+    setLoading(true)
+    setError(null)
 
-  const handleAddUser = () => {
-    const user: User = {
-      id: Date.now().toString(),
-      name: newUser.name,
-      email: newUser.email,
-      role: newUser.role,
-      status: "active",
-      createdAt: new Date().toISOString().split("T")[0],
-      studentIds: newUser.role === "parent" ? newUser.studentIds : undefined, // Use studentIds array
+    try {
+      const response = await fetch("/api/users")
+      if (!response.ok) {
+        throw new Error("Unable to load user records")
+      }
+      const data = (await response.json()) as { users: ApiUser[] }
+      setUsers(data.users.map(mapUser))
+    } catch (err) {
+      console.error(err)
+      setError(err instanceof Error ? err.message : "Unable to fetch users")
+    } finally {
+      setLoading(false)
     }
-    setUsers([...users, user])
-    setNewUser({ name: "", email: "", role: "teacher", password: "", studentIds: [] }) // Reset to empty array
-    setIsAddDialogOpen(false)
-  }
+  }, [])
 
-  const handleEditUser = () => {
-    if (editingUser) {
-      setUsers(users.map((u) => (u.id === editingUser.id ? editingUser : u)))
+  useEffect(() => {
+    void loadUsers()
+  }, [loadUsers])
+
+  const availableStudents = useMemo(() => users.filter((user) => user.role === "student"), [users])
+
+  const handleCreateUser = useCallback(async () => {
+    if (!newUser.name || !newUser.email || !newUser.password) {
+      setError("Name, email, and password are required")
+      return
+    }
+
+    try {
+      const response = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newUser.name,
+          email: newUser.email,
+          role: ROLE_OPTIONS.find((option) => option.value === newUser.role)?.api ?? "Teacher",
+          password: newUser.password,
+          studentIds: newUser.role === "parent" ? newUser.studentIds : undefined,
+        }),
+      })
+
+      if (!response.ok) {
+        const payload = await response.json()
+        throw new Error(payload.error ?? "Failed to create user")
+      }
+
+      const data = (await response.json()) as { user: ApiUser }
+      setUsers((previous) => [...previous, mapUser(data.user)])
+      setNewUser(INITIAL_USER_STATE)
+      setIsAddDialogOpen(false)
+    } catch (err) {
+      console.error(err)
+      setError(err instanceof Error ? err.message : "Unable to create user")
+    }
+  }, [newUser])
+
+  const handleUpdateUser = useCallback(async () => {
+    if (!editingUser) return
+
+    try {
+      const response = await fetch("/api/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingUser.id,
+          name: editingUser.name,
+          email: editingUser.email,
+          role: ROLE_OPTIONS.find((option) => option.value === editingUser.role)?.api ?? "Teacher",
+          status: editingUser.status,
+          studentIds: editingUser.role === "parent" ? editingUser.studentIds : undefined,
+        }),
+      })
+
+      if (!response.ok) {
+        const payload = await response.json()
+        throw new Error(payload.error ?? "Failed to update user")
+      }
+
+      const data = (await response.json()) as { user: ApiUser }
+      setUsers((previous) => previous.map((user) => (user.id === data.user.id ? mapUser(data.user) : user)))
       setEditingUser(null)
       setIsEditDialogOpen(false)
+    } catch (err) {
+      console.error(err)
+      setError(err instanceof Error ? err.message : "Unable to update user")
     }
-  }
+  }, [editingUser])
 
-  const handleDeleteUser = (userId: string) => {
-    setUsers(users.filter((u) => u.id !== userId))
-  }
+  const handleDeleteUser = useCallback(async (userId: string) => {
+    try {
+      const response = await fetch(`/api/users?id=${userId}`, { method: "DELETE" })
+      if (!response.ok) {
+        const payload = await response.json()
+        throw new Error(payload.error ?? "Failed to delete user")
+      }
 
-  const handleSuspendUser = (userId: string) => {
-    setUsers(
-      users.map((u) => (u.id === userId ? { ...u, status: u.status === "suspended" ? "active" : "suspended" } : u)),
-    )
-  }
+      setUsers((previous) => previous.filter((user) => user.id !== userId))
+    } catch (err) {
+      console.error(err)
+      setError(err instanceof Error ? err.message : "Unable to delete user")
+    }
+  }, [])
 
-  const handlePasswordReset = () => {
-    if (selectedUser && newPassword) {
-      // In a real app, this would call an API
-      console.log(`Password reset for ${selectedUser.email}: ${newPassword}`)
+  const handleToggleSuspension = useCallback(async (user: User) => {
+    const nextStatus = user.status === "suspended" ? "active" : "suspended"
+
+    try {
+      const response = await fetch("/api/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: user.id, status: nextStatus }),
+      })
+
+      if (!response.ok) {
+        const payload = await response.json()
+        throw new Error(payload.error ?? "Failed to update user status")
+      }
+
+      const data = (await response.json()) as { user: ApiUser }
+      setUsers((previous) => previous.map((item) => (item.id === data.user.id ? mapUser(data.user) : item)))
+    } catch (err) {
+      console.error(err)
+      setError(err instanceof Error ? err.message : "Unable to update user status")
+    }
+  }, [])
+
+  const handleResetPassword = useCallback(async () => {
+    if (!selectedUser || !newPassword) return
+
+    try {
+      const response = await fetch("/api/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selectedUser.id, password: newPassword }),
+      })
+
+      if (!response.ok) {
+        const payload = await response.json()
+        throw new Error(payload.error ?? "Failed to reset password")
+      }
+
       setNewPassword("")
-      setIsPasswordResetOpen(false)
+      setIsPasswordDialogOpen(false)
       setSelectedUser(null)
+    } catch (err) {
+      console.error(err)
+      setError(err instanceof Error ? err.message : "Unable to reset password")
     }
-  }
+  }, [newPassword, selectedUser])
 
-  const getRoleColor = (role: UserRole) => {
-    const colors = {
-      "super-admin": "bg-red-100 text-red-800",
-      admin: "bg-blue-100 text-blue-800",
-      teacher: "bg-green-100 text-green-800",
-      student: "bg-purple-100 text-purple-800",
-      parent: "bg-orange-100 text-orange-800",
-      librarian: "bg-cyan-100 text-cyan-800",
-      accountant: "bg-yellow-100 text-yellow-800",
-    }
-    return colors[role]
-  }
-
-  const getStatusColor = (status: string) => {
-    const colors = {
-      active: "bg-green-100 text-green-800",
-      suspended: "bg-red-100 text-red-800",
-      inactive: "bg-gray-100 text-gray-800",
-    }
-    return colors[status as keyof typeof colors]
+  if (loading) {
+    return (
+      <Card className="border-[#2d682d]/20">
+        <CardContent className="flex items-center justify-center py-10 text-[#2d682d]">
+          Loading users…
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -182,140 +320,98 @@ export function UserManagement() {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold text-[#2d682d]">User Management</h3>
-          <p className="text-sm text-gray-600">Manage all system users and their roles</p>
+          <p className="text-sm text-gray-600">Manage system users, roles, and access</p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <Dialog
+          open={isAddDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              setNewUser(INITIAL_USER_STATE)
+            }
+            setIsAddDialogOpen(open)
+          }}
+        >
           <DialogTrigger asChild>
             <Button className="bg-[#2d682d] hover:bg-[#1a4a1a]">
-              <UserPlus className="h-4 w-4 mr-2" />
+              <UserPlus className="mr-2 h-4 w-4" />
               Add User
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add New User</DialogTitle>
-              <DialogDescription>Create a new user account</DialogDescription>
+              <DialogTitle>Create User</DialogTitle>
+              <DialogDescription>Provide user credentials and assign a role.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label htmlFor="name">Full Name</Label>
+                <Label htmlFor="new-name">Full Name</Label>
                 <Input
-                  id="name"
+                  id="new-name"
                   value={newUser.name}
-                  onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                  placeholder="Enter full name"
+                  onChange={(event) => setNewUser((prev) => ({ ...prev, name: event.target.value }))}
                 />
               </div>
               <div>
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="new-email">Email</Label>
                 <Input
-                  id="email"
+                  id="new-email"
                   type="email"
                   value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  placeholder="Enter email address"
+                  onChange={(event) => setNewUser((prev) => ({ ...prev, email: event.target.value }))}
                 />
               </div>
               <div>
-                <Label htmlFor="role">Role</Label>
-                <Select
-                  value={newUser.role}
-                  onValueChange={(value: UserRole) => setNewUser({ ...newUser, role: value })}
-                >
+                <Label>Role</Label>
+                <Select value={newUser.role} onValueChange={(value: UserRole) => setNewUser((prev) => ({ ...prev, role: value }))}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="teacher">Teacher</SelectItem>
-                    <SelectItem value="student">Student</SelectItem>
-                    <SelectItem value="parent">Parent</SelectItem>
-                    <SelectItem value="librarian">Librarian</SelectItem>
-                    <SelectItem value="accountant">Accountant</SelectItem>
+                    {ROLE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="new-password">Temporary Password</Label>
                 <Input
-                  id="password"
+                  id="new-password"
                   type="password"
                   value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  placeholder="Enter password"
+                  onChange={(event) => setNewUser((prev) => ({ ...prev, password: event.target.value }))}
                 />
               </div>
               {newUser.role === "parent" && (
-                <div className="space-y-3">
-                  <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Users className="h-4 w-4 text-orange-600" />
-                      <Label className="text-orange-800 font-medium">Parent-Student Assignment</Label>
-                    </div>
-                    <p className="text-sm text-orange-700 mb-3">
-                      Assign students (children) to this parent for fee payment and report card access
-                    </p>
-
-                    <div>
-                      <Label htmlFor="student-assignment" className="text-sm font-medium">
-                        Select Students (Children) *
-                      </Label>
-                      <div className="mt-2 space-y-2">
-                        {availableStudents.length > 0 ? (
-                          <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto border rounded-md p-2">
-                            {availableStudents.map((student) => (
-                              <div
-                                key={student.id}
-                                className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded"
-                              >
-                                <Checkbox
-                                  id={`new-student-${student.id}`}
-                                  checked={newUser.studentIds.includes(student.id)}
-                                  onCheckedChange={(checked) => {
-                                    const updatedStudents = checked
-                                      ? [...newUser.studentIds, student.id]
-                                      : newUser.studentIds.filter((id) => id !== student.id)
-                                    setNewUser({ ...newUser, studentIds: updatedStudents })
-                                  }}
-                                />
-                                <div className="flex-1">
-                                  <Label
-                                    htmlFor={`new-student-${student.id}`}
-                                    className="text-sm font-medium cursor-pointer"
-                                  >
-                                    {student.name}
-                                  </Label>
-                                  <p className="text-xs text-gray-500">{student.email}</p>
-                                  {student.assignedClasses && (
-                                    <Badge variant="outline" className="text-xs mt-1">
-                                      {student.assignedClasses[0]}
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-center py-4 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
-                            <Users className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                            <p className="text-sm">No students available</p>
-                            <p className="text-xs">Create student accounts first</p>
-                          </div>
-                        )}
-
-                        {newUser.studentIds.length > 0 && (
-                          <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
-                            <p className="text-sm text-green-800">
-                              ✓ {newUser.studentIds.length} student{newUser.studentIds.length > 1 ? "s" : ""} selected
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                <div>
+                  <Label>Assign Students</Label>
+                  <div className="mt-2 space-y-2 rounded-md border p-3">
+                    {availableStudents.length === 0 ? (
+                      <p className="text-sm text-gray-500">No students available. Create student accounts first.</p>
+                    ) : (
+                      availableStudents.map((student) => (
+                        <label key={student.id} className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={newUser.studentIds.includes(student.id)}
+                            onCheckedChange={(checked) =>
+                              setNewUser((prev) => ({
+                                ...prev,
+                                studentIds: checked
+                                  ? [...prev.studentIds, student.id]
+                                  : prev.studentIds.filter((id) => id !== student.id),
+                              }))
+                            }
+                          />
+                          <span>{student.name}</span>
+                        </label>
+                      ))
+                    )}
                   </div>
                 </div>
               )}
-              <Button onClick={handleAddUser} className="w-full bg-[#2d682d] hover:bg-[#1a4a1a]">
+              <Button onClick={() => void handleCreateUser()} className="w-full bg-[#2d682d] hover:bg-[#1a4a1a] text-white">
                 Create User
               </Button>
             </div>
@@ -323,14 +419,17 @@ export function UserManagement() {
         </Dialog>
       </div>
 
-      <Card>
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <Card className="border-[#2d682d]/20">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            All Users ({users.length})
-          </CardTitle>
+          <CardTitle className="text-[#2d682d]">All Users ({users.length})</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -349,13 +448,13 @@ export function UserManagement() {
                   <TableCell className="font-medium">{user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
-                    <Badge className={getRoleColor(user.role)}>{user.role.replace("-", " ")}</Badge>
+                    <Badge className={ROLE_BADGE[user.role]}>{ROLE_OPTIONS.find((option) => option.value === user.role)?.label}</Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge className={getStatusColor(user.status)}>{user.status}</Badge>
+                    <Badge className={STATUS_BADGE[user.status]}>{user.status}</Badge>
                   </TableCell>
                   <TableCell>{user.createdAt}</TableCell>
-                  <TableCell>{user.lastLogin || "Never"}</TableCell>
+                  <TableCell>{user.lastLogin ?? "Never"}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <Button
@@ -363,7 +462,7 @@ export function UserManagement() {
                         variant="outline"
                         onClick={() => {
                           setSelectedUser(user)
-                          setIsProfileViewOpen(true)
+                          setIsProfileDialogOpen(true)
                         }}
                       >
                         <Eye className="h-4 w-4" />
@@ -383,7 +482,7 @@ export function UserManagement() {
                         variant="outline"
                         onClick={() => {
                           setSelectedUser(user)
-                          setIsPasswordResetOpen(true)
+                          setIsPasswordDialogOpen(true)
                         }}
                       >
                         <Key className="h-4 w-4" />
@@ -391,21 +490,11 @@ export function UserManagement() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleSuspendUser(user.id)}
-                        className={user.status === "suspended" ? "bg-green-50" : "bg-red-50"}
+                        onClick={() => void handleToggleSuspension(user)}
                       >
-                        {user.status === "suspended" ? (
-                          <UserCheck className="h-4 w-4" />
-                        ) : (
-                          <Shield className="h-4 w-4" />
-                        )}
+                        {user.status === "suspended" ? <UserCheck className="h-4 w-4" /> : <Shield className="h-4 w-4" />}
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleDeleteUser(user.id)}
-                        className="text-red-600 hover:text-red-800"
-                      >
+                      <Button size="sm" variant="destructive" onClick={() => void handleDeleteUser(user.id)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -417,21 +506,29 @@ export function UserManagement() {
         </CardContent>
       </Card>
 
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-2xl">
+      <Dialog
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingUser(null)
+          }
+          setIsEditDialogOpen(open)
+        }}
+      >
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
-            <DialogDescription>Update user information and role-specific assignments</DialogDescription>
+            <DialogDescription>Update user details and role-specific assignments.</DialogDescription>
           </DialogHeader>
           {editingUser && (
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <Label htmlFor="edit-name">Full Name</Label>
                   <Input
                     id="edit-name"
                     value={editingUser.name}
-                    onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                    onChange={(event) => setEditingUser({ ...editingUser, name: event.target.value })}
                   />
                 </div>
                 <div>
@@ -440,13 +537,12 @@ export function UserManagement() {
                     id="edit-email"
                     type="email"
                     value={editingUser.email}
-                    onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                    onChange={(event) => setEditingUser({ ...editingUser, email: event.target.value })}
                   />
                 </div>
               </div>
-
               <div>
-                <Label htmlFor="edit-role">Role</Label>
+                <Label>Role</Label>
                 <Select
                   value={editingUser.role}
                   onValueChange={(value: UserRole) => setEditingUser({ ...editingUser, role: value })}
@@ -455,213 +551,98 @@ export function UserManagement() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="teacher">Teacher</SelectItem>
-                    <SelectItem value="student">Student</SelectItem>
-                    <SelectItem value="parent">Parent</SelectItem>
-                    <SelectItem value="librarian">Librarian</SelectItem>
-                    <SelectItem value="accountant">Accountant</SelectItem>
+                    {ROLE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
-
-              {editingUser.role === "teacher" && (
-                <div className="space-y-4">
-                  <div>
-                    <Label>Assigned Classes</Label>
-                    <div className="grid grid-cols-3 gap-2 mt-2">
-                      {availableClasses.map((className) => (
-                        <div key={className} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`class-${className}`}
-                            checked={editingUser.assignedClasses?.includes(className) || false}
-                            onCheckedChange={(checked) => {
-                              const currentClasses = editingUser.assignedClasses || []
-                              const updatedClasses = checked
-                                ? [...currentClasses, className]
-                                : currentClasses.filter((c) => c !== className)
-                              setEditingUser({ ...editingUser, assignedClasses: updatedClasses })
-                            }}
-                          />
-                          <Label htmlFor={`class-${className}`} className="text-sm">
-                            {className}
-                          </Label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label>Assigned Subjects</Label>
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                      {availableSubjects.map((subject) => (
-                        <div key={subject} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`subject-${subject}`}
-                            checked={editingUser.assignedSubjects?.includes(subject) || false}
-                            onCheckedChange={(checked) => {
-                              const currentSubjects = editingUser.assignedSubjects || []
-                              const updatedSubjects = checked
-                                ? [...currentSubjects, subject]
-                                : currentSubjects.filter((s) => s !== subject)
-                              setEditingUser({ ...editingUser, assignedSubjects: updatedSubjects })
-                            }}
-                          />
-                          <Label htmlFor={`subject-${subject}`} className="text-sm">
-                            {subject}
-                          </Label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {editingUser.role === "student" && (
-                <div className="space-y-4">
-                  <div>
-                    <Label>Assigned Class</Label>
-                    <Select
-                      value={editingUser.assignedClasses?.[0] || ""}
-                      onValueChange={(value) => setEditingUser({ ...editingUser, assignedClasses: [value] })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select class" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableClasses.map((className) => (
-                          <SelectItem key={className} value={className}>
-                            {className}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <Label>Assigned Parent</Label>
-                    <Select
-                      value={editingUser.parentId || ""}
-                      onValueChange={(value) => setEditingUser({ ...editingUser, parentId: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select parent" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableParents.map((parent) => (
-                          <SelectItem key={parent.id} value={parent.id}>
-                            {parent.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              )}
-
+              <div>
+                <Label>Status</Label>
+                <Select
+                  value={editingUser.status}
+                  onValueChange={(value: UserStatus) => setEditingUser({ ...editingUser, status: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                    <SelectItem value="suspended">Suspended</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               {editingUser.role === "parent" && (
-                <div className="space-y-3">
-                  <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Users className="h-4 w-4 text-orange-600" />
-                      <Label className="text-orange-800 font-medium">Parent-Student Assignment</Label>
-                    </div>
-                    <p className="text-sm text-orange-700 mb-3">
-                      Manage student assignments for fee payment and report card access
-                    </p>
-
-                    <div>
-                      <Label className="text-sm font-medium">Assigned Students (Children)</Label>
-                      <div className="mt-2 space-y-2">
-                        {availableStudents.length > 0 ? (
-                          <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto border rounded-md p-2">
-                            {availableStudents.map((student) => (
-                              <div
-                                key={student.id}
-                                className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded"
-                              >
-                                <Checkbox
-                                  id={`edit-student-${student.id}`}
-                                  checked={editingUser.studentIds?.includes(student.id) || false}
-                                  onCheckedChange={(checked) => {
-                                    const currentStudents = editingUser.studentIds || []
-                                    const updatedStudents = checked
-                                      ? [...currentStudents, student.id]
-                                      : currentStudents.filter((s) => s !== student.id)
-                                    setEditingUser({ ...editingUser, studentIds: updatedStudents })
-                                  }}
-                                />
-                                <div className="flex-1">
-                                  <Label
-                                    htmlFor={`edit-student-${student.id}`}
-                                    className="text-sm font-medium cursor-pointer"
-                                  >
-                                    {student.name}
-                                  </Label>
-                                  <p className="text-xs text-gray-500">{student.email}</p>
-                                  {student.assignedClasses && (
-                                    <Badge variant="outline" className="text-xs mt-1">
-                                      {student.assignedClasses[0]}
-                                    </Badge>
-                                  )}
-                                </div>
-                                {editingUser.studentIds?.includes(student.id) && (
-                                  <Badge className="bg-green-100 text-green-800 text-xs">Assigned</Badge>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-center py-4 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
-                            <Users className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                            <p className="text-sm">No students available</p>
-                          </div>
-                        )}
-
-                        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
-                          <p className="text-sm text-blue-800">
-                            Currently assigned to {editingUser.studentIds?.length || 0} student
-                            {(editingUser.studentIds?.length || 0) !== 1 ? "s" : ""}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                <div>
+                  <Label>Assigned Students</Label>
+                  <div className="mt-2 space-y-2 rounded-md border p-3">
+                    {availableStudents.length === 0 ? (
+                      <p className="text-sm text-gray-500">No students available.</p>
+                    ) : (
+                      availableStudents.map((student) => (
+                        <label key={student.id} className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={editingUser.studentIds.includes(student.id)}
+                            onCheckedChange={(checked) =>
+                              setEditingUser((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      studentIds: checked
+                                        ? [...prev.studentIds, student.id]
+                                        : prev.studentIds.filter((id) => id !== student.id),
+                                    }
+                                  : prev,
+                              )
+                            }
+                          />
+                          <span>{student.name}</span>
+                        </label>
+                      ))
+                    )}
                   </div>
                 </div>
               )}
-
-              <Button onClick={handleEditUser} className="w-full bg-[#2d682d] hover:bg-[#1a4a1a]">
-                Update User
+              <Button onClick={() => void handleUpdateUser()} className="w-full bg-[#2d682d] hover:bg-[#1a4a1a] text-white">
+                Save Changes
               </Button>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isPasswordResetOpen} onOpenChange={setIsPasswordResetOpen}>
+      <Dialog
+        open={isPasswordDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedUser(null)
+            setNewPassword("")
+          }
+          setIsPasswordDialogOpen(open)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reset Password</DialogTitle>
             <DialogDescription>
-              Reset password for {selectedUser?.name} ({selectedUser?.email})
+              {selectedUser ? `Set a new password for ${selectedUser.name}` : "Select a user to reset password."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <Label htmlFor="new-password">New Password</Label>
-              <Input
-                id="new-password"
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Enter new password"
-              />
-            </div>
+            <Input
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              placeholder="Enter new password"
+            />
             <div className="flex gap-2">
-              <Button onClick={handlePasswordReset} className="flex-1 bg-[#2d682d] hover:bg-[#1a4a1a]">
+              <Button onClick={() => void handleResetPassword()} className="flex-1 bg-[#2d682d] hover:bg-[#1a4a1a] text-white">
                 Reset Password
               </Button>
-              <Button variant="outline" onClick={() => setIsPasswordResetOpen(false)} className="flex-1">
+              <Button variant="outline" className="flex-1" onClick={() => setIsPasswordDialogOpen(false)}>
                 Cancel
               </Button>
             </div>
@@ -669,58 +650,66 @@ export function UserManagement() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isProfileViewOpen} onOpenChange={setIsProfileViewOpen}>
-        <DialogContent>
+      <Dialog
+        open={isProfileDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedUser(null)
+          }
+          setIsProfileDialogOpen(open)
+        }}
+      >
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>User Profile</DialogTitle>
-            <DialogDescription>View detailed user information</DialogDescription>
+            <DialogDescription>Detailed information about the selected user.</DialogDescription>
           </DialogHeader>
           {selectedUser && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <Label>Name</Label>
-                  <p className="text-sm font-medium">{selectedUser.name}</p>
+                  <p className="font-medium">{selectedUser.name}</p>
                 </div>
                 <div>
                   <Label>Email</Label>
-                  <p className="text-sm font-medium">{selectedUser.email}</p>
+                  <p className="font-medium">{selectedUser.email}</p>
                 </div>
                 <div>
                   <Label>Role</Label>
-                  <Badge className={getRoleColor(selectedUser.role)}>{selectedUser.role.replace("-", " ")}</Badge>
+                  <Badge className={ROLE_BADGE[selectedUser.role]}>
+                    {ROLE_OPTIONS.find((option) => option.value === selectedUser.role)?.label}
+                  </Badge>
                 </div>
                 <div>
                   <Label>Status</Label>
-                  <Badge className={getStatusColor(selectedUser.status)}>{selectedUser.status}</Badge>
+                  <Badge className={STATUS_BADGE[selectedUser.status]}>{selectedUser.status}</Badge>
                 </div>
                 <div>
                   <Label>Created</Label>
-                  <p className="text-sm">{selectedUser.createdAt}</p>
+                  <p>{selectedUser.createdAt}</p>
                 </div>
                 <div>
                   <Label>Last Login</Label>
-                  <p className="text-sm">{selectedUser.lastLogin || "Never"}</p>
+                  <p>{selectedUser.lastLogin ?? "Never"}</p>
                 </div>
               </div>
-
-              {selectedUser.role === "teacher" && (
-                <div className="space-y-2">
-                  <Label>Assigned Classes</Label>
-                  <div className="flex flex-wrap gap-1">
-                    {selectedUser.assignedClasses?.map((className) => (
-                      <Badge key={className} variant="outline">
-                        {className}
-                      </Badge>
-                    )) || <p className="text-sm text-gray-500">No classes assigned</p>}
-                  </div>
-                  <Label>Assigned Subjects</Label>
-                  <div className="flex flex-wrap gap-1">
-                    {selectedUser.assignedSubjects?.map((subject) => (
-                      <Badge key={subject} variant="outline">
-                        {subject}
-                      </Badge>
-                    )) || <p className="text-sm text-gray-500">No subjects assigned</p>}
+              {selectedUser.role === "parent" && (
+                <div>
+                  <Label>Linked Students</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedUser.studentIds.length === 0 ? (
+                      <p className="text-sm text-gray-500">No students assigned.</p>
+                    ) : (
+                      selectedUser.studentIds.map((studentId) => {
+                        const student = availableStudents.find((item) => item.id === studentId)
+                        return (
+                          <Badge key={studentId} variant="outline">
+                            {student ? student.name : studentId}
+                          </Badge>
+                        )
+                      })
+                    )}
                   </div>
                 </div>
               )}

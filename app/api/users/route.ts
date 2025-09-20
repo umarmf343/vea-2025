@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, email, role, password, classId, studentId, subjects, status, isActive } = body
+    const { name, email, role, password, classId, studentId, studentIds, subjects, status, isActive, metadata } = body
 
     if (!name || !email || !role || !password) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
@@ -69,6 +69,12 @@ export async function POST(request: NextRequest) {
     const statusValue = status !== undefined ? normalizeUserStatus(status) : undefined
     const isActiveValue = typeof isActive === "boolean" ? isActive : undefined
 
+    const sanitizedStudentIds = Array.isArray(studentIds)
+      ? studentIds.map((id: string) => sanitizeInput(String(id)))
+      : undefined
+
+    const sanitizedMetadata = sanitizeMetadata(metadata)
+
     const newUser = await createUserRecord({
       name: sanitizeInput(name),
       email: sanitizeInput(email),
@@ -76,9 +82,11 @@ export async function POST(request: NextRequest) {
       passwordHash: hashedPassword,
       classId: classId ? String(classId) : undefined,
       studentId: studentId ? String(studentId) : undefined,
+      studentIds: sanitizedStudentIds,
       subjects: Array.isArray(subjects) ? subjects.map((subject: string) => sanitizeInput(subject)) : undefined,
       status: statusValue,
       isActive: isActiveValue,
+      metadata: sanitizedMetadata ?? null,
     })
 
     const { passwordHash: _passwordHash, ...userWithoutPassword } = newUser
@@ -97,7 +105,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, password, subjects, classId, studentId, status, isActive, ...updateData } = body
+    const { id, password, subjects, classId, studentId, studentIds, status, isActive, metadata, ...updateData } = body
 
     if (!id) {
       return NextResponse.json({ error: "User ID is required" }, { status: 400 })
@@ -121,10 +129,20 @@ export async function PUT(request: NextRequest) {
       sanitizedUpdate.studentIds = studentId ? [String(studentId)] : []
     }
 
+    if (studentIds !== undefined) {
+      sanitizedUpdate.studentIds = Array.isArray(studentIds)
+        ? studentIds.map((student: string) => String(student))
+        : []
+    }
+
     if (subjects !== undefined) {
       sanitizedUpdate.subjects = Array.isArray(subjects)
         ? subjects.map((subject: string) => sanitizeInput(subject))
         : undefined
+    }
+
+    if (metadata !== undefined) {
+      sanitizedUpdate.metadata = sanitizeMetadata(metadata) ?? null
     }
 
     if (status !== undefined) {
@@ -156,6 +174,35 @@ export async function PUT(request: NextRequest) {
     console.error("Failed to update user:", error)
     return NextResponse.json({ error: "Failed to update user" }, { status: 500 })
   }
+}
+
+function sanitizeMetadata(value: unknown): Record<string, any> | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined
+  }
+
+  const result: Record<string, any> = {}
+
+  for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    if (rawValue === undefined) {
+      continue
+    }
+
+    if (typeof rawValue === "string") {
+      result[key] = sanitizeInput(rawValue)
+    } else if (Array.isArray(rawValue)) {
+      result[key] = rawValue.map((entry) => (typeof entry === "string" ? sanitizeInput(entry) : entry))
+    } else if (typeof rawValue === "object" && rawValue !== null) {
+      const nested = sanitizeMetadata(rawValue)
+      if (nested !== undefined) {
+        result[key] = nested
+      }
+    } else {
+      result[key] = rawValue
+    }
+  }
+
+  return result
 }
 
 export async function DELETE(request: NextRequest) {
