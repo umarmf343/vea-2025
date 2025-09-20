@@ -70,7 +70,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
         setSubjects(gradesData.grades || [])
 
         // Load assignments
-        const assignmentsData = await dbManager.getAssignments(student.id)
+        const assignmentsData = await dbManager.getAssignments({ studentId: student.id })
         setAssignments(assignmentsData)
 
         // Load timetable

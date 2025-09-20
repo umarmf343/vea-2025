@@ -1,5 +1,85 @@
 import { safeStorage } from "./safe-storage"
 
+type AssignmentStatus = "draft" | "sent" | "submitted" | "graded" | "overdue"
+
+interface AssignmentSubmissionRecord {
+  id: string
+  assignmentId: string
+  studentId: string
+  status: "pending" | "submitted" | "graded"
+  submittedAt: string | null
+  files: { id: string; name: string }[]
+  comment?: string | null
+  grade?: string | null
+}
+
+interface AssignmentRecord {
+  id: string
+  title: string
+  description: string
+  subject: string
+  classId: string | null
+  className?: string | null
+  teacherId: string | null
+  teacherName?: string | null
+  dueDate: string
+  status: AssignmentStatus
+  assignedStudentIds: string[]
+  submissions: AssignmentSubmissionRecord[]
+  createdAt: string
+  updatedAt: string
+}
+
+interface AssignmentFilters {
+  teacherId?: string
+  studentId?: string
+  classId?: string
+}
+
+interface CreateAssignmentInput {
+  title: string
+  description: string
+  subject: string
+  classId?: string | null
+  className?: string | null
+  teacherId?: string | null
+  teacherName?: string | null
+  dueDate: string
+  status?: AssignmentStatus
+  assignedStudentIds?: string[]
+}
+
+type AssignmentFileInput = { id?: string; name: string } | string
+
+interface CreateAssignmentSubmissionInput {
+  assignmentId: string
+  studentId: string
+  files?: AssignmentFileInput[]
+  status?: "pending" | "submitted" | "graded"
+  comment?: string | null
+  submittedAt?: string
+}
+
+interface TimetableSlot {
+  id: string
+  day: string
+  time: string
+  subject: string
+  teacher: string
+  location?: string | null
+}
+
+interface LibraryBookRecord {
+  id: string
+  title: string
+  author: string
+  issuedDate: string
+  dueDate: string
+  status: "issued" | "overdue" | "returned"
+  coverImage?: string | null
+  renewedAt?: string | null
+}
+
 class DatabaseManager {
   private listeners: Map<string, Function[]> = new Map()
   private static instance: DatabaseManager
@@ -15,6 +95,434 @@ class DatabaseManager {
       DatabaseManager.instance = new DatabaseManager()
     }
     return DatabaseManager.instance
+  }
+
+  private generateId(prefix: string): string {
+    return `${prefix}_${Math.random().toString(36).slice(2, 10)}`
+  }
+
+  private getTimetableStorageKey(className: string): string {
+    return `timetable_${className.replace(/\s+/g, "_").toLowerCase()}`
+  }
+
+  private getLibraryStorageKey(studentId: string): string {
+    return `libraryBooks_${studentId}`
+  }
+
+  private ensureAssignmentsStorage(): AssignmentRecord[] {
+    const raw = safeStorage.getItem("assignments")
+
+    if (!raw) {
+      const seeded = this.seedAssignments()
+      safeStorage.setItem("assignments", JSON.stringify(seeded))
+      return seeded
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as AssignmentRecord[]
+      return parsed.map((assignment) => ({
+        ...assignment,
+        submissions: Array.isArray(assignment.submissions) ? assignment.submissions : [],
+        assignedStudentIds: Array.isArray(assignment.assignedStudentIds)
+          ? assignment.assignedStudentIds
+          : [],
+      }))
+    } catch (error) {
+      console.error("Error parsing assignments from storage:", error)
+      const seeded = this.seedAssignments()
+      safeStorage.setItem("assignments", JSON.stringify(seeded))
+      return seeded
+    }
+  }
+
+  private persistAssignments(assignments: AssignmentRecord[]) {
+    safeStorage.setItem("assignments", JSON.stringify(assignments))
+  }
+
+  private seedAssignments(): AssignmentRecord[] {
+    const timestamp = new Date().toISOString()
+    const dateFromNow = (days: number) => {
+      const date = new Date()
+      date.setDate(date.getDate() + days)
+      return date.toISOString().split("T")[0]
+    }
+
+    return [
+      {
+        id: this.generateId("assignment"),
+        title: "Mathematics Homework - Fractions Mastery",
+        description:
+          "Complete the exercises on page 32 covering proper, improper and mixed fractions. Ensure you show all workings.",
+        subject: "Mathematics",
+        classId: "class_jss1a",
+        className: "JSS 1A",
+        teacherId: "teacher_mathematics_default",
+        teacherName: "Mr. John Smith",
+        dueDate: dateFromNow(3),
+        status: "sent",
+        assignedStudentIds: ["student_john_doe"],
+        submissions: [],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        id: this.generateId("assignment"),
+        title: "English Language - Reading Comprehension",
+        description:
+          "Read the comprehension passage on page 58 and answer the questions that follow. Focus on summarising the main ideas.",
+        subject: "English Language",
+        classId: "class_jss1a",
+        className: "JSS 1A",
+        teacherId: "teacher_english_default",
+        teacherName: "Mrs. Sarah Johnson",
+        dueDate: dateFromNow(5),
+        status: "sent",
+        assignedStudentIds: ["student_john_doe"],
+        submissions: [],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        id: this.generateId("assignment"),
+        title: "Physics Practical - Measurement Accuracy",
+        description:
+          "Prepare a report on the measurement practical we conducted in the laboratory. Include observations and calculations.",
+        subject: "Physics",
+        classId: "class_jss2b",
+        className: "JSS 2B",
+        teacherId: "teacher_physics_default",
+        teacherName: "Mr. Adewale Okoro",
+        dueDate: dateFromNow(4),
+        status: "sent",
+        assignedStudentIds: ["student_alice_smith"],
+        submissions: [],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ]
+  }
+
+  private ensureTimetable(className: string): TimetableSlot[] {
+    const key = this.getTimetableStorageKey(className)
+    const raw = safeStorage.getItem(key)
+
+    if (!raw) {
+      const seeded = this.seedTimetable(className)
+      safeStorage.setItem(key, JSON.stringify(seeded))
+      return seeded
+    }
+
+    try {
+      return JSON.parse(raw) as TimetableSlot[]
+    } catch (error) {
+      console.error("Error parsing timetable from storage:", error)
+      const seeded = this.seedTimetable(className)
+      safeStorage.setItem(key, JSON.stringify(seeded))
+      return seeded
+    }
+  }
+
+  private persistTimetable(className: string, slots: TimetableSlot[]) {
+    const key = this.getTimetableStorageKey(className)
+    safeStorage.setItem(key, JSON.stringify(slots))
+  }
+
+  private seedTimetable(className: string): TimetableSlot[] {
+    const baseSlots: TimetableSlot[] = [
+      {
+        id: this.generateId("slot"),
+        day: "Monday",
+        time: "8:00 AM - 9:00 AM",
+        subject: "Mathematics",
+        teacher: "Mr. John Smith",
+        location: "Room 12",
+      },
+      {
+        id: this.generateId("slot"),
+        day: "Monday",
+        time: "10:00 AM - 11:00 AM",
+        subject: "English Language",
+        teacher: "Mrs. Sarah Johnson",
+        location: "Room 8",
+      },
+      {
+        id: this.generateId("slot"),
+        day: "Tuesday",
+        time: "9:00 AM - 10:00 AM",
+        subject: "Basic Science",
+        teacher: "Mr. Ibrahim Musa",
+        location: "Laboratory 2",
+      },
+      {
+        id: this.generateId("slot"),
+        day: "Wednesday",
+        time: "11:00 AM - 12:00 PM",
+        subject: "Civic Education",
+        teacher: "Mrs. Amaka Obi",
+        location: "Room 5",
+      },
+      {
+        id: this.generateId("slot"),
+        day: "Thursday",
+        time: "1:00 PM - 2:00 PM",
+        subject: "Computer Studies",
+        teacher: "Mr. David Uche",
+        location: "ICT Lab",
+      },
+    ]
+
+    if (className.trim().toLowerCase() === "jss 2b") {
+      return baseSlots.map((slot, index) => ({
+        ...slot,
+        id: this.generateId("slot"),
+        subject: index === 0 ? "Physics" : slot.subject,
+        teacher: index === 0 ? "Mr. Adewale Okoro" : slot.teacher,
+      }))
+    }
+
+    return baseSlots
+  }
+
+  private ensureLibraryBooks(studentId: string): LibraryBookRecord[] {
+    const key = this.getLibraryStorageKey(studentId)
+    const raw = safeStorage.getItem(key)
+
+    if (!raw) {
+      const seeded = this.seedLibraryBooks(studentId)
+      safeStorage.setItem(key, JSON.stringify(seeded))
+      return seeded
+    }
+
+    try {
+      return JSON.parse(raw) as LibraryBookRecord[]
+    } catch (error) {
+      console.error("Error parsing library books from storage:", error)
+      const seeded = this.seedLibraryBooks(studentId)
+      safeStorage.setItem(key, JSON.stringify(seeded))
+      return seeded
+    }
+  }
+
+  private persistLibraryBooks(studentId: string, books: LibraryBookRecord[]) {
+    const key = this.getLibraryStorageKey(studentId)
+    safeStorage.setItem(key, JSON.stringify(books))
+  }
+
+  private seedLibraryBooks(studentId: string): LibraryBookRecord[] {
+    const today = new Date()
+    const formatDate = (date: Date) => {
+      const [isoDate] = date.toISOString().split("T")
+      return isoDate ?? date.toISOString()
+    }
+
+    const issuedDate = new Date(today)
+    issuedDate.setDate(today.getDate() - 7)
+    const dueSoon = new Date(today)
+    dueSoon.setDate(today.getDate() + 5)
+    const overdueDate = new Date(today)
+    overdueDate.setDate(today.getDate() - 3)
+
+    if (studentId === "student_alice_smith") {
+      return [
+        {
+          id: this.generateId("book"),
+          title: "Advanced Physics Workbook",
+          author: "Dr. Kemi Balogun",
+          issuedDate: formatDate(issuedDate),
+          dueDate: formatDate(dueSoon),
+          status: "issued",
+          coverImage: null,
+        },
+        {
+          id: this.generateId("book"),
+          title: "Understanding Electricity",
+          author: "Engr. Peter Musa",
+          issuedDate: formatDate(issuedDate),
+          dueDate: formatDate(overdueDate),
+          status: "overdue",
+          coverImage: null,
+        },
+      ]
+    }
+
+    return [
+      {
+        id: this.generateId("book"),
+        title: "Mathematics for Junior Secondary School",
+        author: "Prof. Tunde Ajayi",
+        issuedDate: formatDate(issuedDate),
+        dueDate: formatDate(dueSoon),
+        status: "issued",
+        coverImage: null,
+      },
+      {
+        id: this.generateId("book"),
+        title: "English Grammar Essentials",
+        author: "Grace Olorunfemi",
+        issuedDate: formatDate(issuedDate),
+        dueDate: formatDate(dueSoon),
+        status: "issued",
+        coverImage: null,
+      },
+      {
+        id: this.generateId("book"),
+        title: "Science Experiments Handbook",
+        author: "Ibrahim Ahmed",
+        issuedDate: formatDate(issuedDate),
+        dueDate: formatDate(overdueDate),
+        status: "overdue",
+        coverImage: null,
+      },
+    ]
+  }
+
+  async getAssignments(filters: AssignmentFilters = {}) {
+    const assignments = this.ensureAssignmentsStorage()
+
+    return assignments
+      .filter((assignment) => {
+        if (filters.teacherId && assignment.teacherId !== filters.teacherId) {
+          return false
+        }
+
+        if (filters.classId && assignment.classId !== filters.classId) {
+          return false
+        }
+
+        if (filters.studentId) {
+          const assignedStudents = Array.isArray(assignment.assignedStudentIds)
+            ? assignment.assignedStudentIds
+            : []
+          const isAssigned = assignedStudents.length === 0 || assignedStudents.includes(filters.studentId)
+
+          return isAssigned
+        }
+
+        return true
+      })
+      .map((assignment) => {
+        const submission = filters.studentId
+          ? assignment.submissions.find((record) => record.studentId === filters.studentId)
+          : undefined
+
+        return {
+          ...assignment,
+          teacher: assignment.teacherName ?? assignment.teacherId ?? "Subject Teacher",
+          class: assignment.className ?? assignment.classId,
+          status: submission ? (submission.status === "submitted" ? "submitted" : submission.status) : assignment.status,
+          submittedAt: submission?.submittedAt ?? null,
+          submittedFile: submission?.files?.[0]?.name ?? null,
+          submittedComment: submission?.comment ?? "",
+        }
+      })
+  }
+
+  async createAssignment(payload: CreateAssignmentInput): Promise<AssignmentRecord> {
+    const assignments = this.ensureAssignmentsStorage()
+    const timestamp = new Date().toISOString()
+
+    const record: AssignmentRecord = {
+      id: this.generateId("assignment"),
+      title: payload.title,
+      description: payload.description,
+      subject: payload.subject,
+      classId: payload.classId ?? null,
+      className: payload.className ?? null,
+      teacherId: payload.teacherId ?? null,
+      teacherName: payload.teacherName ?? null,
+      dueDate: payload.dueDate,
+      status: payload.status ?? "sent",
+      assignedStudentIds: payload.assignedStudentIds ?? [],
+      submissions: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    assignments.push(record)
+    this.persistAssignments(assignments)
+    this.triggerEvent("assignmentsUpdate", record)
+    return record
+  }
+
+  async createAssignmentSubmission(
+    payload: CreateAssignmentSubmissionInput,
+  ): Promise<AssignmentSubmissionRecord> {
+    const assignments = this.ensureAssignmentsStorage()
+    const assignment = assignments.find((item) => item.id === payload.assignmentId)
+
+    if (!assignment) {
+      throw new Error("Assignment not found")
+    }
+
+    const submissions = assignment.submissions ?? []
+    const existingIndex = submissions.findIndex((record) => record.studentId === payload.studentId)
+    const existingSubmission = existingIndex >= 0 ? submissions[existingIndex] : undefined
+    const timestamp = payload.submittedAt ?? new Date().toISOString()
+    const normalisedFiles =
+      payload.files?.map((file) =>
+        typeof file === "string"
+          ? { id: this.generateId("file"), name: file }
+          : { id: file.id ?? this.generateId("file"), name: file.name },
+      ) ?? []
+
+    const submissionRecord: AssignmentSubmissionRecord = {
+      id: existingSubmission?.id ?? this.generateId("submission"),
+      assignmentId: assignment.id,
+      studentId: payload.studentId,
+      status: payload.status ?? "submitted",
+      submittedAt: timestamp,
+      files: normalisedFiles,
+      comment: payload.comment ?? existingSubmission?.comment ?? null,
+      grade: existingSubmission?.grade ?? null,
+    }
+
+    if (existingIndex >= 0) {
+      submissions[existingIndex] = submissionRecord
+    } else {
+      submissions.push(submissionRecord)
+    }
+
+    assignment.submissions = submissions
+    assignment.updatedAt = new Date().toISOString()
+    this.persistAssignments(assignments)
+
+    const eventPayload = {
+      id: assignment.id,
+      studentId: payload.studentId,
+      status: submissionRecord.status === "submitted" ? "submitted" : submissionRecord.status,
+      submittedAt: submissionRecord.submittedAt,
+      submittedFile: submissionRecord.files[0]?.name ?? null,
+      submittedComment: submissionRecord.comment ?? "",
+    }
+
+    this.triggerEvent("assignmentsUpdate", eventPayload)
+    this.triggerEvent("assignmentSubmitted", eventPayload)
+
+    return submissionRecord
+  }
+
+  async getTimetable(className: string): Promise<TimetableSlot[]> {
+    if (!className || !className.trim()) {
+      return this.ensureTimetable("general")
+    }
+
+    return this.ensureTimetable(className)
+  }
+
+  async saveTimetable(className: string, slots: TimetableSlot[]): Promise<TimetableSlot[]> {
+    this.persistTimetable(className, slots)
+    this.triggerEvent("timetableUpdated", { className, slots })
+    return slots
+  }
+
+  async getLibraryBooks(studentId: string): Promise<LibraryBookRecord[]> {
+    return this.ensureLibraryBooks(studentId)
+  }
+
+  async saveLibraryBooks(studentId: string, books: LibraryBookRecord[]): Promise<LibraryBookRecord[]> {
+    this.persistLibraryBooks(studentId, books)
+    this.triggerEvent("libraryBooksUpdated", { studentId, books })
+    return books
   }
 
   addEventListener(key: string, callback: Function) {
@@ -1794,26 +2302,32 @@ class DatabaseManager {
 
   async renewLibraryBook(bookId: string, studentId: string) {
     try {
-      const booksKey = `libraryBooks_${studentId}`
-      const books = safeStorage.getItem(booksKey)
+      const books = this.ensureLibraryBooks(studentId)
+      const index = books.findIndex((book) => book.id === bookId)
 
-      if (books) {
-        const booksList = JSON.parse(books)
-        const bookIndex = booksList.findIndex((b: any) => b.id === bookId)
-
-        if (bookIndex >= 0) {
-          // Extend due date by 2 weeks
-          const currentDue = new Date(booksList[bookIndex].dueDate)
-          currentDue.setDate(currentDue.getDate() + 14)
-          booksList[bookIndex].dueDate = currentDue.toISOString().split("T")[0]
-          booksList[bookIndex].renewedAt = new Date().toISOString()
-
-          safeStorage.setItem(booksKey, JSON.stringify(booksList))
-          this.triggerEvent("libraryBookRenewed", { bookId, studentId })
-        }
+      if (index === -1) {
+        throw new Error("Book not found for renewal")
       }
 
-      return true
+      let currentDue = books[index].dueDate ? new Date(books[index].dueDate) : new Date()
+      if (Number.isNaN(currentDue.getTime())) {
+        currentDue = new Date()
+      }
+
+      currentDue.setDate(currentDue.getDate() + 14)
+
+      books[index] = {
+        ...books[index],
+        dueDate: currentDue.toISOString().split("T")[0],
+        status: "issued",
+        renewedAt: new Date().toISOString(),
+      }
+
+      this.persistLibraryBooks(studentId, books)
+      this.triggerEvent("libraryBooksUpdated", { studentId, books })
+      this.triggerEvent("libraryBookRenewed", { bookId, studentId })
+
+      return books[index]
     } catch (error) {
       console.error("Error renewing library book:", error)
       throw error
@@ -1822,27 +2336,40 @@ class DatabaseManager {
 
   async submitAssignment(submissionData: any) {
     try {
+      const files = submissionData.submittedFile
+        ? [{ id: this.generateId("file"), name: submissionData.submittedFile }]
+        : []
+
+      const submissionRecord = await this.createAssignmentSubmission({
+        assignmentId: submissionData.assignmentId,
+        studentId: submissionData.studentId,
+        files,
+        status: submissionData.status ?? "submitted",
+        comment: submissionData.submittedComment ?? null,
+        submittedAt: submissionData.submittedAt,
+      })
+
       const submissionsKey = `submissions_${submissionData.studentId}`
-      const submissions = safeStorage.getItem(submissionsKey)
-      const submissionsList = submissions ? JSON.parse(submissions) : []
+      const legacyStore = safeStorage.getItem(submissionsKey)
+      const legacyList = legacyStore ? JSON.parse(legacyStore) : []
+      const legacyIndex = legacyList.findIndex((entry: any) => entry.assignmentId === submissionData.assignmentId)
 
-      // Update or add submission
-      const existingIndex = submissionsList.findIndex((s: any) => s.assignmentId === submissionData.assignmentId)
-
-      if (existingIndex >= 0) {
-        submissionsList[existingIndex] = { ...submissionsList[existingIndex], ...submissionData }
-      } else {
-        submissionsList.push({
-          ...submissionData,
-          id: Date.now().toString(),
-          submittedAt: new Date().toISOString(),
-        })
+      const legacyPayload = {
+        ...submissionData,
+        id: submissionRecord.id,
+        submittedAt: submissionRecord.submittedAt,
+        submittedFile: submissionRecord.files[0]?.name ?? submissionData.submittedFile ?? null,
+        status: submissionRecord.status === "submitted" ? "submitted" : submissionRecord.status,
       }
 
-      safeStorage.setItem(submissionsKey, JSON.stringify(submissionsList))
-      this.triggerEvent("assignmentSubmitted", submissionData)
+      if (legacyIndex >= 0) {
+        legacyList[legacyIndex] = { ...legacyList[legacyIndex], ...legacyPayload }
+      } else {
+        legacyList.push(legacyPayload)
+      }
 
-      return submissionData
+      safeStorage.setItem(submissionsKey, JSON.stringify(legacyList))
+      return legacyPayload
     } catch (error) {
       console.error("Error submitting assignment:", error)
       throw error
