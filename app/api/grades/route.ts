@@ -30,6 +30,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ grades })
   } catch (error) {
     console.error("Failed to fetch grades:", error)
+    if (error instanceof Error && error.message.toLowerCase().includes("invalid")) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return NextResponse.json({ error: "Failed to fetch grades" }, { status: 500 })
   }
 }
@@ -59,6 +62,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ grade: savedGrade, message: "Grade saved successfully" })
   } catch (error) {
     console.error("Failed to save grade:", error)
+    if (error instanceof Error && error.message.toLowerCase().includes("invalid")) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return NextResponse.json({ error: "Failed to save grade" }, { status: 500 })
   }
 }
@@ -103,6 +109,9 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ message: "Grade updated successfully", data: updatedGrade })
   } catch (error) {
     console.error("Failed to update grade:", error)
+    if (error instanceof Error && error.message.toLowerCase().includes("invalid")) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return NextResponse.json({ error: "Failed to update grade" }, { status: 500 })
   }
 }
