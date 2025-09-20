@@ -1,15 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { useCallback, useEffect, useMemo, useState } from "react"
+
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { CreditCard, Search, CheckCircle, XCircle, Clock, DollarSign } from "lucide-react"
-import { dbManager } from "@/lib/database-manager"
-import { cn } from "@/lib/utils" // Import cn function
+import { CreditCard, Search, CheckCircle, XCircle, Clock, DollarSign, Loader2 } from "lucide-react"
 
 interface PaymentRecord {
   id: string
@@ -21,217 +20,225 @@ interface PaymentRecord {
   date: string
   reference?: string
   hasAccess: boolean
+  email?: string
+}
+
+interface ApiPaymentRecord {
+  id: string
+  amount: number
+  status: "pending" | "completed" | "failed"
+  paymentType: string
+  studentId: string | null
+  email: string
+  reference: string
+  createdAt: string
+  metadata?: Record<string, any>
+}
+
+function mapPayment(record: ApiPaymentRecord): PaymentRecord {
+  const metadata = record.metadata ?? {}
+  const method = (metadata.method as string | undefined) ?? record.paymentType ?? "online"
+  const hasAccess = Boolean(metadata.accessGranted)
+  const studentName = (metadata.studentName as string | undefined) ?? "Unknown Student"
+  const parentName = (metadata.parentName as string | undefined) ?? "Parent"
+  const status: PaymentRecord["status"] =
+    record.status === "completed" ? "paid" : record.status === "failed" ? "failed" : "pending"
+
+  return {
+    id: record.id,
+    studentName,
+    parentName,
+    amount: Number(record.amount ?? 0),
+    status,
+    method: method === "offline" ? "offline" : "online",
+    date: record.createdAt ? new Date(record.createdAt).toLocaleDateString() : "--",
+    reference: record.reference,
+    hasAccess,
+    email: record.email,
+  }
 }
 
 export function PaymentManagement() {
   const [payments, setPayments] = useState<PaymentRecord[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
 
-  useEffect(() => {
-    const loadPayments = async () => {
-      try {
-        setLoading(true)
-        const paymentData = await dbManager.getPayments()
-        setPayments(paymentData)
-        setError(null)
-      } catch (err) {
-        setError("Failed to load payment data")
-        console.error("Error loading payments:", err)
-      } finally {
-        setLoading(false)
+  const loadPayments = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch("/api/payments/records")
+      if (!response.ok) {
+        throw new Error("Unable to load payment records")
       }
-    }
 
-    loadPayments()
-
-    const handlePaymentUpdate = (updatedPayments: PaymentRecord[]) => {
-      setPayments(updatedPayments)
-    }
-
-    dbManager.on("paymentsUpdated", handlePaymentUpdate)
-
-    return () => {
-      dbManager.off("paymentsUpdated", handlePaymentUpdate)
+      const data = (await response.json()) as { payments: ApiPaymentRecord[] }
+      setPayments(data.payments.map(mapPayment))
+    } catch (err) {
+      console.error(err)
+      setError(err instanceof Error ? err.message : "Unable to load payments")
+    } finally {
+      setLoading(false)
     }
   }, [])
 
-  const filteredPayments = payments.filter(
-    (payment) =>
-      payment.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      payment.parentName.toLowerCase().includes(searchTerm.toLowerCase()),
+  useEffect(() => {
+    void loadPayments()
+  }, [loadPayments])
+
+  const filteredPayments = useMemo(() => {
+    return payments.filter((payment) => {
+      const term = searchTerm.trim().toLowerCase()
+      if (!term) {
+        return true
+      }
+      return (
+        payment.studentName.toLowerCase().includes(term) ||
+        payment.parentName.toLowerCase().includes(term) ||
+        (payment.reference ?? "").toLowerCase().includes(term)
+      )
+    })
+  }, [payments, searchTerm])
+
+  const totals = useMemo(() => {
+    const totalRevenue = payments
+      .filter((payment) => payment.status === "paid")
+      .reduce((sum, payment) => sum + payment.amount, 0)
+
+    const pendingCount = payments.filter((payment) => payment.status === "pending").length
+    const failedCount = payments.filter((payment) => payment.status === "failed").length
+
+    return {
+      totalRevenue,
+      pendingCount,
+      failedCount,
+    }
+  }, [payments])
+
+  const updateAccess = useCallback(
+    async (paymentId: string, hasAccess: boolean) => {
+      setUpdatingId(paymentId)
+      setError(null)
+
+      try {
+        const response = await fetch("/api/payments/records", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: paymentId,
+            status: hasAccess ? "completed" : "pending",
+            accessGranted: hasAccess,
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to update payment access")
+        }
+
+        const data = (await response.json()) as { payment: ApiPaymentRecord }
+        setPayments((previous) => previous.map((payment) => (payment.id === paymentId ? mapPayment(data.payment) : payment)))
+      } catch (err) {
+        console.error(err)
+        setError(err instanceof Error ? err.message : "Unable to update payment access")
+      } finally {
+        setUpdatingId(null)
+      }
+    },
+    [],
   )
-
-  const grantAccess = async (paymentId: string) => {
-    try {
-      await dbManager.updatePaymentAccess(paymentId, true)
-      setPayments((prev) =>
-        prev.map((payment) =>
-          payment.id === paymentId ? { ...payment, hasAccess: true, status: "paid" as const } : payment,
-        ),
-      )
-    } catch (err) {
-      setError("Failed to grant access")
-      console.error("Error granting access:", err)
-    }
-  }
-
-  const revokeAccess = async (paymentId: string) => {
-    try {
-      await dbManager.updatePaymentAccess(paymentId, false)
-      setPayments((prev) =>
-        prev.map((payment) => (payment.id === paymentId ? { ...payment, hasAccess: false } : payment)),
-      )
-    } catch (err) {
-      setError("Failed to revoke access")
-      console.error("Error revoking access:", err)
-    }
-  }
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "paid":
-        return <CheckCircle className="h-4 w-4 text-green-500" />
-      case "pending":
-        return <Clock className="h-4 w-4 text-yellow-500" />
-      case "failed":
-        return <XCircle className="h-4 w-4 text-red-500" />
-      default:
-        return null
-    }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "paid":
-        return "bg-green-100 text-green-800"
-      case "pending":
-        return "bg-yellow-100 text-yellow-800"
-      case "failed":
-        return "bg-red-100 text-red-800"
-      default:
-        return "bg-gray-100 text-gray-800"
-    }
-  }
-
-  const totalRevenue = payments.filter((p) => p.status === "paid").reduce((sum, p) => sum + p.amount, 0)
-  const pendingPayments = payments.filter((p) => p.status === "pending").length
-  const failedPayments = payments.filter((p) => p.status === "failed").length
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="text-center py-8">
-          <p className="text-gray-500">Loading payment data...</p>
-        </div>
-      </div>
+      <Card className="border-[#2d682d]/20">
+        <CardContent className="flex items-center justify-center py-10">
+          <Loader2 className="mr-2 h-5 w-5 animate-spin text-[#2d682d]" />
+          <span className="text-[#2d682d]">Loading payment data…</span>
+        </CardContent>
+      </Card>
     )
   }
 
   if (error) {
     return (
-      <div className="space-y-6">
-        <div className="text-center py-8">
-          <p className="text-red-500">{error}</p>
-          <Button onClick={() => window.location.reload()} className="mt-4">
+      <Card className="border-red-200 bg-red-50">
+        <CardContent className="flex items-center justify-between">
+          <span className="text-sm text-red-700">{error}</span>
+          <Button variant="outline" size="sm" onClick={() => void loadPayments()}>
             Retry
           </Button>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
     <div className="space-y-6">
-      {/* Payment Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="border-[#2d682d]/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-[#2d682d]" />
-              <div>
-                <p className="text-sm text-gray-600">Total Revenue</p>
-                <p className="text-xl font-bold text-[#2d682d]">₦{totalRevenue.toLocaleString()}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-green-200">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-500" />
-              <div>
-                <p className="text-sm text-gray-600">Paid</p>
-                <p className="text-xl font-bold text-green-600">{payments.filter((p) => p.status === "paid").length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-yellow-200">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-yellow-500" />
-              <div>
-                <p className="text-sm text-gray-600">Pending</p>
-                <p className="text-xl font-bold text-yellow-600">{pendingPayments}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-red-200">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <XCircle className="h-5 w-5 text-red-500" />
-              <div>
-                <p className="text-sm text-gray-600">Failed</p>
-                <p className="text-xl font-bold text-red-600">{failedPayments}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <StatCard
+          title="Total Revenue"
+          icon={DollarSign}
+          value={`₦${totals.totalRevenue.toLocaleString()}`}
+          description="Completed transactions"
+          tone="text-[#2d682d]"
+        />
+        <StatCard
+          title="Paid"
+          icon={CheckCircle}
+          value={payments.filter((payment) => payment.status === "paid").length.toString()}
+          description="Successful payments"
+          tone="text-green-600"
+        />
+        <StatCard
+          title="Pending"
+          icon={Clock}
+          value={totals.pendingCount.toString()}
+          description="Awaiting confirmation"
+          tone="text-yellow-600"
+        />
+        <StatCard
+          title="Failed"
+          icon={XCircle}
+          value={totals.failedCount.toString()}
+          description="Failed or reversed"
+          tone="text-red-600"
+        />
       </div>
 
-      {/* Payment Records */}
       <Card className="border-[#b29032]/20">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-[#b29032]">
-                <CreditCard className="h-5 w-5" />
-                Payment Management
-              </CardTitle>
-              <CardDescription>Manage school fee payments and access control</CardDescription>
-            </div>
+        <CardHeader className="space-y-3 md:flex md:items-center md:justify-between md:space-y-0">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-[#2d682d]">
+              <CreditCard className="h-5 w-5" /> Payment Records
+            </CardTitle>
+            <CardDescription>Review and manage fee payments from parents</CardDescription>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <div className="relative w-full md:w-64">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
             <Input
-              placeholder="Search payments..."
+              placeholder="Search student, parent, or reference"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 border-[#2d682d]/20 focus:border-[#b29032]"
+              onChange={(event) => setSearchTerm(event.target.value)}
+              className="pl-9"
             />
           </div>
+        </CardHeader>
 
-          {/* Payments Table */}
-          <div className="border rounded-lg">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Student/Parent</TableHead>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Parent</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Method</TableHead>
                   <TableHead>Date</TableHead>
+                  <TableHead className="hidden md:table-cell">Reference</TableHead>
                   <TableHead>Access</TableHead>
-                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -239,28 +246,19 @@ export function PaymentManagement() {
                   <TableRow key={payment.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback className="bg-[#2d682d] text-white text-xs">
-                            {payment.studentName
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")}
-                          </AvatarFallback>
+                        <Avatar className="h-9 w-9 border border-[#2d682d]/20">
+                          <AvatarFallback>{payment.studentName.slice(0, 2).toUpperCase()}</AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="font-medium">{payment.studentName}</p>
-                          <p className="text-xs text-gray-500">{payment.parentName}</p>
+                          <p className="font-medium text-[#2d682d]">{payment.studentName}</p>
+                          <p className="text-xs text-gray-500">{payment.email ?? "No email"}</p>
                         </div>
                       </div>
                     </TableCell>
+                    <TableCell>{payment.parentName}</TableCell>
+                    <TableCell>₦{payment.amount.toLocaleString()}</TableCell>
                     <TableCell>
-                      <span className="font-medium">₦{payment.amount.toLocaleString()}</span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(payment.status)}
-                        <Badge className={getStatusColor(payment.status)}>{payment.status}</Badge>
-                      </div>
+                      <Badge className={getStatusBadge(payment.status)}>{payment.status}</Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="capitalize">
@@ -268,43 +266,99 @@ export function PaymentManagement() {
                       </Badge>
                     </TableCell>
                     <TableCell>{payment.date}</TableCell>
-                    <TableCell>
-                      <Badge variant={payment.hasAccess ? "default" : "secondary"}>
-                        {payment.hasAccess ? "Granted" : "Restricted"}
-                      </Badge>
+                    <TableCell className="hidden md:table-cell text-xs text-gray-500">
+                      {payment.reference ?? "—"}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        {!payment.hasAccess ? (
+                      <div className="flex flex-wrap gap-2">
+                        {payment.hasAccess ? (
                           <Button
                             size="sm"
-                            onClick={() => grantAccess(payment.id)}
-                            className={cn(
-                              "bg-[#2d682d] hover:bg-[#1a4a1a] text-white",
-                              "text-xs font-medium transition-all duration-200",
-                            )}
+                            variant="outline"
+                            onClick={() => void updateAccess(payment.id, false)}
+                            disabled={updatingId === payment.id}
                           >
-                            Grant Access
+                            {updatingId === payment.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-red-500" />
+                            )}
+                            <span className="ml-1">Revoke</span>
                           </Button>
                         ) : (
                           <Button
                             size="sm"
-                            variant="outline"
-                            onClick={() => revokeAccess(payment.id)}
-                            className="text-xs font-medium transition-all duration-200"
+                            className="bg-[#2d682d] hover:bg-[#1a4a1a]"
+                            onClick={() => void updateAccess(payment.id, true)}
+                            disabled={updatingId === payment.id}
                           >
-                            Revoke Access
+                            {updatingId === payment.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <CheckCircle className="h-4 w-4" />
+                            )}
+                            <span className="ml-1">Grant</span>
                           </Button>
                         )}
                       </div>
                     </TableCell>
                   </TableRow>
                 ))}
+
+                {filteredPayments.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-6 text-center text-sm text-gray-500">
+                      No payment records match your search.
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+function getStatusBadge(status: PaymentRecord["status"]) {
+  switch (status) {
+    case "paid":
+      return "bg-green-100 text-green-800"
+    case "pending":
+      return "bg-yellow-100 text-yellow-800"
+    case "failed":
+      return "bg-red-100 text-red-800"
+    default:
+      return "bg-gray-100 text-gray-800"
+  }
+}
+
+function StatCard({
+  title,
+  icon: Icon,
+  value,
+  description,
+  tone,
+}: {
+  title: string
+  icon: typeof CreditCard
+  value: string
+  description: string
+  tone: string
+}) {
+  return (
+    <Card className="border-[#2d682d]/20">
+      <CardContent className="flex items-center gap-3 p-4">
+        <div className={`rounded-full bg-[#2d682d]/10 p-2 ${tone}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-sm text-gray-600">{description}</p>
+          <p className="text-xl font-bold text-[#2d682d]">{value}</p>
+          <p className="text-xs text-gray-500">{title}</p>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
