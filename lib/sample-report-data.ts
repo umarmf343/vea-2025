@@ -1,4 +1,7 @@
 import { safeStorage } from "@/lib/safe-storage"
+import { getBrandingFromStorage } from "./branding"
+
+const fallbackBrandingInfo = getBrandingFromStorage()
 
 export const completeReportCardData = {
   // Complete report card data for John Doe - JSS 1A Mathematics
@@ -108,11 +111,11 @@ export const completeReportCardData = {
     nextTermBegins: "2025-01-15",
     vacationEnds: "2025-01-14",
     branding: {
-      schoolName: "VICTORY EDUCATIONAL ACADEMY",
-      address: "No. 19, Abdulazeez Street, Zone 3 Duste Baumpaba, Bwari Area Council, Abuja",
-      logo: safeStorage.getItem("schoolLogo") || "/generic-school-logo.png",
-      headmasterSignature: safeStorage.getItem("headmasterSignature") || "",
-      headmasterName: safeStorage.getItem("headmasterName") || "Dr. Victory Adebayo",
+      schoolName: fallbackBrandingInfo.schoolName,
+      address: fallbackBrandingInfo.schoolAddress,
+      logo: fallbackBrandingInfo.logoUrl ?? "/generic-school-logo.png",
+      headmasterSignature: fallbackBrandingInfo.signatureUrl ?? "",
+      headmasterName: fallbackBrandingInfo.headmasterName,
     },
   },
 }
