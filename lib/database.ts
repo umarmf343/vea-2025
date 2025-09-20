@@ -9,12 +9,15 @@ interface CollectionRecord {
   updatedAt: string
 }
 
+export type StoredUserStatus = "active" | "inactive" | "suspended"
+
 export interface StoredUser extends CollectionRecord {
   name: string
   email: string
   role: string
   passwordHash: string
   isActive: boolean
+  status?: StoredUserStatus
   classId?: string | null
   studentIds?: string[]
   subjects?: string[]
@@ -80,6 +83,57 @@ export interface PaymentInitializationRecord extends CollectionRecord {
   metadata?: Record<string, any>
 }
 
+export interface ReportCardSubjectRecord {
+  name: string
+  ca1: number
+  ca2: number
+  assignment: number
+  exam: number
+  total: number
+  grade: string
+  remark?: string
+}
+
+export interface ReportCardRecord extends CollectionRecord {
+  studentId: string
+  studentName: string
+  className: string
+  term: string
+  session: string
+  subjects: ReportCardSubjectRecord[]
+  classTeacherRemark?: string | null
+  headTeacherRemark?: string | null
+}
+
+export type ReportCardSubjectInput =
+  | ReportCardSubjectRecord
+  | (Omit<ReportCardSubjectRecord, "total" | "grade"> & {
+      total?: number
+      grade?: string
+    })
+
+export interface UpsertReportCardPayload
+  extends Omit<ReportCardRecord, "id" | "createdAt" | "updatedAt" | "subjects"> {
+  id?: string
+  subjects: ReportCardSubjectInput[]
+}
+
+export interface BrandingRecord extends CollectionRecord {
+  schoolName: string
+  schoolAddress: string
+  headmasterName: string
+  defaultRemark: string
+  logoUrl?: string | null
+  signatureUrl?: string | null
+}
+
+export interface SystemSettingsRecord extends CollectionRecord {
+  academicYear: string
+  currentTerm: string
+  registrationEnabled: boolean
+  reportCardDeadline?: string | null
+}
+
 export interface CreateUserPayload {
   name: string
   email: string
@@ -92,6 +146,7 @@ export interface CreateUserPayload {
   metadata?: Record<string, any> | null
   profileImage?: string | null
   isActive?: boolean
+  status?: StoredUserStatus
 }
 
 export interface UpdateUserPayload extends Partial<Omit<StoredUser, "id" | "email" | "createdAt" | "updatedAt">> {
@@ -146,6 +201,9 @@ const STORAGE_KEYS = {
   GRADES: "vea_grades",
   MARKS: "vea_marks",
   PAYMENTS: "vea_payment_initializations",
+  REPORT_CARDS: "reportCards",
+  BRANDING: "schoolBranding",
+  SYSTEM_SETTINGS: "systemSettings",
 } as const
 
 const serverCollections = new Map<string, any[]>()
@@ -157,7 +215,7 @@ function deepClone<T>(value: T): T {
 }
 
 function isServer(): boolean {
-  return typeof window === "undefined"
+  return typeof globalThis === "undefined" || typeof (globalThis as Record<string, unknown>).window === "undefined"
 }
 
 function readCollection<T>(key: string): T[] | undefined {
@@ -206,6 +264,24 @@ function ensureCollection<T>(key: string, seed: () => T[]): T[] {
   return deepClone(seeded)
 }
 
+function ensureSingletonRecord<T extends CollectionRecord>(key: string, factory: () => T): T {
+  const records = ensureCollection<T>(key, () => [factory()])
+
+  if (records.length === 0) {
+    const value = factory()
+    persistCollection(key, [value])
+    return deepClone(value)
+  }
+
+  if (records.length > 1) {
+    const [value] = records
+    persistCollection(key, [value])
+    return deepClone(value)
+  }
+
+  return deepClone(records[0])
+}
+
 function generateId(prefix: string): string {
   if (typeof crypto.randomUUID === "function") {
     return `${prefix}_${crypto.randomUUID()}`
@@ -225,6 +301,7 @@ function createDefaultUsers(): StoredUser[] {
       role: "Admin",
       passwordHash: defaultPasswordHash,
       isActive: true,
+      status: "active",
       classId: null,
       studentIds: [],
       subjects: [],
@@ -255,6 +332,36 @@ function createDefaultClasses(): ClassRecord[] {
   ]
 }
 
+function createDefaultBrandingRecord(): BrandingRecord {
+  const timestamp = new Date().toISOString()
+
+  return {
+    id: "branding_default",
+    schoolName: "Victory Educational Academy",
+    schoolAddress: "No. 19, Abdulazeez Street, Zone 3 Duste Baumpaba, Bwari Area Council, Abuja",
+    headmasterName: "Dr. Emmanuel Adebayo",
+    defaultRemark: "Keep up the excellent work and continue to strive for academic excellence.",
+    logoUrl: null,
+    signatureUrl: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+}
+
+function createDefaultSystemSettingsRecord(): SystemSettingsRecord {
+  const timestamp = new Date().toISOString()
+
+  return {
+    id: "system_settings_default",
+    academicYear: "2024/2025",
+    currentTerm: "First Term",
+    registrationEnabled: true,
+    reportCardDeadline: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+}
+
 function defaultEmptyCollection<T>(): T[] {
   return []
 }
@@ -266,6 +373,57 @@ function determineGrade(total: number): string {
   if (total >= 45) return "D"
   if (total >= 40) return "E"
   return "F"
+}
+
+function normalizeUserStatusValue(
+  status: unknown,
+  fallback: StoredUserStatus = "active",
+): StoredUserStatus {
+  if (typeof status !== "string") {
+    return fallback
+  }
+
+  const normalized = status.trim().toLowerCase()
+
+  if (normalized === "inactive") {
+    return "inactive"
+  }
+
+  if (normalized === "suspended") {
+    return "suspended"
+  }
+
+  if (normalized === "active") {
+    return "active"
+  }
+
+  return fallback
+}
+
+function resolveUserState(options: {
+  statusInput?: unknown
+  isActiveInput?: unknown
+  currentStatus?: StoredUserStatus
+}): { status: StoredUserStatus; isActive: boolean } {
+  const { statusInput, isActiveInput, currentStatus } = options
+  const fallbackStatus = currentStatus ?? "active"
+
+  if (typeof statusInput === "string") {
+    const status = normalizeUserStatusValue(statusInput, fallbackStatus)
+    return { status, isActive: status === "active" }
+  }
+
+  if (typeof isActiveInput === "boolean") {
+    if (isActiveInput) {
+      return { status: "active", isActive: true }
+    }
+
+    const derivedStatus = fallbackStatus === "suspended" ? "suspended" : "inactive"
+    return { status: derivedStatus, isActive: false }
+  }
+
+  const normalizedFallback = normalizeUserStatusValue(fallbackStatus, "active")
+  return { status: normalizedFallback, isActive: normalizedFallback === "active" }
 }
 
 // User helpers
@@ -303,13 +461,20 @@ export async function createUserRecord(payload: CreateUserPayload): Promise<Stor
   }
 
   const timestamp = new Date().toISOString()
+  const { status, isActive } = resolveUserState({
+    statusInput: payload.status,
+    isActiveInput: payload.isActive,
+    currentStatus: "active",
+  })
+
   const newUser: StoredUser = {
     id: generateId("user"),
     name: payload.name,
     email: normalizedEmail,
     role: payload.role,
     passwordHash: payload.passwordHash,
-    isActive: payload.isActive ?? true,
+    isActive,
+    status,
     classId: payload.classId ?? null,
     studentIds: payload.studentIds ?? (payload.studentId ? [String(payload.studentId)] : []),
     subjects: payload.subjects ? [...payload.subjects] : [],
@@ -336,16 +501,9 @@ export async function updateUserRecord(id: string, updates: UpdateUserPayload): 
   const existing = users[index]
   const timestamp = new Date().toISOString()
 
-  const {
-    studentId,
-    studentIds,
-    subjects,
-    email,
-    id: _ignored,
-    createdAt: _created,
-    updatedAt: _updated,
-    ...otherUpdates
-  } = updates as UpdateUserPayload & { [key: string]: any }
+  const { studentId, studentIds, subjects, email, status, isActive, ...otherUpdates } = updates as UpdateUserPayload & {
+    [key: string]: unknown
+  }
 
   if (email !== undefined) {
     const normalizedEmail = email.trim().toLowerCase()
@@ -364,6 +522,16 @@ export async function updateUserRecord(id: string, updates: UpdateUserPayload): 
     }
   }
 
+  const currentStatus = existing.status ?? (existing.isActive === false ? "inactive" : "active")
+  const resolvedState = resolveUserState({
+    statusInput: status,
+    isActiveInput: isActive,
+    currentStatus,
+  })
+
+  existing.status = resolvedState.status
+  existing.isActive = resolvedState.isActive
+
   if (studentIds !== undefined) {
     existing.studentIds = Array.isArray(studentIds) ? studentIds.map(String) : []
   } else if (studentId !== undefined) {
@@ -378,6 +546,19 @@ export async function updateUserRecord(id: string, updates: UpdateUserPayload): 
   users[index] = existing
   persistCollection(STORAGE_KEYS.USERS, users)
   return deepClone(existing)
+}
+
+export async function deleteUserRecord(id: string): Promise<boolean> {
+  const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
+  const index = users.findIndex((user) => user.id === id)
+
+  if (index === -1) {
+    return false
+  }
+
+  users.splice(index, 1)
+  persistCollection(STORAGE_KEYS.USERS, users)
+  return true
 }
 
 // Class helpers
@@ -432,6 +613,190 @@ export async function updateClassRecord(id: string, updates: UpdateClassPayload)
   classes[index] = existing
   persistCollection(STORAGE_KEYS.CLASSES, classes)
   return deepClone(existing)
+}
+
+export async function deleteClassRecord(id: string): Promise<boolean> {
+  const classes = ensureCollection<ClassRecord>(STORAGE_KEYS.CLASSES, createDefaultClasses)
+  const index = classes.findIndex((record) => record.id === id)
+
+  if (index === -1) {
+    return false
+  }
+
+  classes.splice(index, 1)
+  persistCollection(STORAGE_KEYS.CLASSES, classes)
+  return true
+}
+
+// Branding helpers
+export async function getBrandingSettings(): Promise<BrandingRecord> {
+  return ensureSingletonRecord(STORAGE_KEYS.BRANDING, createDefaultBrandingRecord)
+}
+
+export async function updateBrandingSettings(
+  updates: Partial<Omit<BrandingRecord, "id" | "createdAt" | "updatedAt" | "logoUrl" | "signatureUrl">> & {
+    logoUrl?: string | null
+    signatureUrl?: string | null
+  },
+): Promise<BrandingRecord> {
+  const records = ensureCollection<BrandingRecord>(STORAGE_KEYS.BRANDING, () => [createDefaultBrandingRecord()])
+  const timestamp = new Date().toISOString()
+  const existing = records[0] ?? createDefaultBrandingRecord()
+
+  const updated: BrandingRecord = {
+    ...existing,
+    ...updates,
+    id: existing.id || generateId("branding"),
+    createdAt: existing.createdAt ?? timestamp,
+    updatedAt: timestamp,
+  }
+
+  records[0] = updated
+  persistCollection(STORAGE_KEYS.BRANDING, records)
+  return deepClone(updated)
+}
+
+// System settings helpers
+export async function getSystemSettingsRecord(): Promise<SystemSettingsRecord> {
+  return ensureSingletonRecord(STORAGE_KEYS.SYSTEM_SETTINGS, createDefaultSystemSettingsRecord)
+}
+
+export async function updateSystemSettingsRecord(
+  updates: Partial<Omit<SystemSettingsRecord, "id" | "createdAt" | "updatedAt">>,
+): Promise<SystemSettingsRecord> {
+  const records = ensureCollection<SystemSettingsRecord>(STORAGE_KEYS.SYSTEM_SETTINGS, () => [
+    createDefaultSystemSettingsRecord(),
+  ])
+  const timestamp = new Date().toISOString()
+  const existing = records[0] ?? createDefaultSystemSettingsRecord()
+
+  const updated: SystemSettingsRecord = {
+    ...existing,
+    ...updates,
+    id: existing.id || generateId("system_settings"),
+    createdAt: existing.createdAt ?? timestamp,
+    updatedAt: timestamp,
+  }
+
+  records[0] = updated
+  persistCollection(STORAGE_KEYS.SYSTEM_SETTINGS, records)
+  return deepClone(updated)
+}
+
+// Report card helpers
+function normalizeReportSubject(subject: ReportCardSubjectInput): ReportCardSubjectRecord {
+  const ca1 = Number(subject.ca1 ?? 0)
+  const ca2 = Number(subject.ca2 ?? 0)
+  const assignment = Number(subject.assignment ?? 0)
+  const exam = Number(subject.exam ?? 0)
+  const computedTotal = ca1 + ca2 + assignment + exam
+  const total = Number(
+    typeof (subject as ReportCardSubjectRecord).total === "number"
+      ? (subject as ReportCardSubjectRecord).total
+      : computedTotal,
+  )
+
+  return {
+    name: subject.name,
+    ca1,
+    ca2,
+    assignment,
+    exam,
+    total,
+    grade: (subject as ReportCardSubjectRecord).grade ?? determineGrade(total),
+    remark: "remark" in subject ? (subject as ReportCardSubjectRecord).remark ?? undefined : undefined,
+  }
+}
+
+export async function listReportCards(filter?: {
+  studentId?: string
+  className?: string
+  term?: string
+  session?: string
+}): Promise<ReportCardRecord[]> {
+  const reportCards = ensureCollection<ReportCardRecord>(STORAGE_KEYS.REPORT_CARDS, defaultEmptyCollection)
+
+  const filtered = reportCards.filter((record) => {
+    if (filter?.studentId && record.studentId !== filter.studentId) {
+      return false
+    }
+    if (filter?.className && record.className !== filter.className) {
+      return false
+    }
+    if (filter?.term && record.term !== filter.term) {
+      return false
+    }
+    if (filter?.session && record.session !== filter.session) {
+      return false
+    }
+    return true
+  })
+
+  return deepClone(filtered)
+}
+
+export async function upsertReportCardRecord(payload: UpsertReportCardPayload): Promise<ReportCardRecord> {
+  const reportCards = ensureCollection<ReportCardRecord>(STORAGE_KEYS.REPORT_CARDS, defaultEmptyCollection)
+  const timestamp = new Date().toISOString()
+
+  const normalizedSubjects = payload.subjects.map((subject) => normalizeReportSubject(subject))
+
+  const findIndex = reportCards.findIndex((record) => {
+    if (payload.id) {
+      return record.id === payload.id
+    }
+    return (
+      record.studentId === payload.studentId &&
+      record.term === payload.term &&
+      record.session === payload.session
+    )
+  })
+
+  if (findIndex >= 0) {
+    const existing = reportCards[findIndex]
+    const updated: ReportCardRecord = {
+      ...existing,
+      ...payload,
+      subjects: normalizedSubjects,
+      classTeacherRemark: payload.classTeacherRemark ?? existing.classTeacherRemark ?? null,
+      headTeacherRemark: payload.headTeacherRemark ?? existing.headTeacherRemark ?? null,
+      updatedAt: timestamp,
+    }
+    reportCards[findIndex] = updated
+    persistCollection(STORAGE_KEYS.REPORT_CARDS, reportCards)
+    return deepClone(updated)
+  }
+
+  const created: ReportCardRecord = {
+    id: payload.id ?? generateId("report_card"),
+    studentId: payload.studentId,
+    studentName: payload.studentName,
+    className: payload.className,
+    term: payload.term,
+    session: payload.session,
+    subjects: normalizedSubjects,
+    classTeacherRemark: payload.classTeacherRemark ?? null,
+    headTeacherRemark: payload.headTeacherRemark ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  reportCards.push(created)
+  persistCollection(STORAGE_KEYS.REPORT_CARDS, reportCards)
+  return deepClone(created)
+}
+
+export async function deleteReportCardRecord(id: string): Promise<boolean> {
+  const reportCards = ensureCollection<ReportCardRecord>(STORAGE_KEYS.REPORT_CARDS, defaultEmptyCollection)
+  const index = reportCards.findIndex((record) => record.id === id)
+
+  if (index === -1) {
+    return false
+  }
+
+  reportCards.splice(index, 1)
+  persistCollection(STORAGE_KEYS.REPORT_CARDS, reportCards)
+  return true
 }
 
 // Grade helpers
@@ -632,6 +997,11 @@ export async function recordPaymentInitialization(
   payments[index] = updated
   persistCollection(STORAGE_KEYS.PAYMENTS, payments)
   return deepClone(updated)
+}
+
+export async function listPaymentInitializations(): Promise<PaymentInitializationRecord[]> {
+  const payments = ensureCollection<PaymentInitializationRecord>(STORAGE_KEYS.PAYMENTS, defaultEmptyCollection)
+  return deepClone(payments)
 }
 
 // Transaction helper for real database operations

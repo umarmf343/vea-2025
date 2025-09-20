@@ -3,12 +3,32 @@ export const runtime = "nodejs"
 import { type NextRequest, NextResponse } from "next/server"
 import {
   createUserRecord,
+  deleteUserRecord,
   getAllUsersFromDb,
   getUserByIdFromDb,
   getUsersByRoleFromDb,
   updateUserRecord,
+  type StoredUserStatus,
 } from "@/lib/database"
 import { hashPassword, sanitizeInput } from "@/lib/security"
+
+function normalizeUserStatus(status: unknown): StoredUserStatus {
+  if (typeof status !== "string") {
+    return "active"
+  }
+
+  const normalized = sanitizeInput(status).trim().toLowerCase()
+
+  if (normalized === "inactive") {
+    return "inactive"
+  }
+
+  if (normalized === "suspended") {
+    return "suspended"
+  }
+
+  return "active"
+}
 
 // const dbManager = new DatabaseManager()
 
@@ -39,13 +59,16 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, email, role, password, classId, studentId, subjects } = body
+    const { name, email, role, password, classId, studentId, subjects, status, isActive } = body
 
     if (!name || !email || !role || !password) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
     const hashedPassword = await hashPassword(password)
+    const statusValue = status !== undefined ? normalizeUserStatus(status) : undefined
+    const isActiveValue = typeof isActive === "boolean" ? isActive : undefined
+
     const newUser = await createUserRecord({
       name: sanitizeInput(name),
       email: sanitizeInput(email),
@@ -54,9 +77,12 @@ export async function POST(request: NextRequest) {
       classId: classId ? String(classId) : undefined,
       studentId: studentId ? String(studentId) : undefined,
       subjects: Array.isArray(subjects) ? subjects.map((subject: string) => sanitizeInput(subject)) : undefined,
+      status: statusValue,
+      isActive: isActiveValue,
     })
 
-    const { passwordHash, ...userWithoutPassword } = newUser
+    const { passwordHash: _passwordHash, ...userWithoutPassword } = newUser
+    void _passwordHash
 
     return NextResponse.json({
       user: userWithoutPassword,
@@ -71,13 +97,13 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, password, subjects, classId, studentId, ...updateData } = body
+    const { id, password, subjects, classId, studentId, status, isActive, ...updateData } = body
 
     if (!id) {
       return NextResponse.json({ error: "User ID is required" }, { status: 400 })
     }
 
-    const sanitizedUpdate: Record<string, any> = {}
+    const sanitizedUpdate: Record<string, unknown> = {}
 
     Object.entries(updateData).forEach(([key, value]) => {
       if (typeof value === "string") {
@@ -101,6 +127,14 @@ export async function PUT(request: NextRequest) {
         : undefined
     }
 
+    if (status !== undefined) {
+      sanitizedUpdate.status = normalizeUserStatus(status)
+    }
+
+    if (isActive !== undefined) {
+      sanitizedUpdate.isActive = Boolean(isActive)
+    }
+
     if (password) {
       sanitizedUpdate.passwordHash = await hashPassword(password)
     }
@@ -111,7 +145,8 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    const { passwordHash, ...userWithoutPassword } = updatedUser
+    const { passwordHash: _passwordHash, ...userWithoutPassword } = updatedUser
+    void _passwordHash
 
     return NextResponse.json({
       user: userWithoutPassword,
@@ -120,5 +155,27 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     console.error("Failed to update user:", error)
     return NextResponse.json({ error: "Failed to update user" }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get("id")
+
+    if (!id) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
+    }
+
+    const deleted = await deleteUserRecord(id)
+
+    if (!deleted) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Failed to delete user:", error)
+    return NextResponse.json({ error: "Failed to delete user" }, { status: 500 })
   }
 }
