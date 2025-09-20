@@ -55,6 +55,9 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error("Marks save error:", error)
+    if (error instanceof Error && error.message.toLowerCase().includes("invalid")) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return NextResponse.json({ error: "Failed to save marks" }, { status: 500 })
   }
 }
@@ -96,6 +99,9 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error("Marks fetch error:", error)
+    if (error instanceof Error && error.message.toLowerCase().includes("invalid")) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return NextResponse.json({ error: "Failed to fetch marks" }, { status: 500 })
   }
 }
