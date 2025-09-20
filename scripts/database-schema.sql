@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   role ENUM('student', 'teacher', 'admin', 'super_admin', 'parent', 'accountant', 'librarian') NOT NULL,
   class_id INT NULL,
   student_id VARCHAR(50) NULL,
+  subjects JSON NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_email (email),
@@ -24,7 +25,11 @@ CREATE TABLE IF NOT EXISTS classes (
   name VARCHAR(100) NOT NULL,
   level VARCHAR(50) NOT NULL,
   teacher_id INT NULL,
+  capacity INT DEFAULT 30,
+  status ENUM('active', 'inactive') DEFAULT 'active',
+  subjects JSON NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (teacher_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
@@ -33,15 +38,66 @@ CREATE TABLE IF NOT EXISTS students (
   id INT PRIMARY KEY AUTO_INCREMENT,
   student_id VARCHAR(50) UNIQUE NOT NULL,
   name VARCHAR(255) NOT NULL,
-  class_id INT NOT NULL,
+  class_id INT NULL,
+  class_name VARCHAR(100) NULL,
   parent_email VARCHAR(255) NULL,
   date_of_birth DATE NULL,
   address TEXT NULL,
   phone VARCHAR(20) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE SET NULL,
   INDEX idx_student_id (student_id),
   INDEX idx_class_id (class_id)
+);
+
+-- Grades table
+CREATE TABLE IF NOT EXISTS grades (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  student_id INT NOT NULL,
+  subject VARCHAR(100) NOT NULL,
+  first_ca DECIMAL(5,2) DEFAULT 0,
+  second_ca DECIMAL(5,2) DEFAULT 0,
+  assignment DECIMAL(5,2) DEFAULT 0,
+  exam DECIMAL(5,2) DEFAULT 0,
+  total DECIMAL(6,2) DEFAULT 0,
+  grade VARCHAR(2) NULL,
+  teacher_remarks TEXT NULL,
+  term VARCHAR(20) NOT NULL,
+  session VARCHAR(20) NOT NULL,
+  class_id INT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+  FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE SET NULL,
+  INDEX idx_grade_student (student_id),
+  INDEX idx_grade_class (class_id),
+  INDEX idx_grade_term (term),
+  INDEX idx_grade_session (session)
+);
+
+-- Detailed marks table for continuous assessment tracking
+CREATE TABLE IF NOT EXISTS student_marks (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  student_id INT NOT NULL,
+  subject VARCHAR(100) NOT NULL,
+  ca1 DECIMAL(5,2) DEFAULT 0,
+  ca2 DECIMAL(5,2) DEFAULT 0,
+  assignment DECIMAL(5,2) DEFAULT 0,
+  exam DECIMAL(5,2) DEFAULT 0,
+  ca_total DECIMAL(6,2) DEFAULT 0,
+  grand_total DECIMAL(6,2) DEFAULT 0,
+  percentage DECIMAL(5,2) DEFAULT 0,
+  grade VARCHAR(2) NOT NULL,
+  remarks VARCHAR(255) NULL,
+  term VARCHAR(20) NOT NULL,
+  session VARCHAR(20) NOT NULL,
+  teacher_id INT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+  FOREIGN KEY (teacher_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_marks_student_term (student_id, term, session),
+  INDEX idx_marks_teacher (teacher_id)
 );
 
 -- Report cards table
@@ -74,8 +130,11 @@ CREATE TABLE IF NOT EXISTS payments (
   status ENUM('pending', 'completed', 'failed') DEFAULT 'pending',
   reference VARCHAR(255) UNIQUE NOT NULL,
   paystack_reference VARCHAR(255) NULL,
+  payer_email VARCHAR(255) NULL,
+  metadata JSON NULL,
   paid_at TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
   INDEX idx_reference (reference),
   INDEX idx_status (status)

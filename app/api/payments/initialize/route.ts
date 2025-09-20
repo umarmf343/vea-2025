@@ -1,4 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { recordPaymentInitialization } from "@/lib/database"
+import { sanitizeInput } from "@/lib/security"
 
 export const runtime = "nodejs"
 
@@ -7,7 +9,7 @@ const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "sk_test_your_sec
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { email, amount, metadata } = body
+    const { email, amount, metadata, studentId, paymentType } = body
 
     if (!email || !amount) {
       return NextResponse.json({ status: false, message: "Email and amount are required" }, { status: 400 })
@@ -30,6 +32,21 @@ export async function POST(request: NextRequest) {
     const data = await response.json()
 
     if (data.status) {
+      try {
+        await recordPaymentInitialization({
+          reference: data.data?.reference ?? data.data?.access_code ?? `paystack_${Date.now()}`,
+          amount: Number(amount),
+          studentId: studentId ? String(studentId) : null,
+          paymentType: paymentType ? sanitizeInput(paymentType) : "general",
+          email: sanitizeInput(email),
+          status: "pending",
+          paystackReference: data.data?.reference ?? null,
+          metadata: metadata ?? undefined,
+        })
+      } catch (dbError) {
+        console.error("Failed to record payment initialization:", dbError)
+      }
+
       return NextResponse.json(data)
     } else {
       return NextResponse.json(
