@@ -1,0 +1,1 @@
+{"version":1,"functions":{"/api/payments/initialize":{},"/api/payments/verify":{},"/api/report-cards/[studentId]":{},"/api/system/metrics":{},"/api/users":{},"/":{},"/payment/callback":{},"/api/assignments":{},"/api/classes":{},"/api/grades":{}}}
