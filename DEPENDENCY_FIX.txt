@@ -1,0 +1,10 @@
+VEA 2025 PORTAL - DEPENDENCY RESOLUTION GUIDE
+=============================================
+
+ISSUE RESOLVED:
+- Updated vaul from 0.9.9 to 1.1.1 (supports React 18)
+- Added package overrides to force React 18.3.1 compatibility
+- Fixed all placeholder imports in components
+
+INSTALLATION COMMANDS:
+1. Delete existing node_modules and package-lock.json:

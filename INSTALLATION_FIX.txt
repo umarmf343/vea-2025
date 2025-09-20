@@ -1,0 +1,41 @@
+VEA 2025 PORTAL - DEPENDENCY FIX INSTRUCTIONS
+=============================================
+
+ISSUE RESOLVED:
+- Downgraded React from version 19 to 18.3.1 for compatibility
+- Updated project name to "vea-2025-portal"
+- Fixed vaul dependency conflict
+
+INSTALLATION STEPS:
+1. Delete node_modules folder (if exists):
+   rmdir /s /q node_modules
+
+2. Delete package-lock.json (if exists):
+   del package-lock.json
+
+3. Clear npm cache:
+   npm cache clean --force
+
+4. Install dependencies:
+   npm install
+
+5. If still having issues, use legacy peer deps:
+   npm install --legacy-peer-deps
+
+6. Start development server:
+   npm run dev
+
+ALTERNATIVE INSTALLATION (if above fails):
+npm install --legacy-peer-deps --force
+
+VERIFICATION:
+- Check that React version is 18.3.1
+- Verify all dependencies install without errors
+- Confirm development server starts on http://localhost:3000
+
+TROUBLESHOOTING:
+- If you still get errors, delete node_modules and package-lock.json again
+- Run: npm install --legacy-peer-deps
+- Contact support if issues persist
+
+The VEA 2025 portal should now install and run without dependency conflicts.
