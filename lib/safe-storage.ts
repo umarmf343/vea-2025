@@ -4,41 +4,68 @@ interface SafeStorage {
   removeItem: (key: string) => void
 }
 
-const createSafeStorage = (): SafeStorage => {
-  if (typeof window === "undefined") {
-    // Server-side: return no-op functions
-    return {
-      getItem: () => null,
-      setItem: () => {},
-      removeItem: () => {},
-    }
+type StorageKind = "localStorage" | "sessionStorage"
+
+function resolveStorage(kind: StorageKind): Storage | null {
+  if (typeof globalThis === "undefined") {
+    return null
   }
 
-  // Client-side: return actual localStorage
-  return {
-    getItem: (key: string) => localStorage.getItem(key),
-    setItem: (key: string, value: string) => localStorage.setItem(key, value),
-    removeItem: (key: string) => localStorage.removeItem(key),
-  }
-}
-
-export const safeStorage = createSafeStorage()
-
-// Helper for session storage
-const createSafeSessionStorage = (): SafeStorage => {
-  if (typeof window === "undefined") {
-    return {
-      getItem: () => null,
-      setItem: () => {},
-      removeItem: () => {},
-    }
+  const candidate = (globalThis as Record<string, unknown>)[kind]
+  if (!candidate) {
+    return null
   }
 
-  return {
-    getItem: (key: string) => sessionStorage.getItem(key),
-    setItem: (key: string, value: string) => sessionStorage.setItem(key, value),
-    removeItem: (key: string) => sessionStorage.removeItem(key),
+  try {
+    const storage = candidate as Storage
+    const testKey = "__vea_storage_test__"
+    storage.getItem(testKey)
+    return storage
+  } catch (error) {
+    return null
   }
 }
 
-export const safeSessionStorage = createSafeSessionStorage()
+function createSafeStorage(kind: StorageKind): SafeStorage {
+  return {
+    getItem: (key: string) => {
+      const storage = resolveStorage(kind)
+      if (!storage) {
+        return null
+      }
+
+      try {
+        return storage.getItem(key)
+      } catch (error) {
+        return null
+      }
+    },
+    setItem: (key: string, value: string) => {
+      const storage = resolveStorage(kind)
+      if (!storage) {
+        return
+      }
+
+      try {
+        storage.setItem(key, value)
+      } catch (error) {
+        // Ignore storage quota errors
+      }
+    },
+    removeItem: (key: string) => {
+      const storage = resolveStorage(kind)
+      if (!storage) {
+        return
+      }
+
+      try {
+        storage.removeItem(key)
+      } catch (error) {
+        // Ignore removal issues
+      }
+    },
+  }
+}
+
+export const safeStorage = createSafeStorage("localStorage")
+export const safeSessionStorage = createSafeStorage("sessionStorage")

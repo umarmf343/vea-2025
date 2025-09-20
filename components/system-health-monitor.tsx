@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { Activity, Database, Server, Users, AlertTriangle, CheckCircle, RefreshCw, Wifi, Cpu } from "lucide-react"
+import { logger } from "@/lib/logger"
 
 interface SystemMetrics {
   uptime: string
@@ -19,44 +20,95 @@ interface SystemMetrics {
   systemStatus: "healthy" | "warning" | "critical"
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+
+  return fallback
+}
+
 export function SystemHealthMonitor() {
   const [metrics, setMetrics] = useState<SystemMetrics>({
-    uptime: "99.9%",
-    activeUsers: 247,
-    databaseConnections: 15,
-    serverLoad: 45,
-    memoryUsage: 62,
-    diskUsage: 78,
-    networkLatency: 23,
-    lastBackup: "2 hours ago",
+    uptime: "—",
+    activeUsers: 0,
+    databaseConnections: 0,
+    serverLoad: 0,
+    memoryUsage: 0,
+    diskUsage: 0,
+    networkLatency: 0,
+    lastBackup: "Loading...",
     systemStatus: "healthy",
   })
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  const refreshMetrics = async () => {
-    setIsRefreshing(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+  const fetchMetrics = useCallback(
+    async (showSpinner = false) => {
+      try {
+        if (showSpinner) {
+          setIsRefreshing(true)
+        }
 
-    // Generate realistic metrics
-    setMetrics({
-      uptime: "99.9%",
-      activeUsers: Math.floor(Math.random() * 300) + 200,
-      databaseConnections: Math.floor(Math.random() * 20) + 10,
-      serverLoad: Math.floor(Math.random() * 60) + 20,
-      memoryUsage: Math.floor(Math.random() * 40) + 50,
-      diskUsage: Math.floor(Math.random() * 30) + 70,
-      networkLatency: Math.floor(Math.random() * 20) + 15,
-      lastBackup: "Just now",
-      systemStatus: Math.random() > 0.8 ? "warning" : "healthy",
-    })
-    setIsRefreshing(false)
-  }
+        const response = await fetch("/api/monitoring", { cache: "no-store" })
+        if (!response.ok) {
+          throw new Error(`Failed to load monitoring metrics (${response.status})`)
+        }
+
+        const data: unknown = await response.json()
+        const metricsPayload = isRecord(data) ? data.metrics : undefined
+
+        if (isRecord(metricsPayload)) {
+          setMetrics((prev) => ({
+            ...prev,
+            ...{
+              uptime: typeof metricsPayload.uptime === "string" ? metricsPayload.uptime : prev.uptime,
+              activeUsers: asNumber(metricsPayload.activeUsers, prev.activeUsers),
+              databaseConnections: asNumber(metricsPayload.databaseConnections, prev.databaseConnections),
+              serverLoad: asNumber(metricsPayload.serverLoad, prev.serverLoad),
+              memoryUsage: asNumber(metricsPayload.memoryUsage, prev.memoryUsage),
+              diskUsage: asNumber(metricsPayload.diskUsage, prev.diskUsage),
+              networkLatency: asNumber(metricsPayload.networkLatency, prev.networkLatency),
+              lastBackup: typeof metricsPayload.lastBackup === "string" ? metricsPayload.lastBackup : prev.lastBackup,
+              systemStatus:
+                metricsPayload.systemStatus === "healthy" ||
+                metricsPayload.systemStatus === "warning" ||
+                metricsPayload.systemStatus === "critical"
+                  ? metricsPayload.systemStatus
+                  : prev.systemStatus,
+            },
+          }))
+        }
+      } catch (error) {
+        logger.error("Unable to refresh monitoring metrics", { error })
+      } finally {
+        if (showSpinner) {
+          setIsRefreshing(false)
+        }
+      }
+    },
+    [],
+  )
+
+  const refreshMetrics = useCallback(async () => {
+    await fetchMetrics(true)
+  }, [fetchMetrics])
 
   useEffect(() => {
-    const interval = setInterval(refreshMetrics, 30000) // Refresh every 30 seconds
+    void fetchMetrics()
+    const interval = setInterval(() => {
+      void fetchMetrics()
+    }, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [fetchMetrics])
 
   const getStatusColor = (status: string) => {
     switch (status) {

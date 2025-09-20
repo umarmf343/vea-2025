@@ -11,8 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useToast } from "@/hooks/use-toast"
-import { dbManager } from "@/lib/database-manager"
 import { Clock, Edit, Loader2, Plus, Trash2 } from "lucide-react"
+import { logger } from "@/lib/logger"
 
 interface TimetableSlot {
   id: string
@@ -72,23 +72,68 @@ export default function TimetableManagement() {
   })
   const [isSaving, setIsSaving] = useState(false)
 
-  const loadClasses = useCallback(async () => {
-    const classes = await dbManager.getClasses()
-    const normalized = (Array.isArray(classes) ? classes : [])
-      .map((item: any) => {
-        if (typeof item === "string") {
-          return { value: item, label: item }
-        }
-        return {
-          value: String(item.name ?? item.id ?? ""),
-          label: String(item.name ?? item.id ?? "Unknown Class"),
-        }
-      })
-      .filter((option) => option.value)
+  const getStartMinutes = useCallback((time: string) => {
+    if (!time) {
+      return 0
+    }
 
-    setClassOptions(normalized)
-    if (normalized.length > 0) {
-      setSelectedClass((prev) => prev || normalized[0].value)
+    const [start] = time.split("-").map((value) => value.trim())
+    const match = start.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+    if (!match) {
+      return 0
+    }
+
+    let hour = Number(match[1])
+    const minute = Number(match[2])
+    const meridiem = match[3].toUpperCase()
+
+    if (meridiem === "PM" && hour !== 12) {
+      hour += 12
+    }
+
+    if (meridiem === "AM" && hour === 12) {
+      hour = 0
+    }
+
+    return hour * 60 + minute
+  }, [])
+
+  const loadClasses = useCallback(async () => {
+    try {
+      const response = await fetch("/api/classes", { cache: "no-store" })
+      if (!response.ok) {
+        throw new Error(`Failed to load classes (${response.status})`)
+      }
+
+      const payload: unknown = await response.json()
+      const rawClasses = Array.isArray((payload as Record<string, unknown>)?.classes)
+        ? ((payload as Record<string, unknown>).classes as unknown[])
+        : []
+      const normalized = rawClasses
+        .map((item) => {
+          if (typeof item === "string") {
+            return { value: item, label: item }
+          }
+          if (item && typeof item === "object") {
+            const record = item as Record<string, unknown>
+            const valueCandidate = record.id ?? record.name
+            if (typeof valueCandidate === "string" && valueCandidate.trim().length > 0) {
+              const labelCandidate =
+                typeof record.name === "string" && record.name.trim().length > 0 ? record.name : valueCandidate
+              return { value: valueCandidate, label: labelCandidate }
+            }
+          }
+          return null
+        })
+        .filter((option): option is ClassOption => Boolean(option?.value))
+
+      setClassOptions(normalized)
+      if (normalized.length > 0) {
+        setSelectedClass((prev) => prev || normalized[0].value)
+      }
+    } catch (error) {
+      logger.error("Unable to load classes", { error })
+      setClassOptions([])
     }
   }, [])
 
@@ -101,10 +146,48 @@ export default function TimetableManagement() {
 
       try {
         setIsLoading(true)
-        const slots = await dbManager.getTimetable(className)
-        setTimetableSlots(slots)
+        const response = await fetch(`/api/timetable?className=${encodeURIComponent(className)}`, {
+          cache: "no-store",
+        })
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch timetable (${response.status})`)
+        }
+
+        const data: unknown = await response.json()
+        const slots = Array.isArray((data as Record<string, unknown>)?.timetable)
+          ? ((data as Record<string, unknown>).timetable as unknown[])
+          : []
+        const normalized: TimetableSlot[] = slots.map((slot) => {
+          if (!slot || typeof slot !== "object") {
+            return {
+              id: `slot_${Math.random().toString(36).slice(2)}`,
+              day: "Monday",
+              time: "8:00 AM - 8:45 AM",
+              subject: "",
+              teacher: "",
+              location: null,
+            }
+          }
+
+          const record = slot as Record<string, unknown>
+          const start = typeof record.startTime === "string" ? record.startTime : "08:00"
+          const end = typeof record.endTime === "string" ? record.endTime : "08:45"
+          const timeValue = typeof record.time === "string" ? record.time : `${start} - ${end}`
+
+          return {
+            id: typeof record.id === "string" ? record.id : String(record.id ?? `slot_${Date.now()}`),
+            day: typeof record.day === "string" ? record.day : "Monday",
+            time: timeValue,
+            subject: typeof record.subject === "string" ? record.subject : "",
+            teacher: typeof record.teacher === "string" ? record.teacher : "",
+            location: typeof record.location === "string" ? record.location : null,
+          }
+        })
+
+        setTimetableSlots(normalized)
       } catch (error) {
-        console.error("Failed to load timetable", error)
+        logger.error("Failed to load timetable", { error })
         toast({
           title: "Unable to load timetable",
           description: "Please refresh the page and try again.",
@@ -126,17 +209,6 @@ export default function TimetableManagement() {
       return
     }
     loadTimetable(selectedClass)
-
-    const handleTimetableUpdate = (payload: { className: string; slots: TimetableSlot[] }) => {
-      if (payload?.className === selectedClass) {
-        setTimetableSlots(payload.slots)
-      }
-    }
-
-    dbManager.on("timetableUpdated", handleTimetableUpdate)
-    return () => {
-      dbManager.off("timetableUpdated", handleTimetableUpdate)
-    }
   }, [selectedClass, loadTimetable])
 
   useEffect(() => {
@@ -164,8 +236,8 @@ export default function TimetableManagement() {
     () =>
       timetableSlots
         .filter((slot) => slot.day === selectedDay)
-        .sort((a, b) => a.time.localeCompare(b.time)),
-    [timetableSlots, selectedDay],
+        .sort((a, b) => getStartMinutes(a.time) - getStartMinutes(b.time)),
+    [timetableSlots, selectedDay, getStartMinutes],
   )
 
   const handleSlotSubmit = async () => {
@@ -190,28 +262,58 @@ export default function TimetableManagement() {
     setIsSaving(true)
     try {
       if (dialogState?.mode === "edit" && dialogState.slot) {
-        await dbManager.updateTimetableSlot(selectedClass, dialogState.slot.id, {
-          day: slotForm.day,
-          time: slotForm.time,
-          subject: slotForm.subject,
-          teacher: slotForm.teacher,
-          location: slotForm.location || undefined,
+        const response = await fetch("/api/timetable", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            slotId: dialogState.slot.id,
+            updates: {
+              day: slotForm.day,
+              time: slotForm.time,
+              subject: slotForm.subject,
+              teacher: slotForm.teacher,
+              location: slotForm.location ? slotForm.location : null,
+            },
+          }),
         })
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
+          const message = typeof payload.error === "string" ? payload.error : `Failed to update timetable (${response.status})`
+          throw new Error(message)
+        }
+        await response.json().catch(() => undefined)
         toast({ title: "Timetable entry updated" })
       } else {
-        await dbManager.addTimetableSlot(selectedClass, {
-          day: slotForm.day,
-          time: slotForm.time,
-          subject: slotForm.subject,
-          teacher: slotForm.teacher,
-          location: slotForm.location || undefined,
+        const response = await fetch("/api/timetable", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            className: selectedClass,
+            slot: {
+              day: slotForm.day,
+              time: slotForm.time,
+              subject: slotForm.subject,
+              teacher: slotForm.teacher,
+              location: slotForm.location ? slotForm.location : null,
+            },
+          }),
         })
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
+          const message =
+            typeof payload.error === "string" ? payload.error : `Failed to create timetable slot (${response.status})`
+          throw new Error(message)
+        }
+        await response.json().catch(() => undefined)
         toast({ title: "Period added to timetable" })
       }
 
+      await loadTimetable(selectedClass)
       setDialogState(null)
     } catch (error) {
-      console.error("Failed to save timetable slot", error)
+      logger.error("Failed to save timetable slot", { error })
       toast({
         title: "Unable to save timetable",
         description: "Please review the details and try again.",
@@ -233,10 +335,21 @@ export default function TimetableManagement() {
     }
 
     try {
-      await dbManager.deleteTimetableSlot(selectedClass, slot.id)
+      const response = await fetch(`/api/timetable?slotId=${encodeURIComponent(slot.id)}`, {
+        method: "DELETE",
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
+        const message =
+          typeof payload.error === "string" ? payload.error : `Failed to delete timetable slot (${response.status})`
+        throw new Error(message)
+      }
+
+      await loadTimetable(selectedClass)
       toast({ title: "Timetable entry removed" })
     } catch (error) {
-      console.error("Failed to delete timetable entry", error)
+      logger.error("Failed to delete timetable entry", { error })
       toast({
         title: "Unable to delete timetable entry",
         description: "Please try again later.",

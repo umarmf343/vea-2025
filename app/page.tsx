@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { GraduationCap, Users, Shield, BookOpen, DollarSign, Book, UserCheck, Key } from "lucide-react"
+import { GraduationCap, Users, Shield, BookOpen, DollarSign, Book, UserCheck, Key, Loader2 } from "lucide-react"
 import { PaymentModal } from "@/components/payment-modal"
 import { StudentProfileCard } from "@/components/student-profile-card"
 import { AcademicProgress } from "@/components/academic-progress"
@@ -40,6 +40,8 @@ import { AdminApprovalDashboard } from "@/components/admin-approval-dashboard"
 import { getCompleteReportCard } from "@/lib/sample-report-data"
 import { safeStorage } from "@/lib/safe-storage"
 import { cn } from "@/lib/utils"
+import { logger } from "@/lib/logger"
+import { toast } from "@/hooks/use-toast"
 import type { Viewport } from "next"
 
 export const dynamic = "force-dynamic"
@@ -58,6 +60,38 @@ interface User {
   hasAccess?: boolean
 }
 
+const mapApiRoleToUi = (role: string): UserRole => {
+  switch (role) {
+    case "super_admin":
+    case "super-admin":
+      return "super-admin"
+    case "admin":
+      return "admin"
+    case "teacher":
+      return "teacher"
+    case "student":
+      return "student"
+    case "librarian":
+      return "librarian"
+    case "accountant":
+      return "accountant"
+    case "parent":
+    default:
+      return "parent"
+  }
+}
+
+const mapUiRoleToApi = (role: UserRole): string => {
+  if (role === "super-admin") {
+    return "super_admin"
+  }
+  return role
+}
+
+const roleHasPortalAccess = (role: UserRole): boolean => {
+  return role === "admin" || role === "super-admin" || role === "teacher"
+}
+
 export default function HomePage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [loginForm, setLoginForm] = useState({ email: "", password: "", role: "parent" as UserRole })
@@ -69,6 +103,10 @@ export default function HomePage() {
     studentId: "",
   })
   const [registrationEnabled, setRegistrationEnabled] = useState(true)
+  const [loginError, setLoginError] = useState<string | null>(null)
+  const [registerError, setRegisterError] = useState<string | null>(null)
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [isRegistering, setIsRegistering] = useState(false)
 
   useEffect(() => {
     const adminSetting = safeStorage.getItem("registrationEnabled")
@@ -77,32 +115,130 @@ export default function HomePage() {
     }
   }, [])
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault()
-    const mockUser: User = {
-      id: "1",
-      email: loginForm.email,
-      role: loginForm.role,
-      name: loginForm.email.split("@")[0],
-      hasAccess: loginForm.role === "admin" || loginForm.role === "super-admin" || Math.random() > 0.5,
+  useEffect(() => {
+    const storedUser = safeStorage.getItem("vea_current_user")
+    const storedToken = safeStorage.getItem("vea_auth_token")
+
+    if (storedUser && storedToken) {
+      try {
+        const parsed = JSON.parse(storedUser) as User
+        setCurrentUser(parsed)
+      } catch (error) {
+        logger.error("Failed to restore saved user", { error })
+        safeStorage.removeItem("vea_current_user")
+        safeStorage.removeItem("vea_auth_token")
+      }
     }
-    setCurrentUser(mockUser)
+  }, [])
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoginError(null)
+    setIsLoggingIn(true)
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: loginForm.email,
+          password: loginForm.password,
+        }),
+      })
+
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        setLoginError(payload.error ?? "Invalid email or password")
+        return
+      }
+
+      const userRole = mapApiRoleToUi(payload.user?.role ?? loginForm.role)
+      const user: User = {
+        id: String(payload.user?.id ?? ""),
+        email: payload.user?.email ?? loginForm.email,
+        role: userRole,
+        name: payload.user?.name ?? loginForm.email.split("@")[0],
+        hasAccess: roleHasPortalAccess(userRole),
+      }
+
+      setCurrentUser(user)
+      if (payload.token) {
+        safeStorage.setItem("vea_auth_token", payload.token)
+      }
+      safeStorage.setItem("vea_current_user", JSON.stringify(user))
+    } catch (error) {
+      logger.error("Login failed", { error })
+      setLoginError("Unable to login at this time. Please try again later.")
+    } finally {
+      setIsLoggingIn(false)
+    }
   }
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    const mockUser: User = {
-      id: "2",
-      email: registerForm.email,
-      role: registerForm.role,
-      name: registerForm.name,
-      hasAccess: registerForm.role === "admin" || registerForm.role === "super-admin",
+    setRegisterError(null)
+    setIsRegistering(true)
+
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: registerForm.name,
+          email: registerForm.email,
+          password: registerForm.password,
+          role: mapUiRoleToApi(registerForm.role),
+        }),
+      })
+
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        setRegisterError(payload.error ?? "Unable to complete registration")
+        return
+      }
+
+      // Automatically authenticate the new user
+      const loginResponse = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: registerForm.email, password: registerForm.password }),
+      })
+
+      const loginPayload = await loginResponse.json().catch(() => ({}))
+
+      if (!loginResponse.ok) {
+        setRegisterError(loginPayload.error ?? "Account created, but automatic login failed")
+        return
+      }
+
+      const userRole = mapApiRoleToUi(loginPayload.user?.role ?? registerForm.role)
+      const user: User = {
+        id: String(loginPayload.user?.id ?? ""),
+        email: loginPayload.user?.email ?? registerForm.email,
+        role: userRole,
+        name: loginPayload.user?.name ?? registerForm.name,
+        hasAccess: roleHasPortalAccess(userRole),
+      }
+
+      setCurrentUser(user)
+      if (loginPayload.token) {
+        safeStorage.setItem("vea_auth_token", loginPayload.token)
+      }
+      safeStorage.setItem("vea_current_user", JSON.stringify(user))
+    } catch (error) {
+      logger.error("Registration failed", { error })
+      setRegisterError("Unable to register at this time. Please try again later.")
+    } finally {
+      setIsRegistering(false)
     }
-    setCurrentUser(mockUser)
   }
 
   const handleLogout = () => {
     setCurrentUser(null)
+    safeStorage.removeItem("vea_auth_token")
+    safeStorage.removeItem("vea_current_user")
   }
 
   if (currentUser) {
@@ -149,6 +285,7 @@ export default function HomePage() {
                     </Label>
                     <Select
                       value={loginForm.role}
+                      disabled={isLoggingIn}
                       onValueChange={(value: UserRole) => setLoginForm((prev) => ({ ...prev, role: value }))}
                     >
                       <SelectTrigger className="border-[#2d682d]/20 focus:border-[#2d682d]">
@@ -212,6 +349,7 @@ export default function HomePage() {
                       onChange={(e) => setLoginForm((prev) => ({ ...prev, email: e.target.value }))}
                       className="border-[#2d682d]/20 focus:border-[#2d682d]"
                       required
+                      disabled={isLoggingIn}
                     />
                   </div>
                   <div className="space-y-2">
@@ -226,9 +364,16 @@ export default function HomePage() {
                       onChange={(e) => setLoginForm((prev) => ({ ...prev, password: e.target.value }))}
                       className="border-[#2d682d]/20 focus:border-[#2d682d]"
                       required
+                      disabled={isLoggingIn}
                     />
                   </div>
-                  <Button type="submit" className="w-full bg-[#2d682d] hover:bg-[#2d682d]/90 text-white">
+                  {loginError && <p className="text-sm text-red-600">{loginError}</p>}
+                  <Button
+                    type="submit"
+                    className="w-full bg-[#2d682d] hover:bg-[#2d682d]/90 text-white"
+                    disabled={isLoggingIn}
+                  >
+                    {isLoggingIn ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Sign In
                   </Button>
                 </form>
@@ -243,6 +388,7 @@ export default function HomePage() {
                       </Label>
                       <Select
                         value={registerForm.role}
+                        disabled={isRegistering}
                         onValueChange={(value: UserRole) => setRegisterForm((prev) => ({ ...prev, role: value }))}
                       >
                         <SelectTrigger className="border-[#2d682d]/20 focus:border-[#2d682d]">
@@ -293,6 +439,7 @@ export default function HomePage() {
                         onChange={(e) => setRegisterForm((prev) => ({ ...prev, name: e.target.value }))}
                         className="border-[#2d682d]/20 focus:border-[#2d682d]"
                         required
+                        disabled={isRegistering}
                       />
                     </div>
                     <div className="space-y-2">
@@ -307,6 +454,7 @@ export default function HomePage() {
                         onChange={(e) => setRegisterForm((prev) => ({ ...prev, email: e.target.value }))}
                         className="border-[#2d682d]/20 focus:border-[#2d682d]"
                         required
+                        disabled={isRegistering}
                       />
                     </div>
                     {registerForm.role === "parent" && (
@@ -321,6 +469,7 @@ export default function HomePage() {
                           onChange={(e) => setRegisterForm((prev) => ({ ...prev, studentId: e.target.value }))}
                           className="border-[#2d682d]/20 focus:border-[#2d682d]"
                           required
+                          disabled={isRegistering}
                         />
                       </div>
                     )}
@@ -336,9 +485,16 @@ export default function HomePage() {
                         onChange={(e) => setRegisterForm((prev) => ({ ...prev, password: e.target.value }))}
                         className="border-[#2d682d]/20 focus:border-[#2d682d]"
                         required
+                        disabled={isRegistering}
                       />
                     </div>
-                    <Button type="submit" className="w-full bg-[#b29032] hover:bg-[#b29032]/90 text-white">
+                    {registerError && <p className="text-sm text-red-600">{registerError}</p>}
+                    <Button
+                      type="submit"
+                      className="w-full bg-[#b29032] hover:bg-[#b29032]/90 text-white"
+                      disabled={isRegistering}
+                    >
+                      {isRegistering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                       Create Account
                     </Button>
                   </form>
@@ -376,6 +532,7 @@ export default function HomePage() {
 }
 
 function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
+
   const getRoleDisplayName = (role: UserRole) => {
     switch (role) {
       case "super-admin":
@@ -734,7 +891,11 @@ function ParentDashboard({ user }: { user: User }) {
         const approvedReports = JSON.parse(safeStorage.getItem("approvedReports") || "[]")
 
         if (!approvedReports.includes(studentData.id)) {
-          alert("Report card is not yet approved by the administrator. Please wait for approval.")
+          toast({
+            variant: "destructive",
+            title: "Report card pending approval",
+            description: "Please wait for the administrator to approve this report card before viewing.",
+          })
           return
         }
 
@@ -793,11 +954,19 @@ function ParentDashboard({ user }: { user: User }) {
           })
           setShowReportCard(true)
         } else {
-          alert("No report card data available. Please ensure teachers have entered marks for this student.")
+          toast({
+            variant: "destructive",
+            title: "No report card data",
+            description: "Please ensure teachers have entered marks for this student before trying again.",
+          })
         }
       } catch (error) {
-        console.error("Error loading report card data:", error)
-        alert("Error loading report card data. Please try again later.")
+        logger.error("Error loading report card data", { error })
+        toast({
+          variant: "destructive",
+          title: "Unable to load report card",
+          description: "Please try again later or contact the administrator if the issue persists.",
+        })
       }
     } else {
       setShowPaymentModal(true)
