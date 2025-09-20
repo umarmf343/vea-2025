@@ -88,7 +88,7 @@ export async function PUT(request: NextRequest) {
     })
 
     if (classId !== undefined) {
-      sanitizedUpdate.class = classId ? String(classId) : null
+      sanitizedUpdate.classId = classId ? String(classId) : null
     }
 
     if (studentId !== undefined) {

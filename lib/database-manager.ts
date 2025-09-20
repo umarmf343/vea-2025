@@ -908,25 +908,7 @@ class DatabaseManager {
     }
   }
 
-  // Payment Management
-  createPayment(paymentData: any): void {
-    const payments = this.getPayments()
-    const newPayment = {
-      ...paymentData,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString(),
-    }
-    payments.push(newPayment)
-    safeStorage.setItem("payments", JSON.stringify(payments))
-    this.emit("paymentCreated", newPayment)
-  }
-
   async getAllPayments() {
-    const payments = safeStorage.getItem("payments")
-    return payments ? JSON.parse(payments) : []
-  }
-
-  getPayments(): any[] {
     const payments = safeStorage.getItem("payments")
     return payments ? JSON.parse(payments) : []
   }
@@ -991,27 +973,6 @@ class DatabaseManager {
     }
   }
 
-  updatePaymentAccess(studentId: string, hasAccess: boolean): void {
-    const payments = safeStorage.getItem("payments")
-    const paymentList = payments ? JSON.parse(payments) : []
-
-    const studentPayment = paymentList.find((p: any) => p.studentId === studentId)
-    if (studentPayment) {
-      studentPayment.hasAccess = hasAccess
-      studentPayment.updatedAt = new Date().toISOString()
-    } else {
-      paymentList.push({
-        id: Date.now().toString(),
-        studentId,
-        hasAccess,
-        createdAt: new Date().toISOString(),
-      })
-    }
-
-    safeStorage.setItem("payments", JSON.stringify(paymentList))
-    this.emit("paymentAccessUpdated", { studentId, hasAccess })
-  }
-
   async createPayment(paymentData: any) {
     try {
       const payments = await this.getPayments()
@@ -1028,20 +989,6 @@ class DatabaseManager {
     } catch (error) {
       console.error("Error creating payment:", error)
       throw error
-    }
-  }
-
-  updatePaymentStatus(paymentId: string, status: string): void {
-    const payments = this.getPayments()
-    const index = payments.findIndex((payment) => payment.id === paymentId)
-    if (index !== -1) {
-      payments[index] = {
-        ...payments[index],
-        status,
-        updatedAt: new Date().toISOString(),
-      }
-      safeStorage.setItem("payments", JSON.stringify(payments))
-      this.emit("paymentStatusUpdated", payments[index])
     }
   }
 
