@@ -7,8 +7,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Sanitize inputs
-    const email = sanitizeInput(body.email)
-    const password = sanitizeInput(body.password)
+    const email = typeof body.email === "string" ? sanitizeInput(body.email) : ""
+    const password = typeof body.password === "string" ? body.password.trim() : ""
 
     // Validate input
     if (!email || !password) {

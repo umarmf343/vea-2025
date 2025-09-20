@@ -76,15 +76,13 @@ export const encryptSensitiveData = (data: string): string => {
   const keyBuffer = crypto.scryptSync(key, "salt", 32)
   const iv = crypto.randomBytes(16)
 
-  const cipher = crypto.createCipher(algorithm, keyBuffer)
+  const cipher = crypto.createCipheriv(algorithm, keyBuffer, iv)
   cipher.setAAD(Buffer.from("additional-data"))
 
-  let encrypted = cipher.update(data, "utf8", "hex")
-  encrypted += cipher.final("hex")
-
+  const encryptedBuffer = Buffer.concat([cipher.update(data, "utf8"), cipher.final()])
   const authTag = cipher.getAuthTag()
 
-  return `${iv.toString("hex")}:${authTag.toString("hex")}:${encrypted}`
+  return `${iv.toString("hex")}:${authTag.toString("hex")}:${encryptedBuffer.toString("hex")}`
 }
 
 export const decryptSensitiveData = (encryptedData: string): string => {
@@ -97,18 +95,22 @@ export const decryptSensitiveData = (encryptedData: string): string => {
   const key = process.env.ENCRYPTION_KEY || "default-key-change-in-production"
   const keyBuffer = crypto.scryptSync(key, "salt", 32)
 
-  const [ivHex, authTagHex, encrypted] = encryptedData.split(":")
+  const parts = encryptedData.split(":")
+  if (parts.length !== 3) {
+    throw new Error("Invalid encrypted payload format")
+  }
+
+  const [ivHex, authTagHex, encrypted] = parts as [string, string, string]
   const iv = Buffer.from(ivHex, "hex")
   const authTag = Buffer.from(authTagHex, "hex")
 
-  const decipher = crypto.createDecipher(algorithm, keyBuffer)
+  const decipher = crypto.createDecipheriv(algorithm, keyBuffer, iv)
   decipher.setAAD(Buffer.from("additional-data"))
   decipher.setAuthTag(authTag)
 
-  let decrypted = decipher.update(encrypted, "hex", "utf8")
-  decrypted += decipher.final("utf8")
+  const decryptedBuffer = Buffer.concat([decipher.update(Buffer.from(encrypted, "hex")), decipher.final()])
 
-  return decrypted
+  return decryptedBuffer.toString("utf8")
 }
 
 export const validateEmail = (email: string): boolean => {
