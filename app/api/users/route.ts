@@ -1,7 +1,14 @@
 export const runtime = "nodejs"
 
 import { type NextRequest, NextResponse } from "next/server"
-import { dbManager } from "@/lib/database-manager"
+import {
+  createUserRecord,
+  getAllUsersFromDb,
+  getUserByIdFromDb,
+  getUsersByRoleFromDb,
+  updateUserRecord,
+} from "@/lib/database"
+import { hashPassword, sanitizeInput } from "@/lib/security"
 
 // const dbManager = new DatabaseManager()
 
@@ -11,17 +18,17 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get("role")
     const userId = searchParams.get("userId")
 
-    let users = []
-
     if (userId) {
-      const user = await dbManager.getUser(userId)
-      users = user ? [user] : []
-    } else if (role) {
-      users = await dbManager.getUsersByRole(role)
-    } else {
-      users = await dbManager.getAllUsers()
+      const user = await getUserByIdFromDb(userId)
+      return NextResponse.json({ users: user ? [user] : [] })
     }
 
+    if (role) {
+      const users = await getUsersByRoleFromDb(role)
+      return NextResponse.json({ users })
+    }
+
+    const users = await getAllUsersFromDb()
     return NextResponse.json({ users })
   } catch (error) {
     console.error("Failed to fetch users:", error)
@@ -32,21 +39,27 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, email, role, password, ...additionalData } = body
+    const { name, email, role, password, classId, studentId, subjects } = body
 
-    const userData = {
-      name,
-      email,
-      role,
-      status: "active",
-      createdAt: new Date().toISOString(),
-      ...additionalData,
+    if (!name || !email || !role || !password) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    const newUser = await dbManager.createUser(userData)
+    const hashedPassword = await hashPassword(password)
+    const newUser = await createUserRecord({
+      name: sanitizeInput(name),
+      email: sanitizeInput(email),
+      role: sanitizeInput(role),
+      passwordHash: hashedPassword,
+      classId: classId ? String(classId) : undefined,
+      studentId: studentId ? String(studentId) : undefined,
+      subjects: Array.isArray(subjects) ? subjects.map((subject: string) => sanitizeInput(subject)) : undefined,
+    })
+
+    const { passwordHash, ...userWithoutPassword } = newUser
 
     return NextResponse.json({
-      user: newUser,
+      user: userWithoutPassword,
       message: "User created successfully",
     })
   } catch (error) {
@@ -58,14 +71,50 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, ...updateData } = body
+    const { id, password, subjects, classId, studentId, ...updateData } = body
 
-    updateData.updatedAt = new Date().toISOString()
+    if (!id) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
+    }
 
-    const updatedUser = await dbManager.updateUser(id, updateData)
+    const sanitizedUpdate: Record<string, any> = {}
+
+    Object.entries(updateData).forEach(([key, value]) => {
+      if (typeof value === "string") {
+        sanitizedUpdate[key] = sanitizeInput(value)
+      } else {
+        sanitizedUpdate[key] = value
+      }
+    })
+
+    if (classId !== undefined) {
+      sanitizedUpdate.class = classId ? String(classId) : null
+    }
+
+    if (studentId !== undefined) {
+      sanitizedUpdate.studentIds = studentId ? [String(studentId)] : []
+    }
+
+    if (subjects !== undefined) {
+      sanitizedUpdate.subjects = Array.isArray(subjects)
+        ? subjects.map((subject: string) => sanitizeInput(subject))
+        : undefined
+    }
+
+    if (password) {
+      sanitizedUpdate.passwordHash = await hashPassword(password)
+    }
+
+    const updatedUser = await updateUserRecord(id, sanitizedUpdate)
+
+    if (!updatedUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+
+    const { passwordHash, ...userWithoutPassword } = updatedUser
 
     return NextResponse.json({
-      user: updatedUser,
+      user: userWithoutPassword,
       message: "User updated successfully",
     })
   } catch (error) {
