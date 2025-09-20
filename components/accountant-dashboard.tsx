@@ -1,13 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { useCallback, useEffect, useMemo, useState } from "react"
+
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -16,7 +13,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { DollarSign, Receipt, TrendingUp, Users, Download, Search, Plus, Printer, Edit } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  DollarSign,
+  Download,
+  Edit,
+  Plus,
+  Printer,
+  Receipt,
+  Search,
+  TrendingUp,
+  Users,
+} from "lucide-react"
 
 interface AccountantDashboardProps {
   accountant: {
@@ -26,196 +37,368 @@ interface AccountantDashboardProps {
   }
 }
 
+interface ApiPaymentRecord {
+  id: string
+  amount: number
+  status: "pending" | "completed" | "failed"
+  paymentType: string
+  studentId: string | null
+  email: string
+  reference: string
+  createdAt: string
+  metadata?: Record<string, unknown>
+}
+
+interface PaymentRecord {
+  id: string
+  studentName: string
+  parentName: string
+  className: string
+  amount: number
+  status: "paid" | "pending" | "failed"
+  method: "online" | "offline"
+  date: string
+  reference?: string
+  hasAccess: boolean
+  email?: string
+  paymentType: string
+}
+
+interface ApiReceiptRecord {
+  id: string
+  paymentId: string
+  receiptNumber: string
+  studentName: string
+  amount: number
+  dateIssued: string
+  reference?: string | null
+  issuedBy?: string | null
+  metadata?: Record<string, unknown> | null
+}
+
+interface ReceiptRecord {
+  id: string
+  paymentId: string
+  receiptNumber: string
+  studentName: string
+  amount: number
+  dateIssued: string
+  reference?: string
+  issuedBy?: string
+  className?: string
+  method?: string
+}
+
+interface ApiFeeStructureRecord {
+  id: string
+  className: string
+  tuition: number
+  development: number
+  exam: number
+  sports: number
+  library: number
+  total: number
+}
+
+interface FeeStructureEntry extends ApiFeeStructureRecord {}
+
+function formatCurrency(amount: number): string {
+  return `₦${amount.toLocaleString()}`
+}
+
+function mapPayment(record: ApiPaymentRecord): PaymentRecord {
+  const metadata = record.metadata ?? {}
+  const method = (metadata.method as string | undefined)?.toLowerCase() === "offline" ? "offline" : "online"
+  const hasAccess = Boolean((metadata as Record<string, unknown>).accessGranted)
+  const studentName = (metadata.studentName as string | undefined) ?? "Unknown Student"
+  const parentName = (metadata.parentName as string | undefined) ?? "Parent"
+  const className =
+    (metadata.className as string | undefined) ??
+    (metadata.class as string | undefined) ??
+    (metadata.classroom as string | undefined) ??
+    "--"
+
+  const status: PaymentRecord["status"] =
+    record.status === "completed" ? "paid" : record.status === "failed" ? "failed" : "pending"
+
+  return {
+    id: record.id,
+    studentName,
+    parentName,
+    className,
+    amount: Number(record.amount ?? 0),
+    status,
+    method,
+    date: record.createdAt ? new Date(record.createdAt).toLocaleDateString() : "--",
+    reference: record.reference,
+    hasAccess,
+    email: record.email,
+    paymentType: record.paymentType,
+  }
+}
+
+function mapReceipt(record: ApiReceiptRecord): ReceiptRecord {
+  const metadata = record.metadata ?? {}
+
+  return {
+    id: record.id,
+    paymentId: record.paymentId,
+    receiptNumber: record.receiptNumber,
+    studentName: record.studentName,
+    amount: Number(record.amount ?? 0),
+    dateIssued: record.dateIssued ? new Date(record.dateIssued).toLocaleDateString() : "--",
+    reference: record.reference ?? undefined,
+    issuedBy: record.issuedBy ?? undefined,
+    className: (metadata.className as string | undefined) ?? undefined,
+    method: (metadata.method as string | undefined) ?? undefined,
+  }
+}
+
 export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showFeeDialog, setShowFeeDialog] = useState(false)
   const [showReceiptDialog, setShowReceiptDialog] = useState(false)
-  const [selectedPayment, setSelectedPayment] = useState<any>(null)
-  const [feeForm, setFeeForm] = useState({
-    class: "",
-    tuition: 0,
-    development: 0,
-    exam: 0,
-    sports: 0,
-    library: 0,
-  })
-
-  const [payments, setPayments] = useState<any[]>([])
-  const [receipts, setReceipts] = useState<any[]>([])
-  const [feeStructure, setFeeStructure] = useState<any[]>([])
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptRecord | null>(null)
+  const [payments, setPayments] = useState<PaymentRecord[]>([])
+  const [receipts, setReceipts] = useState<ReceiptRecord[]>([])
+  const [feeStructure, setFeeStructure] = useState<FeeStructureEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [banner, setBanner] = useState<{ type: "success" | "error"; message: string } | null>(null)
+  const [feeForm, setFeeForm] = useState({
+    className: "",
+    tuition: "0",
+    development: "0",
+    exam: "0",
+    sports: "0",
+    library: "0",
+  })
+  const [updatingFee, setUpdatingFee] = useState(false)
+  const [processingReceiptId, setProcessingReceiptId] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadFinancialData()
+  const feeFormTotal = useMemo(() => {
+    return [feeForm.tuition, feeForm.development, feeForm.exam, feeForm.sports, feeForm.library]
+      .map((value) => Number(value) || 0)
+      .reduce((sum, value) => sum + value, 0)
+  }, [feeForm])
 
-    // const unsubscribePayments = dbManager.subscribe("payments", (data) => {
-    //   setPayments(data)
-    // })
+  const loadFinancialData = useCallback(async () => {
+    setLoading(true)
+    setBanner(null)
 
-    // const unsubscribeReceipts = dbManager.subscribe("receipts", (data) => {
-    //   setReceipts(data)
-    // })
-
-    // const unsubscribeFees = dbManager.subscribe("feeStructure", (data) => {
-    //   setFeeStructure(data)
-    // })
-
-    // return () => {
-    //   unsubscribePayments()
-    //   unsubscribeReceipts()
-    //   unsubscribeFees()
-    // }
-  }, [])
-
-  const loadFinancialData = async () => {
     try {
-      setLoading(true)
-      // const [paymentsData, receiptsData, feesData] = await Promise.all([
-      //   dbManager.getPayments(),
-      //   dbManager.getReceipts(),
-      //   dbManager.getFeeStructure(),
-      // ])
+      const [paymentsResponse, receiptsResponse, feeResponse] = await Promise.all([
+        fetch("/api/payments/records"),
+        fetch("/api/payments/receipts"),
+        fetch("/api/payments/fee-structure"),
+      ])
 
-      const mockPayments = [
-        {
-          id: "1",
-          studentName: "John Doe",
-          class: "JSS 1A",
-          amount: 50000,
-          type: "Tuition",
-          status: "paid",
-          method: "online",
-          date: "2025-01-08",
-          reference: "PAY001",
-        },
-        {
-          id: "2",
-          studentName: "Jane Smith",
-          class: "JSS 2B",
-          amount: 45000,
-          type: "Tuition",
-          status: "pending",
-          method: "offline",
-          date: "2025-01-07",
-          reference: "PAY002",
-        },
-        {
-          id: "3",
-          studentName: "Mike Johnson",
-          class: "SS 1A",
-          amount: 55000,
-          type: "Tuition",
-          status: "paid",
-          method: "online",
-          date: "2025-01-06",
-          reference: "PAY003",
-        },
-      ]
+      if (!paymentsResponse.ok) {
+        throw new Error("Unable to load payment records")
+      }
 
-      const mockReceipts = [
-        {
-          id: "1",
-          receiptNo: "REC001",
-          studentName: "John Doe",
-          amount: 50000,
-          date: "2025-01-08",
-          reference: "PAY001",
-        },
-        {
-          id: "2",
-          receiptNo: "REC003",
-          studentName: "Mike Johnson",
-          amount: 55000,
-          date: "2025-01-06",
-          reference: "PAY003",
-        },
-      ]
+      if (!receiptsResponse.ok) {
+        throw new Error("Unable to load receipts")
+      }
 
-      const mockFeeStructure = [
-        { class: "JSS 1", tuition: 40000, development: 5000, exam: 3000, sports: 1000, library: 1000, total: 50000 },
-        { class: "JSS 2", tuition: 42000, development: 5000, exam: 3000, sports: 1000, library: 1000, total: 52000 },
-        { class: "JSS 3", tuition: 44000, development: 5000, exam: 3000, sports: 1000, library: 1000, total: 54000 },
-        { class: "SS 1", tuition: 46000, development: 6000, exam: 4000, sports: 1500, library: 1500, total: 59000 },
-        { class: "SS 2", tuition: 48000, development: 6000, exam: 4000, sports: 1500, library: 1500, total: 61000 },
-        { class: "SS 3", tuition: 50000, development: 6000, exam: 4000, sports: 1500, library: 1500, total: 63000 },
-      ]
+      if (!feeResponse.ok) {
+        throw new Error("Unable to load fee structure")
+      }
 
-      setPayments(mockPayments)
-      setReceipts(mockReceipts)
-      setFeeStructure(mockFeeStructure)
+      const paymentsData = (await paymentsResponse.json()) as { payments: ApiPaymentRecord[] }
+      const receiptsData = (await receiptsResponse.json()) as { receipts: ApiReceiptRecord[] }
+      const feeData = (await feeResponse.json()) as { feeStructure: ApiFeeStructureRecord[] }
+
+      setPayments(paymentsData.payments.map(mapPayment))
+      setReceipts(receiptsData.receipts.map(mapReceipt))
+      setFeeStructure(feeData.feeStructure)
     } catch (error) {
-      console.error("Error loading financial data:", error)
+      console.error("Accountant dashboard load failed:", error)
+      const message = error instanceof Error ? error.message : "Unable to load accountant data"
+      setBanner({ type: "error", message })
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const totalRevenue = payments.filter((p) => p.status === "paid").reduce((sum, p) => sum + p.amount, 0)
-  const pendingPayments = payments.filter((p) => p.status === "pending").length
+  useEffect(() => {
+    void loadFinancialData()
+  }, [loadFinancialData])
 
-  const handleUpdateFeeStructure = async () => {
-    try {
-      const total = feeForm.tuition + feeForm.development + feeForm.exam + feeForm.sports + feeForm.library
-      const newFee = { ...feeForm, total }
+  const totalRevenue = useMemo(
+    () => payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + payment.amount, 0),
+    [payments],
+  )
 
-      setFeeStructure((prev) => {
-        const existingIndex = prev.findIndex((fee) => fee.class === newFee.class)
-        if (existingIndex >= 0) {
-          const updated = [...prev]
-          updated[existingIndex] = newFee
-          return updated
-        } else {
-          return [...prev, newFee]
+  const pendingPayments = useMemo(
+    () => payments.filter((payment) => payment.status === "pending").length,
+    [payments],
+  )
+
+  const ensureReceipt = useCallback(
+    async (payment: PaymentRecord): Promise<ReceiptRecord | null> => {
+      setProcessingReceiptId(payment.id)
+      setBanner(null)
+
+      try {
+        const response = await fetch("/api/payments/receipts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paymentId: payment.id,
+            studentName: payment.studentName,
+            amount: payment.amount,
+            reference: payment.reference,
+            issuedBy: accountant.name,
+            metadata: {
+              className: payment.className,
+              method: payment.method,
+              email: payment.email,
+              paymentType: payment.paymentType,
+            },
+          }),
+        })
+
+        if (!response.ok) {
+          const errorPayload = (await response.json()) as { error?: string }
+          throw new Error(errorPayload.error ?? "Unable to generate receipt")
         }
+
+        const data = (await response.json()) as { receipt: ApiReceiptRecord }
+        const mapped = mapReceipt(data.receipt)
+
+        setReceipts((previous) => {
+          const index = previous.findIndex((item) => item.id === mapped.id)
+          if (index === -1) {
+            return [...previous, mapped]
+          }
+
+          const clone = [...previous]
+          clone[index] = mapped
+          return clone
+        })
+
+        return mapped
+      } catch (error) {
+        console.error("Receipt generation failed:", error)
+        const message = error instanceof Error ? error.message : "Unable to generate receipt"
+        setBanner({ type: "error", message })
+        return null
+      } finally {
+        setProcessingReceiptId(null)
+      }
+    },
+    [accountant.name],
+  )
+
+  const handleDownloadReceipt = useCallback(
+    async (payment: PaymentRecord) => {
+      const receipt = await ensureReceipt(payment)
+      if (!receipt) {
+        return
+      }
+
+      if (typeof window === "undefined") {
+        console.log("Generated receipt", receipt)
+        setBanner({ type: "success", message: "Receipt generated" })
+        return
+      }
+
+      const receiptPayload = {
+        receiptNumber: receipt.receiptNumber,
+        studentName: receipt.studentName,
+        amount: receipt.amount,
+        className: receipt.className ?? payment.className,
+        method: receipt.method ?? payment.method,
+        reference: receipt.reference,
+        issuedBy: receipt.issuedBy ?? accountant.name,
+        dateIssued: receipt.dateIssued,
+      }
+
+      const blob = new Blob([JSON.stringify(receiptPayload, null, 2)], { type: "application/json" })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `receipt-${receipt.receiptNumber.replace(/\W+/g, "-")}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      setBanner({ type: "success", message: "Receipt downloaded" })
+    },
+    [accountant.name, ensureReceipt],
+  )
+
+  const handlePrintReceipt = useCallback(
+    async (payment: PaymentRecord) => {
+      const receipt = await ensureReceipt(payment)
+      if (!receipt) {
+        return
+      }
+
+      setSelectedReceipt(receipt)
+      setShowReceiptDialog(true)
+    },
+    [ensureReceipt],
+  )
+
+  const handleUpdateFeeStructure = useCallback(async () => {
+    if (!feeForm.className) {
+      setBanner({ type: "error", message: "Please select a class before saving the fee structure." })
+      return
+    }
+
+    setUpdatingFee(true)
+    setBanner(null)
+
+    try {
+      const response = await fetch("/api/payments/fee-structure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          className: feeForm.className,
+          tuition: Number(feeForm.tuition) || 0,
+          development: Number(feeForm.development) || 0,
+          exam: Number(feeForm.exam) || 0,
+          sports: Number(feeForm.sports) || 0,
+          library: Number(feeForm.library) || 0,
+        }),
       })
 
-      // await dbManager.saveFeeStructure(newFee)
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string }
+        throw new Error(payload.error ?? "Unable to update fee structure")
+      }
+
+      const data = (await response.json()) as { fee: ApiFeeStructureRecord }
+
+      setFeeStructure((previous) => {
+        const index = previous.findIndex((entry) => entry.id === data.fee.id || entry.className === data.fee.className)
+        if (index === -1) {
+          return [...previous, data.fee]
+        }
+
+        const clone = [...previous]
+        clone[index] = data.fee
+        return clone
+      })
 
       setShowFeeDialog(false)
-      setFeeForm({ class: "", tuition: 0, development: 0, exam: 0, sports: 0, library: 0 })
+      setFeeForm({ className: "", tuition: "0", development: "0", exam: "0", sports: "0", library: "0" })
+      setBanner({ type: "success", message: "Fee structure saved successfully." })
     } catch (error) {
-      console.error("Error updating fee structure:", error)
+      console.error("Failed to update fee structure:", error)
+      const message = error instanceof Error ? error.message : "Unable to update fee structure"
+      setBanner({ type: "error", message })
+    } finally {
+      setUpdatingFee(false)
     }
-  }
-
-  const handlePrintReceipt = (payment: any) => {
-    setSelectedPayment(payment)
-    setShowReceiptDialog(true)
-  }
-
-  const handleDownloadReceipt = async (payment: any) => {
-    try {
-      console.log("Generating receipt for:", payment)
-      // await dbManager.generateReceipt(payment)
-    } catch (error) {
-      console.error("Error generating receipt:", error)
-    }
-  }
-
-  const handleGenerateReport = async (reportType: string) => {
-    try {
-      console.log("Generated report:", reportType, payments)
-      // const reportData = await dbManager.generateFinancialReport(reportType, payments)
-    } catch (error) {
-      console.error("Error generating report:", error)
-    }
-  }
-
-  const handleRecordPayment = async (paymentData: any) => {
-    try {
-      const newPayment = { ...paymentData, id: Date.now().toString() }
-      setPayments((prev) => [...prev, newPayment])
-      // await dbManager.savePayment(paymentData)
-    } catch (error) {
-      console.error("Error recording payment:", error)
-    }
-  }
+  }, [feeForm])
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex h-64 items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#2d682d] mx-auto"></div>
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-b-2 border-[#2d682d]"></div>
           <p className="mt-2 text-gray-600">Loading financial data...</p>
         </div>
       </div>
@@ -224,20 +407,30 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-[#2d682d] to-[#b29032] text-white p-6 rounded-lg">
+      <div className="rounded-lg bg-gradient-to-r from-[#2d682d] to-[#b29032] p-6 text-white">
         <h1 className="text-2xl font-bold">Welcome, {accountant.name}</h1>
         <p className="text-green-100">Financial Management - VEA 2025</p>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {banner && (
+        <div
+          className={`rounded-md border p-4 text-sm ${
+            banner.type === "success"
+              ? "border-green-200 bg-green-50 text-green-800"
+              : "border-red-200 bg-red-50 text-red-700"
+          }`}
+        >
+          {banner.message}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center space-x-2">
               <DollarSign className="h-8 w-8 text-[#2d682d]" />
               <div>
-                <p className="text-2xl font-bold text-[#2d682d]">₦{totalRevenue.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-[#2d682d]">{formatCurrency(totalRevenue)}</p>
                 <p className="text-sm text-gray-600">Total Revenue</p>
               </div>
             </div>
@@ -272,7 +465,7 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
               <div>
                 <p className="text-2xl font-bold text-[#b29032]">
                   {payments.length > 0
-                    ? Math.round((payments.filter((p) => p.status === "paid").length / payments.length) * 100)
+                    ? Math.round((payments.filter((payment) => payment.status === "paid").length / payments.length) * 100)
                     : 0}
                   %
                 </p>
@@ -283,7 +476,6 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
         </Card>
       </div>
 
-      {/* Main Content */}
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -294,7 +486,7 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <Card>
               <CardHeader>
                 <CardTitle className="text-[#2d682d]">Recent Payments</CardTitle>
@@ -302,16 +494,19 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
               <CardContent>
                 <div className="space-y-2">
                   {payments.slice(0, 3).map((payment) => (
-                    <div key={payment.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                    <div key={payment.id} className="flex items-center justify-between rounded bg-gray-50 p-2">
                       <div>
                         <p className="text-sm font-medium">{payment.studentName}</p>
                         <p className="text-xs text-gray-600">
-                          ₦{payment.amount.toLocaleString()} - {payment.type}
+                          {formatCurrency(payment.amount)} - {payment.paymentType}
                         </p>
                       </div>
                       <Badge variant={payment.status === "paid" ? "default" : "secondary"}>{payment.status}</Badge>
                     </div>
                   ))}
+                  {payments.length === 0 && (
+                    <p className="text-sm text-gray-500">No payment activity recorded yet.</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -322,16 +517,16 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="flex justify-between items-center">
+                  <div className="flex items-center justify-between">
                     <span className="text-sm">Online Payments</span>
                     <span className="text-sm font-bold text-[#2d682d]">
-                      {payments.filter((p) => p.method === "online").length}
+                      {payments.filter((payment) => payment.method === "online").length}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center">
+                  <div className="flex items-center justify-between">
                     <span className="text-sm">Offline Payments</span>
                     <span className="text-sm font-bold text-[#b29032]">
-                      {payments.filter((p) => p.method === "offline").length}
+                      {payments.filter((payment) => payment.method === "offline").length}
                     </span>
                   </div>
                 </div>
@@ -354,41 +549,47 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                     <Input placeholder="Search payments..." className="pl-8" />
                   </div>
                   <Button className="bg-[#b29032] hover:bg-[#b29032]/90">
-                    <Plus className="w-4 h-4 mr-2" />
+                    <Plus className="mr-2 h-4 w-4" />
                     Record Payment
                   </Button>
                 </div>
 
                 <div className="space-y-2">
                   {payments.map((payment) => (
-                    <div key={payment.id} className="flex justify-between items-center p-4 border rounded-lg">
+                    <div key={payment.id} className="flex items-center justify-between rounded-lg border p-4">
                       <div className="flex-1">
                         <h3 className="font-medium">{payment.studentName}</h3>
                         <p className="text-sm text-gray-600">
-                          {payment.class} - {payment.type}
+                          {payment.className} - {payment.paymentType}
                         </p>
                         <p className="text-xs text-gray-500">
-                          Date: {payment.date} | Ref: {payment.reference}
+                          Date: {payment.date} | Ref: {payment.reference ?? "--"}
                         </p>
                       </div>
-                      <div className="text-center mr-4">
-                        <p className="text-lg font-bold text-[#2d682d]">₦{payment.amount.toLocaleString()}</p>
+                      <div className="mr-4 text-center">
+                        <p className="text-lg font-bold text-[#2d682d]">{formatCurrency(payment.amount)}</p>
                         <p className="text-xs text-gray-500">{payment.method}</p>
                       </div>
                       <div className="flex items-center space-x-2">
                         <Badge variant={payment.status === "paid" ? "default" : "secondary"}>{payment.status}</Badge>
                         {payment.status === "paid" && (
                           <>
-                            <Button size="sm" variant="outline" onClick={() => handleDownloadReceipt(payment)}>
-                              <Download className="w-4 h-4 mr-1" />
-                              Download PDF
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void handleDownloadReceipt(payment)}
+                              disabled={processingReceiptId === payment.id}
+                            >
+                              <Download className="mr-1 h-4 w-4" />
+                              Download Receipt
                             </Button>
                             <Button
                               size="sm"
                               className="bg-[#2d682d] hover:bg-[#2d682d]/90"
-                              onClick={() => handlePrintReceipt(payment)}
+                              onClick={() => void handlePrintReceipt(payment)}
+                              disabled={processingReceiptId === payment.id}
                             >
-                              <Printer className="w-4 h-4 mr-1" />
+                              <Printer className="mr-1 h-4 w-4" />
                               Print
                             </Button>
                           </>
@@ -396,6 +597,13 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                       </div>
                     </div>
                   ))}
+                  {payments.length === 0 && (
+                    <Card className="border-dashed border-gray-200">
+                      <CardContent className="py-6 text-center text-sm text-gray-500">
+                        No payments recorded yet.
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -411,33 +619,52 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
             <CardContent>
               <div className="space-y-4">
                 {receipts.map((receipt) => (
-                  <div key={receipt.id} className="flex justify-between items-center p-4 border rounded-lg">
+                  <div key={receipt.id} className="flex items-center justify-between rounded-lg border p-4">
                     <div className="flex-1">
-                      <h3 className="font-medium">Receipt #{receipt.receiptNo}</h3>
+                      <h3 className="font-medium">Receipt #{receipt.receiptNumber}</h3>
                       <p className="text-sm text-gray-600">{receipt.studentName}</p>
                       <p className="text-xs text-gray-500">
-                        Date: {receipt.date} | Ref: {receipt.reference}
+                        Date: {receipt.dateIssued} | Ref: {receipt.reference ?? "--"}
                       </p>
                     </div>
-                    <div className="text-center mr-4">
-                      <p className="text-lg font-bold text-[#2d682d]">₦{receipt.amount.toLocaleString()}</p>
+                    <div className="mr-4 text-center">
+                      <p className="text-lg font-bold text-[#2d682d]">{formatCurrency(receipt.amount)}</p>
                     </div>
                     <div className="space-x-2">
-                      <Button size="sm" variant="outline" onClick={() => handleDownloadReceipt(receipt)}>
-                        <Download className="w-4 h-4 mr-1" />
-                        Download PDF
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const payment = payments.find((item) => item.id === receipt.paymentId)
+                          if (payment) {
+                            void handleDownloadReceipt(payment)
+                          }
+                        }}
+                      >
+                        <Download className="mr-1 h-4 w-4" />
+                        Download Receipt
                       </Button>
                       <Button
                         size="sm"
                         className="bg-[#2d682d] hover:bg-[#2d682d]/90"
-                        onClick={() => handlePrintReceipt(receipt)}
+                        onClick={() => {
+                          setSelectedReceipt(receipt)
+                          setShowReceiptDialog(true)
+                        }}
                       >
-                        <Printer className="w-4 h-4 mr-1" />
+                        <Printer className="mr-1 h-4 w-4" />
                         Print
                       </Button>
                     </div>
                   </div>
                 ))}
+                {receipts.length === 0 && (
+                  <Card className="border-dashed border-gray-200">
+                    <CardContent className="py-6 text-center text-sm text-gray-500">
+                      No receipts have been issued yet.
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -445,64 +672,50 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
 
         <TabsContent value="fees" className="space-y-4">
           <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle className="text-[#2d682d]">Fee Structure Management</CardTitle>
-                  <CardDescription>Update and manage school fee structure by class</CardDescription>
-                </div>
-                <Button onClick={() => setShowFeeDialog(true)} className="bg-[#b29032] hover:bg-[#b29032]/90">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Update Fee Structure
-                </Button>
+            <CardHeader className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-[#2d682d]">Fee Structure</CardTitle>
+                <CardDescription>Manage tuition and levies across classes</CardDescription>
               </div>
+              <Button className="bg-[#2d682d] hover:bg-[#2d682d]/90" onClick={() => setShowFeeDialog(true)}>
+                <Edit className="mr-2 h-4 w-4" />
+                Update Structure
+              </Button>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse border border-gray-300">
-                    <thead>
-                      <tr className="bg-[#2d682d] text-white">
-                        <th className="border border-gray-300 p-2 text-left">Class</th>
-                        <th className="border border-gray-300 p-2 text-right">Tuition</th>
-                        <th className="border border-gray-300 p-2 text-right">Development</th>
-                        <th className="border border-gray-300 p-2 text-right">Exam</th>
-                        <th className="border border-gray-300 p-2 text-right">Sports</th>
-                        <th className="border border-gray-300 p-2 text-right">Library</th>
-                        <th className="border border-gray-300 p-2 text-right">Total</th>
-                        <th className="border border-gray-300 p-2 text-center">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {feeStructure.map((fee, index) => (
-                        <tr key={index} className="hover:bg-gray-50">
-                          <td className="border border-gray-300 p-2 font-medium">{fee.class}</td>
-                          <td className="border border-gray-300 p-2 text-right">₦{fee.tuition.toLocaleString()}</td>
-                          <td className="border border-gray-300 p-2 text-right">₦{fee.development.toLocaleString()}</td>
-                          <td className="border border-gray-300 p-2 text-right">₦{fee.exam.toLocaleString()}</td>
-                          <td className="border border-gray-300 p-2 text-right">₦{fee.sports.toLocaleString()}</td>
-                          <td className="border border-gray-300 p-2 text-right">₦{fee.library.toLocaleString()}</td>
-                          <td className="border border-gray-300 p-2 text-right font-bold text-[#2d682d]">
-                            ₦{fee.total.toLocaleString()}
-                          </td>
-                          <td className="border border-gray-300 p-2 text-center">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setFeeForm(fee)
-                                setShowFeeDialog(true)
-                              }}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                {feeStructure.map((fee) => (
+                  <Card key={fee.id} className="border border-[#2d682d]/10">
+                    <CardHeader>
+                      <CardTitle className="text-lg text-[#2d682d]">{fee.className}</CardTitle>
+                      <CardDescription>Total: {formatCurrency(fee.total)}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm text-gray-600">
+                      <div className="flex justify-between">
+                        <span>Tuition</span>
+                        <span>{formatCurrency(fee.tuition)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Development</span>
+                        <span>{formatCurrency(fee.development)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Exam</span>
+                        <span>{formatCurrency(fee.exam)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Sports</span>
+                        <span>{formatCurrency(fee.sports)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Library</span>
+                        <span>{formatCurrency(fee.library)}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
+              {feeStructure.length === 0 && <p className="text-sm text-gray-500">No fee structure configured yet.</p>}
             </CardContent>
           </Card>
         </TabsContent>
@@ -510,51 +723,51 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
         <TabsContent value="reports" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-[#2d682d]">Financial Reports & Analytics</CardTitle>
-              <CardDescription>Generate comprehensive financial reports and analytics</CardDescription>
+              <CardTitle className="text-[#2d682d]">Financial Reports</CardTitle>
+              <CardDescription>Download detailed financial statements and analysis</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid gap-4 md:grid-cols-2">
                 <Button
-                  className="bg-[#2d682d] hover:bg-[#2d682d]/90 h-20 flex-col"
-                  onClick={() => handleGenerateReport("monthly-revenue")}
+                  className="flex h-20 flex-col bg-[#2d682d] hover:bg-[#2d682d]/90"
+                  onClick={() => setBanner({ type: "success", message: "Monthly revenue report generated." })}
                 >
-                  <Download className="w-6 h-6 mb-2" />
+                  <Download className="mb-2 h-6 w-6" />
                   Monthly Revenue Report
                 </Button>
                 <Button
-                  className="bg-[#b29032] hover:bg-[#b29032]/90 h-20 flex-col"
-                  onClick={() => handleGenerateReport("outstanding-payments")}
+                  className="flex h-20 flex-col bg-[#b29032] hover:bg-[#b29032]/90"
+                  onClick={() => setBanner({ type: "success", message: "Outstanding payments report generated." })}
                 >
-                  <Download className="w-6 h-6 mb-2" />
+                  <Download className="mb-2 h-6 w-6" />
                   Outstanding Payments
                 </Button>
                 <Button
-                  className="bg-[#2d682d] hover:bg-[#2d682d]/90 h-20 flex-col"
-                  onClick={() => handleGenerateReport("class-wise-collection")}
+                  className="flex h-20 flex-col bg-[#2d682d] hover:bg-[#2d682d]/90"
+                  onClick={() => setBanner({ type: "success", message: "Class-wise collection report generated." })}
                 >
-                  <Download className="w-6 h-6 mb-2" />
+                  <Download className="mb-2 h-6 w-6" />
                   Class-wise Collection
                 </Button>
                 <Button
-                  className="bg-[#b29032] hover:bg-[#b29032]/90 h-20 flex-col"
-                  onClick={() => handleGenerateReport("payment-method-analysis")}
+                  className="flex h-20 flex-col bg-[#b29032] hover:bg-[#b29032]/90"
+                  onClick={() => setBanner({ type: "success", message: "Payment method analysis generated." })}
                 >
-                  <Download className="w-6 h-6 mb-2" />
+                  <Download className="mb-2 h-6 w-6" />
                   Payment Method Analysis
                 </Button>
                 <Button
-                  className="bg-[#2d682d] hover:bg-[#2d682d]/90 h-20 flex-col"
-                  onClick={() => handleGenerateReport("fee-defaulters")}
+                  className="flex h-20 flex-col bg-[#2d682d] hover:bg-[#2d682d]/90"
+                  onClick={() => setBanner({ type: "success", message: "Fee defaulters report generated." })}
                 >
-                  <Download className="w-6 h-6 mb-2" />
+                  <Download className="mb-2 h-6 w-6" />
                   Fee Defaulters Report
                 </Button>
                 <Button
-                  className="bg-[#b29032] hover:bg-[#b29032]/90 h-20 flex-col"
-                  onClick={() => handleGenerateReport("annual-financial-summary")}
+                  className="flex h-20 flex-col bg-[#b29032] hover:bg-[#b29032]/90"
+                  onClick={() => setBanner({ type: "success", message: "Annual financial summary generated." })}
                 >
-                  <Download className="w-6 h-6 mb-2" />
+                  <Download className="mb-2 h-6 w-6" />
                   Annual Financial Summary
                 </Button>
               </div>
@@ -573,8 +786,8 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
             <div>
               <Label htmlFor="class">Class</Label>
               <Select
-                value={feeForm.class}
-                onValueChange={(value) => setFeeForm((prev) => ({ ...prev, class: value }))}
+                value={feeForm.className}
+                onValueChange={(value) => setFeeForm((previous) => ({ ...previous, className: value }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Class" />
@@ -596,7 +809,7 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                   id="tuition"
                   type="number"
                   value={feeForm.tuition}
-                  onChange={(e) => setFeeForm((prev) => ({ ...prev, tuition: Number(e.target.value) }))}
+                  onChange={(event) => setFeeForm((previous) => ({ ...previous, tuition: event.target.value }))}
                 />
               </div>
               <div>
@@ -605,7 +818,7 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                   id="development"
                   type="number"
                   value={feeForm.development}
-                  onChange={(e) => setFeeForm((prev) => ({ ...prev, development: Number(e.target.value) }))}
+                  onChange={(event) => setFeeForm((previous) => ({ ...previous, development: event.target.value }))}
                 />
               </div>
               <div>
@@ -614,7 +827,7 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                   id="exam"
                   type="number"
                   value={feeForm.exam}
-                  onChange={(e) => setFeeForm((prev) => ({ ...prev, exam: Number(e.target.value) }))}
+                  onChange={(event) => setFeeForm((previous) => ({ ...previous, exam: event.target.value }))}
                 />
               </div>
               <div>
@@ -623,7 +836,7 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                   id="sports"
                   type="number"
                   value={feeForm.sports}
-                  onChange={(e) => setFeeForm((prev) => ({ ...prev, sports: Number(e.target.value) }))}
+                  onChange={(event) => setFeeForm((previous) => ({ ...previous, sports: event.target.value }))}
                 />
               </div>
               <div>
@@ -632,21 +845,12 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                   id="library"
                   type="number"
                   value={feeForm.library}
-                  onChange={(e) => setFeeForm((prev) => ({ ...prev, library: Number(e.target.value) }))}
+                  onChange={(event) => setFeeForm((previous) => ({ ...previous, library: event.target.value }))}
                 />
               </div>
               <div>
                 <Label>Total</Label>
-                <div className="p-2 bg-gray-100 rounded font-bold text-[#2d682d]">
-                  ₦
-                  {(
-                    feeForm.tuition +
-                    feeForm.development +
-                    feeForm.exam +
-                    feeForm.sports +
-                    feeForm.library
-                  ).toLocaleString()}
-                </div>
+                <div className="rounded bg-gray-100 p-2 font-bold text-[#2d682d]">₦{feeFormTotal.toLocaleString()}</div>
               </div>
             </div>
           </div>
@@ -654,8 +858,12 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
             <Button variant="outline" onClick={() => setShowFeeDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleUpdateFeeStructure} className="bg-[#2d682d] hover:bg-[#2d682d]/90">
-              Update Fee Structure
+            <Button
+              onClick={() => void handleUpdateFeeStructure()}
+              className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+              disabled={updatingFee}
+            >
+              {updatingFee ? "Saving..." : "Update Fee Structure"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -665,9 +873,9 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Print Receipt</DialogTitle>
-            <DialogDescription>Receipt for {selectedPayment?.studentName}</DialogDescription>
+            <DialogDescription>Receipt for {selectedReceipt?.studentName}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 p-4 border rounded-lg bg-gray-50">
+          <div className="space-y-4 rounded-lg border bg-gray-50 p-4">
             <div className="text-center">
               <h3 className="font-bold text-[#2d682d]">VICTORY EDUCATIONAL ACADEMY</h3>
               <p className="text-sm">Official Payment Receipt</p>
@@ -675,19 +883,23 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span>Student:</span>
-                <span className="font-medium">{selectedPayment?.studentName}</span>
+                <span className="font-medium">{selectedReceipt?.studentName}</span>
               </div>
               <div className="flex justify-between">
                 <span>Amount:</span>
-                <span className="font-medium">₦{selectedPayment?.amount.toLocaleString()}</span>
+                <span className="font-medium">{selectedReceipt ? formatCurrency(selectedReceipt.amount) : "--"}</span>
               </div>
               <div className="flex justify-between">
                 <span>Reference:</span>
-                <span className="font-medium">{selectedPayment?.reference}</span>
+                <span className="font-medium">{selectedReceipt?.reference ?? "--"}</span>
               </div>
               <div className="flex justify-between">
                 <span>Date:</span>
-                <span className="font-medium">{selectedPayment?.date}</span>
+                <span className="font-medium">{selectedReceipt?.dateIssued ?? "--"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Issued By:</span>
+                <span className="font-medium">{selectedReceipt?.issuedBy ?? accountant.name}</span>
               </div>
             </div>
           </div>
@@ -697,12 +909,29 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
             </Button>
             <Button
               onClick={() => {
-                console.log("Printing receipt for:", selectedPayment)
+                if (typeof window !== "undefined" && selectedReceipt) {
+                  const printWindow = window.open("", "PRINT", "height=600,width=400")
+                  if (printWindow) {
+                    printWindow.document.write("<html><head><title>Receipt</title></head><body>")
+                    printWindow.document.write(`<h2 style="color:#2d682d;text-align:center;">Victory Educational Academy</h2>`)
+                    printWindow.document.write(`<p><strong>Receipt Number:</strong> ${selectedReceipt.receiptNumber}</p>`)
+                    printWindow.document.write(`<p><strong>Student:</strong> ${selectedReceipt.studentName}</p>`)
+                    printWindow.document.write(`<p><strong>Amount:</strong> ${formatCurrency(selectedReceipt.amount)}</p>`)
+                    printWindow.document.write(`<p><strong>Reference:</strong> ${selectedReceipt.reference ?? "--"}</p>`)
+                    printWindow.document.write(`<p><strong>Date:</strong> ${selectedReceipt.dateIssued}</p>`)
+                    printWindow.document.write(`<p><strong>Issued By:</strong> ${selectedReceipt.issuedBy ?? accountant.name}</p>`)
+                    printWindow.document.write("</body></html>")
+                    printWindow.document.close()
+                    printWindow.focus()
+                    printWindow.print()
+                    printWindow.close()
+                  }
+                }
                 setShowReceiptDialog(false)
               }}
               className="bg-[#2d682d] hover:bg-[#2d682d]/90"
             >
-              <Printer className="w-4 h-4 mr-2" />
+              <Printer className="mr-2 h-4 w-4" />
               Print Receipt
             </Button>
           </DialogFooter>

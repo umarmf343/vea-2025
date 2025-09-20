@@ -113,6 +113,37 @@ export interface PaymentInitializationRecord extends CollectionRecord {
   metadata?: Record<string, any>
 }
 
+export interface FeeStructureRecord extends CollectionRecord {
+  className: string
+  tuition: number
+  development: number
+  exam: number
+  sports: number
+  library: number
+  total: number
+}
+
+export interface UpsertFeeStructurePayload
+  extends Omit<FeeStructureRecord, "id" | "createdAt" | "updatedAt" | "total"> {
+  total?: number
+}
+
+export interface ReceiptRecord extends CollectionRecord {
+  paymentId: string
+  receiptNumber: string
+  studentName: string
+  amount: number
+  dateIssued: string
+  reference?: string | null
+  issuedBy?: string | null
+  metadata?: Record<string, any> | null
+}
+
+export interface CreateReceiptPayload extends Omit<ReceiptRecord, "id" | "createdAt" | "updatedAt" | "receiptNumber" | "dateIssued"> {
+  receiptNumber?: string | null
+  dateIssued?: string | null
+}
+
 export interface ReportCardSubjectRecord {
   name: string
   ca1: number
@@ -257,6 +288,8 @@ const STORAGE_KEYS = {
   GRADES: "vea_grades",
   MARKS: "vea_marks",
   PAYMENTS: "vea_payment_initializations",
+  FEE_STRUCTURE: "vea_fee_structure",
+  RECEIPTS: "vea_payment_receipts",
   REPORT_CARDS: "reportCards",
   REPORT_CARD_CONFIG: "reportCardConfig",
   BRANDING: "schoolBranding",
@@ -365,6 +398,46 @@ function createDefaultUsers(): StoredUser[] {
       metadata: null,
       profileImage: null,
       lastLogin: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  ]
+}
+
+function createDefaultFeeStructures(): FeeStructureRecord[] {
+  const timestamp = new Date().toISOString()
+
+  const seedData: Array<Omit<FeeStructureRecord, "id" | "createdAt" | "updatedAt">> = [
+    { className: "JSS 1", tuition: 40000, development: 5000, exam: 3000, sports: 1000, library: 1000, total: 50000 },
+    { className: "JSS 2", tuition: 42000, development: 5000, exam: 3000, sports: 1000, library: 1000, total: 52000 },
+    { className: "JSS 3", tuition: 44000, development: 5000, exam: 3000, sports: 1000, library: 1000, total: 54000 },
+    { className: "SS 1", tuition: 46000, development: 6000, exam: 4000, sports: 1500, library: 1500, total: 59000 },
+    { className: "SS 2", tuition: 48000, development: 6000, exam: 4000, sports: 1500, library: 1500, total: 61000 },
+    { className: "SS 3", tuition: 50000, development: 6000, exam: 4000, sports: 1500, library: 1500, total: 63000 },
+  ]
+
+  return seedData.map((entry) => ({
+    id: generateId("fee"),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    ...entry,
+  }))
+}
+
+function createDefaultReceipts(): ReceiptRecord[] {
+  const timestamp = new Date().toISOString()
+
+  return [
+    {
+      id: generateId("receipt"),
+      paymentId: "payment_seed_1",
+      receiptNumber: "VEA/2025/0001",
+      studentName: "John Doe",
+      amount: 50000,
+      reference: "PAY001",
+      issuedBy: "System",
+      dateIssued: timestamp,
+      metadata: { className: "JSS 1A" },
       createdAt: timestamp,
       updatedAt: timestamp,
     },
@@ -528,6 +601,16 @@ function createDefaultSystemSettingsRecord(): SystemSettingsRecord {
 
 function defaultEmptyCollection<T>(): T[] {
   return []
+}
+
+function calculateFeeTotal(entry: {
+  tuition: number
+  development: number
+  exam: number
+  sports: number
+  library: number
+}): number {
+  return [entry.tuition, entry.development, entry.exam, entry.sports, entry.library].reduce((sum, value) => sum + Number(value || 0), 0)
 }
 
 function determineGrade(total: number): string {
@@ -1374,6 +1457,118 @@ export async function recordPaymentInitialization(
 export async function listPaymentInitializations(): Promise<PaymentInitializationRecord[]> {
   const payments = ensureCollection<PaymentInitializationRecord>(STORAGE_KEYS.PAYMENTS, defaultEmptyCollection)
   return deepClone(payments)
+}
+
+export async function listFeeStructures(): Promise<FeeStructureRecord[]> {
+  const feeStructures = ensureCollection<FeeStructureRecord>(STORAGE_KEYS.FEE_STRUCTURE, createDefaultFeeStructures)
+  return deepClone(feeStructures)
+}
+
+export async function upsertFeeStructure(payload: UpsertFeeStructurePayload): Promise<FeeStructureRecord> {
+  const feeStructures = ensureCollection<FeeStructureRecord>(STORAGE_KEYS.FEE_STRUCTURE, createDefaultFeeStructures)
+  const timestamp = new Date().toISOString()
+  const normalizedName = payload.className.trim()
+  const total = payload.total ?? calculateFeeTotal(payload)
+
+  const index = feeStructures.findIndex((entry) => entry.className.toLowerCase() === normalizedName.toLowerCase())
+
+  if (index === -1) {
+    const record: FeeStructureRecord = {
+      id: generateId("fee"),
+      className: normalizedName,
+      tuition: Number(payload.tuition),
+      development: Number(payload.development),
+      exam: Number(payload.exam),
+      sports: Number(payload.sports),
+      library: Number(payload.library),
+      total: Number(total),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    feeStructures.push(record)
+    persistCollection(STORAGE_KEYS.FEE_STRUCTURE, feeStructures)
+    return deepClone(record)
+  }
+
+  const existing = feeStructures[index]
+  const updated: FeeStructureRecord = {
+    ...existing,
+    className: normalizedName,
+    tuition: Number(payload.tuition),
+    development: Number(payload.development),
+    exam: Number(payload.exam),
+    sports: Number(payload.sports),
+    library: Number(payload.library),
+    total: Number(total),
+    updatedAt: timestamp,
+  }
+
+  feeStructures[index] = updated
+  persistCollection(STORAGE_KEYS.FEE_STRUCTURE, feeStructures)
+  return deepClone(updated)
+}
+
+function generateReceiptNumber(timestamp: string): string {
+  const datePart = timestamp.slice(0, 10).replace(/-/g, "")
+  const randomPart = crypto.randomBytes(3).toString("hex").toUpperCase()
+  return `VEA/${datePart}/${randomPart}`
+}
+
+export async function listReceipts(): Promise<ReceiptRecord[]> {
+  const receipts = ensureCollection<ReceiptRecord>(STORAGE_KEYS.RECEIPTS, createDefaultReceipts)
+  return deepClone(receipts)
+}
+
+export async function createOrUpdateReceipt(payload: CreateReceiptPayload): Promise<ReceiptRecord> {
+  const receipts = ensureCollection<ReceiptRecord>(STORAGE_KEYS.RECEIPTS, createDefaultReceipts)
+  const timestamp = new Date().toISOString()
+
+  const index = receipts.findIndex((receipt) => receipt.paymentId === payload.paymentId)
+
+  if (index === -1) {
+    const receiptNumber = payload.receiptNumber && payload.receiptNumber.trim().length > 0
+      ? payload.receiptNumber
+      : generateReceiptNumber(timestamp)
+
+    const record: ReceiptRecord = {
+      id: generateId("receipt"),
+      paymentId: payload.paymentId,
+      receiptNumber,
+      studentName: payload.studentName,
+      amount: Number(payload.amount),
+      reference: payload.reference ?? null,
+      issuedBy: payload.issuedBy ?? null,
+      metadata: payload.metadata ?? null,
+      dateIssued: payload.dateIssued ?? timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    receipts.push(record)
+    persistCollection(STORAGE_KEYS.RECEIPTS, receipts)
+    return deepClone(record)
+  }
+
+  const existing = receipts[index]
+  const updated: ReceiptRecord = {
+    ...existing,
+    studentName: payload.studentName || existing.studentName,
+    amount: Number(payload.amount ?? existing.amount),
+    reference: payload.reference ?? existing.reference ?? null,
+    issuedBy: payload.issuedBy ?? existing.issuedBy ?? null,
+    metadata: payload.metadata ?? existing.metadata ?? null,
+    dateIssued: payload.dateIssued ?? existing.dateIssued,
+    updatedAt: timestamp,
+  }
+
+  if (!updated.receiptNumber || updated.receiptNumber.trim().length === 0) {
+    updated.receiptNumber = generateReceiptNumber(timestamp)
+  }
+
+  receipts[index] = updated
+  persistCollection(STORAGE_KEYS.RECEIPTS, receipts)
+  return deepClone(updated)
 }
 
 export interface UpdatePaymentRecordPayload
