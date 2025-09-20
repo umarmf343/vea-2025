@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast"
 import { dbManager } from "@/lib/database-manager"
 import { Download, GraduationCap, Loader2, Printer, TrendingUp, Calendar } from "lucide-react"
+import { useBranding } from "@/hooks/use-branding"
 
 interface CumulativeSubject {
   name: string
@@ -87,6 +88,11 @@ const trendIcon = (trend: SubjectAverage["trend"]) => {
 }
 
 function CumulativeReport({ data, isLoading, error, onRetry }: CumulativeReportProps) {
+  const branding = useBranding()
+  const resolvedSchoolName = branding.schoolName
+  const resolvedAddress = branding.schoolAddress
+  const resolvedLogo = branding.logoUrl
+
   const handlePrint = () => window.print()
 
   if (isLoading) {
@@ -146,10 +152,15 @@ function CumulativeReport({ data, isLoading, error, onRetry }: CumulativeReportP
       <div className="print:p-8 print:bg-white">
         <div className="text-center mb-8 border-b-2 border-[#2d682d] pb-6">
           <div className="flex items-center justify-center mb-4">
-            <GraduationCap className="h-16 w-16 text-[#b29032]" />
+            {resolvedLogo ? (
+              <img src={resolvedLogo} alt={`${resolvedSchoolName} logo`} className="h-20 w-20 object-contain" />
+            ) : (
+              <GraduationCap className="h-16 w-16 text-[#b29032]" />
+            )}
           </div>
-          <h1 className="text-3xl font-bold text-[#2d682d] mb-2">Victory Educational Academy</h1>
-          <p className="text-lg text-gray-600 mb-1">Comprehensive Learning Excellence</p>
+          <h1 className="text-3xl font-bold text-[#2d682d] mb-2">{resolvedSchoolName}</h1>
+          <p className="text-lg text-gray-600 mb-1">{resolvedAddress}</p>
+          <p className="text-sm text-gray-500 italic">{branding.defaultRemark}</p>
           <div className="mt-4">
             <h2 className="text-xl font-semibold text-[#b29032]">CUMULATIVE ACADEMIC REPORT</h2>
             <p className="text-sm text-gray-600">{data.session} Academic Session</p>
@@ -302,14 +313,14 @@ function CumulativeReport({ data, isLoading, error, onRetry }: CumulativeReportP
           </CardContent>
         </Card>
 
-        <div className="text-center border-t-2 border-[#2d682d] pt-6">
-          <p className="text-xs text-gray-500 mb-2">
-            This cumulative report is automatically generated based on approved term results.
-          </p>
-          <div className="text-xs text-gray-400">
-            <p>Victory Educational Academy • Excellence in Education • www.vea2025.edu.ng</p>
+          <div className="text-center border-t-2 border-[#2d682d] pt-6">
+            <p className="text-xs text-gray-500 mb-2">
+              This cumulative report is automatically generated based on approved term results.
+            </p>
+            <div className="text-xs text-gray-400">
+            <p>{resolvedSchoolName} • {resolvedAddress}</p>
+            </div>
           </div>
-        </div>
       </div>
     </DialogContent>
   )

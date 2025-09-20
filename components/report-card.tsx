@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { GraduationCap, Download, Printer, Award, Calendar, MapPin, Phone, Mail } from "lucide-react"
+import { useBranding } from "@/hooks/use-branding"
 
 interface Subject {
   name: string
@@ -19,6 +20,14 @@ interface Subject {
   grade: string
   position: number
   teacherComment: string
+}
+
+interface ReportBranding {
+  schoolName?: string
+  address?: string
+  logo?: string | null
+  headmasterSignature?: string | null
+  headmasterName?: string
 }
 
 interface ReportCardData {
@@ -53,6 +62,7 @@ interface ReportCardData {
   principalComment: string
   classTeacherComment: string
   nextTermBegins: string
+  branding?: ReportBranding
 }
 
 const mockReportData: ReportCardData = {
@@ -148,6 +158,11 @@ const mockReportData: ReportCardData = {
   classTeacherComment:
     "A dedicated student with good leadership qualities. Encourage more participation in class discussions.",
   nextTermBegins: "January 15, 2025",
+  branding: {
+    schoolName: "Victory Educational Academy",
+    address: "No. 19, Abdulazeez Street, Zone 3 Duste Baumpaba, Bwari Area Council, Abuja",
+    headmasterName: "Dr. Emmanuel Adebayo",
+  },
 }
 
 interface ReportCardProps {
@@ -157,6 +172,24 @@ interface ReportCardProps {
 }
 
 export function ReportCard({ data, isOpen, onClose }: ReportCardProps) {
+  const branding = useBranding()
+
+  const pickText = (overrideValue: string | undefined, fallbackValue: string) =>
+    overrideValue && overrideValue.trim().length > 0 ? overrideValue : fallbackValue
+
+  const pickOptional = (overrideValue: string | null | undefined, fallbackValue: string | null) => {
+    if (typeof overrideValue === "string" && overrideValue.trim().length > 0) {
+      return overrideValue
+    }
+    return fallbackValue
+  }
+
+  const resolvedSchoolName = pickText(data.branding?.schoolName, branding.schoolName)
+  const resolvedAddress = pickText(data.branding?.address, branding.schoolAddress)
+  const resolvedLogo = pickOptional(data.branding?.logo ?? null, branding.logoUrl)
+  const resolvedSignature = pickOptional(data.branding?.headmasterSignature ?? null, branding.signatureUrl)
+  const resolvedHeadmasterName = pickText(data.branding?.headmasterName, branding.headmasterName)
+
   const handlePrint = () => {
     window.print()
   }
@@ -205,11 +238,15 @@ export function ReportCard({ data, isOpen, onClose }: ReportCardProps) {
           {/* Header */}
           <div className="text-center mb-8 border-b-2 border-[#2d682d] pb-6">
             <div className="flex items-center justify-center mb-4">
-              <GraduationCap className="h-16 w-16 text-[#b29032]" />
+              {resolvedLogo ? (
+                <img src={resolvedLogo} alt={`${resolvedSchoolName} logo`} className="h-20 w-20 object-contain" />
+              ) : (
+                <GraduationCap className="h-16 w-16 text-[#b29032]" />
+              )}
             </div>
-            <h1 className="text-3xl font-bold text-[#2d682d] mb-2">VEA 2025</h1>
-            <p className="text-lg text-gray-600 mb-1">Victory Educational Academy</p>
-            <p className="text-sm text-gray-500">Excellence in Education Since 2020</p>
+            <h1 className="text-3xl font-bold text-[#2d682d] mb-2">{resolvedSchoolName.toUpperCase()}</h1>
+            <p className="text-lg text-gray-600 mb-1">{resolvedAddress}</p>
+            <p className="text-sm text-gray-500 italic">{branding.defaultRemark}</p>
             <div className="mt-4">
               <h2 className="text-xl font-semibold text-[#b29032]">ACADEMIC REPORT CARD</h2>
               <p className="text-sm text-gray-600">
@@ -418,22 +455,38 @@ export function ReportCard({ data, isOpen, onClose }: ReportCardProps) {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-gray-700 italic">{data.principalComment}</p>
-                <div className="mt-4 pt-4 border-t">
-                  <p className="text-xs text-gray-500">Signature: _________________</p>
-                  <p className="text-xs text-gray-500 mt-1">Date: _________________</p>
-                </div>
               </CardContent>
             </Card>
+          </div>
+
+          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between mb-6">
+            <div className="text-center md:text-left">
+              <div className="border-b-2 border-[#2d682d] print:border-black w-48 h-16 mb-2"></div>
+              <p className="text-sm font-bold text-[#2d682d]">CLASS TEACHER</p>
+            </div>
+            <div className="flex flex-col items-center md:items-end text-center md:text-right">
+              {resolvedSignature ? (
+                <img
+                  src={resolvedSignature}
+                  alt={`${resolvedHeadmasterName} signature`}
+                  className="h-16 w-48 object-contain mb-2 md:ml-auto"
+                />
+              ) : (
+                <div className="border-b-2 border-[#2d682d] print:border-black w-48 h-16 mb-2 md:ml-auto"></div>
+              )}
+              <p className="text-sm font-bold text-[#2d682d]">{resolvedHeadmasterName.toUpperCase()}</p>
+              <p className="text-sm font-bold text-[#2d682d]">HEADMASTER</p>
+            </div>
           </div>
 
           {/* Footer */}
           <div className="text-center border-t-2 border-[#2d682d] pt-6">
             <p className="text-sm font-semibold text-[#2d682d] mb-2">Next Term Begins: {data.nextTermBegins}</p>
-            <p className="text-xs text-gray-500">
-              This report card is computer generated and does not require a signature
-            </p>
+            <div className="mt-2 text-xs text-gray-500">
+              <p>For further enquiries, please contact the school administration.</p>
+            </div>
             <div className="mt-4 text-xs text-gray-400">
-              <p>Victory Educational Academy • Excellence in Education • www.vea2025.edu.ng</p>
+              <p>{resolvedSchoolName} • {resolvedAddress}</p>
             </div>
           </div>
         </div>

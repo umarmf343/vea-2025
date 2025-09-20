@@ -39,6 +39,7 @@ import { InternalMessaging } from "@/components/internal-messaging"
 import { AdminApprovalDashboard } from "@/components/admin-approval-dashboard"
 import { getCompleteReportCard } from "@/lib/sample-report-data"
 import { safeStorage } from "@/lib/safe-storage"
+import { getBrandingFromStorage } from "@/lib/branding"
 import { cn } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { toast } from "@/hooks/use-toast"
@@ -888,6 +889,8 @@ function ParentDashboard({ user }: { user: User }) {
   const handleViewReportCard = async () => {
     if (hasAccess) {
       try {
+        const brandingInfo = getBrandingFromStorage()
+
         const approvedReports = JSON.parse(safeStorage.getItem("approvedReports") || "[]")
 
         if (!approvedReports.includes(studentData.id)) {
@@ -938,13 +941,15 @@ function ParentDashboard({ user }: { user: User }) {
             remarks: {
               classTeacher: data.classTeacherRemarks,
               headmaster:
-                safeStorage.getItem("defaultRemarks") ||
+                brandingInfo.defaultRemark ||
                 "An exemplary student who continues to excel in academics and character development.",
             },
             branding: {
-              logo: safeStorage.getItem("schoolLogo") || "",
-              signature: safeStorage.getItem("headmasterSignature") || "",
-              headmasterName: safeStorage.getItem("headmasterName") || "Dr. Victory Adebayo",
+              logo: brandingInfo.logoUrl ?? "",
+              signature: brandingInfo.signatureUrl ?? "",
+              headmasterName: brandingInfo.headmasterName,
+              schoolName: brandingInfo.schoolName,
+              address: brandingInfo.schoolAddress,
             },
             attendance: {
               present: attendanceData.presentDays,

@@ -4,6 +4,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Download, PrinterIcon as Print } from "lucide-react"
 import { useEffect, useState } from "react"
+
+import { useBranding } from "@/hooks/use-branding"
 import { safeStorage } from "@/lib/safe-storage"
 
 interface ReportCardData {
@@ -46,10 +48,8 @@ interface ReportCardData {
 }
 
 export function EnhancedReportCard({ data }: { data?: ReportCardData }) {
-  const [schoolLogo, setSchoolLogo] = useState<string>("")
-  const [headmasterSignature, setHeadmasterSignature] = useState<string>("")
+  const branding = useBranding()
   const [studentPhoto, setStudentPhoto] = useState<string>("")
-  const [headmasterName, setHeadmasterName] = useState<string>("Dr. Emmanuel Adebayo")
   const [reportCardData, setReportCardData] = useState<ReportCardData | null>(data || null)
 
   useEffect(() => {
@@ -143,14 +143,6 @@ export function EnhancedReportCard({ data }: { data?: ReportCardData }) {
   }
 
   useEffect(() => {
-    const brandingData = safeStorage.getItem("schoolBranding")
-    if (brandingData) {
-      const branding = JSON.parse(brandingData)
-      setSchoolLogo(branding.logoUrl || "")
-      setHeadmasterSignature(branding.signatureUrl || "")
-      setHeadmasterName(branding.headmasterName || "Dr. Emmanuel Adebayo")
-    }
-
     if (reportCardData?.student?.id) {
       const studentPhotos = safeStorage.getItem("studentPhotos")
       if (studentPhotos) {
@@ -207,36 +199,36 @@ export function EnhancedReportCard({ data }: { data?: ReportCardData }) {
 
       <div className="border-8 border-[#2d682d] print:border-black bg-white print:shadow-none">
         <div className="bg-white p-6">
-          <div className="flex items-start justify-between mb-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between mb-6">
             {/* Left: School Logo */}
-            <div className="w-20 h-20 border-2 border-[#2d682d] print:border-black flex items-center justify-center bg-white">
-              {schoolLogo ? (
+            <div className="w-20 h-20 border-2 border-[#2d682d] print:border-black flex items-center justify-center bg-white mx-auto md:mx-0">
+              {branding.logoUrl ? (
                 <img
-                  src={schoolLogo || "/placeholder.svg"}
-                  alt="School Crest"
+                  src={branding.logoUrl}
+                  alt={`${branding.schoolName} logo`}
                   className="w-full h-full object-contain p-1"
                 />
               ) : (
-                <div className="text-xs text-[#2d682d] print:text-gray-600 text-center font-bold">
+                <div className="text-[10px] text-[#2d682d] print:text-gray-600 text-center font-bold leading-tight">
                   SCHOOL
                   <br />
-                  CREST
+                  LOGO
                 </div>
               )}
             </div>
 
             {/* Center: School Information */}
-            <div className="flex-1 text-center mx-8">
+            <div className="flex-1 text-center md:mx-8">
               <h1 className="text-3xl font-bold text-[#2d682d] print:text-black mb-2 uppercase tracking-wide font-serif">
-                VICTORY EDUCATIONAL ACADEMY
+                {branding.schoolName.toUpperCase()}
               </h1>
               <p className="text-sm text-[#2d682d]/80 print:text-black mb-4 font-medium">
-                No. 19, Abdulazeez Street, Zone 3 Duste Baumpaba, Bwari Area Council, Abuja
+                {branding.schoolAddress}
               </p>
             </div>
 
             {/* Right: Student Photo placeholder */}
-            <div className="w-20 h-24 border-2 border-[#2d682d] print:border-black flex items-center justify-center bg-white">
+            <div className="w-20 h-24 border-2 border-[#2d682d] print:border-black flex items-center justify-center bg-white mx-auto md:mx-0">
               {studentPhoto ? (
                 <img
                   src={studentPhoto || "/placeholder.svg"}
@@ -626,31 +618,31 @@ export function EnhancedReportCard({ data }: { data?: ReportCardData }) {
             </div>
           </div>
 
-          <div className="flex justify-between items-end mb-6">
-            <div className="text-center">
+          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between mb-6">
+            <div className="text-center md:text-left">
               <div className="border-b-2 border-[#2d682d] print:border-black w-48 h-16 mb-2"></div>
               <p className="text-sm font-bold text-[#2d682d] print:text-black">CLASS TEACHER</p>
             </div>
-            <div className="text-center">
-              {headmasterSignature ? (
-                <div className="mb-2">
-                  <img
-                    src={headmasterSignature || "/placeholder.svg"}
-                    alt="Headmaster Signature"
-                    className="h-16 w-48 object-contain mx-auto"
-                  />
-                </div>
+            <div className="flex flex-col items-center md:items-end text-center md:text-right">
+              {branding.signatureUrl ? (
+                <img
+                  src={branding.signatureUrl}
+                  alt={`${branding.headmasterName} signature`}
+                  className="h-16 w-48 object-contain mb-2 md:ml-auto"
+                />
               ) : (
-                <div className="border-b-2 border-[#2d682d] print:border-black w-48 h-16 mb-2"></div>
+                <div className="border-b-2 border-[#2d682d] print:border-black w-48 h-16 mb-2 md:ml-auto"></div>
               )}
-              <p className="text-sm font-bold text-[#2d682d] print:text-black">{headmasterName.toUpperCase()}</p>
+              <p className="text-sm font-bold text-[#2d682d] print:text-black">
+                {branding.headmasterName.toUpperCase()}
+              </p>
               <p className="text-sm font-bold text-[#2d682d] print:text-black">HEADMASTER</p>
             </div>
           </div>
 
           <div className="text-center">
             <p className="text-xs text-[#2d682d] print:text-gray-600 font-medium">
-              © Victory Educational Academy. All rights reserved.
+              © {branding.schoolName}. All rights reserved.
             </p>
           </div>
         </div>

@@ -28,6 +28,7 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react"
+import { useBranding } from "@/hooks/use-branding"
 
 interface AccountantDashboardProps {
   accountant: {
@@ -155,6 +156,13 @@ function mapReceipt(record: ApiReceiptRecord): ReceiptRecord {
 }
 
 export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
+  const branding = useBranding()
+  const resolvedLogo = branding.logoUrl
+  const resolvedSignature = branding.signatureUrl
+  const resolvedSchoolName = branding.schoolName
+  const resolvedAddress = branding.schoolAddress
+  const resolvedHeadmasterName = branding.headmasterName
+
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showFeeDialog, setShowFeeDialog] = useState(false)
   const [showReceiptDialog, setShowReceiptDialog] = useState(false)
@@ -876,9 +884,35 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
             <DialogDescription>Receipt for {selectedReceipt?.studentName}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 rounded-lg border bg-gray-50 p-4">
-            <div className="text-center">
-              <h3 className="font-bold text-[#2d682d]">VICTORY EDUCATIONAL ACADEMY</h3>
-              <p className="text-sm">Official Payment Receipt</p>
+            <div className="flex flex-col gap-4 border-b border-dashed border-gray-300 pb-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  {resolvedLogo ? (
+                    <img
+                      src={resolvedLogo}
+                      alt={`${resolvedSchoolName} logo`}
+                      className="h-12 w-12 object-contain"
+                    />
+                  ) : (
+                    <div className="h-12 w-12 rounded-full border border-[#2d682d]/40 flex items-center justify-center text-[10px] font-bold text-[#2d682d]">
+                      LOGO
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="font-bold text-[#2d682d] uppercase tracking-wide">{resolvedSchoolName}</h3>
+                    <p className="text-xs text-gray-600 max-w-[220px]">{resolvedAddress}</p>
+                  </div>
+                </div>
+                <div className="text-right text-xs text-gray-500">
+                  <p className="font-semibold text-[#2d682d]">
+                    Receipt #{selectedReceipt?.receiptNumber ?? "--"}
+                  </p>
+                  <p>{selectedReceipt?.dateIssued ?? "--"}</p>
+                </div>
+              </div>
+              <p className="text-sm font-medium text-gray-600 text-center uppercase tracking-wide">
+                Official Payment Receipt
+              </p>
             </div>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
@@ -897,9 +931,28 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                 <span>Date:</span>
                 <span className="font-medium">{selectedReceipt?.dateIssued ?? "--"}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Issued By:</span>
-                <span className="font-medium">{selectedReceipt?.issuedBy ?? accountant.name}</span>
+            </div>
+            <div className="pt-4 border-t border-dashed border-gray-300">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div className="text-sm text-gray-600">
+                  <p>
+                    <span className="font-medium text-[#2d682d]">Accountant:</span> {selectedReceipt?.issuedBy ?? accountant.name}
+                  </p>
+                  <p className="text-xs text-gray-500">Thank you for keeping your account up to date.</p>
+                </div>
+                <div className="text-right">
+                  {resolvedSignature ? (
+                    <img
+                      src={resolvedSignature}
+                      alt={`${resolvedHeadmasterName} signature`}
+                      className="h-12 w-32 object-contain ml-auto"
+                    />
+                  ) : (
+                    <div className="h-12 w-32 border-b border-[#2d682d]/60 ml-auto"></div>
+                  )}
+                  <p className="mt-2 text-xs font-semibold text-[#2d682d] uppercase">{resolvedHeadmasterName}</p>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide">Headmaster</p>
+                </div>
               </div>
             </div>
           </div>
@@ -912,14 +965,38 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                 if (typeof window !== "undefined" && selectedReceipt) {
                   const printWindow = window.open("", "PRINT", "height=600,width=400")
                   if (printWindow) {
-                    printWindow.document.write("<html><head><title>Receipt</title></head><body>")
-                    printWindow.document.write(`<h2 style="color:#2d682d;text-align:center;">Victory Educational Academy</h2>`)
-                    printWindow.document.write(`<p><strong>Receipt Number:</strong> ${selectedReceipt.receiptNumber}</p>`)
+                    const logoMarkup = resolvedLogo
+                      ? `<div style="text-align:center;margin-bottom:12px;"><img src="${resolvedLogo}" alt="${resolvedSchoolName} logo" style="height:64px;object-fit:contain;" /></div>`
+                      : `<h2 style="color:#2d682d;text-align:center;margin-bottom:4px;">${resolvedSchoolName}</h2>`
+                    const headerMarkup = `
+                      <div style="text-align:center;">
+                        ${logoMarkup}
+                        <p style="margin:0;font-weight:700;color:#2d682d;text-transform:uppercase;">${resolvedSchoolName}</p>
+                        <p style="margin:0;color:#555;font-size:12px;">${resolvedAddress}</p>
+                        <p style="margin-top:8px;font-size:13px;font-weight:600;color:#444;">Official Payment Receipt</p>
+                      </div>
+                    `
+                    const signatureMarkup = resolvedSignature
+                      ? `<div style="margin-top:32px;text-align:right;">
+                          <img src="${resolvedSignature}" alt="${resolvedHeadmasterName} signature" style="height:48px;width:160px;object-fit:contain;margin-bottom:4px;" />
+                          <div style="font-size:11px;font-weight:bold;color:#2d682d;text-transform:uppercase;">${resolvedHeadmasterName}</div>
+                          <div style="font-size:10px;color:#777;">Headmaster</div>
+                        </div>`
+                      : `<div style="margin-top:32px;text-align:right;">
+                          <div style="height:48px;width:160px;border-bottom:1px solid #2d682d66;margin-left:auto;"></div>
+                          <div style="font-size:11px;font-weight:bold;color:#2d682d;text-transform:uppercase;margin-top:4px;">${resolvedHeadmasterName}</div>
+                          <div style="font-size:10px;color:#777;">Headmaster</div>
+                        </div>`
+
+                    printWindow.document.write("<html><head><title>Receipt</title></head><body style=\"font-family:Arial,sans-serif;padding:24px;color:#222;\">")
+                    printWindow.document.write(headerMarkup)
+                    printWindow.document.write(`<p style="margin-top:16px;"><strong>Receipt Number:</strong> ${selectedReceipt.receiptNumber}</p>`)
                     printWindow.document.write(`<p><strong>Student:</strong> ${selectedReceipt.studentName}</p>`)
                     printWindow.document.write(`<p><strong>Amount:</strong> ${formatCurrency(selectedReceipt.amount)}</p>`)
                     printWindow.document.write(`<p><strong>Reference:</strong> ${selectedReceipt.reference ?? "--"}</p>`)
                     printWindow.document.write(`<p><strong>Date:</strong> ${selectedReceipt.dateIssued}</p>`)
-                    printWindow.document.write(`<p><strong>Issued By:</strong> ${selectedReceipt.issuedBy ?? accountant.name}</p>`)
+                    printWindow.document.write(`<p><strong>Accountant:</strong> ${selectedReceipt.issuedBy ?? accountant.name}</p>`)
+                    printWindow.document.write(signatureMarkup)
                     printWindow.document.write("</body></html>")
                     printWindow.document.close()
                     printWindow.focus()
