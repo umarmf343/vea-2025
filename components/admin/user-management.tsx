@@ -53,13 +53,13 @@ interface User {
 }
 
 const ROLE_OPTIONS: { value: UserRole; label: string; api: string }[] = [
-  { value: "super-admin", label: "Super Admin", api: "Super Admin" },
-  { value: "admin", label: "Admin", api: "Admin" },
-  { value: "teacher", label: "Teacher", api: "Teacher" },
-  { value: "student", label: "Student", api: "Student" },
-  { value: "parent", label: "Parent", api: "Parent" },
-  { value: "librarian", label: "Librarian", api: "Librarian" },
-  { value: "accountant", label: "Accountant", api: "Accountant" },
+  { value: "super-admin", label: "Super Admin", api: "super_admin" },
+  { value: "admin", label: "Admin", api: "admin" },
+  { value: "teacher", label: "Teacher", api: "teacher" },
+  { value: "student", label: "Student", api: "student" },
+  { value: "parent", label: "Parent", api: "parent" },
+  { value: "librarian", label: "Librarian", api: "librarian" },
+  { value: "accountant", label: "Accountant", api: "accountant" },
 ]
 
 const STATUS_BADGE: Record<UserStatus, string> = {
@@ -79,7 +79,7 @@ const ROLE_BADGE: Record<UserRole, string> = {
 }
 
 function normalizeRole(role: string): UserRole {
-  const normalized = role.toLowerCase().replace(" ", "-")
+  const normalized = role.toLowerCase().replace(/[_\s]+/g, "-")
   if (
     normalized === "super-admin" ||
     normalized === "admin" ||

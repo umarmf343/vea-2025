@@ -1,6 +1,11 @@
 import crypto from "crypto"
 import bcrypt from "bcryptjs"
-import mysql, { type Pool, type PoolConnection } from "mysql2/promise"
+import mysql, {
+  type Pool,
+  type PoolConnection,
+  type ResultSetHeader,
+  type RowDataPacket,
+} from "mysql2/promise"
 import { safeStorage } from "./safe-storage"
 
 interface CollectionRecord {
@@ -388,7 +393,7 @@ function createDefaultUsers(): StoredUser[] {
       id: "user_admin",
       name: "Admin User",
       email: "admin@vea.edu.ng",
-      role: "Admin",
+      role: "admin",
       passwordHash: defaultPasswordHash,
       isActive: true,
       status: "active",
@@ -674,7 +679,387 @@ function resolveUserState(options: {
 }
 
 // User helpers
+function isDatabaseConfigured(): boolean {
+  return isServer() && Boolean(process.env.DATABASE_URL)
+}
+
+function normalizeRoleForStorage(role: string): string {
+  const normalized = role.trim().toLowerCase().replace(/[\s-]+/g, "_")
+
+  switch (normalized) {
+    case "super_admin":
+      return "super_admin"
+    case "admin":
+      return "admin"
+    case "teacher":
+      return "teacher"
+    case "student":
+      return "student"
+    case "parent":
+      return "parent"
+    case "librarian":
+      return "librarian"
+    case "accountant":
+      return "accountant"
+    default:
+      return "teacher"
+  }
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (!value && value !== 0) {
+    return []
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry))
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed.map((entry: unknown) => String(entry)) : []
+    } catch (error) {
+      console.error("Failed to parse JSON array column:", error)
+      return []
+    }
+  }
+
+  return []
+}
+
+function parseJsonObject(value: unknown): Record<string, any> | null {
+  if (!value) {
+    return null
+  }
+
+  if (typeof value === "object") {
+    return value as Record<string, any>
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value)
+      return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, any>) : null
+    } catch (error) {
+      console.error("Failed to parse JSON object column:", error)
+      return null
+    }
+  }
+
+  return null
+}
+
+type DbUserRow = RowDataPacket & {
+  id: number
+  name: string
+  email: string
+  role: string
+  password_hash: string
+  status?: string | null
+  is_active?: number | null
+  class_id?: string | null
+  student_ids?: any
+  subjects?: any
+  metadata?: any
+  profile_image?: string | null
+  last_login?: string | Date | null
+  created_at: string | Date
+  updated_at: string | Date
+}
+
+const DB_USER_COLUMNS = [
+  "id",
+  "name",
+  "email",
+  "role",
+  "password_hash",
+  "status",
+  "is_active",
+  "class_id",
+  "student_ids",
+  "subjects",
+  "metadata",
+  "profile_image",
+  "last_login",
+  "created_at",
+  "updated_at",
+].join(", ")
+
+function mapDatabaseUser(row: DbUserRow): StoredUser {
+  const createdAt = typeof row.created_at === "string" ? row.created_at : row.created_at.toISOString()
+  const updatedAt = typeof row.updated_at === "string" ? row.updated_at : row.updated_at.toISOString()
+  const lastLogin =
+    row.last_login === null || row.last_login === undefined
+      ? null
+      : typeof row.last_login === "string"
+        ? new Date(row.last_login).toISOString()
+        : row.last_login.toISOString()
+
+  const normalizedStatus = normalizeUserStatusValue(row.status ?? undefined, "active")
+  const isActive = row.is_active === null || row.is_active === undefined ? normalizedStatus === "active" : Boolean(row.is_active)
+
+  return {
+    id: String(row.id),
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    passwordHash: row.password_hash,
+    status: normalizedStatus,
+    isActive,
+    classId: row.class_id ?? null,
+    studentIds: parseStringArray(row.student_ids),
+    subjects: parseStringArray(row.subjects),
+    metadata: parseJsonObject(row.metadata) ?? null,
+    profileImage: row.profile_image ?? null,
+    lastLogin,
+    createdAt: new Date(createdAt).toISOString(),
+    updatedAt: new Date(updatedAt).toISOString(),
+  }
+}
+
+async function fetchUsersFromDatabase<T extends StoredUser | null>(
+  query: string,
+  params: Array<string | number>,
+  expectSingle: true,
+): Promise<T>
+async function fetchUsersFromDatabase<T extends StoredUser[]>(
+  query: string,
+  params: Array<string | number>,
+  expectSingle?: false,
+): Promise<T>
+async function fetchUsersFromDatabase(
+  query: string,
+  params: Array<string | number>,
+  expectSingle = false,
+): Promise<StoredUser[] | StoredUser | null> {
+  const pool = getPool()
+  const [rows] = await pool.query<DbUserRow[]>(query, params)
+
+  if (expectSingle) {
+    if (!rows || rows.length === 0) {
+      return null
+    }
+    return mapDatabaseUser(rows[0])
+  }
+
+  return rows.map(mapDatabaseUser)
+}
+
+async function getUserByEmailFromDatabase(email: string): Promise<StoredUser | null> {
+  return (await fetchUsersFromDatabase(
+    `SELECT ${DB_USER_COLUMNS} FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1`,
+    [email.trim().toLowerCase()],
+    true,
+  )) as StoredUser | null
+}
+
+async function getUserByIdFromDatabase(id: string): Promise<StoredUser | null> {
+  const numericId = Number(id)
+  if (Number.isNaN(numericId)) {
+    return null
+  }
+
+  return (await fetchUsersFromDatabase(
+    `SELECT ${DB_USER_COLUMNS} FROM users WHERE id = ? LIMIT 1`,
+    [numericId],
+    true,
+  )) as StoredUser | null
+}
+
+async function getUsersByRoleFromDatabase(role: string): Promise<StoredUser[]> {
+  const normalizedRole = normalizeRoleForStorage(role)
+  return (await fetchUsersFromDatabase(
+    `SELECT ${DB_USER_COLUMNS} FROM users WHERE role = ? ORDER BY created_at DESC`,
+    [normalizedRole],
+  )) as StoredUser[]
+}
+
+async function getAllUsersFromDatabase(): Promise<StoredUser[]> {
+  return (await fetchUsersFromDatabase(`SELECT ${DB_USER_COLUMNS} FROM users ORDER BY created_at DESC`, [])) as StoredUser[]
+}
+
+function formatJsonColumn(value: string[] | undefined): string | null {
+  if (!value) {
+    return null
+  }
+
+  return JSON.stringify(value.map((entry) => String(entry)))
+}
+
+function formatMetadataColumn(value: Record<string, any> | null | undefined): string | null {
+  if (!value) {
+    return null
+  }
+
+  try {
+    return JSON.stringify(value)
+  } catch (error) {
+    console.error("Failed to stringify metadata column:", error)
+    return null
+  }
+}
+
+function mapMysqlError(error: unknown): never {
+  if (error && typeof error === "object" && "code" in error) {
+    const code = String((error as { code?: unknown }).code)
+    if (code === "ER_DUP_ENTRY") {
+      throw new Error("User with this email already exists")
+    }
+  }
+
+  throw error instanceof Error ? error : new Error("Database operation failed")
+}
+
+async function createUserInDatabase(payload: CreateUserPayload): Promise<StoredUser> {
+  const normalizedEmail = payload.email.trim().toLowerCase()
+  const { status, isActive } = resolveUserState({
+    statusInput: payload.status,
+    isActiveInput: payload.isActive,
+    currentStatus: "active",
+  })
+
+  try {
+    const [result] = await getPool().execute<ResultSetHeader>(
+      `INSERT INTO users (name, email, role, password_hash, status, is_active, class_id, student_ids, subjects, metadata, profile_image, last_login)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+      [
+        payload.name,
+        normalizedEmail,
+        normalizeRoleForStorage(payload.role),
+        payload.passwordHash,
+        status,
+        isActive ? 1 : 0,
+        payload.classId ?? null,
+        formatJsonColumn(payload.studentIds ?? (payload.studentId ? [String(payload.studentId)] : undefined)),
+        formatJsonColumn(payload.subjects),
+        formatMetadataColumn(payload.metadata ?? null),
+        payload.profileImage ?? null,
+        payload.lastLogin ?? null,
+      ],
+    )
+
+    const insertedId = (result as ResultSetHeader).insertId
+    const created = await getUserByIdFromDatabase(String(insertedId))
+    if (!created) {
+      throw new Error("Unable to load created user")
+    }
+
+    return created
+  } catch (error) {
+    throw mapMysqlError(error)
+  }
+}
+
+async function updateUserInDatabase(id: string, updates: UpdateUserPayload): Promise<StoredUser | null> {
+  const existing = await getUserByIdFromDatabase(id)
+  if (!existing) {
+    return null
+  }
+
+  const fields: string[] = []
+  const values: Array<string | number | null> = []
+
+  if (updates.name !== undefined) {
+    fields.push("name = ?")
+    values.push(String(updates.name))
+  }
+
+  if (updates.email !== undefined) {
+    fields.push("email = ?")
+    values.push(String(updates.email).trim().toLowerCase())
+  }
+
+  if (updates.role !== undefined) {
+    fields.push("role = ?")
+    values.push(normalizeRoleForStorage(String(updates.role)))
+  }
+
+  if (updates.passwordHash !== undefined) {
+    fields.push("password_hash = ?")
+    values.push(String(updates.passwordHash))
+  }
+
+  if (updates.classId !== undefined) {
+    fields.push("class_id = ?")
+    values.push(updates.classId ? String(updates.classId) : null)
+  }
+
+  if (updates.studentIds !== undefined) {
+    fields.push("student_ids = ?")
+    values.push(formatJsonColumn(updates.studentIds))
+  } else if (updates.studentId !== undefined) {
+    fields.push("student_ids = ?")
+    values.push(updates.studentId ? JSON.stringify([String(updates.studentId)]) : null)
+  }
+
+  if (updates.subjects !== undefined) {
+    fields.push("subjects = ?")
+    values.push(formatJsonColumn(updates.subjects))
+  }
+
+  if (updates.metadata !== undefined) {
+    fields.push("metadata = ?")
+    values.push(formatMetadataColumn(updates.metadata))
+  }
+
+  if (updates.profileImage !== undefined) {
+    fields.push("profile_image = ?")
+    values.push(updates.profileImage ?? null)
+  }
+
+  if (updates.lastLogin !== undefined) {
+    fields.push("last_login = ?")
+    values.push(updates.lastLogin ?? null)
+  }
+
+  if (updates.status !== undefined || updates.isActive !== undefined) {
+    const resolvedState = resolveUserState({
+      statusInput: updates.status,
+      isActiveInput: updates.isActive,
+      currentStatus: existing.status,
+    })
+    fields.push("status = ?")
+    values.push(resolvedState.status)
+    fields.push("is_active = ?")
+    values.push(resolvedState.isActive ? 1 : 0)
+  }
+
+  if (fields.length === 0) {
+    return existing
+  }
+
+  fields.push("updated_at = CURRENT_TIMESTAMP")
+
+  try {
+    const numericId = Number(id)
+    if (Number.isNaN(numericId)) {
+      throw new Error("Invalid user identifier")
+    }
+
+    await getPool().execute(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`, [...values, numericId])
+  } catch (error) {
+    throw mapMysqlError(error)
+  }
+
+  return await getUserByIdFromDatabase(id)
+}
+
+async function deleteUserFromDatabase(id: string): Promise<boolean> {
+  const numericId = Number(id)
+  if (Number.isNaN(numericId)) {
+    return false
+  }
+
+  const [result] = await getPool().execute<ResultSetHeader>("DELETE FROM users WHERE id = ?", [numericId])
+  return (result as ResultSetHeader).affectedRows > 0
+}
+
 export async function getUserByEmail(email: string): Promise<StoredUser | null> {
+  if (isDatabaseConfigured()) {
+    return await getUserByEmailFromDatabase(email)
+  }
+
   const normalized = email.trim().toLowerCase()
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
   const match = users.find((user) => user.email.toLowerCase() === normalized)
@@ -682,17 +1067,32 @@ export async function getUserByEmail(email: string): Promise<StoredUser | null> 
 }
 
 export async function getUserByIdFromDb(id: string): Promise<StoredUser | null> {
+  if (isDatabaseConfigured()) {
+    const record = await getUserByIdFromDatabase(id)
+    if (record) {
+      return record
+    }
+  }
+
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
   const match = users.find((user) => user.id === id)
   return match ? deepClone(match) : null
 }
 
 export async function getAllUsersFromDb(): Promise<StoredUser[]> {
+  if (isDatabaseConfigured()) {
+    return await getAllUsersFromDatabase()
+  }
+
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
   return deepClone(users)
 }
 
 export async function getUsersByRoleFromDb(role: string): Promise<StoredUser[]> {
+  if (isDatabaseConfigured()) {
+    return await getUsersByRoleFromDatabase(role)
+  }
+
   const normalizedRole = role.trim().toLowerCase()
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
   const filtered = users.filter((user) => user.role.trim().toLowerCase() === normalizedRole)
@@ -700,6 +1100,10 @@ export async function getUsersByRoleFromDb(role: string): Promise<StoredUser[]> 
 }
 
 export async function createUserRecord(payload: CreateUserPayload): Promise<StoredUser> {
+  if (isDatabaseConfigured()) {
+    return await createUserInDatabase(payload)
+  }
+
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
   const normalizedEmail = payload.email.trim().toLowerCase()
 
@@ -738,6 +1142,10 @@ export async function createUserRecord(payload: CreateUserPayload): Promise<Stor
 }
 
 export async function updateUserRecord(id: string, updates: UpdateUserPayload): Promise<StoredUser | null> {
+  if (isDatabaseConfigured()) {
+    return await updateUserInDatabase(id, updates)
+  }
+
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
   const index = users.findIndex((user) => user.id === id)
 
@@ -796,6 +1204,10 @@ export async function updateUserRecord(id: string, updates: UpdateUserPayload): 
 }
 
 export async function deleteUserRecord(id: string): Promise<boolean> {
+  if (isDatabaseConfigured()) {
+    return await deleteUserFromDatabase(id)
+  }
+
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
   const index = users.findIndex((user) => user.id === id)
 

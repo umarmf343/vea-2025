@@ -17,9 +17,14 @@ CREATE TABLE IF NOT EXISTS users (
     'librarian',
     'accountant'
   ) NOT NULL DEFAULT 'student',
-  class VARCHAR(255) NULL,
+  status ENUM('active', 'inactive', 'suspended') NOT NULL DEFAULT 'active',
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  class_id VARCHAR(255) NULL,
   subjects JSON NULL,
   student_ids JSON NULL,
+  metadata JSON NULL,
+  profile_image TEXT NULL,
+  last_login DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
