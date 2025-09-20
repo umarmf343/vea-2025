@@ -1454,6 +1454,29 @@ export async function recordPaymentInitialization(
   return deepClone(updated)
 }
 
+export async function findPaymentByReference(reference: string): Promise<PaymentInitializationRecord | null> {
+  if (!reference || reference.trim().length === 0) {
+    return null
+  }
+
+  const payments = ensureCollection<PaymentInitializationRecord>(STORAGE_KEYS.PAYMENTS, defaultEmptyCollection)
+  const normalized = reference.trim().toLowerCase()
+
+  const match = payments.find((payment) => {
+    if (payment.reference && payment.reference.trim().toLowerCase() === normalized) {
+      return true
+    }
+
+    if (payment.paystackReference && payment.paystackReference.trim().toLowerCase() === normalized) {
+      return true
+    }
+
+    return false
+  })
+
+  return match ? deepClone(match) : null
+}
+
 export async function listPaymentInitializations(): Promise<PaymentInitializationRecord[]> {
   const payments = ensureCollection<PaymentInitializationRecord>(STORAGE_KEYS.PAYMENTS, defaultEmptyCollection)
   return deepClone(payments)

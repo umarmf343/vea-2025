@@ -5,6 +5,25 @@ import { sanitizeInput } from "@/lib/security"
 
 export const runtime = "nodejs"
 
+function mergeAdditionalMetadata(
+  target: Record<string, unknown>,
+  incoming: unknown,
+): Record<string, unknown> {
+  if (!incoming || typeof incoming !== "object") {
+    return target
+  }
+
+  for (const [key, value] of Object.entries(incoming as Record<string, unknown>)) {
+    if (value === undefined || value === null) {
+      continue
+    }
+
+    target[key] = typeof value === "string" ? sanitizeInput(value) : value
+  }
+
+  return target
+}
+
 export async function GET() {
   try {
     const payments = await listPaymentInitializations()
@@ -56,9 +75,7 @@ export async function PUT(request: NextRequest) {
       metadata.method = sanitizeInput(body.method)
     }
 
-    if (body.metadata && typeof body.metadata === "object") {
-      Object.assign(metadata, body.metadata)
-    }
+    mergeAdditionalMetadata(metadata, body.metadata)
 
     const updated = await updatePaymentRecord(body.id, {
       status: body.status ? normalizePaymentStatus(body.status) : undefined,

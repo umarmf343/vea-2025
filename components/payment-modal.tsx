@@ -15,10 +15,18 @@ interface PaymentModalProps {
   onClose: () => void
   onPaymentSuccess: () => void
   studentName: string
+  studentId: string
   amount: number
 }
 
-export function PaymentModal({ isOpen, onClose, onPaymentSuccess, studentName, amount }: PaymentModalProps) {
+export function PaymentModal({
+  isOpen,
+  onClose,
+  onPaymentSuccess,
+  studentName,
+  studentId,
+  amount,
+}: PaymentModalProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [paymentForm, setPaymentForm] = useState({
     email: "",
@@ -40,9 +48,14 @@ export function PaymentModal({ isOpen, onClose, onPaymentSuccess, studentName, a
         },
         body: JSON.stringify({
           email: paymentForm.email,
-          amount: amount * 100, // Convert to kobo
+          amount: amount * 100, // Convert to kobo for Paystack
+          studentId,
+          paymentType: "school_fees",
           metadata: {
             student_name: studentName,
+            studentId,
+            student_id: studentId,
+            payment_type: "school_fees",
             term: paymentForm.term,
             session: paymentForm.session,
             phone: paymentForm.phone,
