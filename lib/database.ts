@@ -113,6 +113,51 @@ export interface PaymentInitializationRecord extends CollectionRecord {
   metadata?: Record<string, any>
 }
 
+export type LibraryRequestStatus = "pending" | "approved" | "rejected"
+
+export interface LibraryBookRecord extends CollectionRecord {
+  title: string
+  author: string
+  isbn: string
+  category: string
+  copies: number
+  available: number
+  addedBy?: string | null
+  addedDate?: string | null
+  updatedBy?: string | null
+}
+
+export type LibraryBorrowStatus = "active" | "returned" | "overdue"
+
+export interface LibraryBorrowRecord extends CollectionRecord {
+  bookId: string
+  bookTitle: string
+  studentId: string
+  studentName: string
+  studentClass: string
+  borrowDate: string
+  dueDate: string
+  status: LibraryBorrowStatus
+  issuedBy?: string | null
+  returnedDate?: string | null
+  returnedTo?: string | null
+}
+
+export interface LibraryRequestRecord extends CollectionRecord {
+  bookId: string | null
+  bookTitle: string
+  studentId: string
+  studentName: string
+  studentClass: string
+  requestDate: string
+  status: LibraryRequestStatus
+  approvedBy?: string | null
+  approvedDate?: string | null
+  rejectedBy?: string | null
+  rejectedDate?: string | null
+  notes?: string | null
+}
+
 export interface ReportCardSubjectRecord {
   name: string
   ca1: number
@@ -249,6 +294,30 @@ export interface PaymentInitializationPayload {
   metadata?: Record<string, any>
 }
 
+export interface CreateLibraryBookPayload
+  extends Omit<LibraryBookRecord, "id" | "createdAt" | "updatedAt" | "available"> {
+  available?: number
+}
+
+export interface UpdateLibraryBookPayload
+  extends Partial<Omit<LibraryBookRecord, "id" | "createdAt" | "updatedAt">> {}
+
+export interface CreateLibraryBorrowPayload
+  extends Omit<LibraryBorrowRecord, "id" | "createdAt" | "updatedAt" | "status"> {
+  status?: LibraryBorrowStatus
+}
+
+export interface UpdateLibraryBorrowPayload
+  extends Partial<Omit<LibraryBorrowRecord, "id" | "createdAt" | "updatedAt">> {}
+
+export interface CreateLibraryRequestPayload
+  extends Omit<LibraryRequestRecord, "id" | "createdAt" | "updatedAt" | "status"> {
+  status?: LibraryRequestStatus
+}
+
+export interface UpdateLibraryRequestPayload
+  extends Partial<Omit<LibraryRequestRecord, "id" | "createdAt" | "updatedAt">> {}
+
 const STORAGE_KEYS = {
   USERS: "vea_users",
   CLASSES: "vea_classes",
@@ -257,6 +326,9 @@ const STORAGE_KEYS = {
   GRADES: "vea_grades",
   MARKS: "vea_marks",
   PAYMENTS: "vea_payment_initializations",
+  LIBRARY_BOOKS: "vea_library_books",
+  LIBRARY_BORROWED: "vea_library_borrowed",
+  LIBRARY_REQUESTS: "vea_library_requests",
   REPORT_CARDS: "reportCards",
   REPORT_CARD_CONFIG: "reportCardConfig",
   BRANDING: "schoolBranding",
@@ -471,6 +543,163 @@ function createDefaultStudents(): StudentRecord[] {
         { subject: "Physics", ca1: 14, ca2: 16, exam: 50, total: 80, grade: "B" },
       ],
       photoUrl: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  ]
+}
+
+function createDefaultLibraryBooks(): LibraryBookRecord[] {
+  const timestamp = new Date().toISOString()
+
+  return [
+    {
+      id: "library_book_mathematics",
+      title: "Mathematics Textbook",
+      author: "John Smith",
+      isbn: "978-123456789",
+      category: "Mathematics",
+      copies: 50,
+      available: 45,
+      addedBy: null,
+      addedDate: timestamp,
+      updatedBy: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: "library_book_english",
+      title: "English Grammar",
+      author: "Jane Doe",
+      isbn: "978-987654321",
+      category: "English",
+      copies: 30,
+      available: 28,
+      addedBy: null,
+      addedDate: timestamp,
+      updatedBy: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: "library_book_physics",
+      title: "Physics Fundamentals",
+      author: "Dr. Brown",
+      isbn: "978-456789123",
+      category: "Physics",
+      copies: 25,
+      available: 20,
+      addedBy: null,
+      addedDate: timestamp,
+      updatedBy: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: "library_book_chemistry",
+      title: "Chemistry Basics",
+      author: "Prof. Amina Bello",
+      isbn: "978-112233445",
+      category: "Chemistry",
+      copies: 20,
+      available: 18,
+      addedBy: null,
+      addedDate: timestamp,
+      updatedBy: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: "library_book_biology",
+      title: "Biology Guide",
+      author: "Dr. Samuel Okeke",
+      isbn: "978-556677889",
+      category: "Biology",
+      copies: 18,
+      available: 17,
+      addedBy: null,
+      addedDate: timestamp,
+      updatedBy: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  ]
+}
+
+function createDefaultBorrowRecords(): LibraryBorrowRecord[] {
+  const timestamp = new Date().toISOString()
+
+  return [
+    {
+      id: "library_borrow_mathematics_john",
+      bookId: "library_book_mathematics",
+      bookTitle: "Mathematics Textbook",
+      studentId: "student_john_doe",
+      studentName: "John Doe",
+      studentClass: "JSS 1A",
+      borrowDate: "2025-01-01",
+      dueDate: "2025-01-15",
+      status: "active",
+      issuedBy: null,
+      returnedDate: null,
+      returnedTo: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: "library_borrow_english_jane",
+      bookId: "library_book_english",
+      bookTitle: "English Grammar",
+      studentId: "student_alice_smith",
+      studentName: "Jane Smith",
+      studentClass: "JSS 2B",
+      borrowDate: "2024-12-20",
+      dueDate: "2025-01-03",
+      status: "active",
+      issuedBy: null,
+      returnedDate: null,
+      returnedTo: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  ]
+}
+
+function createDefaultLibraryRequests(): LibraryRequestRecord[] {
+  const timestamp = new Date().toISOString()
+
+  return [
+    {
+      id: "library_request_chemistry_mike",
+      bookId: "library_book_chemistry",
+      bookTitle: "Chemistry Basics",
+      studentId: "student_mike_johnson",
+      studentName: "Mike Johnson",
+      studentClass: "JSS 3A",
+      requestDate: "2025-01-08",
+      status: "pending",
+      approvedBy: null,
+      approvedDate: null,
+      rejectedBy: null,
+      rejectedDate: null,
+      notes: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: "library_request_biology_sarah",
+      bookId: "library_book_biology",
+      bookTitle: "Biology Guide",
+      studentId: "student_sarah_wilson",
+      studentName: "Sarah Wilson",
+      studentClass: "SS 1B",
+      requestDate: "2025-01-07",
+      status: "approved",
+      approvedBy: null,
+      approvedDate: "2025-01-07",
+      rejectedBy: null,
+      rejectedDate: null,
+      notes: null,
       createdAt: timestamp,
       updatedAt: timestamp,
     },
@@ -1431,6 +1660,466 @@ export async function updatePaymentRecord(
   payments[index] = existing
   persistCollection(STORAGE_KEYS.PAYMENTS, payments)
   return deepClone(existing)
+}
+
+export interface LibraryDashboardSnapshot {
+  books: LibraryBookRecord[]
+  borrowedBooks: LibraryBorrowRecord[]
+  requests: LibraryRequestRecord[]
+  stats: {
+    totalBooks: number
+    totalCopies: number
+    availableCopies: number
+    borrowedCount: number
+    pendingRequests: number
+    overdueCount: number
+  }
+}
+
+export interface ApproveLibraryRequestOptions {
+  librarianId: string
+  dueDate?: string
+  notes?: string | null
+}
+
+export interface ApproveLibraryRequestResult {
+  request: LibraryRequestRecord
+  borrowRecord: LibraryBorrowRecord | null
+}
+
+export async function listLibraryBooks(): Promise<LibraryBookRecord[]> {
+  const books = ensureCollection<LibraryBookRecord>(STORAGE_KEYS.LIBRARY_BOOKS, createDefaultLibraryBooks)
+  return deepClone(books)
+}
+
+export async function createLibraryBookRecord(payload: CreateLibraryBookPayload): Promise<LibraryBookRecord> {
+  const books = ensureCollection<LibraryBookRecord>(STORAGE_KEYS.LIBRARY_BOOKS, createDefaultLibraryBooks)
+
+  const normalizedIsbn = payload.isbn.trim().toLowerCase()
+  if (books.some((book) => book.isbn.trim().toLowerCase() === normalizedIsbn)) {
+    throw new Error("Book with this ISBN already exists")
+  }
+
+  const timestamp = new Date().toISOString()
+  const copies = Number.isFinite(Number(payload.copies)) ? Math.max(0, Number(payload.copies)) : 0
+  let available =
+    payload.available !== undefined && Number.isFinite(Number(payload.available))
+      ? Math.max(0, Number(payload.available))
+      : copies
+
+  if (available > copies) {
+    available = copies
+  }
+
+  const record: LibraryBookRecord = {
+    id: generateId("library_book"),
+    title: payload.title,
+    author: payload.author,
+    isbn: payload.isbn,
+    category: payload.category,
+    copies,
+    available,
+    addedBy: payload.addedBy ?? null,
+    addedDate: payload.addedDate ?? timestamp,
+    updatedBy: payload.updatedBy ?? payload.addedBy ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  books.push(record)
+  persistCollection(STORAGE_KEYS.LIBRARY_BOOKS, books)
+  return deepClone(record)
+}
+
+export async function updateLibraryBookRecord(
+  id: string,
+  updates: UpdateLibraryBookPayload,
+): Promise<LibraryBookRecord | null> {
+  const books = ensureCollection<LibraryBookRecord>(STORAGE_KEYS.LIBRARY_BOOKS, createDefaultLibraryBooks)
+  const index = books.findIndex((book) => book.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const existing = books[index]
+
+  if (updates.isbn) {
+    const normalizedIsbn = updates.isbn.trim().toLowerCase()
+    if (books.some((book, idx) => idx !== index && book.isbn.trim().toLowerCase() === normalizedIsbn)) {
+      throw new Error("Book with this ISBN already exists")
+    }
+    existing.isbn = updates.isbn
+  }
+
+  if (updates.title !== undefined) {
+    existing.title = updates.title
+  }
+
+  if (updates.author !== undefined) {
+    existing.author = updates.author
+  }
+
+  if (updates.category !== undefined) {
+    existing.category = updates.category
+  }
+
+  if (updates.copies !== undefined) {
+    const copies = Math.max(0, Number(updates.copies))
+    existing.copies = copies
+    if (existing.available > copies) {
+      existing.available = copies
+    }
+  }
+
+  if (updates.available !== undefined) {
+    const available = Math.max(0, Number(updates.available))
+    existing.available = Math.min(available, existing.copies)
+  }
+
+  if (updates.addedBy !== undefined) {
+    existing.addedBy = updates.addedBy
+  }
+
+  if (updates.addedDate !== undefined) {
+    existing.addedDate = updates.addedDate
+  }
+
+  if (updates.updatedBy !== undefined) {
+    existing.updatedBy = updates.updatedBy
+  }
+
+  existing.updatedAt = new Date().toISOString()
+  books[index] = existing
+  persistCollection(STORAGE_KEYS.LIBRARY_BOOKS, books)
+  return deepClone(existing)
+}
+
+export async function deleteLibraryBookRecord(id: string): Promise<boolean> {
+  const books = ensureCollection<LibraryBookRecord>(STORAGE_KEYS.LIBRARY_BOOKS, createDefaultLibraryBooks)
+  const index = books.findIndex((book) => book.id === id)
+
+  if (index === -1) {
+    return false
+  }
+
+  books.splice(index, 1)
+  persistCollection(STORAGE_KEYS.LIBRARY_BOOKS, books)
+  return true
+}
+
+export async function listBorrowedLibraryBooks(): Promise<LibraryBorrowRecord[]> {
+  const borrowed = ensureCollection<LibraryBorrowRecord>(STORAGE_KEYS.LIBRARY_BORROWED, createDefaultBorrowRecords)
+  return deepClone(borrowed)
+}
+
+export async function createLibraryBorrowRecord(
+  payload: CreateLibraryBorrowPayload,
+): Promise<LibraryBorrowRecord> {
+  const borrowed = ensureCollection<LibraryBorrowRecord>(STORAGE_KEYS.LIBRARY_BORROWED, createDefaultBorrowRecords)
+  const books = ensureCollection<LibraryBookRecord>(STORAGE_KEYS.LIBRARY_BOOKS, createDefaultLibraryBooks)
+
+  const timestamp = new Date().toISOString()
+  const record: LibraryBorrowRecord = {
+    id: generateId("library_borrow"),
+    bookId: payload.bookId,
+    bookTitle: payload.bookTitle,
+    studentId: payload.studentId,
+    studentName: payload.studentName,
+    studentClass: payload.studentClass,
+    borrowDate: payload.borrowDate ?? timestamp,
+    dueDate:
+      payload.dueDate ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    status: payload.status ?? "active",
+    issuedBy: payload.issuedBy ?? null,
+    returnedDate: payload.returnedDate ?? null,
+    returnedTo: payload.returnedTo ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  const bookIndex = books.findIndex((book) => book.id === payload.bookId)
+  if (bookIndex !== -1) {
+    const book = books[bookIndex]
+    if (book.available <= 0) {
+      throw new Error("No available copies for this book")
+    }
+    book.available = Math.max(0, book.available - 1)
+    book.updatedAt = timestamp
+    book.updatedBy = payload.issuedBy ?? book.updatedBy ?? null
+    books[bookIndex] = book
+    persistCollection(STORAGE_KEYS.LIBRARY_BOOKS, books)
+  }
+
+  borrowed.push(record)
+  persistCollection(STORAGE_KEYS.LIBRARY_BORROWED, borrowed)
+  return deepClone(record)
+}
+
+export async function updateLibraryBorrowRecord(
+  id: string,
+  updates: UpdateLibraryBorrowPayload,
+): Promise<LibraryBorrowRecord | null> {
+  const borrowed = ensureCollection<LibraryBorrowRecord>(STORAGE_KEYS.LIBRARY_BORROWED, createDefaultBorrowRecords)
+  const index = borrowed.findIndex((record) => record.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const existing = borrowed[index]
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined) {
+      ;(existing as any)[key] = value
+    }
+  }
+
+  existing.updatedAt = new Date().toISOString()
+  borrowed[index] = existing
+  persistCollection(STORAGE_KEYS.LIBRARY_BORROWED, borrowed)
+  return deepClone(existing)
+}
+
+export async function markBorrowRecordAsReturned(
+  id: string,
+  librarianId?: string,
+): Promise<LibraryBorrowRecord | null> {
+  const borrowed = ensureCollection<LibraryBorrowRecord>(STORAGE_KEYS.LIBRARY_BORROWED, createDefaultBorrowRecords)
+  const index = borrowed.findIndex((record) => record.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const existing = borrowed[index]
+
+  if (existing.status === "returned") {
+    return deepClone(existing)
+  }
+
+  existing.status = "returned"
+  existing.returnedDate = new Date().toISOString()
+  existing.returnedTo = librarianId ?? existing.returnedTo ?? null
+  existing.updatedAt = new Date().toISOString()
+  borrowed[index] = existing
+  persistCollection(STORAGE_KEYS.LIBRARY_BORROWED, borrowed)
+
+  const books = ensureCollection<LibraryBookRecord>(STORAGE_KEYS.LIBRARY_BOOKS, createDefaultLibraryBooks)
+  const bookIndex = books.findIndex((book) => book.id === existing.bookId)
+  if (bookIndex !== -1) {
+    const book = books[bookIndex]
+    book.available = Math.min(book.copies, book.available + 1)
+    book.updatedAt = new Date().toISOString()
+    book.updatedBy = librarianId ?? book.updatedBy ?? null
+    books[bookIndex] = book
+    persistCollection(STORAGE_KEYS.LIBRARY_BOOKS, books)
+  }
+
+  return deepClone(existing)
+}
+
+export async function listLibraryRequests(): Promise<LibraryRequestRecord[]> {
+  const requests = ensureCollection<LibraryRequestRecord>(
+    STORAGE_KEYS.LIBRARY_REQUESTS,
+    createDefaultLibraryRequests,
+  )
+  return deepClone(requests)
+}
+
+export async function createLibraryRequestRecord(
+  payload: CreateLibraryRequestPayload,
+): Promise<LibraryRequestRecord> {
+  const requests = ensureCollection<LibraryRequestRecord>(
+    STORAGE_KEYS.LIBRARY_REQUESTS,
+    createDefaultLibraryRequests,
+  )
+
+  const timestamp = new Date().toISOString()
+  const record: LibraryRequestRecord = {
+    id: generateId("library_request"),
+    bookId: payload.bookId ?? null,
+    bookTitle: payload.bookTitle,
+    studentId: payload.studentId,
+    studentName: payload.studentName,
+    studentClass: payload.studentClass,
+    requestDate: payload.requestDate ?? timestamp,
+    status: payload.status ?? "pending",
+    approvedBy: payload.approvedBy ?? null,
+    approvedDate: payload.approvedDate ?? null,
+    rejectedBy: payload.rejectedBy ?? null,
+    rejectedDate: payload.rejectedDate ?? null,
+    notes: payload.notes ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  requests.push(record)
+  persistCollection(STORAGE_KEYS.LIBRARY_REQUESTS, requests)
+  return deepClone(record)
+}
+
+export async function updateLibraryRequestRecord(
+  id: string,
+  updates: UpdateLibraryRequestPayload,
+): Promise<LibraryRequestRecord | null> {
+  const requests = ensureCollection<LibraryRequestRecord>(
+    STORAGE_KEYS.LIBRARY_REQUESTS,
+    createDefaultLibraryRequests,
+  )
+  const index = requests.findIndex((record) => record.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const existing = requests[index]
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined) {
+      ;(existing as any)[key] = value
+    }
+  }
+
+  existing.updatedAt = new Date().toISOString()
+  requests[index] = existing
+  persistCollection(STORAGE_KEYS.LIBRARY_REQUESTS, requests)
+  return deepClone(existing)
+}
+
+function resolveLibraryBookForRequest(
+  requests: LibraryRequestRecord[],
+  request: LibraryRequestRecord,
+  books: LibraryBookRecord[],
+): LibraryBookRecord | null {
+  if (request.bookId) {
+    const byId = books.find((book) => book.id === request.bookId)
+    if (byId) {
+      return byId
+    }
+  }
+
+  const normalizedTitle = request.bookTitle.trim().toLowerCase()
+  return books.find((book) => book.title.trim().toLowerCase() === normalizedTitle) ?? null
+}
+
+export async function approveLibraryRequest(
+  id: string,
+  options: ApproveLibraryRequestOptions,
+): Promise<ApproveLibraryRequestResult | null> {
+  const requests = ensureCollection<LibraryRequestRecord>(
+    STORAGE_KEYS.LIBRARY_REQUESTS,
+    createDefaultLibraryRequests,
+  )
+  const requestIndex = requests.findIndex((record) => record.id === id)
+
+  if (requestIndex === -1) {
+    return null
+  }
+
+  const currentRequest = requests[requestIndex]
+  const timestamp = new Date().toISOString()
+
+  if (currentRequest.status === "approved") {
+    return { request: deepClone(currentRequest), borrowRecord: null }
+  }
+
+  const books = ensureCollection<LibraryBookRecord>(STORAGE_KEYS.LIBRARY_BOOKS, createDefaultLibraryBooks)
+  const resolvedBook = resolveLibraryBookForRequest(requests, currentRequest, books)
+
+  if (!resolvedBook) {
+    throw new Error("Requested book could not be found in inventory")
+  }
+
+  if (resolvedBook.available <= 0) {
+    throw new Error("No available copies of the requested book")
+  }
+
+  currentRequest.status = "approved"
+  currentRequest.approvedBy = options.librarianId
+  currentRequest.approvedDate = timestamp
+  currentRequest.rejectedBy = null
+  currentRequest.rejectedDate = null
+  currentRequest.notes = options.notes ?? currentRequest.notes ?? null
+  currentRequest.updatedAt = timestamp
+  requests[requestIndex] = currentRequest
+  persistCollection(STORAGE_KEYS.LIBRARY_REQUESTS, requests)
+
+  const borrowRecord = await createLibraryBorrowRecord({
+    bookId: resolvedBook.id,
+    bookTitle: resolvedBook.title,
+    studentId: currentRequest.studentId,
+    studentName: currentRequest.studentName,
+    studentClass: currentRequest.studentClass,
+    borrowDate: timestamp,
+    dueDate: options.dueDate ?? undefined,
+    status: "active",
+    issuedBy: options.librarianId,
+  })
+
+  return { request: deepClone(currentRequest), borrowRecord }
+}
+
+export async function rejectLibraryRequest(
+  id: string,
+  librarianId: string,
+  notes?: string | null,
+): Promise<LibraryRequestRecord | null> {
+  const requests = ensureCollection<LibraryRequestRecord>(
+    STORAGE_KEYS.LIBRARY_REQUESTS,
+    createDefaultLibraryRequests,
+  )
+  const index = requests.findIndex((record) => record.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const existing = requests[index]
+  const timestamp = new Date().toISOString()
+
+  existing.status = "rejected"
+  existing.rejectedBy = librarianId
+  existing.rejectedDate = timestamp
+  existing.notes = notes ?? existing.notes ?? null
+  existing.updatedAt = timestamp
+  requests[index] = existing
+  persistCollection(STORAGE_KEYS.LIBRARY_REQUESTS, requests)
+  return deepClone(existing)
+}
+
+export async function getLibraryDashboardSnapshot(): Promise<LibraryDashboardSnapshot> {
+  const [books, borrowedBooks, requests] = await Promise.all([
+    listLibraryBooks(),
+    listBorrowedLibraryBooks(),
+    listLibraryRequests(),
+  ])
+
+  const totalCopies = books.reduce((sum, book) => sum + Number(book.copies ?? 0), 0)
+  const availableCopies = books.reduce((sum, book) => sum + Number(book.available ?? 0), 0)
+  const borrowedCount = borrowedBooks.filter((record) => record.status === "active").length
+  const pendingRequests = requests.filter((record) => record.status === "pending").length
+  const overdueCount = borrowedBooks.filter((record) => {
+    if (record.status !== "active") {
+      return false
+    }
+    const dueDate = new Date(record.dueDate)
+    return !Number.isNaN(dueDate.getTime()) && dueDate < new Date()
+  }).length
+
+  return {
+    books,
+    borrowedBooks,
+    requests,
+    stats: {
+      totalBooks: books.length,
+      totalCopies,
+      availableCopies,
+      borrowedCount,
+      pendingRequests,
+      overdueCount,
+    },
+  }
 }
 
 // Transaction helper for real database operations

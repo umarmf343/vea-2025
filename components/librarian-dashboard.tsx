@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -16,191 +16,195 @@ interface LibrarianDashboardProps {
   }
 }
 
+interface LibraryBook {
+  id: string
+  title: string
+  author: string
+  isbn: string
+  category: string
+  copies: number
+  available: number
+  addedBy?: string | null
+  addedDate?: string | null
+}
+
+interface BorrowedBookRecord {
+  id: string
+  bookId: string
+  bookTitle: string
+  studentId: string
+  studentName: string
+  studentClass: string
+  borrowDate: string
+  dueDate: string
+  status: "active" | "returned" | "overdue"
+  issuedBy?: string | null
+  returnedDate?: string | null
+  returnedTo?: string | null
+}
+
+interface LibraryRequestRecord {
+  id: string
+  bookId: string | null
+  bookTitle: string
+  studentId: string
+  studentName: string
+  studentClass: string
+  requestDate: string
+  status: "pending" | "approved" | "rejected"
+  approvedBy?: string | null
+  approvedDate?: string | null
+  rejectedBy?: string | null
+  rejectedDate?: string | null
+  notes?: string | null
+}
+
 export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
   const [selectedTab, setSelectedTab] = useState("overview")
   const [searchTerm, setSearchTerm] = useState("")
-  const [books, setBooks] = useState<any[]>([])
-  const [borrowedBooks, setBorrowedBooks] = useState<any[]>([])
-  const [requests, setRequests] = useState<any[]>([])
+  const [books, setBooks] = useState<LibraryBook[]>([])
+  const [borrowedBooks, setBorrowedBooks] = useState<BorrowedBookRecord[]>([])
+  const [requests, setRequests] = useState<LibraryRequestRecord[]>([])
   const [loading, setLoading] = useState(true)
 
+  const loadLibraryData = useCallback(
+    async (showSpinner = true) => {
+      if (showSpinner) {
+        setLoading(true)
+      }
+
+      try {
+        const response = await fetch("/api/library/dashboard", { cache: "no-store" })
+
+        if (!response.ok) {
+          throw new Error(`Failed to load library data (${response.status})`)
+        }
+
+        const data = (await response.json()) as Partial<{
+          books: LibraryBook[]
+          borrowedBooks: BorrowedBookRecord[]
+          requests: LibraryRequestRecord[]
+        }>
+
+        setBooks(Array.isArray(data.books) ? data.books : [])
+        setBorrowedBooks(Array.isArray(data.borrowedBooks) ? data.borrowedBooks : [])
+        setRequests(Array.isArray(data.requests) ? data.requests : [])
+      } catch (error) {
+        console.error("Error loading library data:", error)
+        if (!showSpinner) {
+          setLoading(false)
+        }
+      } finally {
+        if (showSpinner) {
+          setLoading(false)
+        }
+      }
+    },
+    [],
+  )
+
   useEffect(() => {
-    loadLibraryData()
+    void loadLibraryData()
+  }, [loadLibraryData])
 
-    // const unsubscribeBooks = dbManager.subscribe("books", (data) => {
-    //   setBooks(data || [])
-    // })
-
-    // const unsubscribeBorrowed = dbManager.subscribe("borrowedBooks", (data) => {
-    //   setBorrowedBooks(data || [])
-    // })
-
-    // const unsubscribeRequests = dbManager.subscribe("bookRequests", (data) => {
-    //   setRequests(data || [])
-    // })
-
-    // return () => {
-    //   unsubscribeBooks()
-    //   unsubscribeBorrowed()
-    //   unsubscribeRequests()
-    // }
-  }, [])
-
-  const loadLibraryData = async () => {
+  const handleAddBook = async (bookData: {
+    title: string
+    author: string
+    isbn: string
+    category: string
+    copies: number
+    available?: number
+  }) => {
     try {
       setLoading(true)
-      // const booksData = await dbManager.getBooks()
-      // const borrowedData = await dbManager.getBorrowedBooks()
-      // const requestsData = await dbManager.getBookRequests()
+      const response = await fetch("/api/library/books", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...bookData,
+          copies: Number(bookData.copies),
+          available:
+            bookData.available !== undefined ? Number(bookData.available) : Number(bookData.copies),
+          addedBy: librarian.id,
+        }),
+      })
 
-      const mockBooks = [
-        {
-          id: "1",
-          title: "Mathematics Textbook",
-          author: "John Smith",
-          isbn: "978-123456789",
-          copies: 50,
-          available: 45,
-          category: "Mathematics",
-        },
-        {
-          id: "2",
-          title: "English Grammar",
-          author: "Jane Doe",
-          isbn: "978-987654321",
-          copies: 30,
-          available: 28,
-          category: "English",
-        },
-        {
-          id: "3",
-          title: "Physics Fundamentals",
-          author: "Dr. Brown",
-          isbn: "978-456789123",
-          copies: 25,
-          available: 20,
-          category: "Physics",
-        },
-      ]
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null
+        throw new Error(errorPayload?.error ?? "Failed to add book")
+      }
 
-      const mockBorrowed = [
-        {
-          id: "1",
-          bookTitle: "Mathematics Textbook",
-          studentName: "John Doe",
-          studentClass: "JSS 1A",
-          borrowDate: "2025-01-01",
-          dueDate: "2025-01-15",
-          status: "active",
-        },
-        {
-          id: "2",
-          bookTitle: "English Grammar",
-          studentName: "Jane Smith",
-          studentClass: "JSS 2B",
-          borrowDate: "2024-12-20",
-          dueDate: "2025-01-03",
-          status: "active",
-        },
-      ]
-
-      const mockRequests = [
-        {
-          id: "1",
-          bookTitle: "Chemistry Basics",
-          studentName: "Mike Johnson",
-          studentClass: "JSS 3A",
-          requestDate: "2025-01-08",
-          status: "pending",
-        },
-        {
-          id: "2",
-          bookTitle: "Biology Guide",
-          studentName: "Sarah Wilson",
-          studentClass: "SS 1B",
-          requestDate: "2025-01-07",
-          status: "approved",
-        },
-      ]
-
-      setBooks(mockBooks)
-      setBorrowedBooks(mockBorrowed)
-      setRequests(mockRequests)
+      await loadLibraryData(false)
     } catch (error) {
-      console.error("Error loading library data:", error)
+      console.error("Error adding book:", error)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleAddBook = async (bookData: any) => {
-    try {
-      const newBook = {
-        ...bookData,
-        id: Date.now().toString(),
-        addedBy: librarian.id,
-        addedDate: new Date().toISOString(),
-      }
-      setBooks((prev) => [...prev, newBook])
-      // await dbManager.addBook(newBook)
-    } catch (error) {
-      console.error("Error adding book:", error)
-    }
-  }
-
   const handleApproveRequest = async (requestId: string) => {
     try {
-      setRequests((prev) =>
-        prev.map((req) =>
-          req.id === requestId
-            ? { ...req, status: "approved", approvedBy: librarian.id, approvedDate: new Date().toISOString() }
-            : req,
-        ),
-      )
-      // await dbManager.updateBookRequest(requestId, {
-      //   status: "approved",
-      //   approvedBy: librarian.id,
-      //   approvedDate: new Date().toISOString(),
-      // })
+      setLoading(true)
+      const response = await fetch(`/api/library/requests/${requestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "approved", librarianId: librarian.id }),
+      })
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null
+        throw new Error(errorPayload?.error ?? "Failed to approve request")
+      }
+
+      await loadLibraryData(false)
     } catch (error) {
       console.error("Error approving request:", error)
+    } finally {
+      setLoading(false)
     }
   }
 
   const handleRejectRequest = async (requestId: string) => {
     try {
-      setRequests((prev) =>
-        prev.map((req) =>
-          req.id === requestId
-            ? { ...req, status: "rejected", rejectedBy: librarian.id, rejectedDate: new Date().toISOString() }
-            : req,
-        ),
-      )
-      // await dbManager.updateBookRequest(requestId, {
-      //   status: "rejected",
-      //   rejectedBy: librarian.id,
-      //   rejectedDate: new Date().toISOString(),
-      // })
+      setLoading(true)
+      const response = await fetch(`/api/library/requests/${requestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "rejected", librarianId: librarian.id }),
+      })
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null
+        throw new Error(errorPayload?.error ?? "Failed to reject request")
+      }
+
+      await loadLibraryData(false)
     } catch (error) {
       console.error("Error rejecting request:", error)
+    } finally {
+      setLoading(false)
     }
   }
 
   const handleReturnBook = async (borrowId: string) => {
     try {
-      setBorrowedBooks((prev) =>
-        prev.map((book) =>
-          book.id === borrowId
-            ? { ...book, status: "returned", returnedDate: new Date().toISOString(), returnedTo: librarian.id }
-            : book,
-        ),
-      )
-      // await dbManager.returnBook(borrowId, {
-      //   returnedDate: new Date().toISOString(),
-      //   returnedTo: librarian.id,
-      // })
+      setLoading(true)
+      const response = await fetch(`/api/library/borrowed/${borrowId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "return", librarianId: librarian.id }),
+      })
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null
+        throw new Error(errorPayload?.error ?? "Failed to update borrow record")
+      }
+
+      await loadLibraryData(false)
     } catch (error) {
       console.error("Error returning book:", error)
+    } finally {
+      setLoading(false)
     }
   }
 
