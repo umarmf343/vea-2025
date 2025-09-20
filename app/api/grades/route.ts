@@ -1,7 +1,14 @@
 export const runtime = "nodejs"
 
 import { type NextRequest, NextResponse } from "next/server"
-import { dbManager } from "@/lib/database-manager"
+import {
+  createGradeRecord,
+  getAllGradesFromDb,
+  getGradesForClassFromDb,
+  getGradesForStudentFromDb,
+  updateGradeRecord,
+} from "@/lib/database"
+import { sanitizeInput } from "@/lib/security"
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,19 +16,23 @@ export async function GET(request: NextRequest) {
     const studentId = searchParams.get("studentId")
     const classId = searchParams.get("classId")
 
-    let grades = []
-
     if (studentId) {
-      grades = await dbManager.getStudentGrades(studentId)
-    } else if (classId) {
-      grades = await dbManager.getClassGrades(classId)
-    } else {
-      grades = await dbManager.getAllGrades()
+      const grades = await getGradesForStudentFromDb(studentId)
+      return NextResponse.json({ grades })
     }
 
+    if (classId) {
+      const grades = await getGradesForClassFromDb(classId)
+      return NextResponse.json({ grades })
+    }
+
+    const grades = await getAllGradesFromDb()
     return NextResponse.json({ grades })
   } catch (error) {
     console.error("Failed to fetch grades:", error)
+    if (error instanceof Error && error.message.toLowerCase().includes("invalid")) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return NextResponse.json({ error: "Failed to fetch grades" }, { status: 500 })
   }
 }
@@ -29,39 +40,31 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { studentId, subject, firstCA, secondCA, assignment, exam, remarks, teacherId } = body
+    const { studentId, subject, firstCA, secondCA, assignment, exam, term, session, teacherRemarks, classId } = body
 
-    // Calculate totals and grade
-    const caTotal = (firstCA || 0) + (secondCA || 0) + (assignment || 0)
-    const total = caTotal + (exam || 0)
-
-    let grade = "F"
-    if (total >= 75) grade = "A"
-    else if (total >= 60) grade = "B"
-    else if (total >= 50) grade = "C"
-    else if (total >= 40) grade = "D"
-    else if (total >= 30) grade = "E"
-
-    const gradeData = {
-      studentId,
-      subject,
-      firstCA,
-      secondCA,
-      assignment,
-      caTotal,
-      exam,
-      total,
-      grade,
-      remarks,
-      teacherId,
-      updatedAt: new Date().toISOString(),
+    if (!studentId || !subject) {
+      return NextResponse.json({ error: "Student ID and subject are required" }, { status: 400 })
     }
 
-    const savedGrade = await dbManager.saveGrade(gradeData)
+    const savedGrade = await createGradeRecord({
+      studentId: String(studentId),
+      subject: sanitizeInput(subject),
+      firstCA: Number(firstCA || 0),
+      secondCA: Number(secondCA || 0),
+      assignment: Number(assignment || 0),
+      exam: Number(exam || 0),
+      term: term ? sanitizeInput(term) : "",
+      session: session ? sanitizeInput(session) : "",
+      teacherRemarks: teacherRemarks ? sanitizeInput(teacherRemarks) : undefined,
+      classId: classId ? String(classId) : null,
+    })
 
     return NextResponse.json({ grade: savedGrade, message: "Grade saved successfully" })
   } catch (error) {
     console.error("Failed to save grade:", error)
+    if (error instanceof Error && error.message.toLowerCase().includes("invalid")) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return NextResponse.json({ error: "Failed to save grade" }, { status: 500 })
   }
 }
@@ -69,34 +72,46 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, ...updateData } = body
+    const { id, classId, ...updateData } = body
 
-    // Recalculate totals if assessment scores are updated
-    if (updateData.firstCA !== undefined || updateData.secondCA !== undefined || updateData.assignment !== undefined) {
-      const caTotal = (updateData.firstCA || 0) + (updateData.secondCA || 0) + (updateData.assignment || 0)
-      updateData.caTotal = caTotal
-
-      if (updateData.exam !== undefined) {
-        updateData.total = caTotal + updateData.exam
-
-        let grade = "F"
-        if (updateData.total >= 75) grade = "A"
-        else if (updateData.total >= 60) grade = "B"
-        else if (updateData.total >= 50) grade = "C"
-        else if (updateData.total >= 40) grade = "D"
-        else if (updateData.total >= 30) grade = "E"
-
-        updateData.grade = grade
-      }
+    if (!id) {
+      return NextResponse.json({ error: "Grade ID is required" }, { status: 400 })
     }
 
-    updateData.updatedAt = new Date().toISOString()
+    const sanitizedUpdate: Record<string, any> = {}
 
-    const updatedGrade = await dbManager.updateGrade(id, updateData)
+    Object.entries(updateData).forEach(([key, value]) => {
+      if (typeof value === "string") {
+        sanitizedUpdate[key] = sanitizeInput(value)
+      } else {
+        sanitizedUpdate[key] = value
+      }
+    })
+
+    const numericKeys = ["firstCA", "secondCA", "assignment", "exam", "total"]
+    numericKeys.forEach((key) => {
+      if (sanitizedUpdate[key] !== undefined) {
+        const numericValue = Number(sanitizedUpdate[key])
+        sanitizedUpdate[key] = Number.isFinite(numericValue) ? numericValue : 0
+      }
+    })
+
+    if (classId !== undefined) {
+      sanitizedUpdate.classId = classId ? String(classId) : null
+    }
+
+    const updatedGrade = await updateGradeRecord(id, sanitizedUpdate)
+
+    if (!updatedGrade) {
+      return NextResponse.json({ error: "Grade not found" }, { status: 404 })
+    }
 
     return NextResponse.json({ message: "Grade updated successfully", data: updatedGrade })
   } catch (error) {
     console.error("Failed to update grade:", error)
+    if (error instanceof Error && error.message.toLowerCase().includes("invalid")) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return NextResponse.json({ error: "Failed to update grade" }, { status: 500 })
   }
 }
