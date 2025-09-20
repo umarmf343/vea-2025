@@ -1,5 +1,33 @@
 import { safeStorage } from "./safe-storage"
 
+const serverSideStorage = new Map<string, string>()
+
+const isBrowserEnvironment = (): boolean => typeof window !== "undefined"
+
+const readStorageValue = (key: string): string | null => {
+  if (isBrowserEnvironment()) {
+    return safeStorage.getItem(key)
+  }
+
+  return serverSideStorage.get(key) ?? null
+}
+
+const writeStorageValue = (key: string, value: string): void => {
+  if (isBrowserEnvironment()) {
+    safeStorage.setItem(key, value)
+  } else {
+    serverSideStorage.set(key, value)
+  }
+}
+
+const removeStorageValue = (key: string): void => {
+  if (isBrowserEnvironment()) {
+    safeStorage.removeItem(key)
+  } else {
+    serverSideStorage.delete(key)
+  }
+}
+
 type AssignmentStatus = "draft" | "sent" | "submitted" | "graded" | "overdue"
 
 interface AssignmentSubmissionRecord {
@@ -80,14 +108,83 @@ interface LibraryBookRecord {
   renewedAt?: string | null
 }
 
+type LibraryBorrowStatus = "active" | "overdue" | "returned"
+
+interface LibraryInventoryRecord {
+  id: string
+  title: string
+  author: string
+  isbn: string
+  copies: number
+  available: number
+  category: string
+  tags?: string[]
+  description?: string | null
+  shelfLocation?: string | null
+  coverImage?: string | null
+  addedBy?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+type LibraryRequestStatus = "pending" | "approved" | "rejected" | "fulfilled"
+
+interface LibraryBorrowRecord {
+  id: string
+  bookId: string
+  bookTitle: string
+  studentId: string
+  studentName: string
+  studentClass: string
+  borrowDate: string
+  dueDate: string
+  status: LibraryBorrowStatus
+  returnedDate: string | null
+  returnedTo: string | null
+  issuedBy: string | null
+  createdAt: string
+  updatedAt: string
+  renewedAt?: string | null
+  notes?: string | null
+}
+
+interface LibraryRequestRecord {
+  id: string
+  bookId: string | null
+  bookTitle: string
+  studentId: string
+  studentName: string
+  studentClass: string
+  requestDate: string
+  status: LibraryRequestStatus
+  approvedBy?: string | null
+  approvedDate?: string | null
+  rejectedBy?: string | null
+  rejectedDate?: string | null
+  fulfilledBy?: string | null
+  fulfilledAt?: string | null
+  notes?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 class DatabaseManager {
   private listeners: Map<string, Function[]> = new Map()
   private static instance: DatabaseManager
   private eventListeners: Map<string, Function[]> = new Map()
   private storageArea: any
+  private readonly libraryStorageKeys = {
+    CATALOG: "libraryCatalog",
+    BORROWED: "libraryBorrowedRecords",
+    REQUESTS: "libraryBookRequests",
+  }
 
   constructor() {
     this.storageArea = safeStorage
+  }
+
+  private deepClone<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value))
   }
 
   static getInstance(): DatabaseManager {
@@ -285,11 +382,23 @@ class DatabaseManager {
 
   private ensureLibraryBooks(studentId: string): LibraryBookRecord[] {
     const key = this.getLibraryStorageKey(studentId)
-    const raw = safeStorage.getItem(key)
+    const raw = readStorageValue(key)
 
     if (!raw) {
+      const borrowRecords = this.ensureBorrowRecords().filter((record) => record.studentId === studentId)
+
+      if (borrowRecords.length > 0) {
+        const inventory = this.ensureLibraryInventory()
+        const derived = borrowRecords
+          .filter((record) => this.resolveBorrowStatus(record) !== "returned")
+          .map((record) => this.mapBorrowRecordToStudentBook(record, inventory))
+
+        writeStorageValue(key, JSON.stringify(derived))
+        return derived
+      }
+
       const seeded = this.seedLibraryBooks(studentId)
-      safeStorage.setItem(key, JSON.stringify(seeded))
+      writeStorageValue(key, JSON.stringify(seeded))
       return seeded
     }
 
@@ -298,14 +407,14 @@ class DatabaseManager {
     } catch (error) {
       console.error("Error parsing library books from storage:", error)
       const seeded = this.seedLibraryBooks(studentId)
-      safeStorage.setItem(key, JSON.stringify(seeded))
+      writeStorageValue(key, JSON.stringify(seeded))
       return seeded
     }
   }
 
   private persistLibraryBooks(studentId: string, books: LibraryBookRecord[]) {
     const key = this.getLibraryStorageKey(studentId)
-    safeStorage.setItem(key, JSON.stringify(books))
+    writeStorageValue(key, JSON.stringify(books))
   }
 
   private seedLibraryBooks(studentId: string): LibraryBookRecord[] {
@@ -374,6 +483,406 @@ class DatabaseManager {
         coverImage: null,
       },
     ]
+  }
+
+  private ensureLibraryInventory(): LibraryInventoryRecord[] {
+    const raw = readStorageValue(this.libraryStorageKeys.CATALOG)
+
+    if (!raw) {
+      const seeded = this.seedLibraryInventory()
+      writeStorageValue(this.libraryStorageKeys.CATALOG, JSON.stringify(seeded))
+      return seeded
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as LibraryInventoryRecord[]
+      return parsed.map((record) => ({
+        ...record,
+        copies: Number.isFinite(record.copies) ? Number(record.copies) : 0,
+        available: Number.isFinite(record.available) ? Number(record.available) : 0,
+      }))
+    } catch (error) {
+      console.error("Error parsing library inventory from storage:", error)
+      const seeded = this.seedLibraryInventory()
+      writeStorageValue(this.libraryStorageKeys.CATALOG, JSON.stringify(seeded))
+      return seeded
+    }
+  }
+
+  private persistLibraryInventory(records: LibraryInventoryRecord[]): void {
+    writeStorageValue(this.libraryStorageKeys.CATALOG, JSON.stringify(records))
+  }
+
+  private seedLibraryInventory(): LibraryInventoryRecord[] {
+    const timestamp = new Date().toISOString()
+
+    return [
+      {
+        id: this.generateId("lib_book"),
+        title: "Mathematics Textbook",
+        author: "John Smith",
+        isbn: "978-123456789",
+        copies: 50,
+        available: 45,
+        category: "Mathematics",
+        tags: ["Mathematics", "Junior"],
+        description: "Core mathematics textbook for junior secondary students.",
+        shelfLocation: "A1",
+        coverImage: null,
+        addedBy: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        id: this.generateId("lib_book"),
+        title: "English Grammar",
+        author: "Jane Doe",
+        isbn: "978-987654321",
+        copies: 30,
+        available: 28,
+        category: "English",
+        tags: ["English", "Language"],
+        description: "Comprehensive guide to English grammar and composition.",
+        shelfLocation: "B4",
+        coverImage: null,
+        addedBy: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        id: this.generateId("lib_book"),
+        title: "Physics Fundamentals",
+        author: "Dr. Brown",
+        isbn: "978-456789123",
+        copies: 25,
+        available: 20,
+        category: "Physics",
+        tags: ["Science", "Physics"],
+        description: "Fundamental physics concepts with practical experiments.",
+        shelfLocation: "C2",
+        coverImage: null,
+        addedBy: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ]
+  }
+
+  private ensureBorrowRecords(): LibraryBorrowRecord[] {
+    const inventory = this.ensureLibraryInventory()
+    const raw = readStorageValue(this.libraryStorageKeys.BORROWED)
+
+    if (!raw) {
+      const seeded = this.seedBorrowRecords(inventory)
+      writeStorageValue(this.libraryStorageKeys.BORROWED, JSON.stringify(seeded))
+      this.syncStudentLibraryBooks(seeded, inventory)
+      return seeded
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as LibraryBorrowRecord[]
+      const now = new Date()
+      let hasChanges = false
+
+      const normalized = parsed.map((record) => {
+        const status = this.resolveBorrowStatus(record, now)
+        if (status !== record.status) {
+          hasChanges = true
+          return {
+            ...record,
+            status,
+            updatedAt: record.updatedAt ?? record.createdAt,
+          }
+        }
+        return record
+      })
+
+      if (hasChanges) {
+        writeStorageValue(this.libraryStorageKeys.BORROWED, JSON.stringify(normalized))
+        this.syncStudentLibraryBooks(normalized, inventory)
+      }
+
+      return normalized
+    } catch (error) {
+      console.error("Error parsing library borrow records from storage:", error)
+      const seeded = this.seedBorrowRecords(inventory)
+      writeStorageValue(this.libraryStorageKeys.BORROWED, JSON.stringify(seeded))
+      this.syncStudentLibraryBooks(seeded, inventory)
+      return seeded
+    }
+  }
+
+  private persistBorrowRecords(records: LibraryBorrowRecord[]): void {
+    writeStorageValue(this.libraryStorageKeys.BORROWED, JSON.stringify(records))
+  }
+
+  private seedBorrowRecords(inventory: LibraryInventoryRecord[]): LibraryBorrowRecord[] {
+    const timestamp = new Date().toISOString()
+    const today = new Date()
+    const formatDate = (date: Date) => date.toISOString().split("T")[0]
+
+    const borrowRecords: LibraryBorrowRecord[] = []
+
+    if (inventory[0]) {
+      const borrowDate = new Date(today)
+      borrowDate.setDate(borrowDate.getDate() - 7)
+      const dueDate = new Date(today)
+      dueDate.setDate(dueDate.getDate() + 7)
+
+      borrowRecords.push({
+        id: this.generateId("borrow"),
+        bookId: inventory[0].id,
+        bookTitle: inventory[0].title,
+        studentId: "student_john_doe",
+        studentName: "John Doe",
+        studentClass: "JSS 1A",
+        borrowDate: formatDate(borrowDate),
+        dueDate: formatDate(dueDate),
+        status: "active",
+        returnedDate: null,
+        returnedTo: null,
+        issuedBy: "librarian_default",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        renewedAt: null,
+        notes: null,
+      })
+    }
+
+    if (inventory[1]) {
+      const borrowDate = new Date(today)
+      borrowDate.setDate(borrowDate.getDate() - 20)
+      const dueDate = new Date(today)
+      dueDate.setDate(dueDate.getDate() - 5)
+
+      borrowRecords.push({
+        id: this.generateId("borrow"),
+        bookId: inventory[1].id,
+        bookTitle: inventory[1].title,
+        studentId: "student_jane_smith",
+        studentName: "Jane Smith",
+        studentClass: "JSS 2B",
+        borrowDate: formatDate(borrowDate),
+        dueDate: formatDate(dueDate),
+        status: "overdue",
+        returnedDate: null,
+        returnedTo: null,
+        issuedBy: "librarian_default",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        renewedAt: null,
+        notes: null,
+      })
+    }
+
+    return borrowRecords
+  }
+
+  private ensureBookRequests(): LibraryRequestRecord[] {
+    const inventory = this.ensureLibraryInventory()
+    const raw = readStorageValue(this.libraryStorageKeys.REQUESTS)
+
+    if (!raw) {
+      const seeded = this.seedBookRequests(inventory)
+      writeStorageValue(this.libraryStorageKeys.REQUESTS, JSON.stringify(seeded))
+      return seeded
+    }
+
+    try {
+      return JSON.parse(raw) as LibraryRequestRecord[]
+    } catch (error) {
+      console.error("Error parsing library request records from storage:", error)
+      const seeded = this.seedBookRequests(inventory)
+      writeStorageValue(this.libraryStorageKeys.REQUESTS, JSON.stringify(seeded))
+      return seeded
+    }
+  }
+
+  private persistBookRequests(records: LibraryRequestRecord[]): void {
+    writeStorageValue(this.libraryStorageKeys.REQUESTS, JSON.stringify(records))
+  }
+
+  private seedBookRequests(inventory: LibraryInventoryRecord[]): LibraryRequestRecord[] {
+    const timestamp = new Date().toISOString()
+    const today = new Date()
+    const formatDate = (date: Date) => date.toISOString().split("T")[0]
+
+    return [
+      {
+        id: this.generateId("request"),
+        bookId: inventory[2]?.id ?? null,
+        bookTitle: inventory[2]?.title ?? "Chemistry Basics",
+        studentId: "student_mike_johnson",
+        studentName: "Mike Johnson",
+        studentClass: "JSS 3A",
+        requestDate: formatDate(new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000)),
+        status: "pending",
+        approvedBy: null,
+        approvedDate: null,
+        rejectedBy: null,
+        rejectedDate: null,
+        fulfilledBy: null,
+        fulfilledAt: null,
+        notes: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        id: this.generateId("request"),
+        bookId: inventory[0]?.id ?? null,
+        bookTitle: inventory[0]?.title ?? "Biology Guide",
+        studentId: "student_sarah_wilson",
+        studentName: "Sarah Wilson",
+        studentClass: "SS 1B",
+        requestDate: formatDate(new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000)),
+        status: "approved",
+        approvedBy: "librarian_default",
+        approvedDate: timestamp,
+        rejectedBy: null,
+        rejectedDate: null,
+        fulfilledBy: null,
+        fulfilledAt: null,
+        notes: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ]
+  }
+
+  private resolveBorrowStatus(record: LibraryBorrowRecord, referenceDate = new Date()): LibraryBorrowStatus {
+    if (record.status === "returned") {
+      return "returned"
+    }
+
+    const dueDate = new Date(record.dueDate)
+
+    if (Number.isNaN(dueDate.getTime())) {
+      return record.status
+    }
+
+    return dueDate < referenceDate ? "overdue" : "active"
+  }
+
+  private mapBorrowRecordToStudentBook(
+    record: LibraryBorrowRecord,
+    inventory: LibraryInventoryRecord[],
+  ): LibraryBookRecord {
+    const catalogEntry = inventory.find((item) => item.id === record.bookId)
+    const status = this.resolveBorrowStatus(record)
+
+    return {
+      id: record.id,
+      title: catalogEntry?.title ?? record.bookTitle,
+      author: catalogEntry?.author ?? "Library",
+      issuedDate: record.borrowDate,
+      dueDate: record.dueDate,
+      status: status === "overdue" ? "overdue" : "issued",
+      coverImage: catalogEntry?.coverImage ?? null,
+      renewedAt: record.renewedAt ?? null,
+    }
+  }
+
+  private syncStudentLibraryBooks(
+    records: LibraryBorrowRecord[],
+    inventory: LibraryInventoryRecord[],
+  ): void {
+    const grouped = new Map<string, LibraryBookRecord[]>()
+    const now = new Date()
+
+    records.forEach((record) => {
+      const status = this.resolveBorrowStatus(record, now)
+      if (status === "returned") {
+        return
+      }
+
+      const entry = this.mapBorrowRecordToStudentBook(record, inventory)
+      const list = grouped.get(record.studentId) ?? []
+      list.push(entry)
+      grouped.set(record.studentId, list)
+    })
+
+    const studentIds = new Set<string>()
+    records.forEach((record) => studentIds.add(record.studentId))
+
+    studentIds.forEach((studentId) => {
+      const books = grouped.get(studentId) ?? []
+      this.persistLibraryBooks(studentId, books)
+    })
+  }
+
+  private issueBookFromRequest(
+    request: LibraryRequestRecord,
+    options: { issuedBy?: string | null; dueDate?: string | null; notes?: string | null } = {},
+  ): LibraryBorrowRecord {
+    const inventory = this.ensureLibraryInventory()
+    const borrowRecords = this.ensureBorrowRecords()
+    const timestamp = new Date().toISOString()
+    const borrowDate = timestamp.split("T")[0]
+    const computedDueDate = () => {
+      const date = new Date()
+      date.setDate(date.getDate() + 14)
+      return date.toISOString().split("T")[0]
+    }
+
+    let catalogEntry = request.bookId ? inventory.find((item) => item.id === request.bookId) : undefined
+
+    if (!catalogEntry) {
+      catalogEntry = inventory.find(
+        (item) => item.title.trim().toLowerCase() === request.bookTitle.trim().toLowerCase(),
+      )
+    }
+
+    if (!catalogEntry) {
+      catalogEntry = {
+        id: request.bookId ?? this.generateId("lib_book"),
+        title: request.bookTitle,
+        author: "Library",
+        isbn: "N/A",
+        copies: 1,
+        available: 0,
+        category: "General",
+        tags: [],
+        description: null,
+        shelfLocation: null,
+        coverImage: null,
+        addedBy: options.issuedBy ?? null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      inventory.push(catalogEntry)
+    } else {
+      catalogEntry.available = Math.max(0, Math.min(catalogEntry.copies, catalogEntry.available - 1))
+      catalogEntry.updatedAt = timestamp
+    }
+
+    const dueDate = options.dueDate ?? computedDueDate()
+
+    const borrowRecord: LibraryBorrowRecord = {
+      id: this.generateId("borrow"),
+      bookId: catalogEntry.id,
+      bookTitle: catalogEntry.title,
+      studentId: request.studentId,
+      studentName: request.studentName,
+      studentClass: request.studentClass,
+      borrowDate,
+      dueDate,
+      status: "active",
+      returnedDate: null,
+      returnedTo: null,
+      issuedBy: options.issuedBy ?? null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      renewedAt: null,
+      notes: options.notes ?? request.notes ?? null,
+    }
+
+    borrowRecords.push(borrowRecord)
+    this.persistLibraryInventory(inventory)
+    this.persistBorrowRecords(borrowRecords)
+    this.syncStudentLibraryBooks(borrowRecords, inventory)
+    this.triggerEvent("libraryBorrowCreated", borrowRecord)
+
+    return borrowRecord
   }
 
   async getAssignments(filters: AssignmentFilters = {}) {
@@ -516,13 +1025,367 @@ class DatabaseManager {
   }
 
   async getLibraryBooks(studentId: string): Promise<LibraryBookRecord[]> {
-    return this.ensureLibraryBooks(studentId)
+    const borrowRecords = this.ensureBorrowRecords().filter((record) => record.studentId === studentId)
+
+    if (borrowRecords.length === 0) {
+      return this.deepClone(this.ensureLibraryBooks(studentId))
+    }
+
+    const inventory = this.ensureLibraryInventory()
+    const mapped = borrowRecords
+      .filter((record) => this.resolveBorrowStatus(record) !== "returned")
+      .map((record) => this.mapBorrowRecordToStudentBook(record, inventory))
+
+    this.persistLibraryBooks(studentId, mapped)
+    return this.deepClone(mapped)
   }
 
   async saveLibraryBooks(studentId: string, books: LibraryBookRecord[]): Promise<LibraryBookRecord[]> {
-    this.persistLibraryBooks(studentId, books)
+    const borrowRecords = this.ensureBorrowRecords()
+    const inventory = this.ensureLibraryInventory()
+    const timestamp = new Date().toISOString()
+    let hasChanges = false
+
+    const updatedRecords = borrowRecords.map((record) => {
+      if (record.studentId !== studentId) {
+        return record
+      }
+
+      const match = books.find((book) => book.id === record.id || book.id === record.bookId)
+      if (!match) {
+        return record
+      }
+
+      const normalizedStatus: LibraryBorrowStatus =
+        match.status === "overdue" ? "overdue" : record.status === "returned" ? "returned" : "active"
+
+      if (record.dueDate !== match.dueDate || record.status !== normalizedStatus) {
+        hasChanges = true
+        return {
+          ...record,
+          dueDate: match.dueDate,
+          status: normalizedStatus,
+          updatedAt: timestamp,
+        }
+      }
+
+      return record
+    })
+
+    if (hasChanges) {
+      this.persistBorrowRecords(updatedRecords)
+      this.syncStudentLibraryBooks(updatedRecords, inventory)
+    } else {
+      this.persistLibraryBooks(studentId, books)
+    }
+
     this.triggerEvent("libraryBooksUpdated", { studentId, books })
-    return books
+    return this.deepClone(books)
+  }
+
+  async getBooks(): Promise<LibraryInventoryRecord[]> {
+    const catalog = this.ensureLibraryInventory()
+    return this.deepClone(catalog)
+  }
+
+  async addBook(bookData: {
+    title: string
+    author: string
+    isbn: string
+    copies: number
+    category: string
+    available?: number
+    tags?: string[]
+    description?: string | null
+    shelfLocation?: string | null
+    coverImage?: string | null
+    addedBy?: string | null
+  }): Promise<LibraryInventoryRecord> {
+    const catalog = this.ensureLibraryInventory()
+    const timestamp = new Date().toISOString()
+    const copies = Math.max(1, Math.floor(Number(bookData.copies ?? 1)))
+    const available = Math.min(copies, Math.max(0, Math.floor(Number(bookData.available ?? copies))))
+
+    const record: LibraryInventoryRecord = {
+      id: this.generateId("lib_book"),
+      title: bookData.title,
+      author: bookData.author,
+      isbn: bookData.isbn,
+      copies,
+      available,
+      category: bookData.category,
+      tags: bookData.tags ?? [],
+      description: bookData.description ?? null,
+      shelfLocation: bookData.shelfLocation ?? null,
+      coverImage: bookData.coverImage ?? null,
+      addedBy: bookData.addedBy ?? null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    catalog.push(record)
+    this.persistLibraryInventory(catalog)
+    this.triggerEvent("libraryInventoryUpdated", { action: "created", book: record })
+    return this.deepClone(record)
+  }
+
+  async updateBook(
+    bookId: string,
+    updates: Partial<Omit<LibraryInventoryRecord, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<LibraryInventoryRecord | null> {
+    const catalog = this.ensureLibraryInventory()
+    const index = catalog.findIndex((book) => book.id === bookId)
+
+    if (index === -1) {
+      return null
+    }
+
+    const existing = { ...catalog[index] }
+
+    if (updates.copies !== undefined) {
+      const copies = Math.max(1, Math.floor(Number(updates.copies)))
+      existing.copies = copies
+      existing.available = Math.min(copies, existing.available)
+    }
+
+    if (updates.available !== undefined) {
+      const available = Math.max(0, Math.floor(Number(updates.available)))
+      existing.available = Math.min(existing.copies, available)
+    }
+
+    if (updates.title !== undefined) {
+      existing.title = updates.title
+    }
+
+    if (updates.author !== undefined) {
+      existing.author = updates.author
+    }
+
+    if (updates.isbn !== undefined) {
+      existing.isbn = updates.isbn
+    }
+
+    if (updates.category !== undefined) {
+      existing.category = updates.category
+    }
+
+    if (updates.tags !== undefined) {
+      existing.tags = Array.isArray(updates.tags) ? [...updates.tags] : []
+    }
+
+    if (updates.description !== undefined) {
+      existing.description = updates.description
+    }
+
+    if (updates.shelfLocation !== undefined) {
+      existing.shelfLocation = updates.shelfLocation
+    }
+
+    if (updates.coverImage !== undefined) {
+      existing.coverImage = updates.coverImage
+    }
+
+    if (updates.addedBy !== undefined) {
+      existing.addedBy = updates.addedBy
+    }
+
+    existing.updatedAt = new Date().toISOString()
+    catalog[index] = existing
+    this.persistLibraryInventory(catalog)
+    this.triggerEvent("libraryInventoryUpdated", { action: "updated", book: existing })
+    return this.deepClone(existing)
+  }
+
+  async deleteBook(bookId: string): Promise<boolean> {
+    const catalog = this.ensureLibraryInventory()
+    const borrowRecords = this.ensureBorrowRecords()
+
+    const hasActiveBorrow = borrowRecords.some(
+      (record) => record.bookId === bookId && this.resolveBorrowStatus(record) !== "returned",
+    )
+
+    if (hasActiveBorrow) {
+      throw new Error("Cannot delete a book with active borrow records")
+    }
+
+    const index = catalog.findIndex((book) => book.id === bookId)
+    if (index === -1) {
+      return false
+    }
+
+    const [removed] = catalog.splice(index, 1)
+    this.persistLibraryInventory(catalog)
+    this.triggerEvent("libraryInventoryUpdated", { action: "deleted", book: removed })
+    return true
+  }
+
+  async getBorrowedBooks(): Promise<LibraryBorrowRecord[]> {
+    const records = this.ensureBorrowRecords()
+    const inventory = this.ensureLibraryInventory()
+    const now = new Date()
+    let hasChanges = false
+
+    const normalized = records.map((record) => {
+      const status = this.resolveBorrowStatus(record, now)
+      if (status !== record.status) {
+        hasChanges = true
+        return { ...record, status, updatedAt: new Date().toISOString() }
+      }
+      return record
+    })
+
+    if (hasChanges) {
+      this.persistBorrowRecords(normalized)
+      this.syncStudentLibraryBooks(normalized, inventory)
+      return this.deepClone(normalized)
+    }
+
+    return this.deepClone(records)
+  }
+
+  async returnBook(
+    borrowId: string,
+    payload: { returnedDate?: string; returnedTo?: string | null; notes?: string | null } = {},
+  ): Promise<LibraryBorrowRecord> {
+    const borrowRecords = this.ensureBorrowRecords()
+    const index = borrowRecords.findIndex((record) => record.id === borrowId)
+
+    if (index === -1) {
+      throw new Error("Borrow record not found")
+    }
+
+    const record = borrowRecords[index]!
+    if (record.status === "returned") {
+      return this.deepClone(record)
+    }
+
+    const inventory = this.ensureLibraryInventory()
+    const book = inventory.find((entry) => entry.id === record.bookId)
+    const timestamp = new Date().toISOString()
+    const [timestampDate] = timestamp.split("T")
+    const returnedDate = payload.returnedDate ?? timestampDate ?? timestamp
+
+    const updated: LibraryBorrowRecord = {
+      ...record,
+      status: "returned",
+      returnedDate,
+      returnedTo: payload.returnedTo ?? null,
+      notes: payload.notes ?? record.notes ?? null,
+      updatedAt: timestamp,
+    }
+
+    borrowRecords[index] = updated
+
+    if (book) {
+      book.available = Math.min(book.copies, book.available + 1)
+      book.updatedAt = timestamp
+      this.persistLibraryInventory(inventory)
+    }
+
+    this.persistBorrowRecords(borrowRecords)
+    this.syncStudentLibraryBooks(borrowRecords, inventory)
+    this.triggerEvent("libraryBorrowUpdated", { action: "returned", record: updated })
+    this.triggerEvent("libraryBooksUpdated", {
+      studentId: updated.studentId,
+      books: this.ensureLibraryBooks(updated.studentId),
+    })
+
+    return this.deepClone(updated)
+  }
+
+  async getBookRequests(): Promise<LibraryRequestRecord[]> {
+    const requests = this.ensureBookRequests()
+    return this.deepClone(requests)
+  }
+
+  async createBookRequest(payload: {
+    bookId?: string | null
+    bookTitle: string
+    studentId: string
+    studentName: string
+    studentClass: string
+    requestDate?: string
+    notes?: string | null
+  }): Promise<LibraryRequestRecord> {
+    const requests = this.ensureBookRequests()
+    const timestamp = new Date().toISOString()
+
+    const [datePart] = timestamp.split("T")
+
+    const request: LibraryRequestRecord = {
+      id: this.generateId("request"),
+      bookId: payload.bookId ?? null,
+      bookTitle: payload.bookTitle,
+      studentId: payload.studentId,
+      studentName: payload.studentName,
+      studentClass: payload.studentClass,
+      requestDate: payload.requestDate ?? datePart ?? timestamp,
+      status: "pending",
+      approvedBy: null,
+      approvedDate: null,
+      rejectedBy: null,
+      rejectedDate: null,
+      fulfilledBy: null,
+      fulfilledAt: null,
+      notes: payload.notes ?? null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    requests.push(request)
+    this.persistBookRequests(requests)
+    this.triggerEvent("libraryRequestUpdated", { action: "created", request })
+    return this.deepClone(request)
+  }
+
+  async updateBookRequest(
+    requestId: string,
+    updates: Partial<LibraryRequestRecord> & { status?: LibraryRequestStatus },
+  ): Promise<LibraryRequestRecord> {
+    const requests = this.ensureBookRequests()
+    const index = requests.findIndex((request) => request.id === requestId)
+
+    if (index === -1) {
+      throw new Error("Request not found")
+    }
+
+    const existing = requests[index]!
+    const previousStatus = existing.status
+    const timestamp = new Date().toISOString()
+
+    const updated = { ...existing, ...updates, updatedAt: timestamp } as LibraryRequestRecord
+
+    if (updates.status === "approved" && previousStatus !== "approved") {
+      updated.approvedBy = updates.approvedBy ?? updated.approvedBy ?? null
+      updated.approvedDate = updates.approvedDate ?? timestamp
+      updated.rejectedBy = null
+      updated.rejectedDate = null
+
+      const borrowRecord = this.issueBookFromRequest(updated, {
+        issuedBy: updates.approvedBy ?? updated.approvedBy ?? null,
+        notes: updates.notes ?? updated.notes ?? null,
+      })
+
+      updated.fulfilledBy = borrowRecord.issuedBy
+      updated.fulfilledAt = timestamp
+    }
+
+    if (updates.status === "rejected" && previousStatus !== "rejected") {
+      updated.rejectedBy = updates.rejectedBy ?? updated.rejectedBy ?? null
+      updated.rejectedDate = updates.rejectedDate ?? timestamp
+      updated.approvedBy = null
+      updated.approvedDate = null
+    }
+
+    if (updates.status === "fulfilled") {
+      updated.fulfilledBy = updates.fulfilledBy ?? updated.fulfilledBy ?? null
+      updated.fulfilledAt = updates.fulfilledAt ?? timestamp
+    }
+
+    requests[index] = updated
+    this.persistBookRequests(requests)
+    this.triggerEvent("libraryRequestUpdated", { action: "updated", request: updated })
+    return this.deepClone(updated)
   }
 
   addEventListener(key: string, callback: Function) {
