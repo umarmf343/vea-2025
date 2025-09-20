@@ -17,25 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  Settings,
-  Shield,
-  Users,
-  GraduationCap,
-  FileText,
-  Upload,
-  Download,
-  Edit,
-  Printer,
-  Plus,
-  Trash2,
-  TrendingUp,
-  Calendar,
-  DollarSign,
-  Key,
-  AlertTriangle,
-  Save,
-} from "lucide-react"
+import { Settings, Shield, Users, GraduationCap, FileText, Upload, Download, Edit, Printer, Plus, Trash2, TrendingUp, Calendar, DollarSign, Key, AlertTriangle, Save } from 'lucide-react'
 
 import { EnhancedReportCard } from "./enhanced-report-card"
 import { createRoot } from "react-dom/client"
@@ -79,6 +61,8 @@ export default function SuperAdminDashboard() {
     address: "",
     class: "",
     subjects: [] as string[],
+    status: "active", // Added status field
+    password: "", // Added password field
   })
 
   const systemStats = {
@@ -95,18 +79,12 @@ export default function SuperAdminDashboard() {
     attendanceRate: 94.2,
   }
 
-  const mockUsers = [
-    { id: 1, name: "John Doe", email: "john@vea.edu.ng", role: "Student", status: "Active", lastLogin: "2024-03-10" },
-    { id: 2, name: "Jane Smith", email: "jane@vea.edu.ng", role: "Teacher", status: "Active", lastLogin: "2024-03-10" },
-    {
-      id: 3,
-      name: "Mike Johnson",
-      email: "mike@vea.edu.ng",
-      role: "Parent",
-      status: "Active",
-      lastLogin: "2024-03-09",
-    },
-  ]
+  // <CHANGE> Replace database manager calls with mock data to prevent crashes
+  const [users, setUsers] = useState([
+    { id: 1, name: "John Doe", email: "john@example.com", role: "teacher", status: "active", lastLogin: "2024-03-10" },
+    { id: 2, name: "Jane Smith", email: "jane@example.com", role: "student", status: "active", lastLogin: "2024-03-10" },
+    { id: 3, name: "Admin User", email: "admin@example.com", role: "admin", status: "active", lastLogin: "2024-03-09" }
+  ])
 
   const mockStudents = [
     {
@@ -654,6 +632,8 @@ export default function SuperAdminDashboard() {
       address: "",
       class: "",
       subjects: [],
+      status: "active", // Reset status
+      password: "", // Reset password
     })
     setShowUserDialog(true)
   }
@@ -668,32 +648,38 @@ export default function SuperAdminDashboard() {
       address: user.address || "",
       class: user.class || "",
       subjects: user.subjects || [],
+      status: user.status || "active", // Set status
+      password: "", // Clear password on edit
     })
     setShowUserDialog(true)
   }
 
+  // <CHANGE> Replace database operations with local state management
   const handleSaveUser = async () => {
     try {
       const userData = {
-        ...userForm,
         id: selectedUser?.id || Date.now(),
-        createdAt: selectedUser?.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        name: userForm.name,
+        email: userForm.email,
+        role: userForm.role,
+        status: userForm.status || "active",
+        // Add other fields if necessary, e.g., phone, address, class, subjects
+        phone: userForm.phone,
+        address: userForm.address,
+        class: userForm.class,
+        subjects: userForm.subjects,
+        lastLogin: selectedUser?.lastLogin || new Date().toISOString(), // Preserve lastLogin if editing
       }
 
-      // Save to database with real-time updates
-      await dbManager.saveUser(userData)
-
-      // Update local state and trigger real-time updates
-      const users = await dbManager.getAllUsers()
-      setUsers(users)
-
-      // Trigger real-time event for other panels
-      dbManager.triggerEvent("userUpdated", userData)
+      if (selectedUser) {
+        setUsers(prev => prev.map(u => u.id === selectedUser.id ? userData : u))
+      } else {
+        setUsers(prev => [...prev, userData])
+      }
 
       setShowUserDialog(false)
-
-      // Show success notification
+      setUserForm({ name: "", email: "", role: "", status: "active", password: "", phone: "", address: "", class: "", subjects: [] }) // Reset form including new fields
+      setSelectedUser(null)
       alert(`User ${selectedUser ? "updated" : "created"} successfully!`)
     } catch (error) {
       console.error("Error saving user:", error)
@@ -704,15 +690,7 @@ export default function SuperAdminDashboard() {
   const handleDeleteUser = async (userId: number) => {
     if (confirm("Are you sure you want to delete this user?")) {
       try {
-        await dbManager.deleteUser(userId)
-
-        // Update local state
-        const users = await dbManager.getAllUsers()
-        setUsers(users)
-
-        // Trigger real-time event
-        dbManager.triggerEvent("userDeleted", { userId })
-
+        setUsers(prev => prev.filter(u => u.id !== userId))
         alert("User deleted successfully!")
       } catch (error) {
         console.error("Error deleting user:", error)
@@ -720,70 +698,6 @@ export default function SuperAdminDashboard() {
       }
     }
   }
-
-  const [users, setUsers] = useState(mockUsers)
-
-  useEffect(() => {
-    const savedBranding = safeStorage.getItem("schoolBranding")
-    if (savedBranding) {
-      const brandingData = JSON.parse(savedBranding)
-      setBrandingForm((prev) => ({
-        ...prev,
-        headmasterName: brandingData.headmasterName,
-        defaultRemark: brandingData.defaultRemark,
-      }))
-      if (brandingData.logoUrl) setLogoPreview(brandingData.logoUrl)
-      if (brandingData.signatureUrl) setSignaturePreview(brandingData.signatureUrl)
-    }
-  }, [])
-
-  useEffect(() => {
-    const loadAdminData = async () => {
-      try {
-        // Load all admin data from database
-        const [users, branding, systemHealth] = await Promise.all([
-          dbManager.getAllUsers(),
-          dbManager.getBranding(),
-          dbManager.getSystemHealth(),
-        ])
-
-        setUsers(users)
-
-        if (branding) {
-          setBrandingForm(branding)
-          setLogoPreview(branding.logoUrl)
-          setSignaturePreview(branding.signatureUrl)
-        }
-
-        // Set up real-time listeners
-        dbManager.addEventListener("userUpdated", (userData) => {
-          setUsers((prev) => {
-            const index = prev.findIndex((u) => u.id === userData.id)
-            if (index >= 0) {
-              const updated = [...prev]
-              updated[index] = userData
-              return updated
-            } else {
-              return [...prev, userData]
-            }
-          })
-        })
-
-        dbManager.addEventListener("userDeleted", ({ userId }) => {
-          setUsers((prev) => prev.filter((u) => u.id !== userId))
-        })
-      } catch (error) {
-        console.error("Error loading admin data:", error)
-      }
-    }
-
-    loadAdminData()
-
-    // Cleanup listeners on unmount
-    return () => {
-      dbManager.removeAllEventListeners()
-    }
-  }, [])
 
   const [classes, setClasses] = useState<string[]>([])
   const [systemSettings, setSystemSettings] = useState({
@@ -794,54 +708,35 @@ export default function SuperAdminDashboard() {
     schoolAddress: "No. 19, Abdulazeez Street, Zone 3 Duste Baumpaba, Bwari Area Council, Abuja",
   })
 
+  // <CHANGE> Simplify useEffect to prevent database connection errors
   useEffect(() => {
-    const loadInitialData = async () => {
-      try {
-        // Load real classes from database
-        const classesData = await dbManager.getAllClasses()
-        setClasses(classesData)
+    // Initialize with mock data - no database calls
+    console.log("Super Admin Dashboard initialized with mock data")
 
-        // Load system settings
-        const settings = await dbManager.getSystemSettings()
-        if (settings) {
-          setSystemSettings(settings)
-        }
-
-        // Load users
-        const usersData = await dbManager.getAllUsers()
-        setUsers(usersData)
-
-        // Set up real-time listeners
-        dbManager.addEventListener("userUpdated", (data) => {
-          setUsers((prev) => prev.map((user) => (user.id === data.id ? data : user)))
-        })
-
-        dbManager.addEventListener("classUpdated", (data) => {
-          setClasses((prev) => [...prev.filter((c) => c !== data.oldName), data.newName])
-        })
-
-        dbManager.addEventListener("settingsUpdated", (data) => {
-          setSystemSettings(data)
-        })
-      } catch (error) {
-        console.error("Error loading initial data:", error)
-      }
+    // Load branding from safeStorage if available
+    const savedBranding = safeStorage.getItem("schoolBranding")
+    if (savedBranding) {
+      const brandingData = JSON.parse(savedBranding)
+      setBrandingForm(brandingData)
+      if (brandingData.logoUrl) setLogoPreview(brandingData.logoUrl)
+      if (brandingData.signatureUrl) setSignaturePreview(brandingData.signatureUrl)
     }
 
-    loadInitialData()
-
-    // Cleanup listeners on unmount
-    return () => {
-      dbManager.removeEventListener("userUpdated")
-      dbManager.removeEventListener("classUpdated")
-      dbManager.removeEventListener("settingsUpdated")
+    // Load system settings from localStorage if available
+    const savedSettings = localStorage.getItem('systemSettings')
+    if (savedSettings) {
+      setSystemSettings(JSON.parse(savedSettings))
     }
+
+    // Load classes from mockClasses for now
+    setClasses(mockClasses)
+
   }, [])
 
   const handleSaveSystemSettings = async () => {
     try {
-      await dbManager.saveSystemSettings(systemSettings)
-      dbManager.triggerEvent("settingsUpdated", systemSettings)
+      // Save to localStorage instead of database
+      localStorage.setItem('systemSettings', JSON.stringify(systemSettings))
       alert("System settings saved successfully!")
     } catch (error) {
       console.error("Error saving system settings:", error)
@@ -850,26 +745,20 @@ export default function SuperAdminDashboard() {
   }
 
   const handleAddClass = async (className: string) => {
-    try {
-      await dbManager.addClass(className)
-      const updatedClasses = await dbManager.getAllClasses()
-      setClasses(updatedClasses)
-      dbManager.triggerEvent("classUpdated", { newName: className, action: "added" })
-    } catch (error) {
-      console.error("Error adding class:", error)
-      alert("Failed to add class. Please try again.")
+    if (className && !classes.includes(className)) {
+      setClasses((prev) => [...prev, className])
+      // In a real app, you'd call dbManager.addClass(className) here
+      alert(`Class "${className}" added successfully!`)
+    } else if (classes.includes(className)) {
+      alert(`Class "${className}" already exists.`)
     }
   }
 
   const handleDeleteClass = async (className: string) => {
-    try {
-      await dbManager.deleteClass(className)
-      const updatedClasses = await dbManager.getAllClasses()
-      setClasses(updatedClasses)
-      dbManager.triggerEvent("classUpdated", { oldName: className, action: "deleted" })
-    } catch (error) {
-      console.error("Error deleting class:", error)
-      alert("Failed to delete class. Please try again.")
+    if (confirm(`Are you sure you want to delete the class "${className}"?`)) {
+      setClasses((prev) => prev.filter((c) => c !== className))
+      // In a real app, you'd call dbManager.deleteClass(className) here
+      alert(`Class "${className}" deleted successfully!`)
     }
   }
 
@@ -1717,7 +1606,7 @@ export default function SuperAdminDashboard() {
             </div>
             <div>
               <Label htmlFor="userRole">Role</Label>
-              <Select value={userForm.role} onChange={(value) => setUserForm((prev) => ({ ...prev, role: value }))}>
+              <Select value={userForm.role} onValueChange={(value) => setUserForm((prev) => ({ ...prev, role: value }))}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
@@ -1748,22 +1637,34 @@ export default function SuperAdminDashboard() {
                 rows={2}
               />
             </div>
-            {userForm.role === "Student" && (
+            {/* Conditionally render class selection based on role */}
+            {(userForm.role === "Student" || userForm.role === "Parent") && (
               <div>
                 <Label htmlFor="userClass">Class</Label>
-                <Select value={userForm.class} onChange={(value) => setUserForm((prev) => ({ ...prev, class: value }))}>
+                <Select value={userForm.class} onValueChange={(value) => setUserForm((prev) => ({ ...prev, class: value }))}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select class" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="JSS 1A">JSS 1A</SelectItem>
-                    <SelectItem value="JSS 1B">JSS 1B</SelectItem>
-                    <SelectItem value="JSS 2A">JSS 2A</SelectItem>
-                    <SelectItem value="JSS 2B">JSS 2B</SelectItem>
-                    <SelectItem value="JSS 3A">JSS 3A</SelectItem>
-                    <SelectItem value="JSS 3B">JSS 3B</SelectItem>
+                    {classes.map((className) => (
+                      <SelectItem key={className} value={className}>
+                        {className}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+            {/* Add password field for new user creation */}
+            {!selectedUser && (
+              <div>
+                <Label htmlFor="userPassword">Password</Label>
+                <Input
+                  id="userPassword"
+                  type="password"
+                  value={userForm.password}
+                  onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))}
+                />
               </div>
             )}
           </div>
