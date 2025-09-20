@@ -42,8 +42,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [showCreateAssignment, setShowCreateAssignment] = useState(false)
   const [showSubmissions, setShowSubmissions] = useState(false)
   const [selectedAssignment, setSelectedAssignment] = useState<any>(null)
-  const [selectedClass, setSelectedClass] = useState("")
-  const [selectedSubject, setSelectedSubject] = useState("")
+  const [selectedClass, setSelectedClass] = useState(teacher.classes[0] ?? "")
+  const [selectedSubject, setSelectedSubject] = useState(teacher.subjects[0] ?? "")
   const [selectedTerm, setSelectedTerm] = useState("first")
   const [selectedSession, setSelectedSession] = useState("2024/2025")
   const [reportCardStatus, setReportCardStatus] = useState<
@@ -65,6 +65,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     class: "",
     file: null as File | null,
   })
+
+  const subjectSummary =
+    teacher.subjects.length > 0 ? teacher.subjects.join(", ") : "No subjects assigned yet"
+  const classSummary =
+    teacher.classes.length > 0 ? teacher.classes.join(", ") : "No classes assigned yet"
 
   const mockStudents = [
     { id: 1, name: "John Doe", class: "JSS 1A", subjects: ["Mathematics", "English"] },
@@ -141,7 +146,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     return data.map((student) => {
       const position = sorted.findIndex((s) => s.studentId === student.studentId) + 1
       const averageScore =
-        student.totalMarksObtained > 0
+        student.totalMarksObtained > 0 && student.totalMarksObtainable > 0
           ? Math.round((student.totalMarksObtained / student.totalMarksObtainable) * 100)
           : 0
 
@@ -246,8 +251,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             updatedStudent.totalMarksObtained = updatedStudent.grandTotal
           } else if (field === "totalMarksObtainable") {
             updatedStudent.averageScore =
-              updatedStudent.totalMarksObtained > 0
-                ? Math.round((student.totalMarksObtained / student.totalMarksObtainable) * 100)
+              updatedStudent.totalMarksObtained > 0 && updatedStudent.totalMarksObtainable > 0
+                ? Math.round((updatedStudent.totalMarksObtained / updatedStudent.totalMarksObtainable) * 100)
                 : 0
           }
 
@@ -292,6 +297,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   const handleSaveMarks = async () => {
     try {
+      if (!selectedClass || !selectedSubject) {
+        alert("Please select both a class and a subject before saving marks.")
+        return
+      }
+
       const result = await saveTeacherMarks({
         class: selectedClass,
         subject: selectedSubject,
@@ -347,6 +357,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   const handleSaveBehavioralAssessment = async () => {
     try {
+      if (!selectedClass || !selectedSubject) {
+        alert("Please select both a class and a subject before saving assessments.")
+        return
+      }
+
       const key = getReportCardKey()
       const behavioralData = {
         class: selectedClass,
@@ -373,6 +388,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   const handleSaveAttendancePosition = async () => {
     try {
+      if (!selectedClass || !selectedSubject) {
+        alert("Please select both a class and a subject before saving attendance.")
+        return
+      }
+
       const key = getReportCardKey()
       const attendanceData = {
         class: selectedClass,
@@ -399,6 +419,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   const handleSaveClassTeacherRemarks = async () => {
     try {
+      if (!selectedClass || !selectedSubject) {
+        alert("Please select both a class and a subject before saving class teacher remarks.")
+        return
+      }
+
       const key = getReportCardKey()
       const remarksData = {
         class: selectedClass,
@@ -427,9 +452,10 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       {/* Header */}
       <div className="bg-gradient-to-r from-[#2d682d] to-[#b29032] text-white p-6 rounded-lg">
         <h1 className="text-2xl font-bold">Welcome, {teacher.name}</h1>
-        <p className="text-green-100">
-          Subject: {teacher.subject} | Class: {teacher.class}
-        </p>
+        <div className="text-green-100 text-sm sm:text-base space-y-1">
+          <p>Subjects: {subjectSummary}</p>
+          <p>Classes: {classSummary}</p>
+        </div>
       </div>
 
       {/* Quick Stats */}
@@ -811,9 +837,12 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                         <CardContent className="p-4">
                           <div className="text-sm font-medium text-gray-600">Class Average</div>
                           <div className="text-2xl font-bold text-[#2d682d]">
-                            {Math.round(
-                              marksData.reduce((sum, student) => sum + student.averageScore, 0) / marksData.length,
-                            )}
+                            {marksData.length > 0
+                              ? Math.round(
+                                  marksData.reduce((sum, student) => sum + student.averageScore, 0) /
+                                    marksData.length,
+                                )
+                              : 0}
                             %
                           </div>
                         </CardContent>
@@ -822,7 +851,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                         <CardContent className="p-4">
                           <div className="text-sm font-medium text-gray-600">Highest Score</div>
                           <div className="text-2xl font-bold text-[#b29032]">
-                            {Math.max(...marksData.map((s) => s.grandTotal))}
+                            {marksData.length > 0 ? Math.max(...marksData.map((s) => s.grandTotal)) : 0}
                           </div>
                         </CardContent>
                       </Card>
@@ -830,7 +859,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                         <CardContent className="p-4">
                           <div className="text-sm font-medium text-gray-600">Lowest Score</div>
                           <div className="text-2xl font-bold text-red-600">
-                            {Math.min(...marksData.map((s) => s.grandTotal))}
+                            {marksData.length > 0 ? Math.min(...marksData.map((s) => s.grandTotal)) : 0}
                           </div>
                         </CardContent>
                       </Card>
@@ -838,7 +867,12 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                         <CardContent className="p-4">
                           <div className="text-sm font-medium text-gray-600">Pass Rate</div>
                           <div className="text-2xl font-bold text-green-600">
-                            {Math.round((marksData.filter((s) => s.grade !== "F").length / marksData.length) * 100)}%
+                            {marksData.length > 0
+                              ? Math.round(
+                                  (marksData.filter((s) => s.grade !== "F").length / marksData.length) * 100,
+                                )
+                              : 0}
+                            %
                           </div>
                         </CardContent>
                       </Card>
@@ -1307,7 +1341,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               <CardDescription>Upload and manage study materials for your students</CardDescription>
             </CardHeader>
             <CardContent>
-              <StudyMaterials userRole="teacher" teacherSubjects={teacher.subjects} />
+              <StudyMaterials userRole="teacher" teacherName={teacher.name} />
             </CardContent>
           </Card>
         </TabsContent>
