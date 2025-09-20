@@ -97,6 +97,128 @@ interface TimetableSlot {
   location?: string | null
 }
 
+type ExamScheduleStatus = "scheduled" | "completed" | "cancelled"
+
+interface ExamScheduleRecord {
+  id: string
+  subject: string
+  classId: string
+  className: string
+  term: string
+  session: string
+  examDate: string
+  startTime: string
+  endTime: string
+  durationMinutes: number
+  venue?: string | null
+  invigilator?: string | null
+  notes?: string | null
+  status: ExamScheduleStatus
+  createdBy?: string | null
+  updatedBy?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+interface CreateExamScheduleInput {
+  subject: string
+  classId: string
+  className?: string
+  term: string
+  session: string
+  examDate: string
+  startTime: string
+  endTime: string
+  venue?: string | null
+  invigilator?: string | null
+  notes?: string | null
+  createdBy?: string | null
+}
+
+type UpdateExamScheduleInput = Partial<
+  Omit<ExamScheduleRecord, "id" | "createdAt" | "updatedAt" | "classId" | "className" | "subject">
+> &
+  Partial<Pick<ExamScheduleRecord, "classId" | "className" | "subject">>
+
+interface ExamResultRecord {
+  id: string
+  examId: string
+  studentId: string
+  studentName: string
+  classId: string
+  className: string
+  subject: string
+  term: string
+  session: string
+  ca1: number
+  ca2: number
+  assignment: number
+  exam: number
+  total: number
+  grade: string
+  position?: number | null
+  totalStudents?: number | null
+  remarks?: string | null
+  status: "pending" | "published" | "withheld"
+  publishedAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+interface ExamResultInput {
+  studentId: string
+  studentName: string
+  ca1: number
+  ca2: number
+  assignment: number
+  exam: number
+  position?: number | null
+  totalStudents?: number | null
+  remarks?: string | null
+  status?: "pending" | "published" | "withheld"
+  grade?: string
+}
+
+interface CumulativeSubjectAverage {
+  name: string
+  average: number
+  grade: string
+  trend: "up" | "down" | "stable"
+}
+
+interface CumulativeTermRecord {
+  term: string
+  session: string
+  subjects: Array<{
+    name: string
+    ca1: number
+    ca2: number
+    assignment: number
+    exam: number
+    total: number
+    grade: string
+    position: number | null
+  }>
+  overallAverage: number
+  overallGrade: string
+  classPosition: number
+  totalStudents: number
+}
+
+interface StudentCumulativeReportRecord {
+  studentId: string
+  studentName: string
+  className: string
+  session: string
+  terms: CumulativeTermRecord[]
+  cumulativeAverage: number
+  cumulativeGrade: string
+  cumulativePosition: number
+  totalStudents: number
+  subjectAverages: CumulativeSubjectAverage[]
+  updatedAt: string
+}
+
 interface LibraryBookRecord {
   id: string
   title: string
@@ -177,6 +299,11 @@ class DatabaseManager {
     CATALOG: "libraryCatalog",
     BORROWED: "libraryBorrowedRecords",
     REQUESTS: "libraryBookRequests",
+  }
+  private readonly examStorageKeys = {
+    SCHEDULES: "examSchedules",
+    RESULTS: "examResults",
+    CUMULATIVES: "cumulativeReports",
   }
 
   constructor() {
@@ -301,11 +428,11 @@ class DatabaseManager {
 
   private ensureTimetable(className: string): TimetableSlot[] {
     const key = this.getTimetableStorageKey(className)
-    const raw = safeStorage.getItem(key)
+    const raw = readStorageValue(key)
 
     if (!raw) {
       const seeded = this.seedTimetable(className)
-      safeStorage.setItem(key, JSON.stringify(seeded))
+      writeStorageValue(key, JSON.stringify(seeded))
       return seeded
     }
 
@@ -314,14 +441,14 @@ class DatabaseManager {
     } catch (error) {
       console.error("Error parsing timetable from storage:", error)
       const seeded = this.seedTimetable(className)
-      safeStorage.setItem(key, JSON.stringify(seeded))
+      writeStorageValue(key, JSON.stringify(seeded))
       return seeded
     }
   }
 
   private persistTimetable(className: string, slots: TimetableSlot[]) {
     const key = this.getTimetableStorageKey(className)
-    safeStorage.setItem(key, JSON.stringify(slots))
+    writeStorageValue(key, JSON.stringify(slots))
   }
 
   private seedTimetable(className: string): TimetableSlot[] {
@@ -378,6 +505,431 @@ class DatabaseManager {
     }
 
     return baseSlots
+  }
+
+  private ensureExamSchedules(): ExamScheduleRecord[] {
+    const raw = readStorageValue(this.examStorageKeys.SCHEDULES)
+
+    if (!raw) {
+      const seeded = this.seedExamSchedules()
+      writeStorageValue(this.examStorageKeys.SCHEDULES, JSON.stringify(seeded))
+      return seeded
+    }
+
+    try {
+      return JSON.parse(raw) as ExamScheduleRecord[]
+    } catch (error) {
+      console.error("Error parsing exam schedules from storage:", error)
+      const seeded = this.seedExamSchedules()
+      writeStorageValue(this.examStorageKeys.SCHEDULES, JSON.stringify(seeded))
+      return seeded
+    }
+  }
+
+  private persistExamSchedules(records: ExamScheduleRecord[]): void {
+    writeStorageValue(this.examStorageKeys.SCHEDULES, JSON.stringify(records))
+  }
+
+  private seedExamSchedules(): ExamScheduleRecord[] {
+    const timestamp = new Date().toISOString()
+    const addDays = (days: number) => {
+      const date = new Date()
+      date.setDate(date.getDate() + days)
+      return date.toISOString().split("T")[0]
+    }
+
+    return [
+      {
+        id: this.generateId("exam"),
+        subject: "Mathematics",
+        classId: "class_jss2a",
+        className: "JSS 2A",
+        term: "First Term",
+        session: "2024/2025",
+        examDate: addDays(7),
+        startTime: "09:00",
+        endTime: "11:00",
+        durationMinutes: 120,
+        venue: "Main Examination Hall",
+        invigilator: "Mrs. Sarah Johnson",
+        notes: "Ensure calculators are fully charged.",
+        status: "scheduled",
+        createdBy: "system",
+        updatedBy: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        id: this.generateId("exam"),
+        subject: "English Language",
+        classId: "class_jss2a",
+        className: "JSS 2A",
+        term: "First Term",
+        session: "2024/2025",
+        examDate: addDays(9),
+        startTime: "12:00",
+        endTime: "14:00",
+        durationMinutes: 120,
+        venue: "Main Examination Hall",
+        invigilator: "Mr. John Smith",
+        notes: "Essay and comprehension sections included.",
+        status: "scheduled",
+        createdBy: "system",
+        updatedBy: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        id: this.generateId("exam"),
+        subject: "Physics",
+        classId: "class_ss1b",
+        className: "SS 1B",
+        term: "Third Term",
+        session: "2023/2024",
+        examDate: addDays(-14),
+        startTime: "10:00",
+        endTime: "12:00",
+        durationMinutes: 120,
+        venue: "Science Laboratory",
+        invigilator: "Mrs. Ada Okafor",
+        notes: "Practical section to hold a day before.",
+        status: "completed",
+        createdBy: "system",
+        updatedBy: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ]
+  }
+
+  private ensureExamResults(): ExamResultRecord[] {
+    const raw = readStorageValue(this.examStorageKeys.RESULTS)
+
+    if (!raw) {
+      const schedules = this.ensureExamSchedules()
+      const seeded = this.seedExamResults(schedules)
+      writeStorageValue(this.examStorageKeys.RESULTS, JSON.stringify(seeded))
+      const cumulativeSeed = this.rebuildCumulativeReportsFromResults(seeded)
+      writeStorageValue(this.examStorageKeys.CUMULATIVES, JSON.stringify(cumulativeSeed))
+      return seeded
+    }
+
+    try {
+      return JSON.parse(raw) as ExamResultRecord[]
+    } catch (error) {
+      console.error("Error parsing exam results from storage:", error)
+      const schedules = this.ensureExamSchedules()
+      const seeded = this.seedExamResults(schedules)
+      writeStorageValue(this.examStorageKeys.RESULTS, JSON.stringify(seeded))
+      const cumulativeSeed = this.rebuildCumulativeReportsFromResults(seeded)
+      writeStorageValue(this.examStorageKeys.CUMULATIVES, JSON.stringify(cumulativeSeed))
+      return seeded
+    }
+  }
+
+  private persistExamResults(records: ExamResultRecord[]): void {
+    writeStorageValue(this.examStorageKeys.RESULTS, JSON.stringify(records))
+  }
+
+  private seedExamResults(schedules: ExamScheduleRecord[]): ExamResultRecord[] {
+    if (schedules.length === 0) {
+      return []
+    }
+
+    const completedExam = schedules.find((schedule) => schedule.status === "completed")
+
+    if (!completedExam) {
+      return []
+    }
+
+    const timestamp = new Date().toISOString()
+    const sampleStudents = [
+      { id: "student_olamide_ade", name: "Olamide Ade", position: 1, totals: { ca1: 18, ca2: 17, assignment: 9, exam: 52 } },
+      { id: "student_chinwe_okoro", name: "Chinwe Okoro", position: 3, totals: { ca1: 15, ca2: 16, assignment: 8, exam: 48 } },
+      { id: "student_ibrahim_lawal", name: "Ibrahim Lawal", position: 5, totals: { ca1: 14, ca2: 15, assignment: 7, exam: 44 } },
+    ]
+
+    return sampleStudents.map((student) => {
+      const total = student.totals.ca1 + student.totals.ca2 + student.totals.assignment + student.totals.exam
+      return {
+        id: this.generateId("exam_result"),
+        examId: completedExam.id,
+        studentId: student.id,
+        studentName: student.name,
+        classId: completedExam.classId,
+        className: completedExam.className,
+        subject: completedExam.subject,
+        term: completedExam.term,
+        session: completedExam.session,
+        ca1: student.totals.ca1,
+        ca2: student.totals.ca2,
+        assignment: student.totals.assignment,
+        exam: student.totals.exam,
+        total,
+        grade: this.calculateGradeFromTotal(total),
+        position: student.position,
+        totalStudents: 32,
+        remarks: student.position <= 2 ? "Excellent performance" : "Keep improving",
+        status: "published",
+        publishedAt: timestamp,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+    })
+  }
+
+  private ensureCumulativeReports(): StudentCumulativeReportRecord[] {
+    const raw = readStorageValue(this.examStorageKeys.CUMULATIVES)
+
+    if (!raw) {
+      const rebuilt = this.rebuildCumulativeReportsFromResults(this.ensureExamResults())
+      writeStorageValue(this.examStorageKeys.CUMULATIVES, JSON.stringify(rebuilt))
+      return rebuilt
+    }
+
+    try {
+      return JSON.parse(raw) as StudentCumulativeReportRecord[]
+    } catch (error) {
+      console.error("Error parsing cumulative reports from storage:", error)
+      const rebuilt = this.rebuildCumulativeReportsFromResults(this.ensureExamResults())
+      writeStorageValue(this.examStorageKeys.CUMULATIVES, JSON.stringify(rebuilt))
+      return rebuilt
+    }
+  }
+
+  private persistCumulativeReports(records: StudentCumulativeReportRecord[]): void {
+    writeStorageValue(this.examStorageKeys.CUMULATIVES, JSON.stringify(records))
+  }
+
+  private calculateGradeFromTotal(total: number): string {
+    if (total >= 85) return "A+"
+    if (total >= 75) return "A"
+    if (total >= 65) return "B"
+    if (total >= 55) return "C"
+    if (total >= 45) return "D"
+    if (total >= 40) return "E"
+    return "F"
+  }
+
+  private calculateDurationMinutes(startTime: string, endTime: string): number {
+    const toMinutes = (value: string): number => {
+      const normalised = value.trim().toUpperCase()
+
+      const amPmMatch = normalised.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/)
+      if (amPmMatch) {
+        let hours = Number(amPmMatch[1]) % 12
+        const minutes = Number(amPmMatch[2])
+        if (amPmMatch[3] === "PM") {
+          hours += 12
+        }
+        return hours * 60 + minutes
+      }
+
+      const parts = normalised.split(":")
+      const hours = Number(parts[0])
+      const minutes = Number(parts[1] ?? "0")
+
+      if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+        return 0
+      }
+
+      return hours * 60 + minutes
+    }
+
+    const start = toMinutes(startTime)
+    const end = toMinutes(endTime)
+
+    if (start === 0 && end === 0) {
+      return 0
+    }
+
+    let duration = end - start
+    if (duration <= 0) {
+      duration += 24 * 60
+    }
+
+    return duration
+  }
+
+  private rebuildCumulativeReportsFromResults(results: ExamResultRecord[]): StudentCumulativeReportRecord[] {
+    if (!Array.isArray(results) || results.length === 0) {
+      return []
+    }
+
+    const studentSessionMap = new Map<
+      string,
+      {
+        studentId: string
+        studentName: string
+        className: string
+        session: string
+        termMap: Map<
+          string,
+          {
+            term: string
+            session: string
+            subjects: CumulativeTermRecord["subjects"]
+            totalScore: number
+            subjectCount: number
+            positionTotal: number
+            totalStudents: number
+          }
+        >
+        subjectHistory: Map<string, Array<{ termIndex: number; total: number }>>
+      }
+    >()
+
+    const termOrder = ["First Term", "Second Term", "Third Term"]
+    const resolveTermIndex = (term: string) => {
+      const index = termOrder.indexOf(term)
+      return index === -1 ? termOrder.length : index
+    }
+
+    results.forEach((result) => {
+      const key = `${result.studentId}_${result.session}`
+      if (!studentSessionMap.has(key)) {
+        studentSessionMap.set(key, {
+          studentId: result.studentId,
+          studentName: result.studentName,
+          className: result.className,
+          session: result.session,
+          termMap: new Map(),
+          subjectHistory: new Map(),
+        })
+      }
+
+      const entry = studentSessionMap.get(key)!
+      const termKey = result.term
+
+      if (!entry.termMap.has(termKey)) {
+        entry.termMap.set(termKey, {
+          term: result.term,
+          session: result.session,
+          subjects: [],
+          totalScore: 0,
+          subjectCount: 0,
+          positionTotal: 0,
+          totalStudents: result.totalStudents ?? 0,
+        })
+      }
+
+      const termEntry = entry.termMap.get(termKey)!
+      termEntry.subjects.push({
+        name: result.subject,
+        ca1: result.ca1,
+        ca2: result.ca2,
+        assignment: result.assignment,
+        exam: result.exam,
+        total: result.total,
+        grade: result.grade,
+        position: result.position ?? null,
+      })
+      termEntry.totalScore += result.total
+      termEntry.subjectCount += 1
+      if (typeof result.position === "number") {
+        termEntry.positionTotal += result.position
+      }
+      if (typeof result.totalStudents === "number") {
+        termEntry.totalStudents = Math.max(termEntry.totalStudents, result.totalStudents)
+      }
+
+      const subjectHistory = entry.subjectHistory.get(result.subject) ?? []
+      subjectHistory.push({ termIndex: resolveTermIndex(result.term), total: result.total })
+      entry.subjectHistory.set(result.subject, subjectHistory)
+    })
+
+    const reports: StudentCumulativeReportRecord[] = []
+
+    studentSessionMap.forEach((entry) => {
+      const terms: CumulativeTermRecord[] = Array.from(entry.termMap.values())
+        .map((term) => {
+          const overallAverage = term.subjectCount > 0 ? Math.round(term.totalScore / term.subjectCount) : 0
+          const classPosition =
+            term.subjectCount > 0 && term.positionTotal > 0
+              ? Math.max(1, Math.round(term.positionTotal / term.subjectCount))
+              : 1
+          const totalStudents = term.totalStudents && term.totalStudents > 0 ? term.totalStudents : Math.max(1, term.subjectCount)
+
+          return {
+            term: term.term,
+            session: term.session,
+            subjects: term.subjects.map((subject) => ({
+              ...subject,
+              total: Math.round(subject.total),
+            })),
+            overallAverage,
+            overallGrade: this.calculateGradeFromTotal(overallAverage),
+            classPosition,
+            totalStudents,
+          }
+        })
+        .sort((a, b) => resolveTermIndex(a.term) - resolveTermIndex(b.term))
+
+      const cumulativeAverage =
+        terms.length > 0 ? Math.round(terms.reduce((sum, term) => sum + term.overallAverage, 0) / terms.length) : 0
+      const cumulativeGrade = this.calculateGradeFromTotal(cumulativeAverage)
+      const cumulativePosition =
+        terms.length > 0
+          ? Math.max(1, Math.round(terms.reduce((sum, term) => sum + term.classPosition, 0) / terms.length))
+          : 1
+      const totalStudents = terms.reduce((max, term) => Math.max(max, term.totalStudents), 0) || (terms[0]?.totalStudents ?? 0)
+
+      const subjectAverages: CumulativeSubjectAverage[] = Array.from(entry.subjectHistory.entries())
+        .map(([name, history]) => {
+          const sortedHistory = history.sort((a, b) => a.termIndex - b.termIndex)
+          const average = Math.round(sortedHistory.reduce((sum, item) => sum + item.total, 0) / sortedHistory.length)
+          const trendDelta = sortedHistory.length > 1 ? sortedHistory[sortedHistory.length - 1].total - sortedHistory[0].total : 0
+          const trend: "up" | "down" | "stable" = trendDelta > 0 ? "up" : trendDelta < 0 ? "down" : "stable"
+
+          return {
+            name,
+            average,
+            grade: this.calculateGradeFromTotal(average),
+            trend,
+          }
+        })
+        .sort((a, b) => a.name.localeCompare(b.name))
+
+      reports.push({
+        studentId: entry.studentId,
+        studentName: entry.studentName,
+        className: entry.className,
+        session: entry.session,
+        terms,
+        cumulativeAverage,
+        cumulativeGrade,
+        cumulativePosition,
+        totalStudents: totalStudents || terms.length,
+        subjectAverages,
+        updatedAt: new Date().toISOString(),
+      })
+    })
+
+    return reports
+  }
+
+  private updateCumulativeReportsForStudents(studentIds: string[], session: string): void {
+    if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      return
+    }
+
+    const results = this.ensureExamResults().filter(
+      (result) => studentIds.includes(result.studentId) && (!session || result.session === session),
+    )
+
+    if (results.length === 0) {
+      return
+    }
+
+    const recalculated = this.rebuildCumulativeReportsFromResults(results)
+    const existing = this.ensureCumulativeReports()
+    const filteredExisting = existing.filter(
+      (record) => !studentIds.includes(record.studentId) || (session && record.session !== session),
+    )
+    const merged = [...filteredExisting, ...recalculated]
+
+    this.persistCumulativeReports(merged)
+    this.triggerEvent("cumulativeReportUpdated", { studentIds, session })
   }
 
   private ensureLibraryBooks(studentId: string): LibraryBookRecord[] {
@@ -1022,6 +1574,342 @@ class DatabaseManager {
     this.persistTimetable(className, slots)
     this.triggerEvent("timetableUpdated", { className, slots })
     return slots
+  }
+
+  async addTimetableSlot(
+    className: string,
+    slot: Omit<TimetableSlot, "id">,
+  ): Promise<TimetableSlot> {
+    const slots = this.ensureTimetable(className)
+    const newSlot: TimetableSlot = { id: this.generateId("slot"), ...slot }
+    slots.push(newSlot)
+    this.persistTimetable(className, slots)
+    this.triggerEvent("timetableUpdated", { className, slots })
+    return this.deepClone(newSlot)
+  }
+
+  async updateTimetableSlot(
+    className: string,
+    slotId: string,
+    updates: Partial<Omit<TimetableSlot, "id">>,
+  ): Promise<TimetableSlot | null> {
+    const slots = this.ensureTimetable(className)
+    const index = slots.findIndex((slot) => slot.id === slotId)
+
+    if (index === -1) {
+      return null
+    }
+
+    const updatedSlot: TimetableSlot = { ...slots[index], ...updates }
+    slots[index] = updatedSlot
+    this.persistTimetable(className, slots)
+    this.triggerEvent("timetableUpdated", { className, slots })
+    return this.deepClone(updatedSlot)
+  }
+
+  async deleteTimetableSlot(className: string, slotId: string): Promise<boolean> {
+    const slots = this.ensureTimetable(className)
+    const filtered = slots.filter((slot) => slot.id !== slotId)
+
+    if (filtered.length === slots.length) {
+      return false
+    }
+
+    this.persistTimetable(className, filtered)
+    this.triggerEvent("timetableUpdated", { className, slots: filtered })
+    return true
+  }
+
+  async getExamSchedules(
+    filters: {
+      status?: ExamScheduleStatus
+      classId?: string
+      className?: string
+      session?: string
+      term?: string
+    } = {},
+  ): Promise<ExamScheduleRecord[]> {
+    const schedules = this.ensureExamSchedules()
+    const filtered = schedules.filter((exam) => {
+      if (filters.status && exam.status !== filters.status) {
+        return false
+      }
+      if (filters.classId && exam.classId !== filters.classId) {
+        return false
+      }
+      if (filters.className && exam.className !== filters.className) {
+        return false
+      }
+      if (filters.session && exam.session !== filters.session) {
+        return false
+      }
+      if (filters.term && exam.term !== filters.term) {
+        return false
+      }
+      return true
+    })
+
+    return this.deepClone(
+      filtered.sort((a, b) => a.examDate.localeCompare(b.examDate) || a.startTime.localeCompare(b.startTime)),
+    )
+  }
+
+  async createExamSchedule(payload: CreateExamScheduleInput): Promise<ExamScheduleRecord> {
+    const schedules = this.ensureExamSchedules()
+    const now = new Date().toISOString()
+    const classes = this.getClasses()
+    const matchedClass = Array.isArray(classes)
+      ? classes.find((cls: any) => cls?.id === payload.classId || cls?.name === payload.classId)
+      : undefined
+    const resolvedClassName = payload.className ?? matchedClass?.name ?? payload.classId
+
+    const newExam: ExamScheduleRecord = {
+      id: this.generateId("exam"),
+      subject: payload.subject,
+      classId: payload.classId,
+      className: resolvedClassName,
+      term: payload.term,
+      session: payload.session,
+      examDate: payload.examDate,
+      startTime: payload.startTime,
+      endTime: payload.endTime,
+      durationMinutes: this.calculateDurationMinutes(payload.startTime, payload.endTime),
+      venue: payload.venue ?? null,
+      invigilator: payload.invigilator ?? null,
+      notes: payload.notes ?? null,
+      status: "scheduled",
+      createdBy: payload.createdBy ?? null,
+      updatedBy: payload.createdBy ?? null,
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    schedules.push(newExam)
+    this.persistExamSchedules(schedules)
+    this.triggerEvent("examScheduleUpdated", { action: "created", exam: newExam })
+
+    return this.deepClone(newExam)
+  }
+
+  async updateExamSchedule(examId: string, updates: UpdateExamScheduleInput): Promise<ExamScheduleRecord> {
+    const schedules = this.ensureExamSchedules()
+    const index = schedules.findIndex((exam) => exam.id === examId)
+
+    if (index === -1) {
+      throw new Error("Exam schedule not found")
+    }
+
+    const now = new Date().toISOString()
+    const existing = schedules[index]
+    const startTime = updates.startTime ?? existing.startTime
+    const endTime = updates.endTime ?? existing.endTime
+
+    const updatedExam: ExamScheduleRecord = {
+      ...existing,
+      ...updates,
+      classId: updates.classId ?? existing.classId,
+      className: updates.className ?? existing.className,
+      subject: updates.subject ?? existing.subject,
+      startTime,
+      endTime,
+      durationMinutes:
+        startTime && endTime ? this.calculateDurationMinutes(startTime, endTime) : existing.durationMinutes,
+      updatedBy: updates.updatedBy ?? existing.updatedBy ?? null,
+      updatedAt: now,
+    }
+
+    schedules[index] = updatedExam
+    this.persistExamSchedules(schedules)
+    this.triggerEvent("examScheduleUpdated", { action: "updated", exam: updatedExam })
+
+    return this.deepClone(updatedExam)
+  }
+
+  async deleteExamSchedule(examId: string): Promise<boolean> {
+    const schedules = this.ensureExamSchedules()
+    const index = schedules.findIndex((exam) => exam.id === examId)
+
+    if (index === -1) {
+      return false
+    }
+
+    const [removed] = schedules.splice(index, 1)
+    this.persistExamSchedules(schedules)
+
+    const existingResults = this.ensureExamResults()
+    const remainingResults = existingResults.filter((result) => result.examId !== examId)
+    const removedResults = existingResults.filter((result) => result.examId === examId)
+
+    if (remainingResults.length !== existingResults.length) {
+      this.persistExamResults(remainingResults)
+      const affectedStudents = Array.from(new Set(removedResults.map((result) => result.studentId)))
+      if (affectedStudents.length > 0) {
+        this.updateCumulativeReportsForStudents(affectedStudents, removed.session)
+      }
+    }
+
+    this.triggerEvent("examScheduleUpdated", { action: "deleted", exam: removed })
+    return true
+  }
+
+  async getExamResults(examId: string): Promise<ExamResultRecord[]> {
+    const results = this.ensureExamResults().filter((result) => result.examId === examId)
+    return this.deepClone(results)
+  }
+
+  async saveExamResults(
+    examId: string,
+    results: ExamResultInput[],
+    options: { autoPublish?: boolean } = {},
+  ): Promise<ExamResultRecord[]> {
+    const schedules = this.ensureExamSchedules()
+    const examIndex = schedules.findIndex((exam) => exam.id === examId)
+
+    if (examIndex === -1) {
+      throw new Error("Exam schedule not found")
+    }
+
+    const exam = schedules[examIndex]
+    const existingResults = this.ensureExamResults()
+    const remainingResults = existingResults.filter((result) => result.examId !== examId)
+    const now = new Date().toISOString()
+
+    const processedResults: ExamResultRecord[] = results.map((input) => {
+      const total = input.ca1 + input.ca2 + input.assignment + input.exam
+      const existing = existingResults.find(
+        (record) => record.examId === examId && record.studentId === input.studentId,
+      )
+
+      const status = input.status ?? existing?.status ?? (options.autoPublish ? "published" : "pending")
+      const publishedAt =
+        status === "published" ? existing?.publishedAt ?? now : existing?.publishedAt ?? null
+
+      return {
+        id: existing?.id ?? this.generateId("exam_result"),
+        examId,
+        studentId: input.studentId,
+        studentName: input.studentName,
+        classId: exam.classId,
+        className: exam.className,
+        subject: exam.subject,
+        term: exam.term,
+        session: exam.session,
+        ca1: input.ca1,
+        ca2: input.ca2,
+        assignment: input.assignment,
+        exam: input.exam,
+        total,
+        grade: input.grade ?? this.calculateGradeFromTotal(total),
+        position: input.position ?? existing?.position ?? null,
+        totalStudents: input.totalStudents ?? existing?.totalStudents ?? results.length,
+        remarks: input.remarks ?? existing?.remarks ?? null,
+        status,
+        publishedAt,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      }
+    })
+
+    const combinedResults = [...remainingResults, ...processedResults]
+    this.persistExamResults(combinedResults)
+
+    const uniqueStudentIds = Array.from(new Set(processedResults.map((result) => result.studentId)))
+    if (uniqueStudentIds.length > 0) {
+      this.updateCumulativeReportsForStudents(uniqueStudentIds, exam.session)
+    }
+
+    const updatedExam: ExamScheduleRecord = {
+      ...exam,
+      status: processedResults.length > 0 ? "completed" : exam.status,
+      updatedAt: now,
+    }
+    schedules[examIndex] = updatedExam
+    this.persistExamSchedules(schedules)
+    this.triggerEvent("examScheduleUpdated", { action: "updated", exam: updatedExam })
+    this.triggerEvent("examResultsUpdated", { examId, results: processedResults })
+
+    return this.deepClone(processedResults)
+  }
+
+  async publishExamResults(examId: string): Promise<ExamResultRecord[]> {
+    const schedules = this.ensureExamSchedules()
+    const exam = schedules.find((item) => item.id === examId)
+
+    if (!exam) {
+      throw new Error("Exam schedule not found")
+    }
+
+    const now = new Date().toISOString()
+    const results = this.ensureExamResults()
+    let hasChanges = false
+    const updatedResults = results.map((record) => {
+      if (record.examId !== examId) {
+        return record
+      }
+
+      if (record.status === "published" && record.publishedAt) {
+        return record
+      }
+
+      hasChanges = true
+      return {
+        ...record,
+        status: "published",
+        publishedAt: record.publishedAt ?? now,
+        updatedAt: now,
+      }
+    })
+
+    if (hasChanges) {
+      this.persistExamResults(updatedResults)
+      const affectedStudents = Array.from(
+        new Set(updatedResults.filter((record) => record.examId === examId).map((record) => record.studentId)),
+      )
+      if (affectedStudents.length > 0) {
+        this.updateCumulativeReportsForStudents(affectedStudents, exam.session)
+      }
+      this.triggerEvent("examResultsUpdated", { examId, published: true })
+    }
+
+    return this.deepClone(updatedResults.filter((record) => record.examId === examId))
+  }
+
+  async getStudentCumulativeReport(
+    studentId: string,
+    session?: string,
+  ): Promise<StudentCumulativeReportRecord | null> {
+    if (!studentId) {
+      return null
+    }
+
+    const results = this.ensureExamResults().filter(
+      (result) => result.studentId === studentId && (!session || result.session === session),
+    )
+
+    if (results.length === 0) {
+      return null
+    }
+
+    if (session) {
+      this.updateCumulativeReportsForStudents([studentId], session)
+    } else {
+      const sessions = Array.from(new Set(results.map((result) => result.session)))
+      sessions.forEach((sessionKey) => this.updateCumulativeReportsForStudents([studentId], sessionKey))
+    }
+
+    const reports = this.ensureCumulativeReports().filter((report) => report.studentId === studentId)
+
+    if (reports.length === 0) {
+      return null
+    }
+
+    if (session) {
+      const match = reports.find((report) => report.session === session)
+      return match ? this.deepClone(match) : null
+    }
+
+    const sorted = reports.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    return this.deepClone(sorted[0])
   }
 
   async getLibraryBooks(studentId: string): Promise<LibraryBookRecord[]> {

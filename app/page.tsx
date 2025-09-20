@@ -910,7 +910,11 @@ function ParentDashboard({ user }: { user: User }) {
                 >
                   View Report Card
                 </Button>
-                <CumulativeReportTrigger hasAccess={hasAccess || false}>
+                <CumulativeReportTrigger
+                  hasAccess={hasAccess || false}
+                  studentId={studentData.id}
+                  className={studentData.class}
+                >
                   <Button className="w-full bg-[#b29032] hover:bg-[#b29032]/90 text-white" disabled={!hasAccess}>
                     View Cumulative Report
                   </Button>
