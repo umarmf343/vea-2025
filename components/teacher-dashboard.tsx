@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -17,13 +17,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { BookOpen, Users, FileText, GraduationCap, Clock, User, Download, Plus, Edit, Save } from "lucide-react"
+import { BookOpen, Users, FileText, GraduationCap, Clock, User, Download, Plus, Edit, Save, Loader2 } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
 import { saveTeacherMarks } from "@/lib/report-card-data"
 import { InternalMessaging } from "@/components/internal-messaging"
 import { safeStorage } from "@/lib/safe-storage"
-import React from "react"
+import { dbManager } from "@/lib/database-manager"
 
 interface TeacherDashboardProps {
   teacher: {
@@ -33,6 +33,27 @@ interface TeacherDashboardProps {
     subjects: string[]
     classes: string[]
   }
+}
+
+interface TeacherExamSummary {
+  id: string
+  subject: string
+  className: string
+  examDate: string
+  startTime: string
+  endTime: string
+  term: string
+  session: string
+  status: "scheduled" | "completed" | "cancelled"
+}
+
+interface TeacherTimetableSlot {
+  id: string
+  day: string
+  time: string
+  subject: string
+  teacher: string
+  location?: string | null
 }
 
 export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
@@ -66,6 +87,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     file: null as File | null,
   })
 
+  const [teacherExams, setTeacherExams] = useState<TeacherExamSummary[]>([])
+  const [isExamLoading, setIsExamLoading] = useState(true)
+  const [teacherTimetable, setTeacherTimetable] = useState<TeacherTimetableSlot[]>([])
+  const [isTeacherTimetableLoading, setIsTeacherTimetableLoading] = useState(true)
+
   const subjectSummary =
     teacher.subjects.length > 0 ? teacher.subjects.join(", ") : "No subjects assigned yet"
   const classSummary =
@@ -77,16 +103,108 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     { id: 3, name: "Mike Johnson", class: "JSS 2B", subjects: ["English"] },
   ]
 
-  const mockExams = [
-    { id: 1, title: "First Term Mathematics", class: "JSS 1A", date: "2024-03-15", status: "upcoming" },
-    { id: 2, title: "Mid-term English", class: "JSS 2B", date: "2024-03-10", status: "completed" },
-  ]
+  const formatExamDate = (value: string) => {
+    try {
+      return new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short" }).format(new Date(value))
+    } catch (error) {
+      return value
+    }
+  }
 
-  const mockTimetable = [
-    { day: "Monday", time: "8:00-9:00", subject: "Mathematics", class: "JSS 1A" },
-    { day: "Monday", time: "10:00-11:00", subject: "English", class: "JSS 2B" },
-    { day: "Tuesday", time: "9:00-10:00", subject: "Mathematics", class: "JSS 1A" },
-  ]
+  const normalizeClassName = (value: string) => value.replace(/\s+/g, "").toLowerCase()
+
+  const upcomingTeacherExams = useMemo(
+    () =>
+      teacherExams
+        .filter((exam) => exam.status === "scheduled")
+        .sort((a, b) => a.examDate.localeCompare(b.examDate)),
+    [teacherExams],
+  )
+
+  const sortedTeacherTimetable = useMemo(
+    () => teacherTimetable.slice().sort((a, b) => a.time.localeCompare(b.time)),
+    [teacherTimetable],
+  )
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadExams = async () => {
+      try {
+        setIsExamLoading(true)
+        const schedules = await dbManager.getExamSchedules()
+        if (!isMounted) return
+
+        const normalizedClasses = new Set(teacher.classes.map((cls) => normalizeClassName(cls)))
+        const relevantExams = schedules.filter((exam) =>
+          normalizedClasses.has(normalizeClassName(exam.className)),
+        )
+
+        setTeacherExams(relevantExams)
+      } catch (error) {
+        console.error("Failed to load teacher exams", error)
+      } finally {
+        if (isMounted) {
+          setIsExamLoading(false)
+        }
+      }
+    }
+
+    loadExams()
+
+    const handleExamUpdate = () => {
+      loadExams()
+    }
+
+    dbManager.on("examScheduleUpdated", handleExamUpdate)
+    dbManager.on("examResultsUpdated", handleExamUpdate)
+
+    return () => {
+      isMounted = false
+      dbManager.off("examScheduleUpdated", handleExamUpdate)
+      dbManager.off("examResultsUpdated", handleExamUpdate)
+    }
+  }, [teacher.classes])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadTimetable = async () => {
+      if (!selectedClass) {
+        setTeacherTimetable([])
+        setIsTeacherTimetableLoading(false)
+        return
+      }
+
+      try {
+        setIsTeacherTimetableLoading(true)
+        const slots = await dbManager.getTimetable(selectedClass)
+        if (!isMounted) return
+        setTeacherTimetable(slots)
+      } catch (error) {
+        console.error("Failed to load teacher timetable", error)
+      } finally {
+        if (isMounted) {
+          setIsTeacherTimetableLoading(false)
+        }
+      }
+    }
+
+    loadTimetable()
+
+    const handleTimetableUpdate = (payload: { className: string; slots: TeacherTimetableSlot[] }) => {
+      if (payload?.className === selectedClass) {
+        setTeacherTimetable(payload.slots)
+      }
+    }
+
+    dbManager.on("timetableUpdated", handleTimetableUpdate)
+
+    return () => {
+      isMounted = false
+      dbManager.off("timetableUpdated", handleTimetableUpdate)
+    }
+  }, [selectedClass])
 
   const [marksData, setMarksData] = useState([
     {
@@ -288,7 +406,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     return reportCardStatus[key] || { status: "draft" }
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     const savedStatus = safeStorage.getItem("reportCardStatus")
     if (savedStatus) {
       setReportCardStatus(JSON.parse(savedStatus))
@@ -498,7 +616,9 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             <div className="flex items-center space-x-2">
               <FileText className="h-8 w-8 text-[#b29032]" />
               <div>
-                <p className="text-2xl font-bold text-[#b29032]">{mockExams.length}</p>
+                <p className="text-2xl font-bold text-[#b29032]">
+                  {isExamLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : teacherExams.length}
+                </p>
                 <p className="text-sm text-gray-600">Exams</p>
               </div>
             </div>
@@ -543,18 +663,26 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 <CardTitle className="text-[#2d682d]">Upcoming Exams</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  {mockExams
-                    .filter((exam) => exam.status === "upcoming")
-                    .map((exam) => (
+                {isExamLoading ? (
+                  <div className="flex items-center justify-center py-6 text-gray-500">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading upcoming exams...
+                  </div>
+                ) : upcomingTeacherExams.length === 0 ? (
+                  <p className="text-sm text-gray-500">
+                    No upcoming exams scheduled for your classes.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {upcomingTeacherExams.map((exam) => (
                       <div key={exam.id} className="p-2 bg-yellow-50 border-l-4 border-[#b29032] rounded">
-                        <p className="font-medium">{exam.title}</p>
+                        <p className="font-medium">{exam.subject}</p>
                         <p className="text-sm text-gray-600">
-                          {exam.class} - {exam.date}
+                          {exam.className} • {formatExamDate(exam.examDate)} • {exam.term}
                         </p>
                       </div>
                     ))}
-                </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -1313,23 +1441,32 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               <CardDescription>Your teaching schedule</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {mockTimetable.map((slot, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-4">
-                      <Clock className="w-4 h-4 text-[#b29032]" />
-                      <div>
-                        <p className="font-medium">
-                          {slot.day} - {slot.time}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          {slot.subject} - {slot.class}
-                        </p>
+              {isTeacherTimetableLoading ? (
+                <div className="flex items-center justify-center py-6 text-gray-500">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading timetable...
+                </div>
+              ) : sortedTeacherTimetable.length === 0 ? (
+                <p className="text-sm text-gray-500">No timetable entries available for {selectedClass}.</p>
+              ) : (
+                <div className="space-y-2">
+                  {sortedTeacherTimetable.map((slot) => (
+                    <div key={slot.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center space-x-4">
+                        <Clock className="w-4 h-4 text-[#b29032]" />
+                        <div>
+                          <p className="font-medium">
+                            {slot.day} - {slot.time}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            {slot.subject}
+                            {slot.location ? ` • ${slot.location}` : ""}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
