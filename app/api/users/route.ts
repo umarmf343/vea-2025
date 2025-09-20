@@ -30,6 +30,27 @@ function normalizeUserStatus(status: unknown): StoredUserStatus {
   return "active"
 }
 
+function normalizeRoleInput(role: unknown): string | null {
+  if (typeof role !== "string") {
+    return null
+  }
+
+  const normalized = sanitizeInput(role).trim().toLowerCase().replace(/[\s-]+/g, "_")
+
+  switch (normalized) {
+    case "super_admin":
+    case "admin":
+    case "teacher":
+    case "student":
+    case "parent":
+    case "librarian":
+    case "accountant":
+      return normalized
+    default:
+      return null
+  }
+}
+
 // const dbManager = new DatabaseManager()
 
 export async function GET(request: NextRequest) {
@@ -44,7 +65,8 @@ export async function GET(request: NextRequest) {
     }
 
     if (role) {
-      const users = await getUsersByRoleFromDb(role)
+      const resolvedRole = normalizeRoleInput(role) ?? role
+      const users = await getUsersByRoleFromDb(resolvedRole)
       return NextResponse.json({ users })
     }
 
@@ -65,6 +87,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
+    const resolvedRole = normalizeRoleInput(role)
+    if (!resolvedRole) {
+      return NextResponse.json({ error: "Invalid role specified" }, { status: 400 })
+    }
+
     const hashedPassword = await hashPassword(password)
     const statusValue = status !== undefined ? normalizeUserStatus(status) : undefined
     const isActiveValue = typeof isActive === "boolean" ? isActive : undefined
@@ -78,7 +105,7 @@ export async function POST(request: NextRequest) {
     const newUser = await createUserRecord({
       name: sanitizeInput(name),
       email: sanitizeInput(email),
-      role: sanitizeInput(role),
+      role: resolvedRole,
       passwordHash: hashedPassword,
       classId: classId ? String(classId) : undefined,
       studentId: studentId ? String(studentId) : undefined,
@@ -115,7 +142,14 @@ export async function PUT(request: NextRequest) {
 
     Object.entries(updateData).forEach(([key, value]) => {
       if (typeof value === "string") {
-        sanitizedUpdate[key] = sanitizeInput(value)
+        if (key === "role") {
+          const normalizedRole = normalizeRoleInput(value)
+          if (normalizedRole) {
+            sanitizedUpdate.role = normalizedRole
+          }
+        } else {
+          sanitizedUpdate[key] = sanitizeInput(value)
+        }
       } else {
         sanitizedUpdate[key] = value
       }
