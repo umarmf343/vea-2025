@@ -1,7 +1,7 @@
 export const runtime = "nodejs"
 
 import { type NextRequest, NextResponse } from "next/server"
-import { createClassRecord, getAllClassesFromDb, updateClassRecord } from "@/lib/database"
+import { createClassRecord, deleteClassRecord, getAllClassesFromDb, updateClassRecord } from "@/lib/database"
 import { sanitizeInput } from "@/lib/security"
 
 export async function GET() {
@@ -84,5 +84,27 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     console.error("Failed to update class:", error)
     return NextResponse.json({ error: "Failed to update class" }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get("id")
+
+    if (!id) {
+      return NextResponse.json({ error: "Class ID is required" }, { status: 400 })
+    }
+
+    const deleted = await deleteClassRecord(id)
+
+    if (!deleted) {
+      return NextResponse.json({ error: "Class not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Failed to delete class:", error)
+    return NextResponse.json({ error: "Failed to delete class" }, { status: 500 })
   }
 }
