@@ -47,6 +47,19 @@ export async function PATCH(
       updates.isPinned = body.isPinned
     }
 
+    if ("scheduledFor" in body) {
+      updates.scheduledFor =
+        body.scheduledFor === null
+          ? null
+          : typeof body.scheduledFor === "string"
+            ? body.scheduledFor
+            : undefined
+    }
+
+    if (typeof body?.status === "string") {
+      updates.status = body.status
+    }
+
     const notice = await updateNoticeRecord(id, updates)
     if (!notice) {
       return NextResponse.json({ error: "Notice not found" }, { status: 404 })
@@ -61,6 +74,8 @@ export async function PATCH(
         targetAudience: notice.targetAudience,
         author: notice.authorName,
         authorRole: notice.authorRole,
+        scheduledFor: notice.scheduledFor,
+        status: notice.status,
         date: notice.createdAt,
         isPinned: notice.isPinned,
       },

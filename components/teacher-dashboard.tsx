@@ -128,6 +128,14 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const classSummary =
     teacher.classes.length > 0 ? teacher.classes.join(", ") : "No classes assigned yet"
 
+  useEffect(() => {
+    setSelectedClass(teacher.classes[0] ?? "")
+  }, [teacher.classes])
+
+  useEffect(() => {
+    setSelectedSubject(teacher.subjects[0] ?? "")
+  }, [teacher.subjects])
+
   const mockStudents = [
     { id: 1, name: "John Doe", class: "JSS 1A", subjects: ["Mathematics", "English"] },
     { id: 2, name: "Jane Smith", class: "JSS 1A", subjects: ["Mathematics"] },
