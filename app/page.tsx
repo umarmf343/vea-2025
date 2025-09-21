@@ -55,6 +55,8 @@ export const viewport: Viewport = {
 
 type UserRole = "super-admin" | "admin" | "teacher" | "student" | "parent" | "librarian" | "accountant"
 
+const SELECTABLE_LOGIN_ROLES: readonly UserRole[] = ["teacher", "student", "parent"]
+
 interface User {
   id: string
   email: string
@@ -155,7 +157,15 @@ export default function HomePage() {
     if (storedUser && storedToken) {
       try {
         const parsed = JSON.parse(storedUser) as User
-        if (parsed.role === "teacher" || parsed.role === "student" || parsed.role === "parent") {
+        if (
+          parsed.role === "teacher" ||
+          parsed.role === "student" ||
+          parsed.role === "parent" ||
+          parsed.role === "admin" ||
+          parsed.role === "super-admin" ||
+          parsed.role === "librarian" ||
+          parsed.role === "accountant"
+        ) {
           setCurrentUser(parsed)
         } else {
           safeStorage.removeItem("vea_current_user")
@@ -192,7 +202,7 @@ export default function HomePage() {
       }
 
       const userRole = mapApiRoleToUi(payload.user?.role ?? loginForm.role)
-      if (userRole !== loginForm.role) {
+      if (SELECTABLE_LOGIN_ROLES.includes(userRole) && userRole !== loginForm.role) {
         setLoginError("This account does not match the selected role.")
         return
       }
