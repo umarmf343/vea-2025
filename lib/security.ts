@@ -3,6 +3,9 @@ import jwt from "jsonwebtoken"
 import { rateLimit } from "express-rate-limit"
 import crypto from "crypto"
 
+const DEFAULT_JWT_SECRET = "vea-2025-development-secret"
+const JWT_SECRET = (process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET).trim()
+
 // Password hashing utilities
 export const hashPassword = async (password: string): Promise<string> => {
   const saltRounds = 12
@@ -15,12 +18,12 @@ export const verifyPassword = async (password: string, hash: string): Promise<bo
 
 // JWT utilities
 export const generateToken = (payload: any): string => {
-  return jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: "24h" })
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "24h" })
 }
 
 export const verifyToken = (token: string): any => {
   try {
-    return jwt.verify(token, process.env.JWT_SECRET!)
+    return jwt.verify(token, JWT_SECRET)
   } catch (error) {
     throw new Error("Invalid token")
   }
@@ -46,53 +49,7 @@ export const sanitizeInput = (input: string): string => {
     .trim()
 }
 
-// Role-based access control
-export const hasPermission = (userRole: string, requiredRoles: string[]): boolean => {
-  const roleHierarchy = {
-    "Super Admin": 7,
-    Admin: 6,
-    Teacher: 5,
-    Accountant: 4,
-    Librarian: 3,
-    Parent: 2,
-    Student: 1,
-  }
-
-  const userLevel = roleHierarchy[userRole as keyof typeof roleHierarchy] || 0
-  const requiredLevel = Math.max(...requiredRoles.map((role) => roleHierarchy[role as keyof typeof roleHierarchy] || 0))
-
-  return userLevel >= requiredLevel
-}
-
-// Data encryption utilities
-export const encryptSensitiveData = (data: string): string => {
-  if (typeof window !== "undefined") {
-    // Client-side fallback
-    return Buffer.from(data).toString("base64")
-  }
-
-  const algorithm = "aes-256-gcm"
-  const key = process.env.ENCRYPTION_KEY || "default-key-change-in-production"
-  const keyBuffer = crypto.scryptSync(key, "salt", 32)
-  const iv = crypto.randomBytes(16)
-
-  const cipher = crypto.createCipheriv(algorithm, keyBuffer, iv)
-  cipher.setAAD(Buffer.from("additional-data"))
-
-  const encryptedBuffer = Buffer.concat([cipher.update(data, "utf8"), cipher.final()])
-  const authTag = cipher.getAuthTag()
-
-  return `${iv.toString("hex")}:${authTag.toString("hex")}:${encryptedBuffer.toString("hex")}`
-}
-
-export const decryptSensitiveData = (encryptedData: string): string => {
-  if (typeof window !== "undefined") {
-    // Client-side fallback
-    return Buffer.from(encryptedData, "base64").toString("utf-8")
-  }
-
-  const algorithm = "aes-256-gcm"
-  const key = process.env.ENCRYPTION_KEY || "default-key-change-in-production"
+@@ -96,69 +99,74 @@ export const decryptSensitiveData = (encryptedData: string): string => {
   const keyBuffer = crypto.scryptSync(key, "salt", 32)
 
   const parts = encryptedData.split(":")
@@ -118,7 +75,9 @@ export const validateEmail = (email: string): boolean => {
   return emailRegex.test(email) && email.length <= 255
 }
 
-export const validatePassword = (password: string): { isValid: boolean; errors: string[] } => {
+export const validatePassword = (
+  password: string,
+): { isValid: boolean; errors: string[]; message: string } => {
   const errors: string[] = []
 
   if (password.length < 8) {
@@ -141,9 +100,12 @@ export const validatePassword = (password: string): { isValid: boolean; errors: 
     errors.push("Password must contain at least one special character")
   }
 
+  const isValid = errors.length === 0
+
   return {
-    isValid: errors.length === 0,
+    isValid,
     errors,
+    message: isValid ? "Password meets all requirements" : errors[0] ?? "Invalid password",
   }
 }
 
