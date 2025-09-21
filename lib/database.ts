@@ -288,6 +288,8 @@ export interface PaymentInitializationPayload {
 
 export type NoticeCategory = "general" | "academic" | "event" | "urgent" | "celebration"
 
+export type NoticeStatus = "draft" | "scheduled" | "published"
+
 export interface NoticeRecord extends CollectionRecord {
   title: string
   content: string
@@ -296,12 +298,16 @@ export interface NoticeRecord extends CollectionRecord {
   authorName: string
   authorRole: string
   isPinned: boolean
+  scheduledFor: string | null
+  status: NoticeStatus
 }
 
 export interface CreateNoticePayload
-  extends Omit<NoticeRecord, "id" | "createdAt" | "updatedAt" | "isPinned"> {
+  extends Omit<NoticeRecord, "id" | "createdAt" | "updatedAt" | "isPinned" | "status" | "scheduledFor"> {
   id?: string
   isPinned?: boolean
+  scheduledFor?: string | null
+  status?: NoticeStatus
 }
 
 export interface UpdateNoticePayload
@@ -310,6 +316,8 @@ export interface UpdateNoticePayload
 export interface NoticeQueryOptions {
   audience?: string
   onlyPinned?: boolean
+  includeScheduled?: boolean
+  includeDrafts?: boolean
 }
 
 export interface TimetableSlotRecord extends CollectionRecord {
@@ -640,6 +648,8 @@ function createDefaultNotices(): NoticeRecord[] {
       authorName: "School Administrator",
       authorRole: "admin",
       isPinned: true,
+      scheduledFor: null,
+      status: "published",
       createdAt: timestamp,
       updatedAt: timestamp,
     },
@@ -652,6 +662,8 @@ function createDefaultNotices(): NoticeRecord[] {
       authorName: "Academic Coordinator",
       authorRole: "teacher",
       isPinned: false,
+      scheduledFor: null,
+      status: "published",
       createdAt: timestamp,
       updatedAt: timestamp,
     },
@@ -1478,6 +1490,16 @@ export async function deleteUserRecord(id: string): Promise<boolean> {
 export async function getAllClassesFromDb(): Promise<ClassRecord[]> {
   const classes = ensureCollection<ClassRecord>(STORAGE_KEYS.CLASSES, createDefaultClasses)
   return deepClone(classes)
+}
+
+export async function getClassRecordById(id: string): Promise<ClassRecord | null> {
+  if (!id) {
+    return null
+  }
+
+  const classes = ensureCollection<ClassRecord>(STORAGE_KEYS.CLASSES, createDefaultClasses)
+  const match = classes.find((record) => record.id === id)
+  return match ? deepClone(match) : null
 }
 
 export async function createClassRecord(payload: CreateClassPayload): Promise<ClassRecord> {
@@ -2360,9 +2382,18 @@ async function ensureNoticeboardTable(executor?: SqlExecutor | null) {
       author_name VARCHAR(255) NOT NULL,
       author_role VARCHAR(50) NOT NULL,
       is_pinned TINYINT(1) NOT NULL DEFAULT 0,
+      scheduled_for DATETIME NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'published',
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  )
+
+  await pool.query(
+    `ALTER TABLE ${NOTICEBOARD_TABLE} ADD COLUMN IF NOT EXISTS scheduled_for DATETIME NULL`,
+  )
+  await pool.query(
+    `ALTER TABLE ${NOTICEBOARD_TABLE} ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'published'`,
   )
 
   noticesTableEnsured = true
@@ -2443,19 +2474,51 @@ function mapNoticeRow(row: RowDataPacket): NoticeRecord {
     authorName: String(row.author_name),
     authorRole: String(row.author_role),
     isPinned: Boolean(row.is_pinned),
+    scheduledFor:
+      row.scheduled_for === null || row.scheduled_for === undefined
+        ? null
+        : new Date(row.scheduled_for).toISOString(),
+    status: (row.status as NoticeStatus) ?? "published",
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   }
 }
 
+function getNoticeEffectiveDate(notice: NoticeRecord): number {
+  if (notice.scheduledFor) {
+    const scheduledTime = new Date(notice.scheduledFor).getTime()
+    if (!Number.isNaN(scheduledTime)) {
+      return scheduledTime
+    }
+  }
+
+  return new Date(notice.createdAt).getTime()
+}
+
 function sortNotices(notices: NoticeRecord[]): NoticeRecord[] {
   return notices
     .slice()
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .sort((a, b) => getNoticeEffectiveDate(b) - getNoticeEffectiveDate(a))
 }
 
 function filterNoticesCollection(notices: NoticeRecord[], options?: NoticeQueryOptions): NoticeRecord[] {
+  const now = Date.now()
   let filtered = sortNotices(notices)
+
+  if (!options?.includeDrafts) {
+    filtered = filtered.filter((notice) => notice.status !== "draft")
+  }
+
+  if (!options?.includeScheduled) {
+    filtered = filtered.filter((notice) => {
+      if (!notice.scheduledFor) {
+        return true
+      }
+
+      const scheduledTime = new Date(notice.scheduledFor).getTime()
+      return Number.isNaN(scheduledTime) ? true : scheduledTime <= now
+    })
+  }
 
   if (options?.audience && options.audience !== "admin") {
     const normalizedAudience = options.audience.toLowerCase()
@@ -2469,6 +2532,39 @@ function filterNoticesCollection(notices: NoticeRecord[], options?: NoticeQueryO
   }
 
   return filtered
+}
+
+function normalizeScheduleInput(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  const date = new Date(trimmed)
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+
+  return date.toISOString()
+}
+
+function resolveNoticeStatusValue(scheduledFor: string | null, status?: NoticeStatus): NoticeStatus {
+  if (status === "draft") {
+    return "draft"
+  }
+
+  if (scheduledFor) {
+    const scheduledTime = new Date(scheduledFor).getTime()
+    if (!Number.isNaN(scheduledTime) && scheduledTime > Date.now()) {
+      return "scheduled"
+    }
+  }
+
+  return status === "scheduled" ? "scheduled" : "published"
 }
 
 async function listNoticesFromDatabase(options?: NoticeQueryOptions): Promise<NoticeRecord[]> {
@@ -2500,7 +2596,7 @@ async function listNoticesFromDatabase(options?: NoticeQueryOptions): Promise<No
     parameters,
   )
 
-  return rows.map(mapNoticeRow)
+  return filterNoticesCollection(rows.map(mapNoticeRow), options)
 }
 
 function listNoticesFromStore(options?: NoticeQueryOptions): NoticeRecord[] {
@@ -2522,8 +2618,8 @@ export async function getNoticeRecords(options?: NoticeQueryOptions): Promise<No
 
 export async function createNoticeRecord(payload: CreateNoticePayload): Promise<NoticeRecord> {
   const timestamp = new Date().toISOString()
-  const normalizedPayload: CreateNoticePayload = {
-    ...payload,
+  const scheduledFor = normalizeScheduleInput(payload.scheduledFor ?? null)
+  const normalizedPayload: Omit<NoticeRecord, "id" | "createdAt" | "updatedAt"> = {
     title: payload.title.trim(),
     content: payload.content.trim(),
     category: payload.category ?? "general",
@@ -2531,6 +2627,8 @@ export async function createNoticeRecord(payload: CreateNoticePayload): Promise<
     authorName: payload.authorName ?? "System",
     authorRole: payload.authorRole ?? "admin",
     isPinned: payload.isPinned ?? false,
+    scheduledFor,
+    status: resolveNoticeStatusValue(scheduledFor, payload.status),
   }
 
   const pool = getPoolSafe()
@@ -2538,10 +2636,10 @@ export async function createNoticeRecord(payload: CreateNoticePayload): Promise<
     try {
       await ensureNoticeboardTable(pool)
 
-      const id = normalizedPayload.id ?? generateId("notice")
+      const id = payload.id ?? generateId("notice")
       await pool.execute<ResultSetHeader>(
-        `INSERT INTO ${NOTICEBOARD_TABLE} (id, title, content, category, target_audience, author_name, author_role, is_pinned, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO ${NOTICEBOARD_TABLE} (id, title, content, category, target_audience, author_name, author_role, is_pinned, scheduled_for, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           normalizedPayload.title,
@@ -2551,6 +2649,8 @@ export async function createNoticeRecord(payload: CreateNoticePayload): Promise<
           normalizedPayload.authorName,
           normalizedPayload.authorRole,
           normalizedPayload.isPinned ? 1 : 0,
+          normalizedPayload.scheduledFor,
+          normalizedPayload.status,
           timestamp,
           timestamp,
         ],
@@ -2561,7 +2661,6 @@ export async function createNoticeRecord(payload: CreateNoticePayload): Promise<
         createdAt: timestamp,
         updatedAt: timestamp,
         ...normalizedPayload,
-        isPinned: Boolean(normalizedPayload.isPinned),
       }
     } catch (error) {
       logger.error("Failed to persist notice to database, reverting to in-memory storage", { error })
@@ -2570,11 +2669,10 @@ export async function createNoticeRecord(payload: CreateNoticePayload): Promise<
 
   const notices = ensureCollection<NoticeRecord>(STORAGE_KEYS.NOTICES, createDefaultNotices)
   const record: NoticeRecord = {
-    id: normalizedPayload.id ?? generateId("notice"),
+    id: payload.id ?? generateId("notice"),
     createdAt: timestamp,
     updatedAt: timestamp,
     ...normalizedPayload,
-    isPinned: Boolean(normalizedPayload.isPinned),
   }
 
   notices.unshift(record)
@@ -2589,47 +2687,86 @@ export async function updateNoticeRecord(id: string, updates: UpdateNoticePayloa
 
   const pool = getPoolSafe()
   const timestamp = new Date().toISOString()
+  const sanitizedUpdates: Partial<NoticeRecord> = {}
 
   if (pool) {
     try {
       await ensureNoticeboardTable(pool)
 
       const fields: string[] = []
-      const values: Array<string | number> = []
+      const values: Array<string | number | null> = []
 
       if (updates.title !== undefined) {
+        const title = updates.title.trim()
         fields.push("title = ?")
-        values.push(updates.title.trim())
+        values.push(title)
+        sanitizedUpdates.title = title
       }
 
       if (updates.content !== undefined) {
+        const content = updates.content.trim()
         fields.push("content = ?")
-        values.push(updates.content.trim())
+        values.push(content)
+        sanitizedUpdates.content = content
       }
 
       if (updates.category !== undefined) {
         fields.push("category = ?")
         values.push(updates.category)
+        sanitizedUpdates.category = updates.category as NoticeCategory
       }
 
       if (updates.targetAudience !== undefined) {
         fields.push("target_audience = ?")
-        values.push(JSON.stringify(updates.targetAudience))
+        const audience = Array.isArray(updates.targetAudience)
+          ? updates.targetAudience
+          : []
+        values.push(JSON.stringify(audience))
+        sanitizedUpdates.targetAudience = audience
       }
 
       if (updates.authorName !== undefined) {
+        const authorName = updates.authorName
         fields.push("author_name = ?")
-        values.push(updates.authorName)
+        values.push(authorName)
+        sanitizedUpdates.authorName = authorName
       }
 
       if (updates.authorRole !== undefined) {
+        const authorRole = updates.authorRole
         fields.push("author_role = ?")
-        values.push(updates.authorRole)
+        values.push(authorRole)
+        sanitizedUpdates.authorRole = authorRole
       }
 
       if (updates.isPinned !== undefined) {
         fields.push("is_pinned = ?")
-        values.push(updates.isPinned ? 1 : 0)
+        const pinned = updates.isPinned ? 1 : 0
+        values.push(pinned)
+        sanitizedUpdates.isPinned = Boolean(updates.isPinned)
+      }
+
+      const normalizedSchedule =
+        updates.scheduledFor === undefined
+          ? undefined
+          : updates.scheduledFor === null
+            ? null
+            : normalizeScheduleInput(updates.scheduledFor)
+
+      if (normalizedSchedule !== undefined) {
+        fields.push("scheduled_for = ?")
+        values.push(normalizedSchedule)
+        sanitizedUpdates.scheduledFor = normalizedSchedule
+      }
+
+      if (updates.status !== undefined || normalizedSchedule !== undefined) {
+        const resolvedStatus = resolveNoticeStatusValue(
+          normalizedSchedule ?? null,
+          updates.status,
+        )
+        fields.push("status = ?")
+        values.push(resolvedStatus)
+        sanitizedUpdates.status = resolvedStatus
       }
 
       if (fields.length > 0) {
@@ -2666,8 +2803,11 @@ export async function updateNoticeRecord(id: string, updates: UpdateNoticePayloa
   const existing = notices[index]
   const updatedNotice: NoticeRecord = {
     ...existing,
-    ...updates,
-    isPinned: updates.isPinned !== undefined ? Boolean(updates.isPinned) : existing.isPinned,
+    ...sanitizedUpdates,
+    isPinned: sanitizedUpdates.isPinned ?? existing.isPinned,
+    scheduledFor:
+      sanitizedUpdates.scheduledFor !== undefined ? sanitizedUpdates.scheduledFor : existing.scheduledFor,
+    status: sanitizedUpdates.status ?? existing.status,
     updatedAt: timestamp,
   }
 

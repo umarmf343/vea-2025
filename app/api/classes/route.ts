@@ -1,11 +1,29 @@
 export const runtime = "nodejs"
 
 import { type NextRequest, NextResponse } from "next/server"
-import { createClassRecord, deleteClassRecord, getAllClassesFromDb, updateClassRecord } from "@/lib/database"
+import {
+  createClassRecord,
+  deleteClassRecord,
+  getAllClassesFromDb,
+  getClassRecordById,
+  updateClassRecord,
+} from "@/lib/database"
 import { sanitizeInput } from "@/lib/security"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get("id")
+
+    if (id) {
+      const classRecord = await getClassRecordById(id)
+      if (!classRecord) {
+        return NextResponse.json({ error: "Class not found" }, { status: 404 })
+      }
+
+      return NextResponse.json({ class: classRecord })
+    }
+
     const classes = await getAllClassesFromDb()
     return NextResponse.json({ classes })
   } catch (error) {

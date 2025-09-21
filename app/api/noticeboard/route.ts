@@ -19,6 +19,8 @@ function mapNotice(record: NoticeRecord) {
     targetAudience: record.targetAudience,
     author: record.authorName,
     authorRole: record.authorRole,
+    scheduledFor: record.scheduledFor,
+    status: record.status,
     date: record.createdAt,
     isPinned: record.isPinned,
   }
@@ -29,10 +31,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const audience = searchParams.get("audience") ?? undefined
     const pinned = searchParams.get("pinned")
+    const includeScheduled = searchParams.get("includeScheduled") === "true"
+    const includeDrafts = searchParams.get("includeDrafts") === "true"
 
     const notices = await getNoticeRecords({
       audience: audience ?? undefined,
       onlyPinned: pinned === "true",
+      includeScheduled,
+      includeDrafts,
     })
 
     return NextResponse.json({ notices: notices.map(mapNotice) })
@@ -54,6 +60,8 @@ export async function POST(request: NextRequest) {
       authorName: String(body?.authorName ?? "System"),
       authorRole: String(body?.authorRole ?? "admin"),
       isPinned: Boolean(body?.isPinned ?? false),
+      scheduledFor: typeof body?.scheduledFor === "string" ? body.scheduledFor : null,
+      status: typeof body?.status === "string" ? body.status : undefined,
     }
 
     if (!payload.title || !payload.content || payload.targetAudience.length === 0) {

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { GraduationCap, Users, Shield, BookOpen, DollarSign, Book, UserCheck, Key, Loader2 } from "lucide-react"
+import { GraduationCap, Users, BookOpen, DollarSign, UserCheck, Key, Loader2 } from "lucide-react"
 import { PaymentModal } from "@/components/payment-modal"
 import { StudentProfileCard } from "@/components/student-profile-card"
 import { AcademicProgress } from "@/components/academic-progress"
@@ -61,6 +61,10 @@ interface User {
   role: UserRole
   name: string
   hasAccess?: boolean
+  classId?: string | null
+  className?: string | null
+  subjects?: string[]
+  metadata?: Record<string, unknown> | null
 }
 
 const mapApiRoleToUi = (role: string): UserRole => {
@@ -151,7 +155,12 @@ export default function HomePage() {
     if (storedUser && storedToken) {
       try {
         const parsed = JSON.parse(storedUser) as User
-        setCurrentUser(parsed)
+        if (parsed.role === "teacher" || parsed.role === "student" || parsed.role === "parent") {
+          setCurrentUser(parsed)
+        } else {
+          safeStorage.removeItem("vea_current_user")
+          safeStorage.removeItem("vea_auth_token")
+        }
       } catch (error) {
         logger.error("Failed to restore saved user", { error })
         safeStorage.removeItem("vea_current_user")
@@ -183,12 +192,23 @@ export default function HomePage() {
       }
 
       const userRole = mapApiRoleToUi(payload.user?.role ?? loginForm.role)
+      if (userRole !== loginForm.role) {
+        setLoginError("This account does not match the selected role.")
+        return
+      }
       const user: User = {
         id: String(payload.user?.id ?? ""),
         email: payload.user?.email ?? loginForm.email,
         role: userRole,
         name: payload.user?.name ?? loginForm.email.split("@")[0],
         hasAccess: roleHasPortalAccess(userRole),
+        classId: payload.user?.classId ?? payload.user?.class_id ?? null,
+        className:
+          typeof payload.user?.metadata?.assignedClassName === "string"
+            ? payload.user.metadata.assignedClassName
+            : null,
+        subjects: Array.isArray(payload.user?.subjects) ? payload.user.subjects : [],
+        metadata: payload.user?.metadata ?? null,
       }
 
       setCurrentUser(user)
@@ -249,6 +269,13 @@ export default function HomePage() {
         role: userRole,
         name: loginPayload.user?.name ?? registerForm.name,
         hasAccess: roleHasPortalAccess(userRole),
+        classId: loginPayload.user?.classId ?? loginPayload.user?.class_id ?? null,
+        className:
+          typeof loginPayload.user?.metadata?.assignedClassName === "string"
+            ? loginPayload.user.metadata.assignedClassName
+            : null,
+        subjects: Array.isArray(loginPayload.user?.subjects) ? loginPayload.user.subjects : [],
+        metadata: loginPayload.user?.metadata ?? null,
       }
 
       setCurrentUser(user)
@@ -320,52 +347,28 @@ export default function HomePage() {
                       <SelectTrigger className="border-[#2d682d]/20 focus:border-[#2d682d]">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="super-admin">
-                          <div className="flex items-center gap-2">
-                            <Shield className="h-4 w-4" />
-                            Super Admin
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="admin">
-                          <div className="flex items-center gap-2">
-                            <Shield className="h-4 w-4" />
-                            Admin
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="teacher">
-                          <div className="flex items-center gap-2">
-                            <UserCheck className="h-4 w-4" />
-                            Teacher
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="student">
-                          <div className="flex items-center gap-2">
-                            <BookOpen className="h-4 w-4" />
-                            Student
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="parent">
-                          <div className="flex items-center gap-2">
-                            <Users className="h-4 w-4" />
-                            Parent
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="librarian">
-                          <div className="flex items-center gap-2">
-                            <Book className="h-4 w-4" />
-                            Librarian
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="accountant">
-                          <div className="flex items-center gap-2">
-                            <DollarSign className="h-4 w-4" />
-                            Accountant
-                          </div>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                    <SelectContent>
+                      <SelectItem value="teacher">
+                        <div className="flex items-center gap-2">
+                          <UserCheck className="h-4 w-4" />
+                          Teacher
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="student">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="h-4 w-4" />
+                          Student
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="parent">
+                        <div className="flex items-center gap-2">
+                          <Users className="h-4 w-4" />
+                          Parent
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                   <div className="space-y-2">
                     <Label htmlFor="login-email" className="text-[#2d682d]">
                       Email
@@ -430,28 +433,10 @@ export default function HomePage() {
                               Teacher
                             </div>
                           </SelectItem>
-                          <SelectItem value="student">
-                            <div className="flex items-center gap-2">
-                              <BookOpen className="h-4 w-4" />
-                              Student
-                            </div>
-                          </SelectItem>
                           <SelectItem value="parent">
                             <div className="flex items-center gap-2">
                               <Users className="h-4 w-4" />
                               Parent
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="librarian">
-                            <div className="flex items-center gap-2">
-                              <Book className="h-4 w-4" />
-                              Librarian
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="accountant">
-                            <div className="flex items-center gap-2">
-                              <DollarSign className="h-4 w-4" />
-                              Accountant
                             </div>
                           </SelectItem>
                         </SelectContent>
@@ -561,6 +546,67 @@ export default function HomePage() {
 }
 
 function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const [teacherAssignments, setTeacherAssignments] = useState({
+    classes: user.role === "teacher" && user.className ? [user.className] : [],
+    subjects: user.role === "teacher" && Array.isArray(user.subjects) ? user.subjects : [],
+  })
+
+  useEffect(() => {
+    if (user.role !== "teacher") {
+      setTeacherAssignments({ classes: [], subjects: [] })
+      return
+    }
+
+    let isMounted = true
+
+    const loadTeacherAssignments = async () => {
+      const subjects = Array.isArray(user.subjects) ? user.subjects : []
+      let classes: string[] = []
+
+      const classId = typeof user.classId === "string" ? user.classId.trim() : ""
+
+      if (classId) {
+        try {
+          const response = await fetch(`/api/classes?id=${encodeURIComponent(classId)}`)
+          if (response.ok) {
+            const payload = (await response.json()) as {
+              class?: { id: string; name: string }
+              classes?: Array<{ id: string; name: string }>
+            }
+
+            const match = payload.class
+              ? payload.class
+              : payload.classes?.find((cls) => cls.id === classId)
+
+            if (match?.name) {
+              classes = [match.name]
+            }
+          } else if (response.status !== 404) {
+            logger.error("Unable to load class assignments", {
+              status: response.status,
+              statusText: response.statusText,
+            })
+          }
+        } catch (error) {
+          logger.error("Unable to load class assignments", { error })
+        }
+      }
+
+      if (classes.length === 0 && user.className) {
+        classes = [user.className]
+      }
+
+      if (isMounted) {
+        setTeacherAssignments({ classes, subjects })
+      }
+    }
+
+    void loadTeacherAssignments()
+
+    return () => {
+      isMounted = false
+    }
+  }, [user])
 
   const getRoleDisplayName = (role: UserRole) => {
     switch (role) {
@@ -630,8 +676,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               id: user.id,
               name: user.name,
               email: user.email,
-              subjects: ["Mathematics", "Physics"],
-              classes: ["JSS 1A", "JSS 2B"],
+              subjects: teacherAssignments.subjects,
+              classes: teacherAssignments.classes,
             }}
           />
         )}

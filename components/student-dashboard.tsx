@@ -101,16 +101,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const [attendance, setAttendance] = useState({ present: 0, total: 0, percentage: 0 })
   const [upcomingEvents, setUpcomingEvents] = useState<IdentifiedRecord[]>([])
   const [studentProfile, setStudentProfile] = useState(student)
-  const [showProfileEdit, setShowProfileEdit] = useState(false)
-  const [profileForm, setProfileForm] = useState({
-    name: student.name,
-    email: student.email,
-    phone: "",
-    address: "",
-    emergencyContact: "",
-  })
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     const loadStudentData = async () => {
@@ -176,13 +167,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
         const profileData = await dbManager.getStudentProfile(student.id)
         if (profileData) {
           setStudentProfile(profileData)
-          setProfileForm({
-            name: profileData.name,
-            email: profileData.email,
-            phone: profileData.phone || "",
-            address: profileData.address || "",
-            emergencyContact: profileData.emergencyContact || "",
-          })
         }
       } catch (error) {
         logger.error("Failed to load student data", { error })
@@ -252,25 +236,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       dbManager.removeEventListener("profileUpdate", handleProfileUpdate)
     }
   }, [student.id])
-
-  const handleSaveProfile = async () => {
-    try {
-      setSaving(true)
-      const updatedProfile = {
-        ...studentProfile,
-        ...profileForm,
-        updatedAt: new Date().toISOString(),
-      }
-
-      await dbManager.updateStudentProfile(student.id, updatedProfile)
-      setStudentProfile(updatedProfile)
-      setShowProfileEdit(false)
-    } catch (error) {
-      logger.error("Failed to save profile", { error })
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const handleRenewBook = async (bookId: string) => {
     try {
@@ -361,15 +326,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
             <p className="text-green-100">Student Portal - {student.class} - VEA 2025</p>
             <p className="text-sm text-green-200">Admission No: {student.admissionNumber}</p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="bg-white/10 border-white/20 text-white hover:bg-white/20"
-            onClick={() => setShowProfileEdit(true)}
-          >
-            <User className="w-4 h-4 mr-1" />
-            Edit Profile
-          </Button>
         </div>
       </div>
 
@@ -660,66 +616,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
           </Card>
         </TabsContent>
       </Tabs>
-
-      <Dialog open={showProfileEdit} onOpenChange={setShowProfileEdit}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Profile</DialogTitle>
-            <DialogDescription>Update your personal information</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="name">Full Name</Label>
-              <Input
-                id="name"
-                value={profileForm.name}
-                onChange={(e) => setProfileForm((prev) => ({ ...prev, name: e.target.value }))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={profileForm.email}
-                onChange={(e) => setProfileForm((prev) => ({ ...prev, email: e.target.value }))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="phone">Phone Number</Label>
-              <Input
-                id="phone"
-                value={profileForm.phone}
-                onChange={(e) => setProfileForm((prev) => ({ ...prev, phone: e.target.value }))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="address">Address</Label>
-              <Textarea
-                id="address"
-                value={profileForm.address}
-                onChange={(e) => setProfileForm((prev) => ({ ...prev, address: e.target.value }))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="emergency">Emergency Contact</Label>
-              <Input
-                id="emergency"
-                value={profileForm.emergencyContact}
-                onChange={(e) => setProfileForm((prev) => ({ ...prev, emergencyContact: e.target.value }))}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowProfileEdit(false)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveProfile} disabled={saving} className="bg-[#2d682d] hover:bg-[#2d682d]/90">
-              {saving ? "Saving..." : "Save Profile"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Assignment Submission Dialog */}
       <Dialog open={showSubmitConfirm} onOpenChange={setShowSubmitConfirm}>
