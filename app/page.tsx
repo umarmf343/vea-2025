@@ -110,11 +110,37 @@ export default function HomePage() {
   const [isRegistering, setIsRegistering] = useState(false)
 
   useEffect(() => {
-    const adminSetting = safeStorage.getItem("registrationEnabled")
-    if (adminSetting !== null) {
-      setRegistrationEnabled(JSON.parse(adminSetting))
+    if (currentUser) {
+      return
     }
-  }, [])
+
+    const storedSetting = safeStorage.getItem("registrationEnabled")
+    if (storedSetting !== null) {
+      try {
+        setRegistrationEnabled(JSON.parse(storedSetting))
+      } catch (error) {
+        logger.error("Failed to parse stored registration setting", { error })
+      }
+    }
+
+    const fetchSettings = async () => {
+      try {
+        const response = await fetch("/api/system/settings")
+        if (!response.ok) {
+          throw new Error(`Settings request failed with status ${response.status}`)
+        }
+
+        const payload = (await response.json()) as { settings?: { registrationEnabled?: boolean } }
+        const enabled = Boolean(payload.settings?.registrationEnabled ?? true)
+        setRegistrationEnabled(enabled)
+        safeStorage.setItem("registrationEnabled", JSON.stringify(enabled))
+      } catch (error) {
+        logger.error("Unable to load system settings", { error })
+      }
+    }
+
+    void fetchSettings()
+  }, [currentUser])
 
   useEffect(() => {
     const storedUser = safeStorage.getItem("vea_current_user")

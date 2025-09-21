@@ -408,8 +408,6 @@ const STORAGE_KEYS = {
 
 const serverCollections = new Map<string, unknown[]>()
 
-const defaultPasswordHash = bcrypt.hashSync("Admin2025!", 12)
-
 function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value))
 }
@@ -490,28 +488,103 @@ function generateId(prefix: string): string {
   return `${prefix}_${crypto.randomBytes(12).toString("hex")}`
 }
 
+interface DefaultUserSeed {
+  id: string
+  name: string
+  email: string
+  role: string
+  password: string
+  classId?: string | null
+  studentIds?: string[]
+  subjects?: string[]
+  metadata?: Record<string, unknown> | null
+}
+
 function createDefaultUsers(): StoredUser[] {
   const timestamp = new Date().toISOString()
 
-  return [
+  const seeds: DefaultUserSeed[] = [
+    {
+      id: "user_super_admin",
+      name: "System Super Admin",
+      email: "superadmin@vea.edu.ng",
+      role: "super_admin",
+      password: "SuperAdmin2025!",
+      metadata: {
+        permissions: ["portal:full_access"],
+      },
+    },
     {
       id: "user_admin",
       name: "Admin User",
       email: "admin@vea.edu.ng",
       role: "admin",
-      passwordHash: defaultPasswordHash,
-      isActive: true,
-      status: "active",
-      classId: null,
-      studentIds: [],
-      subjects: [],
-      metadata: null,
-      profileImage: null,
-      lastLogin: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
+      password: "Admin2025!",
+      metadata: {
+        department: "Administration",
+      },
+    },
+    {
+      id: "user_teacher",
+      name: "Class Teacher",
+      email: "teacher@vea.edu.ng",
+      role: "teacher",
+      password: "Teacher2025!",
+      classId: "class_jss1a",
+      subjects: ["Mathematics", "English"],
+    },
+    {
+      id: "user_student",
+      name: "John Student",
+      email: "student@vea.edu.ng",
+      role: "student",
+      password: "Student2025!",
+      classId: "class_jss1a",
+    },
+    {
+      id: "user_parent",
+      name: "Parent Guardian",
+      email: "parent@vea.edu.ng",
+      role: "parent",
+      password: "Parent2025!",
+      metadata: {
+        linkedStudentId: "user_student",
+      },
+      studentIds: ["user_student"],
+    },
+    {
+      id: "user_librarian",
+      name: "Library Manager",
+      email: "librarian@vea.edu.ng",
+      role: "librarian",
+      password: "Librarian2025!",
+    },
+    {
+      id: "user_accountant",
+      name: "Account Officer",
+      email: "accountant@vea.edu.ng",
+      role: "accountant",
+      password: "Accountant2025!",
     },
   ]
+
+  return seeds.map((seed) => ({
+    id: seed.id,
+    name: seed.name,
+    email: seed.email,
+    role: seed.role,
+    passwordHash: bcrypt.hashSync(seed.password, 12),
+    isActive: true,
+    status: "active",
+    classId: seed.classId ?? null,
+    studentIds: seed.studentIds ?? [],
+    subjects: seed.subjects ?? [],
+    metadata: seed.metadata ?? null,
+    profileImage: null,
+    lastLogin: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }))
 }
 
 function createDefaultFeeStructures(): FeeStructureRecord[] {
