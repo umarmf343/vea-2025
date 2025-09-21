@@ -54,6 +54,8 @@ import type {
 import { AdminApprovalDashboard } from "@/components/admin-approval-dashboard"
 import { FinancialReports } from "@/components/financial-reports"
 import { InternalMessaging } from "@/components/internal-messaging"
+import { UserManagement } from "@/components/admin/user-management"
+import { SchoolCalendarApprovalPanel } from "@/components/school-calendar-approval"
 import {
   BarChart3,
   Calendar,
@@ -117,18 +119,6 @@ interface UserRow {
   subjects?: string[]
 }
 
-interface UserFormState {
-  name: string
-  email: string
-  role: PanelRole
-  status: UserStatus
-  password: string
-  phone: string
-  address: string
-  classId: string
-  subjects: string[]
-}
-
 interface ClassRow {
   id: string
   name: string
@@ -172,16 +162,6 @@ interface ReportCardRow extends Omit<ReportCardRecord, "subjects"> {
   subjects: ReportCardSubjectRecord[]
 }
 
-const ROLE_OPTIONS: Array<{ value: PanelRole; label: string }> = [
-  { value: "super_admin", label: "Super Admin" },
-  { value: "admin", label: "Admin" },
-  { value: "teacher", label: "Teacher" },
-  { value: "student", label: "Student" },
-  { value: "parent", label: "Parent" },
-  { value: "librarian", label: "Librarian" },
-  { value: "accountant", label: "Accountant" },
-]
-
 const DEFAULT_BRANDING: BrandingState = {
   schoolName: "Victory Educational Academy",
   schoolAddress: "No. 19, Abdulazeez Street, Zone 3 Duste Baumpaba, Bwari Area Council, Abuja",
@@ -196,18 +176,6 @@ const DEFAULT_SETTINGS: SystemSettingsState = {
   currentTerm: "First Term",
   registrationEnabled: true,
   reportCardDeadline: "",
-}
-
-const DEFAULT_USER_FORM: UserFormState = {
-  name: "",
-  email: "",
-  role: "teacher",
-  status: "active",
-  password: "",
-  phone: "",
-  address: "",
-  classId: "",
-  subjects: [],
 }
 
 function normalizeRole(role: string): PanelRole {
@@ -391,11 +359,6 @@ export default function SuperAdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [users, setUsers] = useState<UserRow[]>([])
-  const [userForm, setUserForm] = useState<UserFormState>(DEFAULT_USER_FORM)
-  const [editingUserId, setEditingUserId] = useState<string | null>(null)
-  const [userDialogOpen, setUserDialogOpen] = useState(false)
-  const [userSearch, setUserSearch] = useState("")
-  const [userToDelete, setUserToDelete] = useState<UserRow | null>(null)
 
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [classForm, setClassForm] = useState({ name: "", level: "Junior Secondary", capacity: "" })
@@ -418,8 +381,6 @@ export default function SuperAdminDashboard() {
   const [reportRemarks, setReportRemarks] = useState({ classTeacherRemark: "", headTeacherRemark: "" })
   const [reportToDelete, setReportToDelete] = useState<ReportCardRow | null>(null)
   const [isSavingReport, setIsSavingReport] = useState(false)
-
-  const [isSavingUser, setIsSavingUser] = useState(false)
 
   const refreshUsers = useCallback(async () => {
     const data = await fetchJson<{ users: StoredUser[] }>("/api/users")
@@ -559,19 +520,6 @@ export default function SuperAdminDashboard() {
     }
   }, [metrics, payments, reportCards, users])
 
-  const filteredUsers = useMemo(() => {
-    if (!userSearch.trim()) {
-      return users
-    }
-    const term = userSearch.trim().toLowerCase()
-    return users.filter(
-      (user) =>
-        user.name.toLowerCase().includes(term) ||
-        user.email.toLowerCase().includes(term) ||
-        formatRole(user.role).toLowerCase().includes(term),
-    )
-  }, [userSearch, users])
-
   const sortedReportCards = useMemo(
     () => [...reportCards].sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")),
     [reportCards],
@@ -589,101 +537,6 @@ export default function SuperAdminDashboard() {
       setIsRefreshing(false)
     }
   }, [refreshAll, toast])
-
-  const handleOpenCreateUser = useCallback(() => {
-    setEditingUserId(null)
-    setUserForm(DEFAULT_USER_FORM)
-    setUserDialogOpen(true)
-  }, [])
-
-  const handleEditUser = useCallback((user: UserRow) => {
-    setEditingUserId(user.id)
-    setUserForm({
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      status: user.status,
-      password: "",
-      phone: "",
-      address: "",
-      classId: user.classId ?? "",
-      subjects: user.subjects ?? [],
-    })
-    setUserDialogOpen(true)
-  }, [])
-
-  const handleSaveUser = useCallback(async () => {
-    if (!userForm.name.trim() || !userForm.email.trim()) {
-      toast({ title: "Missing information", description: "Name and email are required." })
-      return
-    }
-
-    if (!editingUserId && !userForm.password.trim()) {
-      toast({ title: "Missing password", description: "New users must have a password." })
-      return
-    }
-
-    setIsSavingUser(true)
-    try {
-      if (editingUserId) {
-        await fetchJson("/api/users", {
-          method: "PUT",
-          body: JSON.stringify({
-            id: editingUserId,
-            name: userForm.name,
-            email: userForm.email,
-            role: userForm.role,
-            status: userForm.status,
-            classId: userForm.classId || null,
-            subjects: userForm.subjects,
-            isActive: userForm.status === "active",
-            password: userForm.password ? userForm.password : undefined,
-          }),
-        })
-        toast({ title: "User updated" })
-      } else {
-        await fetchJson("/api/users", {
-          method: "POST",
-          body: JSON.stringify({
-            name: userForm.name,
-            email: userForm.email,
-            role: userForm.role,
-            password: userForm.password,
-            status: userForm.status,
-            classId: userForm.classId || null,
-            subjects: userForm.subjects,
-          }),
-        })
-        toast({ title: "User created" })
-      }
-
-      setUserDialogOpen(false)
-      setUserForm(DEFAULT_USER_FORM)
-      setEditingUserId(null)
-      await refreshUsers()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save user"
-      toast({ title: "User update failed", description: message, variant: "destructive" })
-    } finally {
-      setIsSavingUser(false)
-    }
-  }, [editingUserId, refreshUsers, toast, userForm])
-
-  const handleDeleteUser = useCallback(async () => {
-    if (!userToDelete) {
-      return
-    }
-
-    try {
-      await fetchJson(`/api/users?id=${encodeURIComponent(userToDelete.id)}`, { method: "DELETE" })
-      toast({ title: "User removed" })
-      setUserToDelete(null)
-      await refreshUsers()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to delete user"
-      toast({ title: "Deletion failed", description: message, variant: "destructive" })
-    }
-  }, [refreshUsers, toast, userToDelete])
 
   const handleSaveBranding = useCallback(async () => {
     setIsSavingBranding(true)
@@ -1284,6 +1137,7 @@ export default function SuperAdminDashboard() {
         </TabsContent>
 
         <TabsContent value="approval" className="space-y-6">
+          <SchoolCalendarApprovalPanel />
           <AdminApprovalDashboard />
         </TabsContent>
 
@@ -1350,80 +1204,7 @@ export default function SuperAdminDashboard() {
         </TabsContent>
 
         <TabsContent value="users" className="space-y-6">
-          <Card>
-            <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <CardTitle>User Directory</CardTitle>
-                <CardDescription>Manage every actor across the school portal.</CardDescription>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Input
-                  className="w-60"
-                  placeholder="Search by name, email or role"
-                  value={userSearch}
-                  onChange={(event) => setUserSearch(event.target.value)}
-                />
-                <Button onClick={handleOpenCreateUser}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add User
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last Login</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredUsers.length ? (
-                    filteredUsers.map((user) => (
-                      <TableRow key={user.id}>
-                        <TableCell>
-                          <div className="font-medium">{user.name}</div>
-                          <div className="text-xs text-gray-500">{user.email}</div>
-                        </TableCell>
-                        <TableCell>{formatRole(user.role)}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              user.status === "active"
-                                ? "default"
-                                : user.status === "suspended"
-                                  ? "secondary"
-                                  : "outline"
-                            }
-                          >
-                            {user.status.toUpperCase()}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{user.lastLogin ? formatDate(user.lastLogin) : "—"}</TableCell>
-                        <TableCell className="flex justify-end gap-2">
-                          <Button variant="outline" size="sm" onClick={() => handleEditUser(user)}>
-                            Edit
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setUserToDelete(user)}>
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-sm text-gray-500">
-                        No users match the search criteria.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+          <UserManagement />
         </TabsContent>
 
         <TabsContent value="system" className="space-y-6">
@@ -1590,103 +1371,6 @@ export default function SuperAdminDashboard() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingUserId ? "Update User" : "Create User"}</DialogTitle>
-            <DialogDescription>Access control for every panel begins here.</DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="user-name">Full Name</Label>
-              <Input
-                id="user-name"
-                value={userForm.name}
-                onChange={(event) => setUserForm((prev) => ({ ...prev, name: event.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="user-email">Email</Label>
-              <Input
-                id="user-email"
-                type="email"
-                value={userForm.email}
-                onChange={(event) => setUserForm((prev) => ({ ...prev, email: event.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="user-role">Role</Label>
-              <Select value={userForm.role} onValueChange={(value: PanelRole) => setUserForm((prev) => ({ ...prev, role: value }))}>
-                <SelectTrigger id="user-role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROLE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="user-status">Status</Label>
-              <Select
-                value={userForm.status}
-                onValueChange={(value: UserStatus) => setUserForm((prev) => ({ ...prev, status: value }))}
-              >
-                <SelectTrigger id="user-status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                  <SelectItem value="suspended">Suspended</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {!editingUserId && (
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="user-password">Password</Label>
-                <Input
-                  id="user-password"
-                  type="password"
-                  value={userForm.password}
-                  onChange={(event) => setUserForm((prev) => ({ ...prev, password: event.target.value }))}
-                />
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="user-class">Class</Label>
-              <Input
-                id="user-class"
-                value={userForm.classId}
-                onChange={(event) => setUserForm((prev) => ({ ...prev, classId: event.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="user-subjects">Subjects (comma separated)</Label>
-              <Input
-                id="user-subjects"
-                value={userForm.subjects.join(", ")}
-                onChange={(event) =>
-                  setUserForm((prev) => ({ ...prev, subjects: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))
-                }
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setUserDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveUser} disabled={isSavingUser}>
-              <Save className={cn("mr-2 h-4 w-4", isSavingUser && "animate-spin")} />
-              Save User
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -1755,23 +1439,6 @@ export default function SuperAdminDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete user?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action removes the selected user from every connected panel. It can be reversed by creating the user again.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteUser} className="bg-red-600 hover:bg-red-600/90">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog open={!!classToDelete} onOpenChange={(open) => !open && setClassToDelete(null)}>
         <AlertDialogContent>

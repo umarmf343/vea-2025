@@ -26,6 +26,7 @@ import { safeStorage } from "@/lib/safe-storage"
 import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
 import { useToast } from "@/hooks/use-toast"
+import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
 
 interface TeacherDashboardProps {
   teacher: {
@@ -799,6 +800,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               </CardContent>
             </Card>
           </div>
+
+          <SchoolCalendarViewer role="teacher" />
         </TabsContent>
 
         {/* Profile tab */}
