@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Upload, FileText, Download, Eye, Trash2, Plus } from "lucide-react"
-import { DatabaseManager } from "@/lib/database-manager"
+import { dbManager } from "@/lib/database-manager"
 
 interface StudyMaterial {
   id: string
@@ -42,8 +42,6 @@ export function StudyMaterials({ userRole, teacherName, studentClass }: StudyMat
     class: "",
     file: null as File | null,
   })
-
-  const dbManager = DatabaseManager.getInstance()
 
   useEffect(() => {
     loadMaterials()
