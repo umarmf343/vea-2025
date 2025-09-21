@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -76,6 +76,9 @@ interface Message {
   archived: boolean
   priority: "low" | "normal" | "high" | "urgent"
   messageType: "text" | "file" | "image" | "voice" | "video"
+  conversationId: string
+  status: "sent" | "scheduled" | "failed"
+  scheduledFor?: Date | null
   replyTo?: string
   edited: boolean
   editedAt?: Date
@@ -130,6 +133,16 @@ interface InternalMessagingProps {
   }
 }
 
+const generateConversationId = (userA: string, userB: string) =>
+  [userA, userB].sort((a, b) => a.localeCompare(b)).join("::")
+
+const PRIORITY_ORDER: Record<Message["priority"], number> = {
+  urgent: 4,
+  high: 3,
+  normal: 2,
+  low: 1,
+}
+
 export function InternalMessaging({ currentUser }: InternalMessagingProps) {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null)
   const [newMessage, setNewMessage] = useState("")
@@ -143,10 +156,8 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
   const [notifications, setNotifications] = useState(true)
   const [filter, setFilter] = useState<"all" | "unread" | "starred" | "archived">("all")
   const [sortBy, setSortBy] = useState<"time" | "priority" | "sender">("time")
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   const [editingMessage, setEditingMessage] = useState<string | null>(null)
-  const [selectedMessages, setSelectedMessages] = useState<string[]>([])
   const [showGroupDialog, setShowGroupDialog] = useState(false)
   const [dragOver, setDragOver] = useState(false)
 
@@ -154,6 +165,7 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout>()
   const audioRef = useRef<HTMLAudioElement>()
+  const scheduledMessageTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map())
 
   const [newMessageForm, setNewMessageForm] = useState({
     recipient: "",
@@ -215,6 +227,9 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
       archived: false,
       priority: "high",
       messageType: "text",
+      conversationId: generateConversationId("1", currentUser.id),
+      status: "sent",
+      scheduledFor: null,
       edited: false,
       reactions: [{ userId: "2", emoji: "👍", timestamp: new Date(Date.now() - 1000 * 60 * 25) }],
       mentions: ["4"],
@@ -247,6 +262,9 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
       archived: false,
       priority: "urgent",
       messageType: "text",
+      conversationId: generateConversationId("2", currentUser.id),
+      status: "sent",
+      scheduledFor: null,
       edited: false,
       reactions: [],
       mentions: [],
@@ -269,6 +287,9 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
       archived: false,
       priority: "normal",
       messageType: "text",
+      conversationId: generateConversationId("3", currentUser.id),
+      status: "sent",
+      scheduledFor: null,
       edited: false,
       reactions: [{ userId: currentUser.id, emoji: "❤️", timestamp: new Date(Date.now() - 1000 * 60 * 60 * 3) }],
       mentions: [],
@@ -331,11 +352,15 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
           parsed.map((m: any) => ({
             ...m,
             timestamp: new Date(m.timestamp),
+            scheduledFor: m.scheduledFor ? new Date(m.scheduledFor) : null,
+            status: m.status ?? "sent",
+            conversationId: m.conversationId ?? generateConversationId(m.senderId, m.recipientId),
             reactions:
               m.reactions?.map((r: any) => ({
                 ...r,
                 timestamp: new Date(r.timestamp),
               })) || [],
+            editedAt: m.editedAt ? new Date(m.editedAt) : undefined,
           })),
         )
       } catch (error) {
@@ -344,10 +369,30 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
     }
   }, [])
 
+  useEffect(() => {
+    return () => {
+      scheduledMessageTimeouts.current.forEach((timeout) => clearTimeout(timeout))
+      scheduledMessageTimeouts.current.clear()
+    }
+  }, [])
+
   // Save messages to localStorage whenever messages change
   useEffect(() => {
     safeStorage.setItem("vea_messages", JSON.stringify(messages))
   }, [messages])
+
+  useEffect(() => {
+    messages.forEach((message) => {
+      if (message.status === "scheduled" && message.scheduledFor) {
+        scheduleMessageDelivery(message)
+      }
+    })
+  }, [messages, scheduleMessageDelivery])
+
+  useEffect(() => {
+    setReplyingTo(null)
+    setNewMessage("")
+  }, [selectedConversation])
 
   // Initialize online statuses
   useEffect(() => {
@@ -381,6 +426,9 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
       archived: false,
       priority: "normal",
       messageType: "text",
+      conversationId: generateConversationId(randomUser.id, currentUser.id),
+      status: "sent",
+      scheduledFor: null,
       edited: false,
       reactions: [],
       mentions: [],
@@ -398,7 +446,10 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
         description: newMsg.content.substring(0, 50) + "...",
         action: {
           label: "View",
-          onClick: () => setSelectedConversation(newMsg.id),
+          onClick: () => {
+            setSelectedConversation(newMsg.conversationId)
+            markConversationAsRead(newMsg.conversationId)
+          },
         },
       })
     }
@@ -443,30 +494,96 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
     }
   }
 
+  const scheduleMessageDelivery = useCallback(
+    (message: Message) => {
+      if (message.status !== "scheduled" || !message.scheduledFor) {
+        return
+      }
+
+      if (scheduledMessageTimeouts.current.has(message.id)) {
+        return
+      }
+
+      const deliver = () => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === message.id
+              ? {
+                  ...m,
+                  status: "sent",
+                  delivered: true,
+                  timestamp: message.scheduledFor ?? new Date(),
+                }
+              : m,
+          ),
+        )
+        toast.success(`Scheduled message delivered to ${message.recipientName}`)
+      }
+
+      const delay = message.scheduledFor.getTime() - Date.now()
+
+      if (delay <= 0) {
+        deliver()
+        return
+      }
+
+      const timeout = setTimeout(() => {
+        scheduledMessageTimeouts.current.delete(message.id)
+        deliver()
+      }, delay)
+
+      scheduledMessageTimeouts.current.set(message.id, timeout)
+    },
+    [setMessages],
+  )
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
   const handleSendMessage = () => {
-    if (!newMessage.trim()) return
+    if (!newMessage.trim() || !selectedConversation) return
+
+    const conversationMessages = messages
+      .filter((m) => m.conversationId === selectedConversation)
+      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+
+    if (conversationMessages.length === 0) return
+
+    const referenceMessage = replyingTo || conversationMessages[conversationMessages.length - 1]
+    const targetUser =
+      referenceMessage.senderId === currentUser.id
+        ? {
+            id: referenceMessage.recipientId,
+            name: referenceMessage.recipientName,
+            role: referenceMessage.recipientRole,
+          }
+        : {
+            id: referenceMessage.senderId,
+            name: referenceMessage.senderName,
+            role: referenceMessage.senderRole,
+          }
 
     const message: Message = {
       id: Date.now().toString(),
       senderId: currentUser.id,
       senderName: currentUser.name,
       senderRole: currentUser.role,
-      recipientId: selectedConversation || "",
-      recipientName: "Recipient Name",
-      recipientRole: "recipient_role",
-      subject: replyingTo ? `Re: ${replyingTo.subject}` : "Reply",
+      recipientId: targetUser.id,
+      recipientName: targetUser.name,
+      recipientRole: targetUser.role,
+      subject: replyingTo ? `Re: ${replyingTo.subject}` : referenceMessage.subject,
       content: newMessage,
       timestamp: new Date(),
       read: false,
-      delivered: true,
+      delivered: false,
       starred: false,
       archived: false,
-      priority: "normal",
+      priority: referenceMessage.priority,
       messageType: "text",
+      conversationId: selectedConversation,
+      status: "sent",
+      scheduledFor: null,
       edited: false,
       reactions: [],
       mentions: extractMentions(newMessage),
@@ -495,6 +612,10 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
     const recipient = users.find((u) => u.id === newMessageForm.recipient)
     if (!recipient) return
 
+    const conversationId = generateConversationId(currentUser.id, recipient.id)
+    const scheduledFor = newMessageForm.scheduledFor
+    const isScheduled = !!scheduledFor && scheduledFor.getTime() > Date.now()
+
     const message: Message = {
       id: Date.now().toString(),
       senderId: currentUser.id,
@@ -505,13 +626,16 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
       recipientRole: recipient.role,
       subject: newMessageForm.subject,
       content: newMessageForm.content,
-      timestamp: newMessageForm.scheduledFor || new Date(),
+      timestamp: scheduledFor || new Date(),
       read: false,
-      delivered: false,
+      delivered: !isScheduled,
       starred: false,
       archived: false,
       priority: newMessageForm.priority,
       messageType: newMessageForm.attachments.length > 0 ? "file" : "text",
+      conversationId,
+      status: isScheduled ? "scheduled" : "sent",
+      scheduledFor: scheduledFor || null,
       edited: false,
       reactions: [],
       mentions: newMessageForm.mentions,
@@ -527,6 +651,7 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
     }
 
     setMessages((prev) => [...prev, message])
+    setSelectedConversation(conversationId)
     setNewMessageForm({
       recipient: "",
       subject: "",
@@ -539,7 +664,15 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
     })
     setShowNewMessageDialog(false)
 
-    toast.success(`Message ${newMessageForm.scheduledFor ? "scheduled" : "sent"} successfully!`)
+    if (isScheduled) {
+      scheduleMessageDelivery(message)
+    } else {
+      setTimeout(() => {
+        setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, delivered: true } : m)))
+      }, 1000)
+    }
+
+    toast.success(`Message ${isScheduled ? "scheduled" : "sent"} successfully!`)
   }
 
   const handleTyping = () => {
@@ -564,6 +697,14 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
     return tags.map((t) => t.substring(1))
   }
 
+  const markConversationAsRead = (conversationId: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.conversationId === conversationId && m.recipientId === currentUser.id ? { ...m, read: true } : m,
+      ),
+    )
+  }
+
   const markAsRead = (messageId: string) => {
     setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, read: true } : m)))
   }
@@ -576,7 +717,33 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
     setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, archived: !m.archived } : m)))
   }
 
+  const toggleConversationStar = (conversationId: string) => {
+    setMessages((prev) => {
+      const conversationMessages = prev.filter((m) => m.conversationId === conversationId)
+      const shouldStar = !conversationMessages.some((m) => m.starred)
+      return prev.map((m) =>
+        m.conversationId === conversationId ? { ...m, starred: shouldStar } : m,
+      )
+    })
+  }
+
+  const toggleConversationArchive = (conversationId: string) => {
+    setMessages((prev) => {
+      const conversationMessages = prev.filter((m) => m.conversationId === conversationId)
+      const shouldArchive = !conversationMessages.every((m) => m.archived)
+      toast.success(shouldArchive ? "Conversation archived" : "Conversation restored")
+      return prev.map((m) =>
+        m.conversationId === conversationId ? { ...m, archived: shouldArchive } : m,
+      )
+    })
+  }
+
   const deleteMessage = (messageId: string) => {
+    const scheduledTimeout = scheduledMessageTimeouts.current.get(messageId)
+    if (scheduledTimeout) {
+      clearTimeout(scheduledTimeout)
+      scheduledMessageTimeouts.current.delete(messageId)
+    }
     setMessages((prev) => prev.filter((m) => m.id !== messageId))
     toast.success("Message deleted")
   }
@@ -695,42 +862,150 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
     return <File className="h-4 w-4" />
   }
 
-  const filteredMessages = messages
-    .filter((message) => {
-      const matchesSearch =
-        message.senderName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        message.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        message.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        message.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+  const conversations = useMemo(() => {
+    const conversationMap = new Map<
+      string,
+      {
+        id: string
+        messages: Message[]
+      }
+    >()
 
-      const matchesFilter = (() => {
-        switch (filter) {
-          case "unread":
-            return !message.read && message.recipientId === currentUser.id
-          case "starred":
-            return message.starred
-          case "archived":
-            return message.archived
-          default:
-            return !message.archived
-        }
-      })()
+    messages.forEach((message) => {
+      const conversationId = message.conversationId || generateConversationId(message.senderId, message.recipientId)
+      if (!conversationMap.has(conversationId)) {
+        conversationMap.set(conversationId, { id: conversationId, messages: [] })
+      }
 
-      return matchesSearch && matchesFilter
+      conversationMap.get(conversationId)!.messages.push(message)
     })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case "priority":
-          const priorityOrder = { urgent: 4, high: 3, normal: 2, low: 1 }
-          return priorityOrder[b.priority] - priorityOrder[a.priority]
-        case "sender":
-          return a.senderName.localeCompare(b.senderName)
-        default:
-          return b.timestamp.getTime() - a.timestamp.getTime()
+
+    return Array.from(conversationMap.values()).map(({ id, messages: conversationMessages }) => {
+      const sortedMessages = [...conversationMessages].sort(
+        (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+      )
+      const lastMessage = sortedMessages[sortedMessages.length - 1]
+
+      const participantMap = new Map<
+        string,
+        {
+          id: string
+          name: string
+          role: string
+        }
+      >()
+
+      sortedMessages.forEach((message) => {
+        participantMap.set(message.senderId, {
+          id: message.senderId,
+          name: message.senderName,
+          role: message.senderRole,
+        })
+        participantMap.set(message.recipientId, {
+          id: message.recipientId,
+          name: message.recipientName,
+          role: message.recipientRole,
+        })
+      })
+
+      const participants = Array.from(participantMap.values())
+      const otherParticipants = participants.filter((participant) => participant.id !== currentUser.id)
+      const displayName =
+        otherParticipants.length > 0
+          ? otherParticipants.map((participant) => participant.name).join(", ")
+          : currentUser.name
+      const displayRole =
+        otherParticipants.length === 1
+          ? otherParticipants[0].role
+          : otherParticipants.length > 1
+            ? "group"
+            : currentUser.role
+      const unreadCount = sortedMessages.filter(
+        (message) => !message.read && message.recipientId === currentUser.id,
+      ).length
+      const archived = sortedMessages.every((message) => message.archived)
+      const starred = sortedMessages.some((message) => message.starred)
+      const highestPriority = sortedMessages.reduce<Message["priority"]>(
+        (highest, message) =>
+          PRIORITY_ORDER[message.priority] > PRIORITY_ORDER[highest] ? message.priority : highest,
+        sortedMessages[0]?.priority ?? "normal",
+      )
+      const primaryParticipant =
+        otherParticipants[0] ||
+        participants[0] || {
+          id: currentUser.id,
+          name: currentUser.name,
+          role: currentUser.role,
+        }
+
+      return {
+        id,
+        messages: sortedMessages,
+        lastMessage,
+        participants,
+        otherParticipants,
+        displayName,
+        displayRole,
+        unreadCount,
+        archived,
+        starred,
+        highestPriority,
+        primaryParticipant,
       }
     })
+  }, [messages, currentUser.id, currentUser.name, currentUser.role])
 
-  const unreadCount = messages.filter((m) => !m.read && m.recipientId === currentUser.id).length
+  const filteredConversations = useMemo(() => {
+    const lowerSearch = searchTerm.toLowerCase().trim()
+    return conversations
+      .filter((conversation) => {
+        const matchesSearch =
+          lowerSearch.length === 0 ||
+          conversation.displayName.toLowerCase().includes(lowerSearch) ||
+          conversation.participants.some(
+            (participant) =>
+              participant.name.toLowerCase().includes(lowerSearch) ||
+              participant.role.toLowerCase().includes(lowerSearch),
+          ) ||
+          conversation.messages.some(
+            (message) =>
+              message.subject.toLowerCase().includes(lowerSearch) ||
+              message.content.toLowerCase().includes(lowerSearch) ||
+              message.tags.some((tag) => tag.toLowerCase().includes(lowerSearch)),
+          )
+
+        const matchesFilter = (() => {
+          switch (filter) {
+            case "unread":
+              return conversation.unreadCount > 0
+            case "starred":
+              return conversation.starred
+            case "archived":
+              return conversation.archived
+            default:
+              return !conversation.archived
+          }
+        })()
+
+        return matchesSearch && matchesFilter
+      })
+      .sort((a, b) => {
+        switch (sortBy) {
+          case "priority":
+            return PRIORITY_ORDER[b.highestPriority] - PRIORITY_ORDER[a.highestPriority]
+          case "sender":
+            return a.displayName.localeCompare(b.displayName)
+          default:
+            return b.lastMessage.timestamp.getTime() - a.lastMessage.timestamp.getTime()
+        }
+      })
+  }, [conversations, searchTerm, filter, sortBy])
+
+  const unreadCount = conversations.reduce((count, conversation) => count + conversation.unreadCount, 0)
+  const activeConversation = useMemo(
+    () => conversations.find((conversation) => conversation.id === selectedConversation) || null,
+    [conversations, selectedConversation],
+  )
   const getUserOnlineStatus = (userId: string) => {
     return onlineUsers.find((u) => u.userId === userId)?.status || "offline"
   }
@@ -1019,18 +1294,8 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-[#2d682d] flex items-center gap-2">
                   Messages
-                  <Badge variant="outline">{filteredMessages.length}</Badge>
+                  <Badge variant="outline">{filteredConversations.length}</Badge>
                 </CardTitle>
-                {selectedMessages.length > 0 && (
-                  <div className="flex gap-1">
-                    <Button size="sm" variant="outline" onClick={() => selectedMessages.forEach(toggleArchive)}>
-                      <Archive className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => selectedMessages.forEach(deleteMessage)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
               </div>
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
@@ -1065,119 +1330,129 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
                     </div>
                   ))}
 
-                  {filteredMessages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
-                        selectedConversation === message.id
-                          ? "bg-[#2d682d]/10 border-[#2d682d] shadow-md"
-                          : "hover:bg-gray-50 hover:shadow-sm"
-                      } ${
-                        !message.read && message.recipientId === currentUser.id
-                          ? "bg-blue-50 border-blue-200 shadow-sm"
-                          : ""
-                      } ${
-                        message.priority === "urgent"
-                          ? "border-l-4 border-l-red-500"
-                          : message.priority === "high"
-                            ? "border-l-4 border-l-orange-500"
-                            : ""
-                      }`}
-                      onClick={() => {
-                        setSelectedConversation(message.id)
-                        if (!message.read && message.recipientId === currentUser.id) {
-                          markAsRead(message.id)
-                        }
-                      }}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="relative">
-                          <Avatar className="h-8 w-8">
-                            <AvatarFallback className="bg-[#2d682d] text-white text-xs">
-                              {message.senderName
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
-                            </AvatarFallback>
-                          </Avatar>
-                          {getStatusIcon(getUserOnlineStatus(message.senderId))}
-                        </div>
+                  {filteredConversations.map((conversation) => {
+                    const lastMessage = conversation.lastMessage
+                    const isSelected = selectedConversation === conversation.id
+                    const hasUnread = conversation.unreadCount > 0
+                    const hasAttachments = conversation.messages.some(
+                      (msg) => msg.attachments && msg.attachments.length > 0,
+                    )
+                    const statusLabel =
+                      lastMessage.status === "scheduled"
+                        ? `Scheduled for ${(lastMessage.scheduledFor ?? lastMessage.timestamp).toLocaleString()}`
+                        : lastMessage.timestamp.toLocaleString()
 
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <p className="text-sm font-medium truncate">{message.senderName}</p>
-                            <div className="flex items-center gap-1">
-                              {message.starred && <Star className="h-3 w-3 text-yellow-500 fill-current" />}
-                              {message.priority !== "normal" && (
-                                <Badge size="sm" className={getPriorityColor(message.priority)}>
-                                  {message.priority}
-                                </Badge>
-                              )}
-                              {!message.read && message.recipientId === currentUser.id && (
-                                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                              )}
-                              <Clock className="h-3 w-3 text-gray-400" />
-                            </div>
+                    return (
+                      <div
+                        key={conversation.id}
+                        className={`p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
+                          isSelected
+                            ? "bg-[#2d682d]/10 border-[#2d682d] shadow-md"
+                            : "hover:bg-gray-50 hover:shadow-sm"
+                        } ${hasUnread ? "bg-blue-50 border-blue-200 shadow-sm" : ""} ${
+                          lastMessage.priority === "urgent"
+                            ? "border-l-4 border-l-red-500"
+                            : lastMessage.priority === "high"
+                              ? "border-l-4 border-l-orange-500"
+                              : ""
+                        }`}
+                        onClick={() => {
+                          setSelectedConversation(conversation.id)
+                          if (conversation.unreadCount > 0) {
+                            markConversationAsRead(conversation.id)
+                          }
+                        }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="relative">
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback className="bg-[#2d682d] text-white text-xs">
+                                {conversation.displayName
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")}
+                              </AvatarFallback>
+                            </Avatar>
+                            {getStatusIcon(getUserOnlineStatus(conversation.primaryParticipant.id))}
                           </div>
 
-                          <div className="flex items-center gap-2 mb-1">
-                            <Badge className={getRoleColor(message.senderRole)} variant="secondary">
-                              {message.senderRole}
-                            </Badge>
-                            {message.attachments && message.attachments.length > 0 && (
-                              <Paperclip className="h-3 w-3 text-gray-400" />
-                            )}
-                            {message.reactions.length > 0 && (
-                              <div className="flex -space-x-1">
-                                {message.reactions.slice(0, 3).map((reaction, index) => (
-                                  <span key={index} className="text-xs bg-white rounded-full px-1 border">
-                                    {reaction.emoji}
-                                  </span>
-                                ))}
-                                {message.reactions.length > 3 && (
-                                  <span className="text-xs text-gray-500">+{message.reactions.length - 3}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-sm font-medium truncate">{conversation.displayName}</p>
+                              <div className="flex items-center gap-1">
+                                {conversation.starred && <Star className="h-3 w-3 text-yellow-500 fill-current" />}
+                                {conversation.highestPriority !== "normal" && (
+                                  <Badge size="sm" className={getPriorityColor(conversation.highestPriority)}>
+                                    {conversation.highestPriority}
+                                  </Badge>
                                 )}
+                                {hasUnread && (
+                                  <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                    {conversation.unreadCount}
+                                  </Badge>
+                                )}
+                                <Clock className="h-3 w-3 text-gray-400" />
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge className={getRoleColor(conversation.displayRole)} variant="secondary">
+                                {conversation.displayRole === "group" ? "Group" : conversation.displayRole}
+                              </Badge>
+                              {hasAttachments && <Paperclip className="h-3 w-3 text-gray-400" />}
+                              {lastMessage.reactions.length > 0 && (
+                                <div className="flex -space-x-1">
+                                  {lastMessage.reactions.slice(0, 3).map((reaction, index) => (
+                                    <span key={index} className="text-xs bg-white rounded-full px-1 border">
+                                      {reaction.emoji}
+                                    </span>
+                                  ))}
+                                  {lastMessage.reactions.length > 3 && (
+                                    <span className="text-xs text-gray-500">
+                                      +{lastMessage.reactions.length - 3}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            <p className="text-sm font-medium text-gray-900 truncate">{lastMessage.subject}</p>
+                            <p className="text-xs text-gray-500 truncate">{lastMessage.content}</p>
+
+                            {(lastMessage.tags.length > 0 || lastMessage.mentions.length > 0) && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {lastMessage.tags.slice(0, 2).map((tag, index) => (
+                                  <Badge key={index} variant="outline" className="text-xs">
+                                    #{tag}
+                                  </Badge>
+                                ))}
+                                {lastMessage.mentions.slice(0, 1).map((mention, index) => (
+                                  <Badge key={index} variant="secondary" className="text-xs">
+                                    @{mention}
+                                  </Badge>
+                                ))}
                               </div>
                             )}
-                          </div>
 
-                          <p className="text-sm font-medium text-gray-900 truncate">{message.subject}</p>
-                          <p className="text-xs text-gray-500 truncate">{message.content}</p>
-
-                          {/* Tags and Mentions */}
-                          {(message.tags.length > 0 || message.mentions.length > 0) && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {message.tags.slice(0, 2).map((tag, index) => (
-                                <Badge key={index} variant="outline" className="text-xs">
-                                  #{tag}
-                                </Badge>
-                              ))}
-                              {message.mentions.slice(0, 1).map((mention, index) => (
-                                <Badge key={index} variant="secondary" className="text-xs">
-                                  @{mention}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-
-                          <div className="flex items-center justify-between mt-1">
-                            <p className="text-xs text-gray-400">{message.timestamp.toLocaleString()}</p>
-                            <div className="flex items-center gap-1">
-                              {message.delivered &&
-                                message.senderId === currentUser.id &&
-                                (message.read ? (
-                                  <CheckCheck className="h-3 w-3 text-blue-500" />
-                                ) : (
-                                  <CheckCircle2 className="h-3 w-3 text-gray-400" />
-                                ))}
+                            <div className="flex items-center justify-between mt-1">
+                              <p className="text-xs text-gray-400">{statusLabel}</p>
+                              <div className="flex items-center gap-1">
+                                {lastMessage.delivered &&
+                                  lastMessage.senderId === currentUser.id &&
+                                  (lastMessage.read ? (
+                                    <CheckCheck className="h-3 w-3 text-blue-500" />
+                                  ) : (
+                                    <CheckCircle2 className="h-3 w-3 text-gray-400" />
+                                  ))}
+                              </div>
                             </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
 
-                  {filteredMessages.length === 0 && (
+                  {filteredConversations.length === 0 && (
                     <div className="text-center py-8 text-gray-500">
                       <MessageCircle className="h-12 w-12 mx-auto mb-2 text-gray-300" />
                       <p>No messages found</p>
@@ -1192,232 +1467,316 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
 
         {/* Enhanced Message Detail */}
         <div className="lg:col-span-2">
-          {selectedConversation ? (
-            <Card className="h-full">
+          {activeConversation ? (
+            <Card className="h-full flex flex-col">
               <CardHeader>
-                {(() => {
-                  const message = messages.find((m) => m.id === selectedConversation)
-                  if (!message) return null
-                  return (
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-3">
-                        <div className="relative">
-                          <Avatar className="h-10 w-10">
-                            <AvatarFallback className="bg-[#2d682d] text-white">
-                              {message.senderName
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
-                            </AvatarFallback>
-                          </Avatar>
-                          {getStatusIcon(getUserOnlineStatus(message.senderId))}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-semibold">{message.senderName}</h3>
-                            <Badge className={getRoleColor(message.senderRole)} variant="secondary">
-                              {message.senderRole}
-                            </Badge>
-                            {message.priority !== "normal" && (
-                              <Badge className={getPriorityColor(message.priority)}>{message.priority}</Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-600">
-                            {message.timestamp.toLocaleString()}
-                            {message.edited && <span className="text-xs text-gray-400 ml-2">(edited)</span>}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Message Actions */}
-                      <div className="flex items-center gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => toggleStar(message.id)}>
-                          <Star className={`h-4 w-4 ${message.starred ? "text-yellow-500 fill-current" : ""}`} />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setReplyingTo(message)}>
-                          <Reply className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost">
-                          <Forward className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => toggleArchive(message.id)}>
-                          <Archive className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => deleteMessage(message.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="relative">
+                      <Avatar className="h-10 w-10">
+                        <AvatarFallback className="bg-[#2d682d] text-white">
+                          {activeConversation.displayName
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      {getStatusIcon(getUserOnlineStatus(activeConversation.primaryParticipant.id))}
                     </div>
-                  )
-                })()}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold">{activeConversation.displayName}</h3>
+                        <Badge className={getRoleColor(activeConversation.displayRole)} variant="secondary">
+                          {activeConversation.displayRole === "group"
+                            ? "Group"
+                            : activeConversation.displayRole}
+                        </Badge>
+                        {activeConversation.highestPriority !== "normal" && (
+                          <Badge className={getPriorityColor(activeConversation.highestPriority)}>
+                            {activeConversation.highestPriority}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600">
+                        Last message {activeConversation.lastMessage.timestamp.toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => toggleConversationStar(activeConversation.id)}>
+                      <Star
+                        className={`h-4 w-4 ${activeConversation.starred ? "text-yellow-500 fill-current" : ""}`}
+                      />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setReplyingTo(activeConversation.lastMessage)}
+                    >
+                      <Reply className="h-4 w-4" />
+                    </Button>
+                    <Button size="sm" variant="ghost">
+                      <Forward className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => toggleConversationArchive(activeConversation.id)}
+                    >
+                      <Archive className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="flex-1 flex flex-col">
-                {(() => {
-                  const message = messages.find((m) => m.id === selectedConversation)
-                  if (!message) return null
-                  return (
-                    <div className="space-y-4 flex-1">
-                      {/* Reply Context */}
-                      {message.replyTo && (
-                        <div className="p-3 bg-gray-50 rounded-lg border-l-4 border-blue-500">
-                          <p className="text-sm text-gray-600">Replying to:</p>
-                          {(() => {
-                            const originalMessage = messages.find((m) => m.id === message.replyTo)
-                            return originalMessage ? (
-                              <p className="text-sm font-medium">{originalMessage.subject}</p>
-                            ) : null
-                          })()}
-                        </div>
-                      )}
+                <div className="flex-1 overflow-y-auto pr-1">
+                  <div className="space-y-4">
+                    {activeConversation.messages.map((message) => {
+                      const isOwnMessage = message.senderId === currentUser.id
+                      const messageTimestamp =
+                        message.status === "scheduled" && message.scheduledFor
+                          ? message.scheduledFor
+                          : message.timestamp
 
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-semibold text-lg">{message.subject}</h4>
-                          {message.reactions.length > 0 && (
-                            <div className="flex items-center gap-1">
-                              {message.reactions.map((reaction, index) => (
-                                <span
-                                  key={index}
-                                  className="text-sm bg-gray-100 rounded-full px-2 py-1 cursor-pointer hover:bg-gray-200"
-                                  title={`${reaction.userId === currentUser.id ? "You" : "Someone"} reacted with ${reaction.emoji}`}
-                                >
-                                  {reaction.emoji}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="prose prose-sm max-w-none">
-                          <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-                            {message.content.split(/(@\w+|#\w+)/g).map((part, index) => {
-                              if (part.startsWith("@")) {
-                                return (
-                                  <span key={index} className="text-blue-600 font-medium bg-blue-50 px-1 rounded">
-                                    {part}
-                                  </span>
-                                )
-                              } else if (part.startsWith("#")) {
-                                return (
-                                  <span key={index} className="text-green-600 font-medium bg-green-50 px-1 rounded">
-                                    {part}
-                                  </span>
-                                )
-                              }
-                              return part
-                            })}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Attachments */}
-                      {message.attachments && message.attachments.length > 0 && (
-                        <div>
-                          <h5 className="font-medium mb-3 flex items-center gap-2">
-                            <Paperclip className="h-4 w-4" />
-                            Attachments ({message.attachments.length})
-                          </h5>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {message.attachments.map((attachment, index) => (
+                      return (
+                        <div key={message.id} className={`flex ${isOwnMessage ? "justify-end" : "justify-start"}`}>
+                          <div className={`flex max-w-2xl gap-3 ${isOwnMessage ? "flex-row-reverse text-right" : ""}`}>
+                            <Avatar className="h-8 w-8 mt-1">
+                              <AvatarFallback className="bg-[#2d682d] text-white text-xs">
+                                {(isOwnMessage ? currentUser.name : message.senderName)
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="space-y-2">
                               <div
-                                key={index}
-                                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors"
+                                className={`rounded-lg border p-3 ${
+                                  isOwnMessage ? "bg-[#2d682d]/10 border-[#2d682d]/30" : "bg-white"
+                                }`}
                               >
-                                <div className="flex items-center gap-3">
-                                  {attachment.thumbnail ? (
-                                    <img
-                                      src={attachment.thumbnail || "/placeholder.svg"}
-                                      alt={attachment.name}
-                                      className="w-10 h-10 object-cover rounded"
-                                    />
-                                  ) : (
-                                    getFileIcon(attachment.type)
-                                  )}
-                                  <div>
-                                    <p className="text-sm font-medium truncate max-w-32">{attachment.name}</p>
-                                    <p className="text-xs text-gray-500">{attachment.size}</p>
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className={`flex items-center gap-2 ${isOwnMessage ? "justify-end" : ""}`}>
+                                    <span className="text-sm font-semibold">
+                                      {isOwnMessage ? "You" : message.senderName}
+                                    </span>
+                                    <Badge className={getRoleColor(message.senderRole)} variant="secondary">
+                                      {message.senderRole}
+                                    </Badge>
+                                    {message.priority !== "normal" && (
+                                      <Badge className={getPriorityColor(message.priority)}>{message.priority}</Badge>
+                                    )}
+                                    {message.status === "scheduled" && (
+                                      <Badge variant="outline" className="text-xs">
+                                        Scheduled
+                                      </Badge>
+                                    )}
                                   </div>
+                                  <span className="text-xs text-gray-400">{messageTimestamp.toLocaleString()}</span>
                                 </div>
-                                <div className="flex gap-1">
-                                  <Button size="sm" variant="outline">
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-                                  <Button size="sm" variant="outline">
-                                    <Download className="h-4 w-4" />
-                                  </Button>
+
+                                <p className={`text-sm font-semibold text-gray-900 mt-2 ${isOwnMessage ? "text-right" : ""}`}>
+                                  {message.subject}
+                                </p>
+                                <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                                  {message.content.split(/(@\w+|#\w+)/g).map((part, index) => {
+                                    if (part.startsWith("@")) {
+                                      return (
+                                        <span key={index} className="text-blue-600 font-medium bg-blue-50 px-1 rounded">
+                                          {part}
+                                        </span>
+                                      )
+                                    }
+                                    if (part.startsWith("#")) {
+                                      return (
+                                        <span key={index} className="text-green-600 font-medium bg-green-50 px-1 rounded">
+                                          {part}
+                                        </span>
+                                      )
+                                    }
+                                    return <span key={index}>{part}</span>
+                                  })}
+                                </p>
+
+                                {(message.tags.length > 0 || message.mentions.length > 0) && (
+                                  <div className={`flex flex-wrap gap-1 mt-2 ${isOwnMessage ? "justify-end" : ""}`}>
+                                    {message.tags.map((tag, index) => (
+                                      <Badge key={`tag-${message.id}-${index}`} variant="outline" className="text-xs">
+                                        #{tag}
+                                      </Badge>
+                                    ))}
+                                    {message.mentions.map((mention, index) => (
+                                      <Badge
+                                        key={`mention-${message.id}-${index}`}
+                                        variant="secondary"
+                                        className="text-xs"
+                                      >
+                                        @{mention}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {message.attachments && message.attachments.length > 0 && (
+                                  <div className="mt-3 space-y-2">
+                                    {message.attachments.map((attachment, index) => (
+                                      <div
+                                        key={`${message.id}-attachment-${index}`}
+                                        className={`flex items-center justify-between rounded-lg border bg-gray-50 px-3 py-2 ${
+                                          isOwnMessage ? "flex-row-reverse text-right" : ""
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-3">
+                                          {attachment.thumbnail ? (
+                                            <img
+                                              src={attachment.thumbnail || "/placeholder.svg"}
+                                              alt={attachment.name}
+                                              className="w-10 h-10 object-cover rounded"
+                                            />
+                                          ) : (
+                                            getFileIcon(attachment.type)
+                                          )}
+                                          <div className="text-left">
+                                            <p className="text-sm font-medium truncate max-w-40">{attachment.name}</p>
+                                            <p className="text-xs text-gray-500">{attachment.size}</p>
+                                          </div>
+                                        </div>
+                                        <div className="flex gap-1">
+                                          <Button size="sm" variant="outline">
+                                            <Eye className="h-4 w-4" />
+                                          </Button>
+                                          <Button size="sm" variant="outline">
+                                            <Download className="h-4 w-4" />
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                <div
+                                  className={`flex items-center justify-between mt-3 text-xs text-gray-500 ${
+                                    isOwnMessage ? "flex-row-reverse" : ""
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-1">
+                                    {message.delivered &&
+                                      message.senderId === currentUser.id &&
+                                      (message.read ? (
+                                        <CheckCheck className="h-3 w-3 text-blue-500" />
+                                      ) : (
+                                        <CheckCircle2 className="h-3 w-3 text-gray-400" />
+                                      ))}
+                                  </div>
+                                  {message.reactions.length > 0 && (
+                                    <div className="flex items-center gap-1">
+                                      {message.reactions.map((reaction, index) => (
+                                        <span
+                                          key={`${message.id}-reaction-${index}`}
+                                          className="text-xs bg-gray-100 rounded-full px-2 py-1"
+                                        >
+                                          {reaction.emoji}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
-                            ))}
+
+                              <div
+                                className={`flex flex-wrap items-center gap-1 text-xs text-gray-500 ${
+                                  isOwnMessage ? "justify-end" : ""
+                                }`}
+                              >
+                                <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setReplyingTo(message)}>
+                                  <Reply className="h-3 w-3 mr-1" />
+                                  Reply
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => toggleStar(message.id)}>
+                                  <Star
+                                    className={`h-3 w-3 mr-1 ${message.starred ? "text-yellow-500 fill-current" : ""}`}
+                                  />
+                                  Star
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => toggleArchive(message.id)}>
+                                  <Archive className="h-3 w-3 mr-1" />
+                                  Archive
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => deleteMessage(message.id)}>
+                                  <Trash2 className="h-3 w-3 mr-1" />
+                                  Delete
+                                </Button>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      )}
+                      )
+                    })}
+                    <div ref={messagesEndRef} />
+                  </div>
+                </div>
 
-                      {/* Reaction Bar */}
-                      <div className="flex items-center gap-2 pt-2 border-t">
-                        <span className="text-sm text-gray-500">Quick reactions:</span>
-                        {emojis.map((emoji) => (
-                          <button
-                            key={emoji}
-                            onClick={() => addReaction(message.id, emoji)}
-                            className="text-lg hover:bg-gray-100 rounded p-1 transition-colors"
-                            title={`React with ${emoji}`}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
+                <div className="flex items-center gap-2 pt-3 border-t mt-4">
+                  <span className="text-sm text-gray-500">Quick reactions:</span>
+                  {emojis.map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => addReaction(activeConversation.lastMessage.id, emoji)}
+                      className="text-lg hover:bg-gray-100 rounded p-1 transition-colors"
+                      title={`React with ${emoji}`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
 
-                      {/* Reply Section */}
-                      <div className="border-t pt-4 mt-auto">
-                        {replyingTo && (
-                          <div className="mb-3 p-2 bg-blue-50 rounded-lg flex items-center justify-between">
-                            <span className="text-sm text-blue-600">Replying to: {replyingTo.subject}</span>
-                            <Button size="sm" variant="ghost" onClick={() => setReplyingTo(null)}>
-                              ×
-                            </Button>
-                          </div>
-                        )}
-
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <Textarea
-                              placeholder="Type your reply... Use @username to mention or #tag"
-                              value={newMessage}
-                              onChange={(e) => {
-                                setNewMessage(e.target.value)
-                                handleTyping()
-                              }}
-                              rows={3}
-                              className="resize-none"
-                            />
-                            <div className="text-xs text-gray-500 mt-1">{newMessage.length}/1000 characters</div>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            <Button size="sm" variant="outline" title="Attach file">
-                              <Paperclip className="h-4 w-4" />
-                            </Button>
-                            <Button size="sm" variant="outline" title="Add emoji">
-                              <Smile className="h-4 w-4" />
-                            </Button>
-                            <Button size="sm" variant="outline" title="Voice message">
-                              <Mic className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={handleSendMessage}
-                              disabled={!newMessage.trim()}
-                              className="bg-[#2d682d] hover:bg-[#2d682d]/90"
-                              title="Send message"
-                            >
-                              <Send className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
+                <div className="border-t pt-4 mt-4">
+                  {replyingTo && (
+                    <div className="mb-3 p-2 bg-blue-50 rounded-lg flex items-center justify-between">
+                      <span className="text-sm text-blue-600">Replying to: {replyingTo.subject}</span>
+                      <Button size="sm" variant="ghost" onClick={() => setReplyingTo(null)}>
+                        ×
+                      </Button>
                     </div>
-                  )
-                })()}
-                <div ref={messagesEndRef} />
+                  )}
+
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <Textarea
+                        placeholder="Type your reply... Use @username to mention or #tag"
+                        value={newMessage}
+                        onChange={(e) => {
+                          setNewMessage(e.target.value)
+                          handleTyping()
+                        }}
+                        rows={3}
+                        className="resize-none"
+                      />
+                      <div className="text-xs text-gray-500 mt-1">{newMessage.length}/1000 characters</div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Button size="sm" variant="outline" title="Attach file">
+                        <Paperclip className="h-4 w-4" />
+                      </Button>
+                      <Button size="sm" variant="outline" title="Add emoji">
+                        <Smile className="h-4 w-4" />
+                      </Button>
+                      <Button size="sm" variant="outline" title="Voice message">
+                        <Mic className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSendMessage}
+                        disabled={!newMessage.trim() || !selectedConversation}
+                        className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+                        title="Send message"
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           ) : (
