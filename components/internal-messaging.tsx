@@ -381,6 +381,49 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
     safeStorage.setItem("vea_messages", JSON.stringify(messages))
   }, [messages])
 
+  const scheduleMessageDelivery = useCallback(
+    (message: Message) => {
+      if (message.status !== "scheduled" || !message.scheduledFor) {
+        return
+      }
+
+      if (scheduledMessageTimeouts.current.has(message.id)) {
+        return
+      }
+
+      const deliver = () => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === message.id
+              ? {
+                  ...m,
+                  status: "sent",
+                  delivered: true,
+                  timestamp: message.scheduledFor ?? new Date(),
+                }
+              : m,
+          ),
+        )
+        toast.success(`Scheduled message delivered to ${message.recipientName}`)
+      }
+
+      const delay = message.scheduledFor.getTime() - Date.now()
+
+      if (delay <= 0) {
+        deliver()
+        return
+      }
+
+      const timeout = setTimeout(() => {
+        scheduledMessageTimeouts.current.delete(message.id)
+        deliver()
+      }, delay)
+
+      scheduledMessageTimeouts.current.set(message.id, timeout)
+    },
+    [setMessages],
+  )
+
   useEffect(() => {
     messages.forEach((message) => {
       if (message.status === "scheduled" && message.scheduledFor) {
@@ -493,49 +536,6 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
       })
     }
   }
-
-  const scheduleMessageDelivery = useCallback(
-    (message: Message) => {
-      if (message.status !== "scheduled" || !message.scheduledFor) {
-        return
-      }
-
-      if (scheduledMessageTimeouts.current.has(message.id)) {
-        return
-      }
-
-      const deliver = () => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === message.id
-              ? {
-                  ...m,
-                  status: "sent",
-                  delivered: true,
-                  timestamp: message.scheduledFor ?? new Date(),
-                }
-              : m,
-          ),
-        )
-        toast.success(`Scheduled message delivered to ${message.recipientName}`)
-      }
-
-      const delay = message.scheduledFor.getTime() - Date.now()
-
-      if (delay <= 0) {
-        deliver()
-        return
-      }
-
-      const timeout = setTimeout(() => {
-        scheduledMessageTimeouts.current.delete(message.id)
-        deliver()
-      }, delay)
-
-      scheduledMessageTimeouts.current.set(message.id, timeout)
-    },
-    [setMessages],
-  )
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
