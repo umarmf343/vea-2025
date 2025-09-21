@@ -76,6 +76,8 @@ const ROLE_OPTIONS: { value: UserRole; label: string; api: string }[] = [
   { value: "accountant", label: "Accountant", api: "accountant" },
 ]
 
+const NO_CLASS_SELECT_VALUE = "__no_class__"
+
 const STATUS_BADGE: Record<UserStatus, string> = {
   active: "bg-green-100 text-green-800",
   inactive: "bg-gray-100 text-gray-800",
@@ -557,16 +559,23 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                 <div className="space-y-2">
                   <Label>Assign Class</Label>
                   <Select
-                    value={newUser.classId}
+                    value={
+                      newUser.classId && newUser.classId.trim().length > 0
+                        ? newUser.classId
+                        : NO_CLASS_SELECT_VALUE
+                    }
                     onValueChange={(value) =>
-                      setNewUser((prev) => ({ ...prev, classId: value === "" ? "" : value }))
+                      setNewUser((prev) => ({
+                        ...prev,
+                        classId: value === NO_CLASS_SELECT_VALUE ? "" : value,
+                      }))
                     }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select a class" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">No class assigned</SelectItem>
+                      <SelectItem value={NO_CLASS_SELECT_VALUE}>No class assigned</SelectItem>
                       {availableClasses.length === 0 ? (
                         <SelectItem value="__no_classes__" disabled>
                           No classes available
@@ -841,10 +850,19 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                   <div className="space-y-2">
                     <Label>Assigned Class</Label>
                     <Select
-                      value={editingUser.classId ?? ""}
+                      value={
+                        editingUser.classId && editingUser.classId.trim().length > 0
+                          ? editingUser.classId
+                          : NO_CLASS_SELECT_VALUE
+                      }
                       onValueChange={(value) =>
                         setEditingUser((prev) =>
-                          prev ? { ...prev, classId: value === "" ? null : value } : prev,
+                          prev
+                            ? {
+                                ...prev,
+                                classId: value === NO_CLASS_SELECT_VALUE ? null : value,
+                              }
+                            : prev,
                         )
                       }
                     >
@@ -852,7 +870,7 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                         <SelectValue placeholder="Select a class" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">No class assigned</SelectItem>
+                        <SelectItem value={NO_CLASS_SELECT_VALUE}>No class assigned</SelectItem>
                         {availableClasses.length === 0 ? (
                           <SelectItem value="__no_classes__" disabled>
                             No classes available
