@@ -137,7 +137,11 @@ const INITIAL_USER_STATE: NewUserState = {
   studentIds: [],
 }
 
-export function UserManagement() {
+interface UserManagementProps {
+  hideSuperAdmin?: boolean
+}
+
+export function UserManagement({ hideSuperAdmin = false }: UserManagementProps = {}) {
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -162,20 +166,36 @@ export function UserManagement() {
         throw new Error("Unable to load user records")
       }
       const data = (await response.json()) as { users: ApiUser[] }
-      setUsers(data.users.map(mapUser))
+      const mappedUsers = data.users.map(mapUser)
+      setUsers(hideSuperAdmin ? mappedUsers.filter((user) => user.role !== "super-admin") : mappedUsers)
     } catch (err) {
       console.error(err)
       setError(err instanceof Error ? err.message : "Unable to fetch users")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [hideSuperAdmin])
 
   useEffect(() => {
     void loadUsers()
   }, [loadUsers])
 
   const availableStudents = useMemo(() => users.filter((user) => user.role === "student"), [users])
+
+  const roleOptions = useMemo(
+    () => (hideSuperAdmin ? ROLE_OPTIONS.filter((option) => option.value !== "super-admin") : ROLE_OPTIONS),
+    [hideSuperAdmin],
+  )
+
+  const displayedUsers = useMemo(
+    () => (hideSuperAdmin ? users.filter((user) => user.role !== "super-admin") : users),
+    [hideSuperAdmin, users],
+  )
+
+  const resolveRoleLabel = useCallback(
+    (role: UserRole) => ROLE_OPTIONS.find((option) => option.value === role)?.label ?? role,
+    [],
+  )
 
   const handleCreateUser = useCallback(async () => {
     if (!newUser.name || !newUser.email || !newUser.password) {
@@ -202,14 +222,20 @@ export function UserManagement() {
       }
 
       const data = (await response.json()) as { user: ApiUser }
-      setUsers((previous) => [...previous, mapUser(data.user)])
+      const createdUser = mapUser(data.user)
+      setUsers((previous) => {
+        if (hideSuperAdmin && createdUser.role === "super-admin") {
+          return previous
+        }
+        return [...previous, createdUser]
+      })
       setNewUser(INITIAL_USER_STATE)
       setIsAddDialogOpen(false)
     } catch (err) {
       console.error(err)
       setError(err instanceof Error ? err.message : "Unable to create user")
     }
-  }, [newUser])
+  }, [hideSuperAdmin, newUser])
 
   const handleUpdateUser = useCallback(async () => {
     if (!editingUser) return
@@ -234,14 +260,25 @@ export function UserManagement() {
       }
 
       const data = (await response.json()) as { user: ApiUser }
-      setUsers((previous) => previous.map((user) => (user.id === data.user.id ? mapUser(data.user) : user)))
+      const updatedUser = mapUser(data.user)
+      setUsers((previous) => {
+        if (hideSuperAdmin && updatedUser.role === "super-admin") {
+          return previous.filter((user) => user.id !== updatedUser.id)
+        }
+
+        if (previous.some((user) => user.id === updatedUser.id)) {
+          return previous.map((user) => (user.id === updatedUser.id ? updatedUser : user))
+        }
+
+        return [...previous, updatedUser]
+      })
       setEditingUser(null)
       setIsEditDialogOpen(false)
     } catch (err) {
       console.error(err)
       setError(err instanceof Error ? err.message : "Unable to update user")
     }
-  }, [editingUser])
+  }, [editingUser, hideSuperAdmin])
 
   const handleDeleteUser = useCallback(async (userId: string) => {
     try {
@@ -274,12 +311,19 @@ export function UserManagement() {
       }
 
       const data = (await response.json()) as { user: ApiUser }
-      setUsers((previous) => previous.map((item) => (item.id === data.user.id ? mapUser(data.user) : item)))
+      const toggledUser = mapUser(data.user)
+      setUsers((previous) => {
+        if (hideSuperAdmin && toggledUser.role === "super-admin") {
+          return previous.filter((item) => item.id !== toggledUser.id)
+        }
+
+        return previous.map((item) => (item.id === toggledUser.id ? toggledUser : item))
+      })
     } catch (err) {
       console.error(err)
       setError(err instanceof Error ? err.message : "Unable to update user status")
     }
-  }, [])
+  }, [hideSuperAdmin])
 
   const handleResetPassword = useCallback(async () => {
     if (!selectedUser || !newPassword) return
@@ -367,7 +411,7 @@ export function UserManagement() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLE_OPTIONS.map((option) => (
+                    {roleOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
@@ -427,7 +471,7 @@ export function UserManagement() {
 
       <Card className="border-[#2d682d]/20">
         <CardHeader>
-          <CardTitle className="text-[#2d682d]">All Users ({users.length})</CardTitle>
+          <CardTitle className="text-[#2d682d]">All Users ({displayedUsers.length})</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -443,12 +487,12 @@ export function UserManagement() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((user) => (
+              {displayedUsers.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
-                    <Badge className={ROLE_BADGE[user.role]}>{ROLE_OPTIONS.find((option) => option.value === user.role)?.label}</Badge>
+                    <Badge className={ROLE_BADGE[user.role]}>{resolveRoleLabel(user.role)}</Badge>
                   </TableCell>
                   <TableCell>
                     <Badge className={STATUS_BADGE[user.status]}>{user.status}</Badge>
@@ -551,7 +595,7 @@ export function UserManagement() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLE_OPTIONS.map((option) => (
+                    {roleOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
@@ -677,9 +721,7 @@ export function UserManagement() {
                 </div>
                 <div>
                   <Label>Role</Label>
-                  <Badge className={ROLE_BADGE[selectedUser.role]}>
-                    {ROLE_OPTIONS.find((option) => option.value === selectedUser.role)?.label}
-                  </Badge>
+                  <Badge className={ROLE_BADGE[selectedUser.role]}>{resolveRoleLabel(selectedUser.role)}</Badge>
                 </div>
                 <div>
                   <Label>Status</Label>

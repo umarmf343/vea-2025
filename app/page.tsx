@@ -44,6 +44,8 @@ import { cn } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { toast } from "@/hooks/use-toast"
 import type { Viewport } from "next"
+import { SchoolCalendarManager } from "@/components/admin/school-calendar-manager"
+import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
 
 export const dynamic = "force-dynamic"
 export const viewport: Viewport = {
@@ -665,7 +667,7 @@ function AdminDashboard() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="w-full overflow-x-auto">
-          <TabsList className="grid w-full min-w-max grid-cols-8 lg:grid-cols-15 bg-green-50 gap-1 p-1">
+          <TabsList className="grid w-full min-w-max grid-cols-8 lg:grid-cols-16 bg-green-50 gap-1 p-1">
             <TabsTrigger
               value="overview"
               className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
@@ -745,6 +747,12 @@ function AdminDashboard() {
               Noticeboard
             </TabsTrigger>
             <TabsTrigger
+              value="calendar"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              School Calendar
+            </TabsTrigger>
+            <TabsTrigger
               value="monitoring"
               className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
             >
@@ -775,7 +783,7 @@ function AdminDashboard() {
         </TabsContent>
 
         <TabsContent value="users" className="space-y-6">
-          <UserManagement />
+          <UserManagement hideSuperAdmin />
         </TabsContent>
 
         <TabsContent value="classes" className="space-y-6">
@@ -816,6 +824,10 @@ function AdminDashboard() {
 
         <TabsContent value="noticeboard" className="space-y-6">
           <Noticeboard userRole="admin" userName="Admin" />
+        </TabsContent>
+
+        <TabsContent value="calendar" className="space-y-6">
+          <SchoolCalendarManager />
         </TabsContent>
 
         <TabsContent value="monitoring" className="space-y-6">
@@ -1130,6 +1142,8 @@ function ParentDashboard({ user }: { user: User }) {
                 </Button>
               </CardContent>
             </Card>
+
+            <SchoolCalendarViewer role="parent" />
           </div>
 
           <div className="mt-8">
