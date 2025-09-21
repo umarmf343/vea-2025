@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { AlertCircle, Loader2, RotateCcw, Save, Settings } from "lucide-react"
+import { safeStorage } from "@/lib/safe-storage"
 
 interface BrandingPayload {
   schoolName: string
@@ -67,7 +68,9 @@ export function SystemSettings() {
       const settingsData = (await settingsResponse.json()) as { settings: Partial<SystemSettingsPayload> }
       const brandingData = (await brandingResponse.json()) as { branding: Partial<BrandingPayload> }
 
-      setRegistrationEnabled(Boolean(settingsData.settings?.registrationEnabled ?? true))
+      const registrationState = Boolean(settingsData.settings?.registrationEnabled ?? true)
+      setRegistrationEnabled(registrationState)
+      safeStorage.setItem("registrationEnabled", JSON.stringify(registrationState))
       setCurrentSession(settingsData.settings?.academicYear ?? "2024/2025")
       setCurrentTerm(settingsData.settings?.currentTerm ?? "First Term")
       setReportCardDeadline(settingsData.settings?.reportCardDeadline ?? "")
@@ -140,6 +143,7 @@ export function SystemSettings() {
         throw new Error("Failed to update branding settings")
       }
 
+      safeStorage.setItem("registrationEnabled", JSON.stringify(registrationEnabled))
       setStatusMessage("Settings saved successfully")
     } catch (err) {
       console.error(err)

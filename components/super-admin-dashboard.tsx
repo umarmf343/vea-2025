@@ -460,6 +460,7 @@ export default function SuperAdminDashboard() {
     setSystemSettings(mapped)
 
     safeStorage.setItem("systemSettings", JSON.stringify(mapped))
+    safeStorage.setItem("registrationEnabled", JSON.stringify(mapped.registrationEnabled))
 
     dbManager.triggerEvent("systemSettingsUpdated", mapped)
   }, [])
