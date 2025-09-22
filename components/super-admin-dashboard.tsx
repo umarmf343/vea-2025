@@ -39,6 +39,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
 import { dbManager } from "@/lib/database-manager"
 import { safeStorage } from "@/lib/safe-storage"
@@ -48,6 +49,7 @@ import type {
   PaymentInitializationRecord,
   ReportCardRecord,
   ReportCardSubjectRecord,
+  StudentRecord,
   StoredUser,
   SystemSettingsRecord,
 } from "@/lib/database"
@@ -74,6 +76,13 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import {
+  grantReportCardAccess,
+  REPORT_CARD_ACCESS_EVENT,
+  type ReportCardAccessRecord,
+  revokeReportCardAccess,
+  syncReportCardAccess,
+} from "@/lib/report-card-access"
 
 interface SystemMetrics {
   serverStatus: string
@@ -117,6 +126,8 @@ interface UserRow {
   lastLogin?: string
   classId?: string | null
   subjects?: string[]
+  studentIds?: string[]
+  metadata?: Record<string, unknown> | null
 }
 
 interface ClassRow {
@@ -160,6 +171,14 @@ interface PaymentRow {
 
 interface ReportCardRow extends Omit<ReportCardRecord, "subjects"> {
   subjects: ReportCardSubjectRecord[]
+}
+
+interface StudentRow {
+  id: string
+  name: string
+  className: string
+  admissionNumber: string
+  parentEmail: string
 }
 
 const DEFAULT_BRANDING: BrandingState = {
@@ -295,6 +314,8 @@ function mapStoredUser(user: StoredUser): UserRow {
     lastLogin: user.lastLogin ?? undefined,
     classId: user.classId ?? null,
     subjects: user.subjects ?? [],
+    studentIds: user.studentIds ?? [],
+    metadata: user.metadata ?? null,
   }
 }
 
@@ -352,6 +373,16 @@ function mapReportCard(record: ReportCardRecord): ReportCardRow {
   }
 }
 
+function mapStudentRecord(record: StudentRecord): StudentRow {
+  return {
+    id: record.id,
+    name: record.name,
+    className: record.class,
+    admissionNumber: record.admissionNumber,
+    parentEmail: record.parentEmail,
+  }
+}
+
 export default function SuperAdminDashboard() {
   const { toast } = useToast()
 
@@ -359,6 +390,7 @@ export default function SuperAdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [users, setUsers] = useState<UserRow[]>([])
+  const [students, setStudents] = useState<StudentRow[]>([])
 
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [classForm, setClassForm] = useState({ name: "", level: "Junior Secondary", capacity: "" })
@@ -376,6 +408,7 @@ export default function SuperAdminDashboard() {
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null)
 
   const [reportCards, setReportCards] = useState<ReportCardRow[]>([])
+  const [accessRecords, setAccessRecords] = useState<ReportCardAccessRecord[]>([])
   const [selectedReportCard, setSelectedReportCard] = useState<ReportCardRow | null>(null)
   const [reportDialogOpen, setReportDialogOpen] = useState(false)
   const [reportRemarks, setReportRemarks] = useState({ classTeacherRemark: "", headTeacherRemark: "" })
@@ -402,6 +435,17 @@ export default function SuperAdminDashboard() {
 
     mapped.forEach((classRecord) => dbManager.emit("classUpdated", classRecord))
     dbManager.triggerEvent("classesRefreshed", mapped)
+  }, [])
+
+  const refreshStudents = useCallback(async () => {
+    const data = await fetchJson<{ students: StudentRecord[] }>("/api/students")
+    const mapped = data.students.map(mapStudentRecord)
+    setStudents(mapped)
+
+    safeStorage.setItem("students", JSON.stringify(mapped))
+
+    mapped.forEach((student) => dbManager.emit("studentUpdated", student))
+    dbManager.triggerEvent("studentsRefreshed", mapped)
   }, [])
 
   const refreshBranding = useCallback(async () => {
@@ -455,6 +499,7 @@ export default function SuperAdminDashboard() {
     await Promise.all([
       refreshUsers(),
       refreshClasses(),
+      refreshStudents(),
       refreshBranding(),
       refreshSystemSettings(),
       refreshMetrics(),
@@ -464,6 +509,7 @@ export default function SuperAdminDashboard() {
   }, [
     refreshUsers,
     refreshClasses,
+    refreshStudents,
     refreshBranding,
     refreshSystemSettings,
     refreshMetrics,
@@ -492,6 +538,36 @@ export default function SuperAdminDashboard() {
       isMounted = false
     }
   }, [refreshAll, toast])
+
+  useEffect(() => {
+    if (!systemSettings.currentTerm || !systemSettings.academicYear) {
+      return
+    }
+
+    const records = syncReportCardAccess(systemSettings.currentTerm, systemSettings.academicYear)
+    setAccessRecords(records)
+  }, [systemSettings.academicYear, systemSettings.currentTerm])
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    const handleUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ records?: ReportCardAccessRecord[] }>).detail
+      const incoming = Array.isArray(detail?.records) ? detail.records : []
+      const filtered = incoming.filter(
+        (record) =>
+          record.term === systemSettings.currentTerm && record.session === systemSettings.academicYear,
+      )
+      setAccessRecords(filtered)
+    }
+
+    window.addEventListener(REPORT_CARD_ACCESS_EVENT, handleUpdate as EventListener)
+    return () => {
+      window.removeEventListener(REPORT_CARD_ACCESS_EVENT, handleUpdate as EventListener)
+    }
+  }, [systemSettings.academicYear, systemSettings.currentTerm])
 
   const systemStats = useMemo(() => {
     const totalUsers = users.length
@@ -525,6 +601,64 @@ export default function SuperAdminDashboard() {
     [reportCards],
   )
 
+  const studentLookup = useMemo(() => {
+    const map = new Map<string, StudentRow>()
+    students.forEach((student) => {
+      map.set(student.id, student)
+      map.set(student.admissionNumber, student)
+      map.set(student.parentEmail, student)
+    })
+    return map
+  }, [students])
+
+  const parentAccessRows = useMemo(() => {
+    return users
+      .filter((user) => user.role === "parent")
+      .flatMap((parent) => {
+        const linkedIds = Array.isArray(parent.studentIds) && parent.studentIds.length
+          ? parent.studentIds
+          : typeof parent.metadata?.linkedStudentId === "string"
+            ? [String(parent.metadata.linkedStudentId)]
+            : []
+
+        if (linkedIds.length === 0) {
+          return [
+            {
+              key: `${parent.id}::none`,
+              parentId: parent.id,
+              parentName: parent.name,
+              parentEmail: parent.email,
+              studentId: null as string | null,
+              studentLabel: "No linked student",
+              hasAccess: false,
+              grantedBy: null as ReportCardAccessRecord["grantedBy"] | null,
+              disabled: true,
+            },
+          ]
+        }
+
+        return linkedIds.map((studentId) => {
+          const student = studentLookup.get(studentId)
+          const record = accessRecords.find(
+            (entry) => entry.parentId === parent.id && entry.studentId === studentId,
+          )
+
+          return {
+            key: `${parent.id}::${studentId}`,
+            parentId: parent.id,
+            parentName: parent.name,
+            parentEmail: parent.email,
+            studentId,
+            studentLabel: student ? `${student.name} (${student.className})` : studentId,
+            hasAccess: Boolean(record),
+            grantedBy: record?.grantedBy ?? null,
+            disabled: false,
+          }
+        })
+      })
+      .sort((a, b) => a.parentName.localeCompare(b.parentName))
+  }, [accessRecords, studentLookup, users])
+
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true)
     try {
@@ -537,6 +671,57 @@ export default function SuperAdminDashboard() {
       setIsRefreshing(false)
     }
   }, [refreshAll, toast])
+
+  const handleManualAccessChange = useCallback(
+    (parentId: string, studentId: string | null, enable: boolean) => {
+      if (!studentId) {
+        toast({
+          title: "No linked student",
+          description: "Assign a student to this parent before managing access.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      if (!systemSettings.currentTerm || !systemSettings.academicYear) {
+        toast({
+          title: "Unable to update access",
+          description: "Set the current term and academic session in system settings first.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      try {
+        const updated = enable
+          ? grantReportCardAccess({
+              parentId,
+              studentId,
+              term: systemSettings.currentTerm,
+              session: systemSettings.academicYear,
+              grantedBy: "manual",
+            })
+          : revokeReportCardAccess({
+              parentId,
+              studentId,
+              term: systemSettings.currentTerm,
+              session: systemSettings.academicYear,
+            })
+        setAccessRecords(updated)
+
+        toast({
+          title: enable ? "Access granted" : "Access revoked",
+          description: enable
+            ? "Parent can now view report cards for the current term."
+            : "Parent access has been removed for this term.",
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to update access"
+        toast({ title: "Unable to update access", description: message, variant: "destructive" })
+      }
+    },
+    [systemSettings.academicYear, systemSettings.currentTerm, toast],
+  )
 
   const handleSaveBranding = useCallback(async () => {
     setIsSavingBranding(true)
@@ -1082,6 +1267,90 @@ export default function SuperAdminDashboard() {
         </TabsContent>
 
         <TabsContent value="reportcards" className="space-y-6">
+          <Card className="border-[#2d682d]/20">
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-[#2d682d]" />
+                  Manual Report Card Access
+                </CardTitle>
+                <CardDescription>
+                  Grant temporary access to parents who completed offline payments. Access resets automatically when the
+                  term changes.
+                </CardDescription>
+              </div>
+              <Badge variant="outline" className="border-[#2d682d]/30 text-[#2d682d]">
+                {systemSettings.currentTerm} • {systemSettings.academicYear}
+              </Badge>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Parent</TableHead>
+                    <TableHead>Linked Student</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Manual Override</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {parentAccessRows.length ? (
+                    parentAccessRows.map((row) => (
+                      <TableRow key={row.key}>
+                        <TableCell>
+                          <div className="font-medium text-[#1f3d1f]">{row.parentName}</div>
+                          <div className="text-xs text-gray-500">{row.parentEmail}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{row.studentLabel}</div>
+                          {row.disabled && (
+                            <p className="text-xs text-red-500">Link a student to enable overrides.</p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {row.hasAccess ? (
+                            <Badge
+                              variant={row.grantedBy === "manual" ? "default" : "secondary"}
+                              className={row.grantedBy === "manual" ? "bg-[#2d682d]/10 text-[#2d682d]" : ""}
+                            >
+                              {row.grantedBy === "manual" ? "Manual" : "Payment"} access
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="border-gray-300 text-gray-600">
+                              No access
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-3">
+                            {row.grantedBy && (
+                              <span className="text-xs text-gray-500">
+                                {row.grantedBy === "manual" ? "Super admin" : "Payment"} granted
+                              </span>
+                            )}
+                            <Switch
+                              checked={row.hasAccess}
+                              onCheckedChange={(checked) =>
+                                handleManualAccessChange(row.parentId, row.studentId, checked)
+                              }
+                              disabled={row.disabled}
+                            />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-sm text-gray-500">
+                        No parent accounts available yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
