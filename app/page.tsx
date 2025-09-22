@@ -22,7 +22,6 @@ import { LibrarianDashboard } from "@/components/librarian-dashboard"
 import { AccountantDashboard } from "@/components/accountant-dashboard"
 import TimetableManagement from "@/components/timetable-management"
 import ExamManagement from "@/components/exam-management"
-import GradeManagement from "@/components/grade-management"
 import SuperAdminDashboard from "@/components/super-admin-dashboard"
 import { ReportCardConfig } from "@/components/admin/report-card-config"
 import { Noticeboard } from "@/components/noticeboard"
@@ -780,12 +779,6 @@ function AdminDashboard() {
               Exams
             </TabsTrigger>
             <TabsTrigger
-              value="grades"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
-            >
-              Grades
-            </TabsTrigger>
-            <TabsTrigger
               value="reportcards"
               className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
             >
@@ -867,10 +860,6 @@ function AdminDashboard() {
 
         <TabsContent value="exams" className="space-y-6">
           <ExamManagement />
-        </TabsContent>
-
-        <TabsContent value="grades" className="space-y-6">
-          <GradeManagement />
         </TabsContent>
 
         <TabsContent value="reportcards" className="space-y-6">

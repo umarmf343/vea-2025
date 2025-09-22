@@ -1,3 +1,4 @@
+import { deriveGradeFromScore } from "./grade-utils"
 import { safeStorage } from "./safe-storage"
 
 const serverSideStorage = new Map<string, string>()
@@ -741,9 +742,9 @@ class DatabaseManager {
 
     const timestamp = new Date().toISOString()
     const sampleStudents = [
-      { id: "student_olamide_ade", name: "Olamide Ade", position: 1, totals: { ca1: 18, ca2: 17, assignment: 9, exam: 52 } },
-      { id: "student_chinwe_okoro", name: "Chinwe Okoro", position: 3, totals: { ca1: 15, ca2: 16, assignment: 8, exam: 48 } },
-      { id: "student_ibrahim_lawal", name: "Ibrahim Lawal", position: 5, totals: { ca1: 14, ca2: 15, assignment: 7, exam: 44 } },
+      { id: "student_olamide_ade", name: "Olamide Ade", position: 1, totals: { ca1: 19, ca2: 18, assignment: 19, exam: 36 } },
+      { id: "student_chinwe_okoro", name: "Chinwe Okoro", position: 3, totals: { ca1: 17, ca2: 16, assignment: 18, exam: 32 } },
+      { id: "student_ibrahim_lawal", name: "Ibrahim Lawal", position: 5, totals: { ca1: 15, ca2: 14, assignment: 16, exam: 28 } },
     ]
 
     return sampleStudents.map((student) => {
@@ -799,13 +800,7 @@ class DatabaseManager {
   }
 
   private calculateGradeFromTotal(total: number): string {
-    if (total >= 85) return "A+"
-    if (total >= 75) return "A"
-    if (total >= 65) return "B"
-    if (total >= 55) return "C"
-    if (total >= 45) return "D"
-    if (total >= 40) return "E"
-    return "F"
+    return deriveGradeFromScore(total)
   }
 
   private calculateDurationMinutes(startTime: string, endTime: string): number {
