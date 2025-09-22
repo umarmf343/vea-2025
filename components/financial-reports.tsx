@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -208,6 +208,24 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
 
   const COLORS = ["#2d682d", "#b29032", "#4ade80", "#f59e0b", "#ef4444", "#8b5cf6"]
 
+  const classOptions = useMemo(() => {
+    const classes = new Set<string>()
+
+    for (const entry of classWiseCollection) {
+      if (typeof entry.class === "string" && entry.class.trim().length > 0) {
+        classes.add(entry.class)
+      }
+    }
+
+    if (selectedClass !== "all") {
+      classes.add(selectedClass)
+    }
+
+    return ["all", ...Array.from(classes)]
+  }, [classWiseCollection, selectedClass])
+
+  const shouldShowClassFilter = classOptions.length > 1
+
   const handlePrint = () => {
     window.print()
   }
@@ -230,26 +248,110 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
       const dataStr = JSON.stringify(reportData, null, 2)
       const dataBlob = new Blob([dataStr], { type: "application/json" })
       const url = URL.createObjectURL(dataBlob)
-@@ -165,230 +269,237 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
-              <SelectItem value="current-term">Current Term</SelectItem>
-              <SelectItem value="last-term">Last Term</SelectItem>
-              <SelectItem value="current-session">Current Session</SelectItem>
-              <SelectItem value="last-session">Last Session</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="flex gap-2">
-            <Button onClick={handlePrint} size="sm" variant="outline" className="flex-1 sm:flex-none bg-transparent">
-              <Printer className="h-4 w-4 mr-2" />
-              Print
-            </Button>
-            <Button onClick={handleDownload} size="sm" className="bg-[#b29032] hover:bg-[#8a6b25] flex-1 sm:flex-none">
-              <Download className="h-4 w-4 mr-2" />
-              Export
-            </Button>
+
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `financial-report-${selectedPeriod}-${new Date().toISOString()}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error("Error exporting financial report:", error)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-[#2d682d]/40 bg-white p-8 text-center shadow-sm">
+        <Loader2 className="h-8 w-8 animate-spin text-[#2d682d]" aria-hidden="true" />
+        <p className="text-sm text-gray-600">Loading financial reports...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-4 rounded-lg border border-red-200 bg-red-50 p-8 text-center shadow-sm">
+        <AlertTriangle className="h-8 w-8 text-red-500" aria-hidden="true" />
+        <div>
+          <p className="text-base font-semibold text-red-700">Unable to load financial data</p>
+          <p className="text-sm text-red-600">{error}</p>
+        </div>
+        <Button
+          type="button"
+          onClick={() => {
+            void loadFinancialData()
+          }}
+          className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+        >
+          Retry
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-[#2d682d]/10 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-[#2d682d]">Financial Reports</h2>
+            <p className="text-sm text-gray-600">
+              Comprehensive fee collection and expense tracking across the school.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+                <SelectTrigger className="w-full sm:w-[200px]">
+                  <SelectValue placeholder="Select period" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="current-term">Current Term</SelectItem>
+                  <SelectItem value="last-term">Last Term</SelectItem>
+                  <SelectItem value="current-session">Current Session</SelectItem>
+                  <SelectItem value="last-session">Last Session</SelectItem>
+                </SelectContent>
+              </Select>
+              {shouldShowClassFilter ? (
+                <Select value={selectedClass} onValueChange={setSelectedClass}>
+                  <SelectTrigger className="w-full sm:w-[200px]">
+                    <SelectValue placeholder="All Classes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {classOptions.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option === "all" ? "All Classes" : option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={handlePrint}
+                size="sm"
+                variant="outline"
+                className="flex-1 bg-transparent sm:flex-none"
+              >
+                <Printer className="mr-2 h-4 w-4" />
+                Print
+              </Button>
+              <Button
+                onClick={handleDownload}
+                size="sm"
+                className="flex-1 bg-[#b29032] hover:bg-[#8a6b25] sm:flex-none"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            </div>
           </div>
         </div>
       </div>
-
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4">
@@ -470,7 +572,9 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
             </CardContent>
           </Card>
         </TabsContent>
-@@ -398,46 +509,46 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
+
+        <TabsContent value="analytics" className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
                 <CardTitle className="text-[#2d682d]">Collection vs Target</CardTitle>
