@@ -17,10 +17,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { BookOpen, Users, FileText, GraduationCap, Clock, User, Plus, Save, Loader2, Youtube } from "lucide-react"
+import { BookOpen, Users, FileText, GraduationCap, Clock, User, Plus, Save, Loader2 } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
 import { InternalMessaging } from "@/components/internal-messaging"
+import { TutorialLink } from "@/components/tutorial-link"
+import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
 import {
   CONTINUOUS_ASSESSMENT_MAXIMUMS,
   calculateContinuousAssessmentTotal,
@@ -250,14 +252,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       setIsAssignmentsLoading(false)
     }
   }, [teacher.id, toast])
-
-  const upcomingTeacherExams = useMemo(
-    () =>
-      teacherExams
-        .filter((exam) => exam.status === "scheduled")
-        .sort((a, b) => a.examDate.localeCompare(b.examDate)),
-    [teacherExams],
-  )
 
   const sortedTeacherTimetable = useMemo(
     () => teacherTimetable.slice().sort((a, b) => a.time.localeCompare(b.time)),
@@ -864,15 +858,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               <p>Classes: {classSummary}</p>
             </div>
           </div>
-          <a
-            href="https://www.youtube.com/watch?v=HkyVTxH2fIM"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 self-start rounded-md bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-          >
-            <Youtube className="h-4 w-4" />
-            Tutorial
-          </a>
+          <TutorialLink href="https://www.youtube.com/watch?v=HkyVTxH2fIM" variant="inverse" />
         </div>
       </div>
 
@@ -958,33 +944,15 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-[#2d682d]">Upcoming Exams</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isExamLoading ? (
-                  <div className="flex items-center justify-center py-6 text-gray-500">
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading upcoming exams...
-                  </div>
-                ) : upcomingTeacherExams.length === 0 ? (
-                  <p className="text-sm text-gray-500">
-                    No upcoming exams scheduled for your classes.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {upcomingTeacherExams.map((exam) => (
-                      <div key={exam.id} className="p-2 bg-yellow-50 border-l-4 border-[#b29032] rounded">
-                        <p className="font-medium">{exam.subject}</p>
-                        <p className="text-sm text-gray-600">
-                          {exam.className} • {formatExamDate(exam.examDate)} • {exam.term}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <ExamScheduleOverview
+              role="teacher"
+              title="Upcoming Exams"
+              description="Next scheduled assessments across your assigned classes."
+              classNames={teacher.classes}
+              className="h-full"
+              emptyState="No upcoming exams scheduled for your classes."
+              limit={4}
+            />
           </div>
 
           <SchoolCalendarViewer role="teacher" />

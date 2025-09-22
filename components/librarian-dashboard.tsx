@@ -16,9 +16,10 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { BookOpen, Search, Plus, Users, Calendar, AlertTriangle, Youtube } from "lucide-react"
+import { BookOpen, Search, Plus, Users, Calendar, AlertTriangle } from "lucide-react"
 import { dbManager } from "@/lib/database-manager"
 import { useToast } from "@/hooks/use-toast"
+import { TutorialLink } from "@/components/tutorial-link"
 
 interface LibrarianDashboardProps {
   librarian: {
@@ -439,15 +440,11 @@ export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
             <h1 className="text-2xl font-bold">Welcome, {librarian.name}</h1>
             <p className="text-green-100">Library Management - VEA 2025</p>
           </div>
-          <a
+          <TutorialLink
             href="https://www.youtube.com/watch?v=3GwjfUFyY6M"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-md bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-          >
-            <Youtube className="h-4 w-4" />
-            Tutorial
-          </a>
+            variant="inverse"
+            className="text-white"
+          />
         </div>
       </div>
 

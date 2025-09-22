@@ -58,6 +58,8 @@ import { FinancialReports } from "@/components/financial-reports"
 import { InternalMessaging } from "@/components/internal-messaging"
 import { UserManagement } from "@/components/admin/user-management"
 import { SchoolCalendarApprovalPanel } from "@/components/school-calendar-approval"
+import { TutorialLink } from "@/components/tutorial-link"
+import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
 import {
   BarChart3,
   Calendar,
@@ -73,7 +75,7 @@ import {
   TrendingUp,
   Users,
   DollarSign,
-  Youtube,
+  X,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -394,8 +396,23 @@ export default function SuperAdminDashboard() {
   const [students, setStudents] = useState<StudentRow[]>([])
 
   const [classes, setClasses] = useState<ClassRow[]>([])
-  const [classForm, setClassForm] = useState({ name: "", level: "Junior Secondary", capacity: "" })
+  const [classForm, setClassForm] = useState({
+    name: "",
+    level: "Junior Secondary",
+    capacity: "",
+    subjectInput: "",
+    subjects: [] as string[],
+  })
   const [classToDelete, setClassToDelete] = useState<ClassRow | null>(null)
+  const [classBeingEdited, setClassBeingEdited] = useState<ClassRow | null>(null)
+  const [editClassDialogOpen, setEditClassDialogOpen] = useState(false)
+  const [editClassForm, setEditClassForm] = useState({
+    name: "",
+    level: "Junior Secondary",
+    capacity: "",
+    subjects: [] as string[],
+    subjectInput: "",
+  })
 
   const [payments, setPayments] = useState<PaymentRow[]>([])
 
@@ -770,9 +787,63 @@ export default function SuperAdminDashboard() {
     }
   }, [refreshSystemSettings, systemSettings, toast])
 
+  const handleAddClassSubject = useCallback(() => {
+    setClassForm((previous) => {
+      const value = previous.subjectInput.trim()
+      if (!value) {
+        return previous
+      }
+
+      const normalized = value.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "")
+      if (previous.subjects.some((subject) => subject.toLowerCase() === normalized.toLowerCase())) {
+        return { ...previous, subjectInput: "" }
+      }
+
+      return { ...previous, subjects: [...previous.subjects, normalized], subjectInput: "" }
+    })
+  }, [])
+
+  const handleRemoveClassSubject = useCallback((subject: string) => {
+    setClassForm((previous) => ({
+      ...previous,
+      subjects: previous.subjects.filter((item) => item.toLowerCase() !== subject.toLowerCase()),
+    }))
+  }, [])
+
+  const handleAddEditClassSubject = useCallback(() => {
+    setEditClassForm((previous) => {
+      const value = previous.subjectInput.trim()
+      if (!value) {
+        return previous
+      }
+
+      const normalized = value.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "")
+      if (previous.subjects.some((subject) => subject.toLowerCase() === normalized.toLowerCase())) {
+        return { ...previous, subjectInput: "" }
+      }
+
+      return { ...previous, subjects: [...previous.subjects, normalized], subjectInput: "" }
+    })
+  }, [])
+
+  const handleRemoveEditClassSubject = useCallback((subject: string) => {
+    setEditClassForm((previous) => ({
+      ...previous,
+      subjects: previous.subjects.filter((item) => item.toLowerCase() !== subject.toLowerCase()),
+    }))
+  }, [])
+
   const handleAddClass = useCallback(async () => {
     if (!classForm.name.trim()) {
       toast({ title: "Missing class name", description: "Please provide a class name." })
+      return
+    }
+
+    if (!classForm.subjects.length) {
+      toast({
+        title: "Add subjects",
+        description: "Include at least one subject offered in this class before saving.",
+      })
       return
     }
 
@@ -783,16 +854,72 @@ export default function SuperAdminDashboard() {
           name: classForm.name,
           level: classForm.level,
           capacity: classForm.capacity ? Number(classForm.capacity) : undefined,
+          subjects: classForm.subjects,
         }),
       })
       toast({ title: "Class added" })
-      setClassForm({ name: "", level: classForm.level, capacity: "" })
+      setClassForm({ name: "", level: classForm.level, capacity: "", subjectInput: "", subjects: [] })
       await refreshClasses()
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to add class"
       toast({ title: "Class creation failed", description: message, variant: "destructive" })
     }
   }, [classForm, refreshClasses, toast])
+
+  const handleOpenEditClass = useCallback((classRecord: ClassRow) => {
+    setClassBeingEdited(classRecord)
+    setEditClassForm({
+      name: classRecord.name,
+      level: classRecord.level,
+      capacity: classRecord.capacity ? String(classRecord.capacity) : "",
+      subjects: Array.isArray(classRecord.subjects) ? [...classRecord.subjects] : [],
+      subjectInput: "",
+    })
+    setEditClassDialogOpen(true)
+  }, [])
+
+  const resetEditClassForm = useCallback(() => {
+    setClassBeingEdited(null)
+    setEditClassForm({
+      name: "",
+      level: "Junior Secondary",
+      capacity: "",
+      subjects: [],
+      subjectInput: "",
+    })
+  }, [])
+
+  const handleUpdateClass = useCallback(async () => {
+    if (!classBeingEdited) {
+      return
+    }
+
+    const trimmedName = editClassForm.name.trim()
+    if (!trimmedName) {
+      toast({ title: "Missing class name", description: "Please provide a class name." })
+      return
+    }
+
+    try {
+      await fetchJson("/api/classes", {
+        method: "PUT",
+        body: JSON.stringify({
+          id: classBeingEdited.id,
+          name: trimmedName,
+          level: editClassForm.level,
+          capacity: editClassForm.capacity ? Number(editClassForm.capacity) : undefined,
+          subjects: editClassForm.subjects,
+        }),
+      })
+      toast({ title: "Class updated" })
+      setEditClassDialogOpen(false)
+      resetEditClassForm()
+      await refreshClasses()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update class"
+      toast({ title: "Unable to update class", description: message, variant: "destructive" })
+    }
+  }, [classBeingEdited, editClassForm.capacity, editClassForm.level, editClassForm.name, editClassForm.subjects, refreshClasses, resetEditClassForm, toast])
 
   const handleDeleteClass = useCallback(async () => {
     if (!classToDelete) {
@@ -955,27 +1082,19 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-[#2d682d]">Super Admin Dashboard</h1>
-          <p className="text-gray-600">Holistic control for every panel within the VEA portal</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <a
-            href="https://www.youtube.com/watch?v=04854XqcfCY"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-md border border-[#2d682d]/20 bg-[#2d682d]/10 px-4 py-2 text-sm font-medium text-[#1f4a1f] transition hover:bg-[#2d682d]/20"
-          >
-            <Youtube className="h-4 w-4" />
-            Tutorial
-          </a>
-          <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing}>
-            <RefreshCw className={cn("mr-2 h-4 w-4", isRefreshing && "animate-spin")} />
-            Refresh Data
-          </Button>
-          <Button className="bg-[#b29032] hover:bg-[#9a7c2a]" onClick={() => setActiveTab("system")}>
-            <Shield className="mr-2 h-4 w-4" />
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-[#2d682d]">Super Admin Dashboard</h1>
+            <p className="text-gray-600">Holistic control for every panel within the VEA portal</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <TutorialLink href="https://www.youtube.com/watch?v=04854XqcfCY" />
+            <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing}>
+              <RefreshCw className={cn("mr-2 h-4 w-4", isRefreshing && "animate-spin")} />
+              Refresh Data
+            </Button>
+            <Button className="bg-[#b29032] hover:bg-[#9a7c2a]" onClick={() => setActiveTab("system")}>
+              <Shield className="mr-2 h-4 w-4" />
             Admin Tools
           </Button>
         </div>
@@ -1040,7 +1159,7 @@ export default function SuperAdminDashboard() {
                 </Card>
               </div>
 
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center justify-between">
@@ -1132,6 +1251,15 @@ export default function SuperAdminDashboard() {
                     </Table>
                   </CardContent>
                 </Card>
+
+                <ExamScheduleOverview
+                  role="super_admin"
+                  title="Upcoming Exams"
+                  description="Monitor the latest assessments scheduled across all classes."
+                  className="h-full"
+                  limit={6}
+                  emptyState="No upcoming exams scheduled by administrators yet."
+                />
               </div>
 
               <Card>
@@ -1601,6 +1729,45 @@ export default function SuperAdminDashboard() {
                     />
                   </div>
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="class-subject-input">Subjects</Label>
+                  <div className="flex flex-wrap gap-2 rounded-md border border-dashed border-[#2d682d]/30 bg-[#f8faf5] p-3">
+                    {classForm.subjects.length ? (
+                      classForm.subjects.map((subject) => (
+                        <Badge key={subject} variant="secondary" className="flex items-center gap-2 bg-[#2d682d]/10 text-[#1f4a1f]">
+                          {subject}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveClassSubject(subject)}
+                            className="rounded-full p-0.5 text-[#1f4a1f]/70 transition hover:bg-[#2d682d]/10 hover:text-[#1f4a1f]"
+                            aria-label={`Remove ${subject}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-xs text-gray-500">No subjects added yet.</span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      id="class-subject-input"
+                      placeholder="Add subject e.g. Mathematics"
+                      value={classForm.subjectInput}
+                      onChange={(event) => setClassForm((prev) => ({ ...prev, subjectInput: event.target.value }))}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault()
+                          handleAddClassSubject()
+                        }
+                      }}
+                    />
+                    <Button type="button" variant="outline" onClick={handleAddClassSubject} className="sm:w-auto">
+                      <Plus className="mr-2 h-4 w-4" /> Add Subject
+                    </Button>
+                  </div>
+                </div>
                 <div className="flex justify-end">
                   <Button onClick={handleAddClass}>
                     <Plus className="mr-2 h-4 w-4" />
@@ -1614,6 +1781,7 @@ export default function SuperAdminDashboard() {
                       <TableHead>Class</TableHead>
                       <TableHead>Level</TableHead>
                       <TableHead>Capacity</TableHead>
+                      <TableHead>Subjects</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1624,16 +1792,34 @@ export default function SuperAdminDashboard() {
                           <TableCell>{classRecord.name}</TableCell>
                           <TableCell>{classRecord.level}</TableCell>
                           <TableCell>{classRecord.capacity ?? "—"}</TableCell>
-                          <TableCell className="flex justify-end">
-                            <Button variant="ghost" size="sm" onClick={() => setClassToDelete(classRecord)}>
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {(classRecord.subjects ?? []).length ? (
+                                classRecord.subjects?.map((subject) => (
+                                  <Badge key={`${classRecord.id}-${subject}`} variant="outline" className="border-[#2d682d]/30 text-[#2d682d]">
+                                    {subject}
+                                  </Badge>
+                                ))
+                              ) : (
+                                <span className="text-xs text-gray-500">No subjects</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-end gap-2">
+                              <Button variant="outline" size="sm" onClick={() => handleOpenEditClass(classRecord)}>
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => setClassToDelete(classRecord)}>
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center text-sm text-gray-500">
+                        <TableCell colSpan={5} className="text-center text-sm text-gray-500">
                           No classes defined yet.
                         </TableCell>
                       </TableRow>
@@ -1649,6 +1835,109 @@ export default function SuperAdminDashboard() {
           <FinancialReports />
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={editClassDialogOpen}
+        onOpenChange={(open) => {
+          setEditClassDialogOpen(open)
+          if (!open) {
+            resetEditClassForm()
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Class</DialogTitle>
+            <DialogDescription>Update class details and align subjects with the curriculum.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-class-name">Class Name</Label>
+              <Input
+                id="edit-class-name"
+                value={editClassForm.name}
+                onChange={(event) => setEditClassForm((prev) => ({ ...prev, name: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-class-level">Level</Label>
+              <Select
+                value={editClassForm.level}
+                onValueChange={(value) => setEditClassForm((prev) => ({ ...prev, level: value }))}
+              >
+                <SelectTrigger id="edit-class-level">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Junior Secondary">Junior Secondary</SelectItem>
+                  <SelectItem value="Senior Secondary">Senior Secondary</SelectItem>
+                  <SelectItem value="Primary">Primary</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-class-capacity">Capacity</Label>
+              <Input
+                id="edit-class-capacity"
+                type="number"
+                value={editClassForm.capacity}
+                onChange={(event) => setEditClassForm((prev) => ({ ...prev, capacity: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-class-subject">Subjects</Label>
+              <div className="flex flex-wrap gap-2 rounded-md border border-dashed border-[#2d682d]/30 bg-[#f8faf5] p-3">
+                {editClassForm.subjects.length ? (
+                  editClassForm.subjects.map((subject) => (
+                    <Badge key={`${classBeingEdited?.id ?? "edit"}-${subject}`} variant="secondary" className="flex items-center gap-2 bg-[#2d682d]/10 text-[#1f4a1f]">
+                      {subject}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveEditClassSubject(subject)}
+                        className="rounded-full p-0.5 text-[#1f4a1f]/70 transition hover:bg-[#2d682d]/10 hover:text-[#1f4a1f]"
+                        aria-label={`Remove ${subject}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-xs text-gray-500">No subjects assigned yet.</span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  id="edit-class-subject"
+                  placeholder="Add subject e.g. Biology"
+                  value={editClassForm.subjectInput}
+                  onChange={(event) => setEditClassForm((prev) => ({ ...prev, subjectInput: event.target.value }))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      handleAddEditClassSubject()
+                    }
+                  }}
+                />
+                <Button type="button" variant="outline" onClick={handleAddEditClassSubject} className="sm:w-auto">
+                  <Plus className="mr-2 h-4 w-4" /> Add Subject
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditClassDialogOpen(false)
+                resetEditClassForm()
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateClass}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
         <DialogContent className="max-w-2xl">
