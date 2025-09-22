@@ -1,12 +1,22 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
-import { BookOpen, Search, Plus, Users, Calendar, AlertTriangle } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { BookOpen, Search, Plus, Users, Calendar, AlertTriangle, Youtube } from "lucide-react"
 import { dbManager } from "@/lib/database-manager"
 import { useToast } from "@/hooks/use-toast"
 
@@ -70,6 +80,24 @@ export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
   const [borrowedBooks, setBorrowedBooks] = useState<BorrowedBookRecord[]>([])
   const [requests, setRequests] = useState<BookRequestRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [bookDialogOpen, setBookDialogOpen] = useState(false)
+  const [bookDetailsOpen, setBookDetailsOpen] = useState(false)
+  const [bookDialogLoading, setBookDialogLoading] = useState(false)
+  const [editingBookId, setEditingBookId] = useState<string | null>(null)
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null)
+  const [deletingBookId, setDeletingBookId] = useState<string | null>(null)
+  const [bookForm, setBookForm] = useState({
+    title: "",
+    author: "",
+    isbn: "",
+    category: "",
+    copies: "1",
+    available: "1",
+    description: "",
+    shelfLocation: "",
+    tags: "",
+    coverImage: "",
+  })
 
   const { toast } = useToast()
 
@@ -213,6 +241,184 @@ export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
     return dueDate < new Date()
   })
 
+  const selectedBook = useMemo(
+    () => (selectedBookId ? books.find((book) => book.id === selectedBookId) ?? null : null),
+    [books, selectedBookId],
+  )
+
+  const resetBookForm = useCallback(() => {
+    setBookForm({
+      title: "",
+      author: "",
+      isbn: "",
+      category: "",
+      copies: "1",
+      available: "1",
+      description: "",
+      shelfLocation: "",
+      tags: "",
+      coverImage: "",
+    })
+    setEditingBookId(null)
+  }, [])
+
+  const handleOpenAddBook = useCallback(() => {
+    resetBookForm()
+    setBookDialogOpen(true)
+  }, [resetBookForm])
+
+  const handleBookFormChange = (field: keyof typeof bookForm, value: string) => {
+    setBookForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleOpenEditBook = useCallback(
+    (book: InventoryBook) => {
+      setEditingBookId(book.id)
+      setBookForm({
+        title: book.title ?? "",
+        author: book.author ?? "",
+        isbn: book.isbn ?? "",
+        category: book.category ?? "",
+        copies: String(book.copies ?? 1),
+        available: String(book.available ?? book.copies ?? 1),
+        description: book.description ?? "",
+        shelfLocation: book.shelfLocation ?? "",
+        tags: (book.tags ?? []).join(", "),
+        coverImage: book.coverImage ?? "",
+      })
+      setBookDialogOpen(true)
+      setBookDetailsOpen(false)
+    },
+    [],
+  )
+
+  const handleViewBook = useCallback((book: InventoryBook) => {
+    setSelectedBookId(book.id)
+    setBookDetailsOpen(true)
+  }, [])
+
+  const handleDeleteBook = useCallback(
+    async (bookId: string) => {
+      const runtimeConfirm = typeof window !== "undefined" ? window.confirm : undefined
+      const confirmed = runtimeConfirm ? runtimeConfirm("Remove this book from the library catalog?") : true
+      if (!confirmed) {
+        return
+      }
+
+      try {
+        setDeletingBookId(bookId)
+        await dbManager.deleteBook(bookId)
+        toast({
+          title: "Book removed",
+          description: "The book has been deleted from the catalog.",
+        })
+        if (selectedBookId === bookId) {
+          setSelectedBookId(null)
+          setBookDetailsOpen(false)
+        }
+        await loadLibraryData()
+      } catch (error) {
+        console.error("Error deleting book:", error)
+        toast({
+          variant: "destructive",
+          title: "Unable to delete book",
+          description: error instanceof Error ? error.message : "Please try again later.",
+        })
+      } finally {
+        setDeletingBookId(null)
+      }
+    },
+    [loadLibraryData, selectedBookId, toast],
+  )
+
+  const handleSubmitBook = useCallback(async () => {
+    if (!bookForm.title.trim() || !bookForm.author.trim() || !bookForm.isbn.trim() || !bookForm.category.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Missing information",
+        description: "Title, author, ISBN, and category are required.",
+      })
+      return
+    }
+
+    const copies = Number.parseInt(bookForm.copies, 10)
+    const available = Number.parseInt(bookForm.available, 10)
+
+    if (Number.isNaN(copies) || copies <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Invalid copies",
+        description: "Enter a valid number of copies.",
+      })
+      return
+    }
+
+    if (Number.isNaN(available) || available < 0) {
+      toast({
+        variant: "destructive",
+        title: "Invalid availability",
+        description: "Enter how many copies are currently available.",
+      })
+      return
+    }
+
+    const normalizedAvailable = Math.min(available, copies)
+    const tags = bookForm.tags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0)
+
+    try {
+      setBookDialogLoading(true)
+
+      if (editingBookId) {
+        await dbManager.updateBook(editingBookId, {
+          title: bookForm.title.trim(),
+          author: bookForm.author.trim(),
+          isbn: bookForm.isbn.trim(),
+          category: bookForm.category.trim(),
+          copies,
+          available: normalizedAvailable,
+          description: bookForm.description.trim() ? bookForm.description.trim() : null,
+          shelfLocation: bookForm.shelfLocation.trim() ? bookForm.shelfLocation.trim() : null,
+          coverImage: bookForm.coverImage.trim() ? bookForm.coverImage.trim() : null,
+          tags,
+        })
+
+        toast({
+          title: "Book updated",
+          description: "The book information has been refreshed.",
+        })
+      } else {
+        await handleAddBook({
+          title: bookForm.title.trim(),
+          author: bookForm.author.trim(),
+          isbn: bookForm.isbn.trim(),
+          category: bookForm.category.trim(),
+          copies,
+          available: normalizedAvailable,
+          description: bookForm.description.trim() ? bookForm.description.trim() : null,
+          shelfLocation: bookForm.shelfLocation.trim() ? bookForm.shelfLocation.trim() : null,
+          coverImage: bookForm.coverImage.trim() ? bookForm.coverImage.trim() : null,
+          tags,
+        })
+      }
+
+      await loadLibraryData()
+      setBookDialogOpen(false)
+      resetBookForm()
+    } catch (error) {
+      console.error("Error saving book:", error)
+      toast({
+        variant: "destructive",
+        title: "Unable to save book",
+        description: error instanceof Error ? error.message : "Please try again.",
+      })
+    } finally {
+      setBookDialogLoading(false)
+    }
+  }, [bookForm, editingBookId, handleAddBook, loadLibraryData, resetBookForm, toast])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -228,8 +434,21 @@ export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#2d682d] to-[#b29032] text-white p-6 rounded-lg">
-        <h1 className="text-2xl font-bold">Welcome, {librarian.name}</h1>
-        <p className="text-green-100">Library Management - VEA 2025</p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Welcome, {librarian.name}</h1>
+            <p className="text-green-100">Library Management - VEA 2025</p>
+          </div>
+          <a
+            href="https://www.youtube.com/watch?v=3GwjfUFyY6M"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-md bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+          >
+            <Youtube className="h-4 w-4" />
+            Tutorial
+          </a>
+        </div>
       </div>
 
       {/* Quick Stats */}
@@ -367,41 +586,7 @@ export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
                       className="pl-8"
                     />
                   </div>
-                  <Button
-                    className="bg-[#b29032] hover:bg-[#b29032]/90"
-                    onClick={() => {
-                      const title = prompt("Enter book title:")
-                      const author = prompt("Enter author:")
-                      const isbn = prompt("Enter ISBN:")
-                      const copies = prompt("Enter number of copies:")
-                      const category = prompt("Enter category:")
-
-                      if (title && author && isbn && copies && category) {
-                        const parsedCopies = Number.parseInt(copies, 10)
-                        if (Number.isNaN(parsedCopies) || parsedCopies <= 0) {
-                          toast({
-                            variant: "destructive",
-                            title: "Invalid quantity",
-                            description: "Please provide a valid number of copies.",
-                          })
-                          return
-                        }
-
-                        void handleAddBook({
-                          title,
-                          author,
-                          isbn,
-                          copies: parsedCopies,
-                          available: parsedCopies,
-                          category,
-                          description: null,
-                          shelfLocation: null,
-                          coverImage: null,
-                          tags: [],
-                        })
-                      }
-                    }}
-                  >
+                  <Button className="bg-[#b29032] hover:bg-[#b29032]/90" onClick={handleOpenAddBook}>
                     <Plus className="w-4 h-4 mr-2" />
                     Add Book
                   </Button>
@@ -431,10 +616,14 @@ export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
                           </p>
                         </div>
                         <div className="space-x-2">
-                          <Button size="sm" variant="outline">
+                          <Button size="sm" variant="outline" onClick={() => handleOpenEditBook(book)}>
                             Edit
                           </Button>
-                          <Button size="sm" className="bg-[#2d682d] hover:bg-[#2d682d]/90">
+                          <Button
+                            size="sm"
+                            className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+                            onClick={() => handleViewBook(book)}
+                          >
                             View Details
                           </Button>
                         </div>
@@ -527,6 +716,223 @@ export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={bookDialogOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setBookDialogOpen(true)
+          } else {
+            setBookDialogOpen(false)
+            resetBookForm()
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingBookId ? "Update Book" : "Add New Book"}</DialogTitle>
+            <DialogDescription>
+              {editingBookId
+                ? "Edit the details of the selected book and update the catalog."
+                : "Provide the details for the new book you want to add to the library."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="book-title">Title</Label>
+              <Input
+                id="book-title"
+                value={bookForm.title}
+                onChange={(event) => handleBookFormChange("title", event.target.value)}
+                placeholder="e.g. Introduction to Biology"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="book-author">Author</Label>
+              <Input
+                id="book-author"
+                value={bookForm.author}
+                onChange={(event) => handleBookFormChange("author", event.target.value)}
+                placeholder="Author name"
+              />
+            </div>
+            <div className="grid gap-2 md:grid-cols-2 md:gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="book-isbn">ISBN</Label>
+                <Input
+                  id="book-isbn"
+                  value={bookForm.isbn}
+                  onChange={(event) => handleBookFormChange("isbn", event.target.value)}
+                  placeholder="ISBN number"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="book-category">Category</Label>
+                <Input
+                  id="book-category"
+                  value={bookForm.category}
+                  onChange={(event) => handleBookFormChange("category", event.target.value)}
+                  placeholder="e.g. Science"
+                />
+              </div>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2 md:gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="book-copies">Total Copies</Label>
+                <Input
+                  id="book-copies"
+                  type="number"
+                  min={1}
+                  value={bookForm.copies}
+                  onChange={(event) => handleBookFormChange("copies", event.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="book-available">Available Copies</Label>
+                <Input
+                  id="book-available"
+                  type="number"
+                  min={0}
+                  value={bookForm.available}
+                  onChange={(event) => handleBookFormChange("available", event.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="book-shelf">Shelf Location</Label>
+              <Input
+                id="book-shelf"
+                value={bookForm.shelfLocation}
+                onChange={(event) => handleBookFormChange("shelfLocation", event.target.value)}
+                placeholder="e.g. Aisle 3B"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="book-tags">Tags</Label>
+              <Input
+                id="book-tags"
+                value={bookForm.tags}
+                onChange={(event) => handleBookFormChange("tags", event.target.value)}
+                placeholder="Comma separated keywords"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="book-description">Description</Label>
+              <Textarea
+                id="book-description"
+                value={bookForm.description}
+                onChange={(event) => handleBookFormChange("description", event.target.value)}
+                placeholder="Short summary of the book"
+                rows={4}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="book-cover">Cover Image URL</Label>
+              <Input
+                id="book-cover"
+                value={bookForm.coverImage}
+                onChange={(event) => handleBookFormChange("coverImage", event.target.value)}
+                placeholder="Optional image link"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBookDialogOpen(false)
+                resetBookForm()
+              }}
+              disabled={bookDialogLoading}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void handleSubmitBook()} disabled={bookDialogLoading}>
+              {bookDialogLoading ? "Saving..." : editingBookId ? "Update Book" : "Add Book"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={bookDetailsOpen && Boolean(selectedBook)}
+        onOpenChange={(open) => {
+          setBookDetailsOpen(open)
+          if (!open) {
+            setSelectedBookId(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedBook?.title}</DialogTitle>
+            <DialogDescription>
+              Detailed information about this title, including borrowing status and catalog metadata.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="grid grid-cols-2 gap-2">
+              <span className="text-gray-500">Author</span>
+              <span className="font-medium">{selectedBook?.author}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <span className="text-gray-500">ISBN</span>
+              <span className="font-medium">{selectedBook?.isbn}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <span className="text-gray-500">Category</span>
+              <span className="font-medium">{selectedBook?.category}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <span className="text-gray-500">Available</span>
+              <span className="font-medium">
+                {selectedBook?.available ?? 0}/{selectedBook?.copies ?? 0}
+              </span>
+            </div>
+            {selectedBook?.shelfLocation && (
+              <div className="grid grid-cols-2 gap-2">
+                <span className="text-gray-500">Shelf</span>
+                <span className="font-medium">{selectedBook.shelfLocation}</span>
+              </div>
+            )}
+            {selectedBook?.tags && selectedBook.tags.length > 0 && (
+              <div className="grid gap-2">
+                <span className="text-gray-500">Tags</span>
+                <div className="flex flex-wrap gap-2">
+                  {selectedBook.tags.map((tag) => (
+                    <Badge key={tag} variant="outline">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {selectedBook?.description && (
+              <div className="grid gap-1">
+                <span className="text-gray-500">Description</span>
+                <p className="text-gray-700">{selectedBook.description}</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:justify-between">
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => handleOpenEditBook(selectedBook!)}>
+                Edit Book
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => void handleDeleteBook(selectedBook!.id)}
+                disabled={deletingBookId === selectedBook?.id}
+              >
+                {deletingBookId === selectedBook?.id ? "Deleting..." : "Delete"}
+              </Button>
+            </div>
+            <Button variant="outline" onClick={() => setBookDetailsOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
