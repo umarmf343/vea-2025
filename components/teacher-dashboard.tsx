@@ -21,6 +21,14 @@ import { BookOpen, Users, FileText, GraduationCap, Clock, User, Plus, Save, Load
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
 import { InternalMessaging } from "@/components/internal-messaging"
+import {
+  CONTINUOUS_ASSESSMENT_MAXIMUMS,
+  calculateContinuousAssessmentTotal,
+  calculateGrandTotal,
+  deriveGradeFromScore,
+  mapTermKeyToLabel,
+  normalizeAssessmentScores,
+} from "@/lib/grade-utils"
 import { safeStorage } from "@/lib/safe-storage"
 import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
@@ -149,6 +157,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [isExamLoading, setIsExamLoading] = useState(true)
   const [teacherTimetable, setTeacherTimetable] = useState<TeacherTimetableSlot[]>([])
   const [isTeacherTimetableLoading, setIsTeacherTimetableLoading] = useState(true)
+  const [isSyncingGrades, setIsSyncingGrades] = useState(false)
 
   const subjectSummary =
     teacher.subjects.length > 0 ? teacher.subjects.join(", ") : "No subjects assigned yet"
@@ -379,15 +388,15 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     {
       studentId: 1,
       studentName: "John Doe",
-      firstCA: 15,
-      secondCA: 12,
-      noteAssignment: 8,
-      caTotal: 35,
-      exam: 55,
-      grandTotal: 90,
+      firstCA: 19,
+      secondCA: 18,
+      noteAssignment: 19,
+      caTotal: 56,
+      exam: 36,
+      grandTotal: 92,
       totalMarksObtainable: 100,
-      totalMarksObtained: 90,
-      averageScore: 90,
+      totalMarksObtained: 92,
+      averageScore: 92,
       position: 1,
       grade: "A",
       teacherRemark: "Excellent performance",
@@ -395,34 +404,34 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     {
       studentId: 2,
       studentName: "Jane Smith",
-      firstCA: 14,
-      secondCA: 11,
-      noteAssignment: 5,
-      caTotal: 30,
-      exam: 45,
-      grandTotal: 75,
+      firstCA: 17,
+      secondCA: 16,
+      noteAssignment: 17,
+      caTotal: 50,
+      exam: 32,
+      grandTotal: 82,
       totalMarksObtainable: 100,
-      totalMarksObtained: 75,
-      averageScore: 75,
+      totalMarksObtained: 82,
+      averageScore: 82,
       position: 2,
       grade: "B",
-      teacherRemark: "Good work",
+      teacherRemark: "Strong understanding of concepts",
     },
     {
       studentId: 3,
       studentName: "Mike Johnson",
-      firstCA: 12,
-      secondCA: 8,
-      noteAssignment: 5,
-      caTotal: 25,
-      exam: 40,
-      grandTotal: 65,
+      firstCA: 14,
+      secondCA: 13,
+      noteAssignment: 15,
+      caTotal: 42,
+      exam: 28,
+      grandTotal: 70,
       totalMarksObtainable: 100,
-      totalMarksObtained: 65,
-      averageScore: 65,
+      totalMarksObtained: 70,
+      averageScore: 70,
       position: 3,
       grade: "C",
-      teacherRemark: "Needs improvement",
+      teacherRemark: "Showing steady improvement",
     },
   ])
 
@@ -446,13 +455,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     })
   }
 
-  const calculateGrade = (total: number) => {
-    if (total >= 75) return "A"
-    if (total >= 65) return "B"
-    if (total >= 55) return "C"
-    if (total >= 45) return "D"
-    return "F"
-  }
+  const calculateGrade = (total: number) => deriveGradeFromScore(total)
 
   const handleMarksUpdate = (studentId: number, field: string, value: unknown) => {
     setMarksData((prev) => {
@@ -465,32 +468,140 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           return { ...student, teacherRemark: typeof value === "string" ? value : student.teacherRemark }
         }
 
+        if (field === "totalMarksObtainable") {
+          const numericValue = typeof value === "number" ? value : Number(value)
+          const safeValue = Number.isFinite(numericValue) && numericValue > 0 ? Math.round(numericValue) : 100
+          return { ...student, totalMarksObtainable: safeValue }
+        }
+
         const numericValue = typeof value === "number" ? value : Number(value)
         const safeValue = Number.isFinite(numericValue) ? numericValue : 0
-        const updatedStudent: MarksRecord = { ...student, [field]: safeValue }
+        let updatedStudent: MarksRecord = { ...student, [field]: safeValue }
 
-        if (field === "firstCA" || field === "secondCA" || field === "noteAssignment") {
-          updatedStudent.caTotal =
-            (updatedStudent.firstCA || 0) + (updatedStudent.secondCA || 0) + (updatedStudent.noteAssignment || 0)
-          updatedStudent.grandTotal = updatedStudent.caTotal + (updatedStudent.exam || 0)
-          updatedStudent.grade = calculateGrade(updatedStudent.grandTotal)
-          updatedStudent.totalMarksObtained = updatedStudent.grandTotal
-        } else if (field === "exam") {
-          updatedStudent.grandTotal = (updatedStudent.caTotal || 0) + safeValue
-          updatedStudent.grade = calculateGrade(updatedStudent.grandTotal)
-          updatedStudent.totalMarksObtained = updatedStudent.grandTotal
-        } else if (field === "totalMarksObtainable") {
-          updatedStudent.averageScore =
-            updatedStudent.totalMarksObtained > 0 && updatedStudent.totalMarksObtainable > 0
-              ? Math.round((updatedStudent.totalMarksObtained / updatedStudent.totalMarksObtainable) * 100)
-              : 0
+        const normalizedScores = normalizeAssessmentScores({
+          ca1: updatedStudent.firstCA,
+          ca2: updatedStudent.secondCA,
+          assignment: updatedStudent.noteAssignment,
+          exam: updatedStudent.exam,
+        })
+
+        updatedStudent = {
+          ...updatedStudent,
+          firstCA: normalizedScores.ca1,
+          secondCA: normalizedScores.ca2,
+          noteAssignment: normalizedScores.assignment,
+          exam: normalizedScores.exam,
         }
+
+        const caTotal = calculateContinuousAssessmentTotal(
+          normalizedScores.ca1,
+          normalizedScores.ca2,
+          normalizedScores.assignment,
+        )
+        const grandTotal = calculateGrandTotal(
+          normalizedScores.ca1,
+          normalizedScores.ca2,
+          normalizedScores.assignment,
+          normalizedScores.exam,
+        )
+
+        updatedStudent.caTotal = caTotal
+        updatedStudent.grandTotal = grandTotal
+        updatedStudent.totalMarksObtained = grandTotal
+        updatedStudent.grade = calculateGrade(grandTotal)
 
         return updatedStudent
       })
 
       return calculatePositionsAndAverages(updated)
     })
+  }
+
+  const handleSyncAcademicMarks = async () => {
+    try {
+      if (!selectedClass || !selectedSubject) {
+        toast({
+          variant: "destructive",
+          title: "Selection required",
+          description: "Choose both a class and subject before syncing grades.",
+        })
+        return
+      }
+
+      if (marksData.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "No marks recorded",
+          description: "Add student scores before sending them to the exam office.",
+        })
+        return
+      }
+
+      const termLabel = mapTermKeyToLabel(selectedTerm)
+      const normalizedClass = normalizeClassName(selectedClass)
+      const matchingExam = teacherExams.find(
+        (exam) =>
+          normalizeClassName(exam.className) === normalizedClass &&
+          exam.subject.toLowerCase() === selectedSubject.toLowerCase() &&
+          exam.term === termLabel &&
+          exam.session === selectedSession,
+      )
+
+      if (!matchingExam) {
+        toast({
+          variant: "destructive",
+          title: "Exam schedule not found",
+          description: "Ask the administrator to schedule this assessment in Exam Management first.",
+        })
+        return
+      }
+
+      setIsSyncingGrades(true)
+
+      const resultsPayload = marksData.map((student) => {
+        const normalizedScores = normalizeAssessmentScores({
+          ca1: student.firstCA,
+          ca2: student.secondCA,
+          assignment: student.noteAssignment,
+          exam: student.exam,
+        })
+        const total = calculateGrandTotal(
+          normalizedScores.ca1,
+          normalizedScores.ca2,
+          normalizedScores.assignment,
+          normalizedScores.exam,
+        )
+
+        return {
+          studentId: String(student.studentId),
+          studentName: student.studentName,
+          ca1: normalizedScores.ca1,
+          ca2: normalizedScores.ca2,
+          assignment: normalizedScores.assignment,
+          exam: normalizedScores.exam,
+          grade: deriveGradeFromScore(total),
+          position: student.position,
+          remarks: student.teacherRemark.trim() ? student.teacherRemark.trim() : undefined,
+          totalStudents: marksData.length,
+          status: "pending" as const,
+        }
+      })
+
+      await dbManager.saveExamResults(matchingExam.id, resultsPayload, { autoPublish: false })
+      toast({
+        title: "Grades synced",
+        description: "Marks are now available in the admin Exam Management portal for consolidation.",
+      })
+    } catch (error) {
+      logger.error("Failed to sync academic marks", { error })
+      toast({
+        variant: "destructive",
+        title: "Unable to sync grades",
+        description: "Please try again or contact the administrator if the problem persists.",
+      })
+    } finally {
+      setIsSyncingGrades(false)
+    }
   }
 
   const getReportCardKey = () => `${selectedClass}-${selectedSubject}-${selectedTerm}-${selectedSession}`
@@ -1026,14 +1137,39 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                   </TabsList>
 
                   <TabsContent value="academic" className="space-y-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs text-gray-500">
+                        Grade Management weighting: 1st CA {CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1}, 2nd CA {CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2},
+                        note/assignment {CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment}, exam {CONTINUOUS_ASSESSMENT_MAXIMUMS.exam}.
+                      </p>
+                      <Button
+                        className="bg-[#2d682d] hover:bg-[#245224] text-white"
+                        onClick={handleSyncAcademicMarks}
+                        disabled={isSyncingGrades}
+                      >
+                        {isSyncingGrades ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="mr-2 h-4 w-4" />
+                        )}
+                        Sync to Exam Management
+                      </Button>
+                    </div>
+
                     <div className="border rounded-lg overflow-hidden">
                       <div className="bg-gray-50 p-2 grid grid-cols-12 gap-2 font-medium text-xs">
                         <div>Student Name</div>
-                        <div>1st C.A. (15)</div>
-                        <div>2nd C.A. (15)</div>
-                        <div>NOTE/ASSIGN (10)</div>
-                        <div>C.A. TOTAL (40)</div>
-                        <div>EXAM (60)</div>
+                        <div>1st C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1})</div>
+                        <div>2nd C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2})</div>
+                        <div>NOTE/ASSIGN ({CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment})</div>
+                        <div>
+                          C.A. TOTAL ({
+                            CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1 +
+                            CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2 +
+                            CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment
+                          })
+                        </div>
+                        <div>EXAM ({CONTINUOUS_ASSESSMENT_MAXIMUMS.exam})</div>
                         <div>GRAND TOTAL (100)</div>
                         <div>Total Obtainable</div>
                         <div>Total Obtained</div>
@@ -1048,7 +1184,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                           <div>
                             <Input
                               type="number"
-                              max="15"
+                              max={CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1}
                               value={student.firstCA}
                               onChange={(e) =>
                                 handleMarksUpdate(student.studentId, "firstCA", Number.parseInt(e.target.value) || 0)
@@ -1062,7 +1198,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                           <div>
                             <Input
                               type="number"
-                              max="15"
+                              max={CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2}
                               value={student.secondCA}
                               onChange={(e) =>
                                 handleMarksUpdate(student.studentId, "secondCA", Number.parseInt(e.target.value) || 0)
@@ -1076,7 +1212,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                           <div>
                             <Input
                               type="number"
-                              max="10"
+                              max={CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment}
                               value={student.noteAssignment}
                               onChange={(e) =>
                                 handleMarksUpdate(
@@ -1095,7 +1231,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                           <div>
                             <Input
                               type="number"
-                              max="60"
+                              max={CONTINUOUS_ASSESSMENT_MAXIMUMS.exam}
                               value={student.exam}
                               onChange={(e) =>
                                 handleMarksUpdate(student.studentId, "exam", Number.parseInt(e.target.value) || 0)

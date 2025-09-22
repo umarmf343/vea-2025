@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,7 +15,15 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { dbManager } from "@/lib/database-manager"
-import { BarChart3, Calendar, CheckCircle2, Clock, Edit, FileText, Loader2, Plus, Trash2 } from "lucide-react"
+import {
+  CONTINUOUS_ASSESSMENT_MAXIMUMS,
+  GRADE_BANDS,
+  deriveGradeFromScore,
+  getRemarkForGrade,
+  normalizeAssessmentScores,
+  summarizeGradeDistribution,
+} from "@/lib/grade-utils"
+import { BarChart3, Calendar, CheckCircle2, Clock, Edit, Eye, FileText, Loader2, Plus, Printer, Trash2 } from "lucide-react"
 
 interface ExamSchedule {
   id: string
@@ -119,24 +127,6 @@ const formatDuration = (minutes?: number) => {
   return `${hours} hr${hours > 1 ? "s" : ""} ${remaining} mins`
 }
 
-const calculateTotal = (entry: ResultFormEntry) => {
-  const ca1 = Number(entry.ca1) || 0
-  const ca2 = Number(entry.ca2) || 0
-  const assignment = Number(entry.assignment) || 0
-  const exam = Number(entry.exam) || 0
-  return ca1 + ca2 + assignment + exam
-}
-
-const gradeFromTotal = (total: number) => {
-  if (total >= 85) return "A+"
-  if (total >= 75) return "A"
-  if (total >= 65) return "B"
-  if (total >= 55) return "C"
-  if (total >= 45) return "D"
-  if (total >= 40) return "E"
-  return "F"
-}
-
 const statusBadgeVariant = (status: ExamSchedule["status"]) => {
   switch (status) {
     case "completed":
@@ -195,6 +185,8 @@ export default function ExamManagement() {
   const [availableStudents, setAvailableStudents] = useState<Array<{ id: string; name: string }>>([])
   const [isResultsDialogOpen, setIsResultsDialogOpen] = useState(false)
   const [isPreparingResults, setIsPreparingResults] = useState(false)
+  const [previewResult, setPreviewResult] = useState<ExamResult | null>(null)
+  const previewContentRef = useRef<HTMLDivElement>(null)
 
   const loadMetaData = useCallback(async () => {
     try {
@@ -387,6 +379,17 @@ export default function ExamManagement() {
     [examResults],
   )
 
+  const examGradeDistribution = useMemo(
+    () => summarizeGradeDistribution(examResults.map((result) => result.total)),
+    [examResults],
+  )
+
+  const previewGrade = previewResult ? deriveGradeFromScore(previewResult.total) : null
+  const previewGradeRemark = previewGrade ? getRemarkForGrade(previewGrade) : ""
+  const previewClassSize =
+    previewResult?.totalStudents ?? (examResults.length > 0 ? examResults.length : undefined)
+  const hasClassOptions = classOptions.length > 0
+
   const resetScheduleForm = () => {
     setScheduleForm({
       subject: SUBJECT_OPTIONS[0],
@@ -415,7 +418,7 @@ export default function ExamManagement() {
     setIsSavingSchedule(true)
     try {
       if (scheduleDialogState?.mode === "edit" && scheduleDialogState.exam) {
-        await dbManager.updateExamSchedule(scheduleDialogState.exam.id, {
+        const updatedExam = await dbManager.updateExamSchedule(scheduleDialogState.exam.id, {
           subject: scheduleForm.subject,
           classId: scheduleForm.classId,
           className:
@@ -431,11 +434,12 @@ export default function ExamManagement() {
           session: scheduleForm.session,
         })
         toast({ title: "Exam schedule updated" })
+        setSelectedExamId(updatedExam.id)
       } else {
-        await dbManager.createExamSchedule({
+        const createdExam = await dbManager.createExamSchedule({
           subject: scheduleForm.subject,
           classId: scheduleForm.classId,
-          className: classOptions.find((option) => option.value === scheduleForm.classId)?.label,
+          className: classOptions.find((option) => option.value === scheduleForm.classId)?.label || scheduleForm.classId,
           examDate: scheduleForm.examDate,
           startTime: scheduleForm.startTime,
           endTime: scheduleForm.endTime,
@@ -446,10 +450,12 @@ export default function ExamManagement() {
           session: scheduleForm.session || new Date().getFullYear().toString(),
         })
         toast({ title: "Exam scheduled successfully" })
+        setSelectedExamId(createdExam.id)
       }
 
       setScheduleDialogState(null)
       resetScheduleForm()
+      await loadSchedules()
     } catch (error) {
       console.error("Failed to save exam schedule", error)
       toast({
@@ -612,20 +618,45 @@ export default function ExamManagement() {
       return
     }
 
-    const normalizedResults = resultEntries
+    const normalizedEntries = resultEntries
       .filter((entry) => entry.studentId && entry.studentName)
-      .map((entry) => ({
-        studentId: entry.studentId,
-        studentName: entry.studentName,
-        ca1: Number(entry.ca1) || 0,
-        ca2: Number(entry.ca2) || 0,
-        assignment: Number(entry.assignment) || 0,
-        exam: Number(entry.exam) || 0,
-        position: entry.position ? Number(entry.position) : undefined,
-        remarks: entry.remarks.trim() ? entry.remarks.trim() : undefined,
-        totalStudents: classSize ? Number(classSize) : undefined,
-        status: publishImmediately ? "published" : "pending",
-      }))
+      .map((entry) => {
+        const rawScores = {
+          ca1: Number(entry.ca1) || 0,
+          ca2: Number(entry.ca2) || 0,
+          assignment: Number(entry.assignment) || 0,
+          exam: Number(entry.exam) || 0,
+        }
+        const normalizedScores = normalizeAssessmentScores(rawScores)
+        const total =
+          normalizedScores.ca1 +
+          normalizedScores.ca2 +
+          normalizedScores.assignment +
+          normalizedScores.exam
+        const grade = deriveGradeFromScore(total)
+
+        return {
+          studentId: entry.studentId,
+          studentName: entry.studentName,
+          ca1: normalizedScores.ca1,
+          ca2: normalizedScores.ca2,
+          assignment: normalizedScores.assignment,
+          exam: normalizedScores.exam,
+          grade,
+          position: entry.position ? Number(entry.position) : undefined,
+          remarks: entry.remarks.trim() ? entry.remarks.trim() : undefined,
+          status: publishImmediately ? "published" : "pending",
+        }
+      })
+
+    const parsedClassSize = Number(classSize)
+    const resolvedClassSize =
+      Number.isFinite(parsedClassSize) && parsedClassSize > 0 ? parsedClassSize : normalizedEntries.length
+
+    const normalizedResults = normalizedEntries.map((entry) => ({
+      ...entry,
+      totalStudents: resolvedClassSize || undefined,
+    }))
 
     if (normalizedResults.length === 0) {
       toast({
@@ -687,6 +718,149 @@ export default function ExamManagement() {
     } finally {
       setIsPublishing(false)
     }
+  }
+
+  const handleOpenPreview = (result: ExamResult) => {
+    setPreviewResult(result)
+  }
+
+  const handlePrintPreview = () => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    if (!previewResult) {
+      toast({
+        title: "No result selected",
+        description: "Open a student's result before printing.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const printWindow = window.open("", "PRINT", "height=720,width=900")
+
+    if (!printWindow) {
+      toast({
+        title: "Print blocked",
+        description: "Allow pop-ups in your browser to print this result.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const grade = deriveGradeFromScore(previewResult.total)
+    const gradeRemark = getRemarkForGrade(grade)
+    const exam = selectedExam
+    const classSize = previewResult.totalStudents ?? (examResults.length > 0 ? examResults.length : undefined)
+    const generatedAt = new Date().toLocaleString()
+
+    const examLabel = exam
+      ? `${exam.subject} • ${exam.className} • ${exam.term} • ${exam.session}`
+      : "Exam Result"
+
+    printWindow.document.write(`<!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${previewResult.studentName} - ${exam?.subject ?? "Exam Result"}</title>
+          <style>
+            body { font-family: 'Inter', Arial, sans-serif; margin: 32px; color: #1f2937; }
+            h1, h2, h3 { color: #14532d; margin: 0; }
+            .header { text-align: center; margin-bottom: 24px; }
+            .meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+            .meta-section { min-width: 200px; }
+            .meta-label { font-size: 12px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.08em; }
+            .meta-value { font-size: 16px; font-weight: 600; color: #111827; margin-top: 4px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+            th, td { border: 1px solid #d1d5db; padding: 10px; text-align: left; font-size: 14px; }
+            th { background-color: #f3f4f6; font-weight: 600; }
+            .grade-badge { display: inline-flex; align-items: center; gap: 8px; background-color: #ecfdf5; color: #047857; padding: 6px 16px; border-radius: 9999px; font-weight: 600; }
+            .remarks { margin-top: 24px; padding: 16px; border: 1px solid #d1d5db; border-radius: 12px; background-color: #f9fafb; }
+            .remarks-title { font-weight: 600; margin-bottom: 6px; color: #14532d; }
+            .footer { margin-top: 32px; font-size: 12px; text-align: center; color: #6b7280; }
+            @page { margin: 20mm; }
+            @media print {
+              body { margin: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h2>VEA 2025 Result Slip</h2>
+            <p>${examLabel}</p>
+          </div>
+          <div class="meta">
+            <div class="meta-section">
+              <div class="meta-label">Student Name</div>
+              <div class="meta-value">${previewResult.studentName}</div>
+              <div class="meta-label" style="margin-top: 12px;">Student ID</div>
+              <div class="meta-value">${previewResult.studentId}</div>
+            </div>
+            <div class="meta-section">
+              <div class="meta-label">Total Score</div>
+              <div class="meta-value">${previewResult.total} / 100</div>
+              <div class="meta-label" style="margin-top: 12px;">Class Position</div>
+              <div class="meta-value">${previewResult.position ?? "-"}${classSize ? ` of ${classSize}` : ""}</div>
+            </div>
+            <div class="meta-section" style="text-align: right;">
+              <div class="meta-label">Grade</div>
+              <div class="grade-badge">Grade ${grade}</div>
+              <div class="meta-label" style="margin-top: 12px;">Generated</div>
+              <div class="meta-value">${generatedAt}</div>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Assessment Area</th>
+                <th>Score</th>
+                <th>Maximum</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1st Continuous Assessment</td>
+                <td>${previewResult.ca1}</td>
+                <td>${CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1}</td>
+              </tr>
+              <tr>
+                <td>2nd Continuous Assessment</td>
+                <td>${previewResult.ca2}</td>
+                <td>${CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2}</td>
+              </tr>
+              <tr>
+                <td>Note / Assignment</td>
+                <td>${previewResult.assignment}</td>
+                <td>${CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment}</td>
+              </tr>
+              <tr>
+                <td>Examination</td>
+                <td>${previewResult.exam}</td>
+                <td>${CONTINUOUS_ASSESSMENT_MAXIMUMS.exam}</td>
+              </tr>
+              <tr>
+                <td><strong>Grand Total</strong></td>
+                <td><strong>${previewResult.total}</strong></td>
+                <td><strong>100</strong></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="remarks">
+            <div class="remarks-title">Automated Remark</div>
+            <div>${gradeRemark || "Result recorded."}</div>
+            ${previewResult.remarks ? `<div class="remarks-title" style="margin-top: 12px;">Teacher's Remark</div><div>${previewResult.remarks}</div>` : ""}
+          </div>
+          <div class="footer">Powered by the Grade Management system • ${generatedAt}</div>
+        </body>
+      </html>`)
+
+    printWindow.document.close()
+    printWindow.focus()
+    setTimeout(() => {
+      printWindow.print()
+      printWindow.close()
+    }, 150)
   }
 
   const getStudentOptionDisabled = (studentId: string, entryId: string) => {
@@ -850,7 +1024,9 @@ export default function ExamManagement() {
           <Card>
             <CardHeader className="space-y-1">
               <CardTitle className="text-[#2d682d]">Exam Results Consolidation</CardTitle>
-              <CardDescription>Track cumulative performance and publish assessments.</CardDescription>
+              <CardDescription>
+                Consolidate Grade Management scores, publish official results and prepare printable report cards.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_repeat(2,minmax(0,1fr))]">
@@ -927,39 +1103,74 @@ export default function ExamManagement() {
               ) : (
                 <div className="space-y-6">
                   {examResultsSummary && (
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                      <Card className="bg-[#2d682d]/5">
-                        <CardContent className="p-4">
-                          <p className="text-sm text-gray-600">Average Score</p>
-                          <p className="text-2xl font-semibold text-[#2d682d]">
-                            {examResultsSummary.average}%
-                          </p>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardContent className="p-4">
-                          <p className="text-sm text-gray-600">Highest Score</p>
-                          <p className="text-2xl font-semibold text-[#2d682d]">
-                            {examResultsSummary.highest}
-                          </p>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardContent className="p-4">
-                          <p className="text-sm text-gray-600">Lowest Score</p>
-                          <p className="text-2xl font-semibold text-[#b29032]">
-                            {examResultsSummary.lowest}
-                          </p>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardContent className="p-4">
-                          <p className="text-sm text-gray-600">Published</p>
-                          <p className="text-2xl font-semibold text-[#2d682d]">
-                            {examResultsSummary.publishedCount}/{examResults.length}
-                          </p>
-                        </CardContent>
-                      </Card>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <Card className="bg-[#2d682d]/5">
+                          <CardContent className="p-4">
+                            <p className="text-sm text-gray-600">Average Score</p>
+                            <p className="text-2xl font-semibold text-[#2d682d]">
+                              {examResultsSummary.average}%
+                            </p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4">
+                            <p className="text-sm text-gray-600">Highest Score</p>
+                            <p className="text-2xl font-semibold text-[#2d682d]">
+                              {examResultsSummary.highest}
+                            </p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4">
+                            <p className="text-sm text-gray-600">Lowest Score</p>
+                            <p className="text-2xl font-semibold text-[#b29032]">
+                              {examResultsSummary.lowest}
+                            </p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4">
+                            <p className="text-sm text-gray-600">Published</p>
+                            <p className="text-2xl font-semibold text-[#2d682d]">
+                              {examResultsSummary.publishedCount}/{examResults.length}
+                            </p>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      {examGradeDistribution.total > 0 && (
+                        <Card className="border-dashed border-[#2d682d]/40">
+                          <CardContent className="p-4 space-y-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-[#2d682d]">Grade Distribution</p>
+                                <p className="text-xs text-gray-500">
+                                  Weighted with the grade management thresholds (A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60).
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm text-gray-600">Pass Rate</p>
+                                <p className="text-2xl font-semibold text-[#2d682d]">{examGradeDistribution.passRate}%</p>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-3">
+                              {GRADE_BANDS.map((grade) => (
+                                <div
+                                  key={grade}
+                                  className="flex items-center gap-2 rounded-full border border-[#2d682d]/30 px-3 py-1"
+                                >
+                                  <span className="text-sm font-semibold text-[#2d682d]">{grade}</span>
+                                  <span className="text-xs text-gray-600">
+                                    {examGradeDistribution.distribution[grade]} student
+                                    {examGradeDistribution.distribution[grade] === 1 ? "" : "s"}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
                     </div>
                   )}
 
@@ -968,39 +1179,50 @@ export default function ExamManagement() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Student</TableHead>
-                          <TableHead className="text-center">1st C.A.</TableHead>
-                          <TableHead className="text-center">2nd C.A.</TableHead>
-                          <TableHead className="text-center">Assignment</TableHead>
-                          <TableHead className="text-center">Exam</TableHead>
+                          <TableHead className="text-center">1st C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1})</TableHead>
+                          <TableHead className="text-center">2nd C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2})</TableHead>
+                          <TableHead className="text-center">Note/Assignment ({CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment})</TableHead>
+                          <TableHead className="text-center">Exam ({CONTINUOUS_ASSESSMENT_MAXIMUMS.exam})</TableHead>
                           <TableHead className="text-center">Total</TableHead>
                           <TableHead className="text-center">Grade</TableHead>
                           <TableHead className="text-center">Position</TableHead>
                           <TableHead className="text-center">Status</TableHead>
+                          <TableHead className="text-center">Report</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {examResults.map((result) => (
-                          <TableRow key={result.id}>
-                            <TableCell>
-                              <div className="font-medium text-[#2d682d]">{result.studentName}</div>
-                              <div className="text-xs text-gray-500">{result.studentId}</div>
-                            </TableCell>
-                            <TableCell className="text-center">{result.ca1}</TableCell>
-                            <TableCell className="text-center">{result.ca2}</TableCell>
-                            <TableCell className="text-center">{result.assignment}</TableCell>
-                            <TableCell className="text-center">{result.exam}</TableCell>
-                            <TableCell className="text-center font-semibold">{result.total}</TableCell>
-                            <TableCell className="text-center">
-                              <Badge variant="secondary">{result.grade}</Badge>
-                            </TableCell>
-                            <TableCell className="text-center">{result.position ?? "-"}</TableCell>
-                            <TableCell className="text-center">
-                              <Badge variant={resultStatusBadgeVariant(result.status)} className="uppercase">
-                                {result.status}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {examResults.map((result) => {
+                          const grade = deriveGradeFromScore(result.total)
+                          return (
+                            <TableRow key={result.id}>
+                              <TableCell>
+                                <div className="font-medium text-[#2d682d]">{result.studentName}</div>
+                                <div className="text-xs text-gray-500">{result.studentId}</div>
+                              </TableCell>
+                              <TableCell className="text-center">{result.ca1}</TableCell>
+                              <TableCell className="text-center">{result.ca2}</TableCell>
+                              <TableCell className="text-center">{result.assignment}</TableCell>
+                              <TableCell className="text-center">{result.exam}</TableCell>
+                              <TableCell className="text-center font-semibold text-[#2d682d]">{result.total}</TableCell>
+                              <TableCell className="text-center">
+                                <Badge variant="secondary" className="font-semibold uppercase">
+                                  {grade}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-center">{result.position ?? "-"}</TableCell>
+                              <TableCell className="text-center">
+                                <Badge variant={resultStatusBadgeVariant(result.status)} className="uppercase">
+                                  {result.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Button variant="outline" size="sm" onClick={() => handleOpenPreview(result)}>
+                                  <Eye className="mr-2 h-3 w-3" /> Preview
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -1043,21 +1265,36 @@ export default function ExamManagement() {
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium text-gray-700">Class</Label>
-              <Select
-                value={scheduleForm.classId}
-                onValueChange={(value) => setScheduleForm((prev) => ({ ...prev, classId: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select class" />
-                </SelectTrigger>
-                <SelectContent>
-                  {classOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {hasClassOptions ? (
+                <Select
+                  value={scheduleForm.classId}
+                  onValueChange={(value) => setScheduleForm((prev) => ({ ...prev, classId: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {classOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="space-y-1">
+                  <Input
+                    value={scheduleForm.classId}
+                    onChange={(event) =>
+                      setScheduleForm((prev) => ({ ...prev, classId: event.target.value }))
+                    }
+                    placeholder="Enter class name"
+                  />
+                  <p className="text-xs text-gray-500">
+                    No classes detected yet. Enter the class name exactly as it should appear on reports.
+                  </p>
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium text-gray-700">Term</Label>
@@ -1206,10 +1443,10 @@ export default function ExamManagement() {
                     <TableHeader>
                       <TableRow>
                         <TableHead className="min-w-[220px]">Student</TableHead>
-                        <TableHead className="text-center">1st C.A.</TableHead>
-                        <TableHead className="text-center">2nd C.A.</TableHead>
-                        <TableHead className="text-center">Assignment</TableHead>
-                        <TableHead className="text-center">Exam</TableHead>
+                        <TableHead className="text-center">1st C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1})</TableHead>
+                        <TableHead className="text-center">2nd C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2})</TableHead>
+                        <TableHead className="text-center">Note/Assignment ({CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment})</TableHead>
+                        <TableHead className="text-center">Exam ({CONTINUOUS_ASSESSMENT_MAXIMUMS.exam})</TableHead>
                         <TableHead className="text-center">Total</TableHead>
                         <TableHead className="text-center">Grade</TableHead>
                         <TableHead className="text-center">Position</TableHead>
@@ -1219,8 +1456,18 @@ export default function ExamManagement() {
                     </TableHeader>
                     <TableBody>
                       {resultEntries.map((entry) => {
-                        const total = calculateTotal(entry)
-                        const grade = gradeFromTotal(total)
+                        const normalizedScores = normalizeAssessmentScores({
+                          ca1: Number(entry.ca1) || 0,
+                          ca2: Number(entry.ca2) || 0,
+                          assignment: Number(entry.assignment) || 0,
+                          exam: Number(entry.exam) || 0,
+                        })
+                        const total =
+                          normalizedScores.ca1 +
+                          normalizedScores.ca2 +
+                          normalizedScores.assignment +
+                          normalizedScores.exam
+                        const grade = deriveGradeFromScore(total)
 
                         return (
                           <TableRow key={entry.id} className="align-top">
@@ -1268,7 +1515,7 @@ export default function ExamManagement() {
                               <Input
                                 type="number"
                                 min={0}
-                                max={20}
+                                max={CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1}
                                 value={entry.ca1}
                                 onChange={(event) =>
                                   updateResultEntry(entry.id, { ca1: event.target.value })
@@ -1280,7 +1527,7 @@ export default function ExamManagement() {
                               <Input
                                 type="number"
                                 min={0}
-                                max={20}
+                                max={CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2}
                                 value={entry.ca2}
                                 onChange={(event) =>
                                   updateResultEntry(entry.id, { ca2: event.target.value })
@@ -1292,7 +1539,7 @@ export default function ExamManagement() {
                               <Input
                                 type="number"
                                 min={0}
-                                max={10}
+                                max={CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment}
                                 value={entry.assignment}
                                 onChange={(event) =>
                                   updateResultEntry(entry.id, { assignment: event.target.value })
@@ -1304,7 +1551,7 @@ export default function ExamManagement() {
                               <Input
                                 type="number"
                                 min={0}
-                                max={60}
+                                max={CONTINUOUS_ASSESSMENT_MAXIMUMS.exam}
                                 value={entry.exam}
                                 onChange={(event) =>
                                   updateResultEntry(entry.id, { exam: event.target.value })
@@ -1363,12 +1610,130 @@ export default function ExamManagement() {
             </ScrollArea>
           )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsResultsDialogOpen(false)}>
-              Cancel
+      <DialogFooter>
+        <Button variant="outline" onClick={() => setIsResultsDialogOpen(false)}>
+          Cancel
+        </Button>
+        <Button className="bg-[#2d682d] hover:bg-[#245224] text-white" onClick={handleSaveResults}>
+          Save Results
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+
+      <Dialog open={!!previewResult} onOpenChange={(open) => (!open ? setPreviewResult(null) : null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-[#2d682d]">Student Result Preview</DialogTitle>
+            <DialogDescription>
+              Review the breakdown generated from the Grade Management system before printing or sharing.
+            </DialogDescription>
+          </DialogHeader>
+
+          {previewResult ? (
+            <div className="space-y-6">
+              <div
+                ref={previewContentRef}
+                className="preview-wrapper space-y-6 rounded-lg border border-gray-200 bg-white p-4"
+              >
+                <div className="preview-header text-center space-y-1">
+                  <h3 className="text-lg font-semibold text-[#2d682d]">
+                    {selectedExam?.subject ?? "Exam Result"}
+                  </h3>
+                  {selectedExam ? (
+                    <p className="text-sm text-gray-600">
+                      {selectedExam.className} • {selectedExam.term} • {selectedExam.session}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="preview-meta grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Student</p>
+                    <p className="text-base font-semibold text-[#1f2937]">{previewResult.studentName}</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Student ID</p>
+                    <p className="text-sm text-gray-700">{previewResult.studentId}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Performance</p>
+                    <p className="text-2xl font-bold text-[#2d682d]">{previewResult.total}/100</p>
+                    <div className="preview-grade-badge inline-flex items-center gap-2 rounded-full bg-[#ecfdf5] px-3 py-1 text-sm font-semibold text-[#047857]">
+                      Grade {previewGrade ?? "-"}
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Position: {previewResult.position ?? "-"}
+                      {previewClassSize ? ` of ${previewClassSize}` : ""}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="overflow-hidden rounded-lg border border-gray-200">
+                  <table className="preview-table w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-600">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium">Assessment Area</th>
+                        <th className="px-3 py-2 text-left font-medium">Score</th>
+                        <th className="px-3 py-2 text-left font-medium">Maximum</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      <tr>
+                        <td className="px-3 py-2">1st Continuous Assessment</td>
+                        <td className="px-3 py-2 font-semibold text-[#1f2937]">{previewResult.ca1}</td>
+                        <td className="px-3 py-2 text-gray-500">{CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2">2nd Continuous Assessment</td>
+                        <td className="px-3 py-2 font-semibold text-[#1f2937]">{previewResult.ca2}</td>
+                        <td className="px-3 py-2 text-gray-500">{CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2">Note / Assignment</td>
+                        <td className="px-3 py-2 font-semibold text-[#1f2937]">{previewResult.assignment}</td>
+                        <td className="px-3 py-2 text-gray-500">{CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2">Examination</td>
+                        <td className="px-3 py-2 font-semibold text-[#1f2937]">{previewResult.exam}</td>
+                        <td className="px-3 py-2 text-gray-500">{CONTINUOUS_ASSESSMENT_MAXIMUMS.exam}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 font-semibold text-[#1f2937]">Grand Total</td>
+                        <td className="px-3 py-2 font-semibold text-[#1f2937]">{previewResult.total}</td>
+                        <td className="px-3 py-2 text-gray-500">100</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="preview-remarks space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+                  <div>
+                    <p className="text-sm font-semibold text-[#2d682d]">Automated Remark</p>
+                    <p>{previewGradeRemark || "Result recorded."}</p>
+                  </div>
+                  {previewResult.remarks ? (
+                    <div>
+                      <p className="text-sm font-semibold text-[#2d682d]">Teacher's Remark</p>
+                      <p className="whitespace-pre-line">{previewResult.remarks}</p>
+                    </div>
+                  ) : null}
+                </div>
+
+                <p className="text-center text-xs text-gray-400">
+                  Generated {new Date().toLocaleString()} via the Grade Management engine.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="py-10 text-center text-sm text-gray-500">Select a student result to preview.</div>
+          )}
+
+          <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+            <Button variant="outline" onClick={() => setPreviewResult(null)}>
+              Close
             </Button>
-            <Button className="bg-[#2d682d] hover:bg-[#245224] text-white" onClick={handleSaveResults}>
-              Save Results
+            <Button className="bg-[#2d682d] hover:bg-[#245224] text-white" onClick={handlePrintPreview}>
+              <Printer className="mr-2 h-4 w-4" /> Print Result
             </Button>
           </DialogFooter>
         </DialogContent>
