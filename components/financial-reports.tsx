@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,9 +23,62 @@ import {
 import { DollarSign, TrendingUp, Users, Download, Printer, AlertTriangle, Loader2 } from "lucide-react"
 import { dbManager } from "@/lib/database-manager"
 
+interface FeeCollectionEntry {
+  month: string
+  collected: number
+  expected: number
+  percentage: number
+}
+
+interface ClassCollectionEntry {
+  class: string
+  collected: number
+  expected: number
+  students?: number
+  percentage: number
+}
+
+interface ExpenseEntry {
+  category: string
+  amount: number
+  percentage: number
+}
+
+interface DefaulterEntry {
+  id: string
+  name: string
+  class: string
+  term: string
+  contact: string
+  amount: number
+}
+
+interface FinancialSummary {
+  totalCollected: number
+  collectionRate: number
+  studentsPaid: number
+  defaultersCount: number
+  outstandingAmount: number
+  avgCollectionTime: number
+  onTimePaymentRate: number
+}
+
 interface FinancialReportsProps {
   userRole: string
 }
+
+const defaultSummaryStats: FinancialSummary = {
+  totalCollected: 0,
+  collectionRate: 0,
+  studentsPaid: 0,
+  defaultersCount: 0,
+  outstandingAmount: 0,
+  avgCollectionTime: 0,
+  onTimePaymentRate: 0,
+}
+
+const ensureNumber = (value: unknown): number =>
+  typeof value === "number" && Number.isFinite(value) ? value : 0
 
 export function FinancialReports({ userRole }: FinancialReportsProps) {
   const [selectedPeriod, setSelectedPeriod] = useState("current-term")
@@ -33,40 +86,13 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [feeCollectionData, setFeeCollectionData] = useState<any[]>([])
-  const [classWiseCollection, setClassWiseCollection] = useState<any[]>([])
-  const [expenseData, setExpenseData] = useState<any[]>([])
-  const [defaultersData, setDefaultersData] = useState<any[]>([])
-  const [summaryStats, setSummaryStats] = useState({
-    totalCollected: 0,
-    collectionRate: 0,
-    studentsPaid: 0,
-    defaultersCount: 0,
-    outstandingAmount: 0,
-    avgCollectionTime: 0,
-    onTimePaymentRate: 0,
-  })
+  const [feeCollectionData, setFeeCollectionData] = useState<FeeCollectionEntry[]>([])
+  const [classWiseCollection, setClassWiseCollection] = useState<ClassCollectionEntry[]>([])
+  const [expenseData, setExpenseData] = useState<ExpenseEntry[]>([])
+  const [defaultersData, setDefaultersData] = useState<DefaulterEntry[]>([])
+  const [summaryStats, setSummaryStats] = useState<FinancialSummary>(defaultSummaryStats)
 
-  useEffect(() => {
-    loadFinancialData()
-
-    // Real-time listeners for data updates
-    const handleFinancialUpdate = () => {
-      loadFinancialData()
-    }
-
-    dbManager.on("financialDataUpdated", handleFinancialUpdate)
-    dbManager.on("paymentProcessed", handleFinancialUpdate)
-    dbManager.on("expenseAdded", handleFinancialUpdate)
-
-    return () => {
-      dbManager.off("financialDataUpdated", handleFinancialUpdate)
-      dbManager.off("paymentProcessed", handleFinancialUpdate)
-      dbManager.off("expenseAdded", handleFinancialUpdate)
-    }
-  }, [selectedPeriod, selectedClass])
-
-  const loadFinancialData = async () => {
+  const loadFinancialData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -79,18 +105,96 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
         dbManager.getFinancialSummary(selectedPeriod),
       ])
 
-      setFeeCollectionData(feeCollection)
-      setClassWiseCollection(classCollection)
-      setExpenseData(expenses)
-      setDefaultersData(defaulters)
-      setSummaryStats(stats)
+      const normalizedFeeCollection = Array.isArray(feeCollection)
+        ? feeCollection
+            .filter((entry): entry is Partial<FeeCollectionEntry> => Boolean(entry))
+            .map((entry) => ({
+              month: typeof entry.month === "string" ? entry.month : "",
+              collected: ensureNumber(entry.collected),
+              expected: ensureNumber(entry.expected),
+              percentage: ensureNumber(entry.percentage),
+            }))
+        : []
+
+      const normalizedClassCollection = Array.isArray(classCollection)
+        ? classCollection
+            .filter((entry): entry is Partial<ClassCollectionEntry> => Boolean(entry))
+            .map((entry) => ({
+              class: typeof entry.class === "string" ? entry.class : "",
+              collected: ensureNumber(entry.collected),
+              expected: ensureNumber(entry.expected),
+              students: ensureNumber(entry.students),
+              percentage: ensureNumber(entry.percentage),
+            }))
+        : []
+
+      const normalizedExpenses = Array.isArray(expenses)
+        ? expenses
+            .filter((entry): entry is Partial<ExpenseEntry> => Boolean(entry))
+            .map((entry) => ({
+              category: typeof entry.category === "string" ? entry.category : "",
+              amount: ensureNumber(entry.amount),
+              percentage: ensureNumber(entry.percentage),
+            }))
+        : []
+
+      const normalizedDefaulters = Array.isArray(defaulters)
+        ? defaulters
+            .filter((entry): entry is Partial<DefaulterEntry> => Boolean(entry))
+            .map((entry) => ({
+              id: typeof entry.id === "string" ? entry.id : "",
+              name: typeof entry.name === "string" ? entry.name : "",
+              class: typeof entry.class === "string" ? entry.class : "",
+              term: typeof entry.term === "string" ? entry.term : "",
+              contact: typeof entry.contact === "string" ? entry.contact : "",
+              amount: ensureNumber(entry.amount),
+            }))
+        : []
+
+      const normalizedSummary = {
+        ...defaultSummaryStats,
+        ...(typeof stats === "object" && stats !== null ? stats : {}),
+      }
+
+      setFeeCollectionData(normalizedFeeCollection)
+      setClassWiseCollection(normalizedClassCollection)
+      setExpenseData(normalizedExpenses)
+      setDefaultersData(normalizedDefaulters)
+      setSummaryStats({
+        totalCollected: ensureNumber(normalizedSummary.totalCollected),
+        collectionRate: ensureNumber(normalizedSummary.collectionRate),
+        studentsPaid: ensureNumber(normalizedSummary.studentsPaid),
+        defaultersCount: ensureNumber(normalizedSummary.defaultersCount),
+        outstandingAmount: ensureNumber(normalizedSummary.outstandingAmount),
+        avgCollectionTime: ensureNumber(normalizedSummary.avgCollectionTime),
+        onTimePaymentRate: ensureNumber(normalizedSummary.onTimePaymentRate),
+      })
     } catch (err) {
       setError("Failed to load financial data")
       console.error("Error loading financial data:", err)
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedPeriod, selectedClass])
+
+  useEffect(() => {
+    void loadFinancialData()
+
+    // Real-time listeners for data updates
+    const handleFinancialUpdate = () => {
+      void loadFinancialData()
+    }
+
+    dbManager.on("financialDataUpdated", handleFinancialUpdate)
+    dbManager.on("paymentProcessed", handleFinancialUpdate)
+    dbManager.on("expenseAdded", handleFinancialUpdate)
+
+    return () => {
+      dbManager.off("financialDataUpdated", handleFinancialUpdate)
+      dbManager.off("paymentProcessed", handleFinancialUpdate)
+      dbManager.off("expenseAdded", handleFinancialUpdate)
+    }
+  }, [loadFinancialData])
 
   const COLORS = ["#2d682d", "#b29032", "#4ade80", "#f59e0b", "#ef4444", "#8b5cf6"]
 
@@ -116,52 +220,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
       const dataStr = JSON.stringify(reportData, null, 2)
       const dataBlob = new Blob([dataStr], { type: "application/json" })
       const url = URL.createObjectURL(dataBlob)
-      const link = document.createElement("a")
-      link.href = url
-      link.download = `financial-report-${selectedPeriod}-${Date.now()}.json`
-      link.click()
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      console.error("Error generating report:", err)
-      alert("Failed to generate report")
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-[#2d682d]" />
-        <span className="ml-2 text-[#2d682d]">Loading financial data...</span>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="text-center p-8">
-        <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-        <p className="text-red-600 mb-4">{error}</p>
-        <Button onClick={loadFinancialData} className="bg-[#2d682d] hover:bg-[#2d682d]/90">
-          Retry
-        </Button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-[#2d682d]">Financial Reports</h2>
-          <p className="text-gray-600">Comprehensive fee collection and expense tracking</p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="Select period" />
-            </SelectTrigger>
-            <SelectContent>
+@@ -165,230 +269,237 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
               <SelectItem value="current-term">Current Term</SelectItem>
               <SelectItem value="last-term">Last Term</SelectItem>
               <SelectItem value="current-session">Current Session</SelectItem>
@@ -187,7 +246,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
             <div className="flex items-center space-x-2">
               <DollarSign className="h-8 w-8 text-[#2d682d]" />
               <div>
-                <p className="text-2xl font-bold text-[#2d682d]">₦{summaryStats.totalCollected.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-[#2d682d]">₦{ensureNumber(summaryStats.totalCollected).toLocaleString()}</p>
                 <p className="text-sm text-gray-600">Total Collected</p>
               </div>
             </div>
@@ -198,7 +257,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
             <div className="flex items-center space-x-2">
               <TrendingUp className="h-8 w-8 text-green-600" />
               <div>
-                <p className="text-2xl font-bold text-green-600">{summaryStats.collectionRate}%</p>
+                <p className="text-2xl font-bold text-green-600">{ensureNumber(summaryStats.collectionRate)}%</p>
                 <p className="text-sm text-gray-600">Collection Rate</p>
               </div>
             </div>
@@ -209,7 +268,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
             <div className="flex items-center space-x-2">
               <Users className="h-8 w-8 text-[#b29032]" />
               <div>
-                <p className="text-2xl font-bold text-[#b29032]">{summaryStats.studentsPaid}</p>
+                <p className="text-2xl font-bold text-[#b29032]">{ensureNumber(summaryStats.studentsPaid)}</p>
                 <p className="text-sm text-gray-600">Students Paid</p>
               </div>
             </div>
@@ -220,7 +279,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
             <div className="flex items-center space-x-2">
               <AlertTriangle className="h-8 w-8 text-red-500" />
               <div>
-                <p className="text-2xl font-bold text-red-500">{summaryStats.defaultersCount}</p>
+                <p className="text-2xl font-bold text-red-500">{ensureNumber(summaryStats.defaultersCount)}</p>
                 <p className="text-sm text-gray-600">Defaulters</p>
               </div>
             </div>
@@ -264,18 +323,22 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
               <CardContent>
                 <div className="space-y-4">
                   {classWiseCollection.map((item, index) => (
-                    <div key={index} className="space-y-2">
+                    <div key={`${item.class}-${index}`} className="space-y-2">
                       <div className="flex justify-between items-center">
                         <span className="font-medium">{item.class}</span>
                         <div className="text-right">
-                          <span className="text-sm font-bold text-[#2d682d]">{item.percentage}%</span>
+                          <span className="text-sm font-bold text-[#2d682d]">{ensureNumber(item.percentage)}%</span>
                           <p className="text-xs text-gray-500">
-                            ₦{item.collected.toLocaleString()} / ₦{item.expected.toLocaleString()}
+                            ₦{ensureNumber(item.collected).toLocaleString()} / ₦
+                            {ensureNumber(item.expected).toLocaleString()}
                           </p>
                         </div>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div className="bg-[#2d682d] h-2 rounded-full" style={{ width: `${item.percentage}%` }}></div>
+                        <div
+                          className="bg-[#2d682d] h-2 rounded-full"
+                          style={{ width: `${Math.min(100, Math.max(0, ensureNumber(item.percentage)))}%` }}
+                        ></div>
                       </div>
                     </div>
                   ))}
@@ -305,7 +368,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
                       dataKey="amount"
                     >
                       {expenseData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <Cell key={`${entry.category}-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
                     <Tooltip formatter={(value) => [`₦${(value as number).toLocaleString()}`, "Amount"]} />
@@ -321,7 +384,10 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
               <CardContent>
                 <div className="space-y-4">
                   {expenseData.map((expense, index) => (
-                    <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                    <div
+                      key={`${expense.category}-${index}`}
+                      className="flex justify-between items-center p-3 bg-gray-50 rounded-lg"
+                    >
                       <div className="flex items-center space-x-3">
                         <div
                           className="w-4 h-4 rounded-full"
@@ -330,8 +396,8 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
                         <span className="font-medium">{expense.category}</span>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-[#2d682d]">₦{expense.amount.toLocaleString()}</p>
-                        <p className="text-xs text-gray-500">{expense.percentage}%</p>
+                        <p className="font-bold text-[#2d682d]">₦{ensureNumber(expense.amount).toLocaleString()}</p>
+                        <p className="text-xs text-gray-500">{ensureNumber(expense.percentage)}%</p>
                       </div>
                     </div>
                   ))}
@@ -354,7 +420,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
               <div className="space-y-4">
                 {defaultersData.map((defaulter, index) => (
                   <div
-                    key={index}
+                    key={`${defaulter.id || defaulter.name}-${index}`}
                     className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 border border-red-200 bg-red-50 rounded-lg gap-4"
                   >
                     <div className="flex-1">
@@ -366,7 +432,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
                       <Badge variant="destructive" className="whitespace-nowrap">
-                        ₦{defaulter.amount.toLocaleString()} Outstanding
+                        ₦{ensureNumber(defaulter.amount).toLocaleString()} Outstanding
                       </Badge>
                       <div className="flex gap-2">
                         <Button
@@ -392,9 +458,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
             </CardContent>
           </Card>
         </TabsContent>
-
-        <TabsContent value="analytics" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+@@ -398,46 +509,46 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
             <Card>
               <CardHeader>
                 <CardTitle className="text-[#2d682d]">Collection vs Target</CardTitle>
@@ -420,16 +484,16 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
                 <div className="space-y-6">
                   <div className="text-center p-4 bg-[#2d682d]/5 rounded-lg">
                     <p className="text-3xl font-bold text-[#2d682d]">
-                      ₦{summaryStats.outstandingAmount.toLocaleString()}
+                      ₦{ensureNumber(summaryStats.outstandingAmount).toLocaleString()}
                     </p>
                     <p className="text-sm text-gray-600">Outstanding Amount</p>
                   </div>
                   <div className="text-center p-4 bg-[#b29032]/5 rounded-lg">
-                    <p className="text-3xl font-bold text-[#b29032]">{summaryStats.avgCollectionTime} Days</p>
+                    <p className="text-3xl font-bold text-[#b29032]">{ensureNumber(summaryStats.avgCollectionTime)} Days</p>
                     <p className="text-sm text-gray-600">Average Collection Time</p>
                   </div>
                   <div className="text-center p-4 bg-green-50 rounded-lg">
-                    <p className="text-3xl font-bold text-green-600">{summaryStats.onTimePaymentRate}%</p>
+                    <p className="text-3xl font-bold text-green-600">{ensureNumber(summaryStats.onTimePaymentRate)}%</p>
                     <p className="text-sm text-gray-600">On-time Payment Rate</p>
                   </div>
                 </div>
