@@ -28,8 +28,10 @@ import {
   Search,
   TrendingUp,
   Users,
+  Youtube,
 } from "lucide-react"
 import { useBranding } from "@/hooks/use-branding"
+import { dbManager } from "@/lib/database-manager"
 
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
@@ -173,6 +175,83 @@ function mapReceipt(record: ApiReceiptRecord): ReceiptRecord {
   }
 }
 
+function getPaymentKey(record: PaymentRecord): string {
+  const reference = record.reference?.trim()
+  if (reference && reference.length > 0) {
+    return reference.toLowerCase()
+  }
+
+  return record.id.toLowerCase()
+}
+
+function mapLocalPayment(record: Record<string, unknown>): PaymentRecord {
+  const rawId = String(record.id ?? `manual-${Date.now()}`)
+  const manualId = rawId.startsWith("manual-") ? rawId : `manual-${rawId}`
+  const status =
+    record.status === "failed"
+      ? "failed"
+      : record.status === "pending"
+        ? "pending"
+        : "paid"
+
+  const method = record.method === "offline" ? "offline" : "online"
+  const dateSource = typeof record.date === "string" && record.date.length > 0 ? record.date : new Date().toISOString()
+
+  return {
+    id: manualId,
+    studentName: typeof record.studentName === "string" ? record.studentName : "Unknown Student",
+    parentName: typeof record.parentName === "string" ? record.parentName : "Parent",
+    className: typeof record.className === "string" ? record.className : "--",
+    amount: Number(record.amount ?? 0),
+    status,
+    method,
+    date: new Date(dateSource).toLocaleDateString(),
+    reference:
+      typeof record.reference === "string" && record.reference.length > 0 ? record.reference : manualId,
+    hasAccess: Boolean(record.hasAccess ?? (status === "paid")),
+    email: typeof record.email === "string" ? record.email : undefined,
+    paymentType:
+      typeof record.paymentType === "string" && record.paymentType.length > 0 ? record.paymentType : "general",
+  }
+}
+
+function mergePaymentRecords(base: PaymentRecord[], additions: PaymentRecord[]): PaymentRecord[] {
+  if (additions.length === 0) {
+    return base
+  }
+
+  const map = new Map<string, PaymentRecord>()
+  const order: string[] = []
+
+  for (const record of base) {
+    const key = getPaymentKey(record)
+    if (!map.has(key)) {
+      order.push(key)
+    }
+    map.set(key, record)
+  }
+
+  for (const record of additions) {
+    const key = getPaymentKey(record)
+    if (!map.has(key)) {
+      order.push(key)
+    }
+    map.set(key, record)
+  }
+
+  return order.reduce<PaymentRecord[]>((accumulator, key) => {
+    const record = map.get(key)
+    if (record) {
+      accumulator.push(record)
+    }
+    return accumulator
+  }, [])
+}
+
+function isManualPayment(payment: PaymentRecord): boolean {
+  return payment.id.startsWith("manual-")
+}
+
 export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
   const branding = useBranding()
   const resolvedLogo = branding.logoUrl
@@ -208,6 +287,20 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
   const [selectedParentEmail, setSelectedParentEmail] = useState("")
   const [isLoadingParents, setIsLoadingParents] = useState(false)
   const [isSendingFee, setIsSendingFee] = useState(false)
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
+  const [isSavingPayment, setIsSavingPayment] = useState(false)
+  const [paymentSearch, setPaymentSearch] = useState("")
+  const [paymentForm, setPaymentForm] = useState({
+    studentName: "",
+    parentName: "",
+    className: "",
+    amount: "",
+    status: "paid" as PaymentRecord["status"],
+    method: "online" as PaymentRecord["method"],
+    paymentType: "tuition",
+    email: "",
+    reference: "",
+  })
 
   const feeFormTotal = useMemo(() => {
     return [feeForm.tuition, feeForm.development, feeForm.exam, feeForm.sports, feeForm.library]
@@ -215,10 +308,48 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       .reduce((sum, value) => sum + value, 0)
   }, [feeForm])
 
+  const filteredPayments = useMemo(() => {
+    const term = paymentSearch.trim().toLowerCase()
+    if (!term) {
+      return payments
+    }
+
+    return payments.filter((payment) => {
+      return [
+        payment.studentName,
+        payment.parentName,
+        payment.className,
+        payment.paymentType,
+        payment.reference,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(term))
+    })
+  }, [payments, paymentSearch])
+
   const resetFeeForm = useCallback(() => {
     setFeeForm({ className: "", tuition: "0", development: "0", exam: "0", sports: "0", library: "0" })
     setEditingFeeId(null)
   }, [])
+
+  const resetPaymentForm = useCallback(() => {
+    setPaymentForm({
+      studentName: "",
+      parentName: "",
+      className: "",
+      amount: "",
+      status: "paid",
+      method: "online",
+      paymentType: "tuition",
+      email: "",
+      reference: "",
+    })
+  }, [])
+
+  const handleOpenPaymentDialog = useCallback(() => {
+    resetPaymentForm()
+    setPaymentDialogOpen(true)
+  }, [resetPaymentForm])
 
   const loadFinancialData = useCallback(async () => {
     setLoading(true)
@@ -247,7 +378,19 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       const receiptsData = (await receiptsResponse.json()) as { receipts: ApiReceiptRecord[] }
       const feeData = (await feeResponse.json()) as { feeStructure: ApiFeeStructureRecord[] }
 
-      setPayments(paymentsData.payments.map(mapPayment))
+      let localPayments: PaymentRecord[] = []
+      try {
+        const stored = await dbManager.getPayments()
+        if (Array.isArray(stored)) {
+          localPayments = stored.map((entry) => mapLocalPayment(entry as Record<string, unknown>))
+        }
+      } catch (error) {
+        console.warn("Unable to load local payment records:", error)
+      }
+
+      const combinedPayments = mergePaymentRecords(paymentsData.payments.map(mapPayment), localPayments)
+
+      setPayments(combinedPayments)
       setReceipts(receiptsData.receipts.map(mapReceipt))
       setFeeStructure(feeData.feeStructure)
     } catch (error) {
@@ -261,6 +404,67 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
 
   useEffect(() => {
     void loadFinancialData()
+  }, [loadFinancialData])
+
+  const handleSaveManualPayment = useCallback(async () => {
+    if (!paymentForm.studentName.trim() || !paymentForm.parentName.trim() || !paymentForm.className.trim()) {
+      setBanner({
+        type: "error",
+        message: "Student, parent, and class information are required to record a payment.",
+      })
+      return
+    }
+
+    const parsedAmount = Number.parseFloat(paymentForm.amount)
+    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+      setBanner({ type: "error", message: "Enter a valid amount before saving the payment." })
+      return
+    }
+
+    const reference = paymentForm.reference.trim().length > 0 ? paymentForm.reference.trim() : `MANUAL-${Date.now()}`
+
+    setIsSavingPayment(true)
+    setBanner(null)
+
+    try {
+      const created = await dbManager.createPayment({
+        studentName: paymentForm.studentName.trim(),
+        parentName: paymentForm.parentName.trim(),
+        className: paymentForm.className.trim(),
+        amount: parsedAmount,
+        status: paymentForm.status,
+        method: paymentForm.method,
+        paymentType: paymentForm.paymentType.trim() || "tuition",
+        reference,
+        email: paymentForm.email.trim() || undefined,
+      })
+
+      const mapped = mapLocalPayment(created as Record<string, unknown>)
+      setPayments((previous) => mergePaymentRecords(previous, [mapped]))
+      setBanner({ type: "success", message: "Payment recorded successfully." })
+      setPaymentDialogOpen(false)
+      resetPaymentForm()
+    } catch (error) {
+      console.error("Failed to create manual payment:", error)
+      const message = error instanceof Error ? error.message : "Unable to record payment"
+      setBanner({ type: "error", message })
+    } finally {
+      setIsSavingPayment(false)
+    }
+  }, [paymentForm, resetPaymentForm, setBanner])
+
+  useEffect(() => {
+    const handlePaymentsEvent = () => {
+      void loadFinancialData()
+    }
+
+    dbManager.on("paymentsUpdated", handlePaymentsEvent)
+    dbManager.on("paymentCompleted", handlePaymentsEvent)
+
+    return () => {
+      dbManager.off("paymentsUpdated", handlePaymentsEvent)
+      dbManager.off("paymentCompleted", handlePaymentsEvent)
+    }
   }, [loadFinancialData])
 
   const handleEditFeeStructure = useCallback((fee: FeeStructureEntry) => {
@@ -439,6 +643,38 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       setProcessingReceiptId(payment.id)
       setBanner(null)
 
+      if (isManualPayment(payment)) {
+        const normalizedReference = payment.reference?.replace(/\W+/g, "").toUpperCase() ?? payment.id
+        const receiptNumber = `MAN-${normalizedReference.slice(-8)}`
+        const manualReceipt: ReceiptRecord = {
+          id: `manual-${payment.id}`,
+          paymentId: payment.id,
+          receiptNumber,
+          studentName: payment.studentName,
+          amount: payment.amount,
+          dateIssued: new Date().toLocaleDateString(),
+          reference: payment.reference,
+          issuedBy: accountant.name,
+          className: payment.className,
+          method: payment.method,
+        }
+
+        setReceipts((previous) => {
+          const index = previous.findIndex((entry) => entry.paymentId === payment.id)
+          if (index === -1) {
+            return [...previous, manualReceipt]
+          }
+
+          const clone = [...previous]
+          clone[index] = manualReceipt
+          return clone
+        })
+
+        setProcessingReceiptId(null)
+        setBanner({ type: "success", message: "Receipt generated for the manual payment." })
+        return manualReceipt
+      }
+
       try {
         const response = await fetch("/api/payments/receipts", {
           method: "POST",
@@ -609,8 +845,21 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
   return (
     <div className="space-y-6">
       <div className="rounded-lg bg-gradient-to-r from-[#2d682d] to-[#b29032] p-6 text-white">
-        <h1 className="text-2xl font-bold">Welcome, {accountant.name}</h1>
-        <p className="text-green-100">Financial Management - VEA 2025</p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Welcome, {accountant.name}</h1>
+            <p className="text-green-100">Financial Management - VEA 2025</p>
+          </div>
+          <a
+            href="https://www.youtube.com/watch?v=6Dh-RL__uN4"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 self-start rounded-md bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+          >
+            <Youtube className="h-4 w-4" />
+            Tutorial
+          </a>
+        </div>
       </div>
 
       {banner && (
@@ -747,16 +996,21 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                 <div className="flex space-x-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
-                    <Input placeholder="Search payments..." className="pl-8" />
+                    <Input
+                      placeholder="Search payments..."
+                      className="pl-8"
+                      value={paymentSearch}
+                      onChange={(event) => setPaymentSearch(event.target.value)}
+                    />
                   </div>
-                  <Button className="bg-[#b29032] hover:bg-[#b29032]/90">
+                  <Button className="bg-[#b29032] hover:bg-[#b29032]/90" onClick={handleOpenPaymentDialog}>
                     <Plus className="mr-2 h-4 w-4" />
                     Record Payment
                   </Button>
                 </div>
 
                 <div className="space-y-2">
-                  {payments.map((payment) => (
+                  {filteredPayments.map((payment) => (
                     <div key={payment.id} className="flex items-center justify-between rounded-lg border p-4">
                       <div className="flex-1">
                         <h3 className="font-medium">{payment.studentName}</h3>
@@ -798,10 +1052,12 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                       </div>
                     </div>
                   ))}
-                  {payments.length === 0 && (
+                  {filteredPayments.length === 0 && (
                     <Card className="border-dashed border-gray-200">
                       <CardContent className="py-6 text-center text-sm text-gray-500">
-                        No payments recorded yet.
+                        {paymentSearch
+                          ? `No payments match "${paymentSearch}".`
+                          : "No payments recorded yet."}
                       </CardContent>
                     </Card>
                   )}
@@ -1196,6 +1452,153 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
             >
               {isSendingFee ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Send Fee Structure
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={paymentDialogOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setPaymentDialogOpen(true)
+          } else {
+            setPaymentDialogOpen(false)
+            resetPaymentForm()
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Record Manual Payment</DialogTitle>
+            <DialogDescription>
+              Capture offline or exceptional payments and keep them aligned with the digital ledger.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2 md:grid-cols-2 md:gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="manual-student">Student Name</Label>
+                <Input
+                  id="manual-student"
+                  value={paymentForm.studentName}
+                  onChange={(event) => setPaymentForm((prev) => ({ ...prev, studentName: event.target.value }))}
+                  placeholder="Student full name"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="manual-parent">Parent/Guardian</Label>
+                <Input
+                  id="manual-parent"
+                  value={paymentForm.parentName}
+                  onChange={(event) => setPaymentForm((prev) => ({ ...prev, parentName: event.target.value }))}
+                  placeholder="Parent or guardian name"
+                />
+              </div>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2 md:gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="manual-class">Class</Label>
+                <Input
+                  id="manual-class"
+                  value={paymentForm.className}
+                  onChange={(event) => setPaymentForm((prev) => ({ ...prev, className: event.target.value }))}
+                  placeholder="e.g. JSS1A"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="manual-amount">Amount (₦)</Label>
+                <Input
+                  id="manual-amount"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={paymentForm.amount}
+                  onChange={(event) => setPaymentForm((prev) => ({ ...prev, amount: event.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2 md:gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="manual-type">Payment Type</Label>
+                <Input
+                  id="manual-type"
+                  value={paymentForm.paymentType}
+                  onChange={(event) => setPaymentForm((prev) => ({ ...prev, paymentType: event.target.value }))}
+                  placeholder="e.g. Tuition"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Method</Label>
+                <Select
+                  value={paymentForm.method}
+                  onValueChange={(value) =>
+                    setPaymentForm((prev) => ({ ...prev, method: value as PaymentRecord["method"] }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="online">Online</SelectItem>
+                    <SelectItem value="offline">Offline</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2 md:gap-4">
+              <div className="grid gap-2">
+                <Label>Status</Label>
+                <Select
+                  value={paymentForm.status}
+                  onValueChange={(value) =>
+                    setPaymentForm((prev) => ({ ...prev, status: value as PaymentRecord["status"] }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="manual-email">Parent Email (optional)</Label>
+                <Input
+                  id="manual-email"
+                  type="email"
+                  value={paymentForm.email}
+                  onChange={(event) => setPaymentForm((prev) => ({ ...prev, email: event.target.value }))}
+                  placeholder="parent@example.com"
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="manual-reference">Reference (optional)</Label>
+              <Input
+                id="manual-reference"
+                value={paymentForm.reference}
+                onChange={(event) => setPaymentForm((prev) => ({ ...prev, reference: event.target.value }))}
+                placeholder="If provided, used to generate the receipt"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPaymentDialogOpen(false)
+                resetPaymentForm()
+              }}
+              disabled={isSavingPayment}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void handleSaveManualPayment()} disabled={isSavingPayment}>
+              {isSavingPayment ? "Saving..." : "Save Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>

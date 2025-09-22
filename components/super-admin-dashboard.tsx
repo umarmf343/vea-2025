@@ -73,6 +73,7 @@ import {
   TrendingUp,
   Users,
   DollarSign,
+  Youtube,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -960,6 +961,15 @@ export default function SuperAdminDashboard() {
           <p className="text-gray-600">Holistic control for every panel within the VEA portal</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <a
+            href="https://www.youtube.com/watch?v=04854XqcfCY"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-md border border-[#2d682d]/20 bg-[#2d682d]/10 px-4 py-2 text-sm font-medium text-[#1f4a1f] transition hover:bg-[#2d682d]/20"
+          >
+            <Youtube className="h-4 w-4" />
+            Tutorial
+          </a>
           <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing}>
             <RefreshCw className={cn("mr-2 h-4 w-4", isRefreshing && "animate-spin")} />
             Refresh Data

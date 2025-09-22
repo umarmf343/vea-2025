@@ -17,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { BookOpen, Calendar, FileText, User, Clock, Trophy, Upload, CheckCircle } from "lucide-react"
+import { BookOpen, Calendar, FileText, User, Clock, Trophy, Upload, CheckCircle, Youtube } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
 import { dbManager } from "@/lib/database-manager"
@@ -320,12 +320,21 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#2d682d] to-[#b29032] text-white p-6 rounded-lg">
-        <div className="flex justify-between items-start">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">Welcome, {studentProfile.name}</h1>
             <p className="text-green-100">Student Portal - {student.class} - VEA 2025</p>
             <p className="text-sm text-green-200">Admission No: {student.admissionNumber}</p>
           </div>
+          <a
+            href="https://www.youtube.com/watch?v=1FJD7jZqZEk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 self-start rounded-md bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+          >
+            <Youtube className="h-4 w-4" />
+            Tutorial
+          </a>
         </div>
       </div>
 

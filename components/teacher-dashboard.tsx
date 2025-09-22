@@ -17,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { BookOpen, Users, FileText, GraduationCap, Clock, User, Plus, Save, Loader2 } from "lucide-react"
+import { BookOpen, Users, FileText, GraduationCap, Clock, User, Plus, Save, Loader2, Youtube } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
 import { InternalMessaging } from "@/components/internal-messaging"
@@ -745,10 +745,23 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#2d682d] to-[#b29032] text-white p-6 rounded-lg">
-        <h1 className="text-2xl font-bold">Welcome, {teacher.name}</h1>
-        <div className="text-green-100 text-sm sm:text-base space-y-1">
-          <p>Subjects: {subjectSummary}</p>
-          <p>Classes: {classSummary}</p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Welcome, {teacher.name}</h1>
+            <div className="text-green-100 text-sm sm:text-base space-y-1">
+              <p>Subjects: {subjectSummary}</p>
+              <p>Classes: {classSummary}</p>
+            </div>
+          </div>
+          <a
+            href="https://www.youtube.com/watch?v=HkyVTxH2fIM"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 self-start rounded-md bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+          >
+            <Youtube className="h-4 w-4" />
+            Tutorial
+          </a>
         </div>
       </div>
 
