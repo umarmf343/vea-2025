@@ -80,6 +80,16 @@ const defaultSummaryStats: FinancialSummary = {
 const ensureNumber = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) ? value : 0
 
+const formatNumberValue = (
+  value: unknown,
+  options?: Intl.NumberFormatOptions,
+): string => ensureNumber(value).toLocaleString(undefined, options)
+
+const formatPercentageValue = (
+  value: unknown,
+  options?: Intl.NumberFormatOptions,
+): string => `${formatNumberValue(value, options)}%`
+
 export function FinancialReports({ userRole }: FinancialReportsProps) {
   const [selectedPeriod, setSelectedPeriod] = useState("current-term")
   const [selectedClass, setSelectedClass] = useState("all")
@@ -246,7 +256,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
             <div className="flex items-center space-x-2">
               <DollarSign className="h-8 w-8 text-[#2d682d]" />
               <div>
-                <p className="text-2xl font-bold text-[#2d682d]">₦{ensureNumber(summaryStats.totalCollected).toLocaleString()}</p>
+                <p className="text-2xl font-bold text-[#2d682d]">₦{formatNumberValue(summaryStats.totalCollected)}</p>
                 <p className="text-sm text-gray-600">Total Collected</p>
               </div>
             </div>
@@ -257,7 +267,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
             <div className="flex items-center space-x-2">
               <TrendingUp className="h-8 w-8 text-green-600" />
               <div>
-                <p className="text-2xl font-bold text-green-600">{ensureNumber(summaryStats.collectionRate)}%</p>
+                <p className="text-2xl font-bold text-green-600">{formatPercentageValue(summaryStats.collectionRate)}</p>
                 <p className="text-sm text-gray-600">Collection Rate</p>
               </div>
             </div>
@@ -268,7 +278,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
             <div className="flex items-center space-x-2">
               <Users className="h-8 w-8 text-[#b29032]" />
               <div>
-                <p className="text-2xl font-bold text-[#b29032]">{ensureNumber(summaryStats.studentsPaid)}</p>
+                <p className="text-2xl font-bold text-[#b29032]">{formatNumberValue(summaryStats.studentsPaid)}</p>
                 <p className="text-sm text-gray-600">Students Paid</p>
               </div>
             </div>
@@ -279,7 +289,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
             <div className="flex items-center space-x-2">
               <AlertTriangle className="h-8 w-8 text-red-500" />
               <div>
-                <p className="text-2xl font-bold text-red-500">{ensureNumber(summaryStats.defaultersCount)}</p>
+                <p className="text-2xl font-bold text-red-500">{formatNumberValue(summaryStats.defaultersCount)}</p>
                 <p className="text-sm text-gray-600">Defaulters</p>
               </div>
             </div>
@@ -308,7 +318,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
                     <YAxis />
-                    <Tooltip formatter={(value) => [`₦${(value as number).toLocaleString()}`, "Amount"]} />
+                    <Tooltip formatter={(value) => [`₦${formatNumberValue(value)}`, "Amount"]} />
                     <Bar dataKey="collected" fill="#2d682d" />
                     <Bar dataKey="expected" fill="#b29032" opacity={0.6} />
                   </BarChart>
@@ -327,10 +337,12 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
                       <div className="flex justify-between items-center">
                         <span className="font-medium">{item.class}</span>
                         <div className="text-right">
-                          <span className="text-sm font-bold text-[#2d682d]">{ensureNumber(item.percentage)}%</span>
+                        <span className="text-sm font-bold text-[#2d682d]">
+                          {formatPercentageValue(item.percentage)}
+                        </span>
                           <p className="text-xs text-gray-500">
-                            ₦{ensureNumber(item.collected).toLocaleString()} / ₦
-                            {ensureNumber(item.expected).toLocaleString()}
+                            ₦{formatNumberValue(item.collected)} / ₦
+                            {formatNumberValue(item.expected)}
                           </p>
                         </div>
                       </div>
@@ -371,7 +383,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
                         <Cell key={`${entry.category}-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value) => [`₦${(value as number).toLocaleString()}`, "Amount"]} />
+                    <Tooltip formatter={(value) => [`₦${formatNumberValue(value)}`, "Amount"]} />
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -396,8 +408,8 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
                         <span className="font-medium">{expense.category}</span>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-[#2d682d]">₦{ensureNumber(expense.amount).toLocaleString()}</p>
-                        <p className="text-xs text-gray-500">{ensureNumber(expense.percentage)}%</p>
+                        <p className="font-bold text-[#2d682d]">₦{formatNumberValue(expense.amount)}</p>
+                        <p className="text-xs text-gray-500">{formatPercentageValue(expense.percentage)}</p>
                       </div>
                     </div>
                   ))}
@@ -432,7 +444,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
                       <Badge variant="destructive" className="whitespace-nowrap">
-                        ₦{ensureNumber(defaulter.amount).toLocaleString()} Outstanding
+                        ₦{formatNumberValue(defaulter.amount)} Outstanding
                       </Badge>
                       <div className="flex gap-2">
                         <Button
@@ -469,7 +481,7 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
                     <YAxis />
-                    <Tooltip formatter={(value) => [`${value}%`, "Collection Rate"]} />
+                    <Tooltip formatter={(value) => [formatPercentageValue(value), "Collection Rate"]} />
                     <Line type="monotone" dataKey="percentage" stroke="#2d682d" strokeWidth={3} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -484,16 +496,20 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
                 <div className="space-y-6">
                   <div className="text-center p-4 bg-[#2d682d]/5 rounded-lg">
                     <p className="text-3xl font-bold text-[#2d682d]">
-                      ₦{ensureNumber(summaryStats.outstandingAmount).toLocaleString()}
+                      ₦{formatNumberValue(summaryStats.outstandingAmount)}
                     </p>
                     <p className="text-sm text-gray-600">Outstanding Amount</p>
                   </div>
                   <div className="text-center p-4 bg-[#b29032]/5 rounded-lg">
-                    <p className="text-3xl font-bold text-[#b29032]">{ensureNumber(summaryStats.avgCollectionTime)} Days</p>
+                    <p className="text-3xl font-bold text-[#b29032]">
+                      {formatNumberValue(summaryStats.avgCollectionTime)} Days
+                    </p>
                     <p className="text-sm text-gray-600">Average Collection Time</p>
                   </div>
                   <div className="text-center p-4 bg-green-50 rounded-lg">
-                    <p className="text-3xl font-bold text-green-600">{ensureNumber(summaryStats.onTimePaymentRate)}%</p>
+                    <p className="text-3xl font-bold text-green-600">
+                      {formatPercentageValue(summaryStats.onTimePaymentRate)}
+                    </p>
                     <p className="text-sm text-gray-600">On-time Payment Rate</p>
                   </div>
                 </div>
