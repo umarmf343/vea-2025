@@ -1,54 +1,183 @@
 "use client"
 
 import type React from "react"
+import { useEffect, useMemo, useState } from "react"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Upload, FileText, Download, Eye, Trash2, Plus } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { useToast } from "@/hooks/use-toast"
 import { dbManager } from "@/lib/database-manager"
+import { cn } from "@/lib/utils"
+import { Download, FileText, Plus, Trash2, Upload } from "lucide-react"
 
-interface StudyMaterial {
+type BrowserRuntime = typeof globalThis & Partial<Window>
+
+const getBrowserRuntime = (): BrowserRuntime | null => {
+  if (typeof globalThis === "undefined") {
+    return null
+  }
+
+  return globalThis as BrowserRuntime
+}
+
+interface StudyMaterialRecord {
   id: string
   title: string
   description: string
   subject: string
-  class: string
+  className: string
+  classId?: string | null
+  teacherId?: string | null
+  teacherName: string
+  fileName: string
+  fileSize: number
   fileType: string
+  fileUrl?: string | null
   uploadDate: string
   downloadCount: number
-  teacherName: string
 }
 
 interface StudyMaterialsProps {
   userRole: "teacher" | "student"
   teacherName?: string
+  teacherId?: string
+  availableSubjects?: string[]
+  availableClasses?: string[]
   studentClass?: string
 }
 
-export function StudyMaterials({ userRole, teacherName, studentClass }: StudyMaterialsProps) {
-  const [materials, setMaterials] = useState<StudyMaterial[]>([])
+const DEFAULT_SUBJECTS = [
+  "Mathematics",
+  "English Language",
+  "Physics",
+  "Chemistry",
+  "Biology",
+  "Economics",
+]
+
+const DEFAULT_CLASSES = ["JSS 1", "JSS 2", "JSS 3", "SS 1", "SS 2", "SS 3"]
+
+const formatFileSize = (bytes: number) => {
+  if (!bytes || Number.isNaN(bytes)) {
+    return "--"
+  }
+
+  const units = ["B", "KB", "MB", "GB"]
+  let size = bytes
+  let unitIndex = 0
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+
+  return `${size.toFixed(size < 10 && unitIndex > 0 ? 1 : 0)} ${units[unitIndex]}`
+}
+
+const readFileAsDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "")
+    reader.onerror = () => reject(new Error("Unable to read file"))
+    reader.readAsDataURL(file)
+  })
+
+export function StudyMaterials({
+  userRole,
+  teacherName,
+  teacherId,
+  availableSubjects,
+  availableClasses,
+  studentClass,
+}: StudyMaterialsProps) {
+  const { toast } = useToast()
+  const [materials, setMaterials] = useState<StudyMaterialRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [showUploadForm, setShowUploadForm] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [uploadForm, setUploadForm] = useState({
     title: "",
     description: "",
     subject: "",
-    class: "",
+    className: "",
     file: null as File | null,
   })
 
-  useEffect(() => {
-    loadMaterials()
+  const subjectOptions = useMemo(() => {
+    if (userRole === "teacher" && availableSubjects && availableSubjects.length > 0) {
+      return availableSubjects
+    }
+    return DEFAULT_SUBJECTS
+  }, [availableSubjects, userRole])
 
-    // Real-time listener for materials updates
+  const classOptions = useMemo(() => {
+    if (userRole === "teacher" && availableClasses && availableClasses.length > 0) {
+      return availableClasses
+    }
+    return DEFAULT_CLASSES
+  }, [availableClasses, userRole])
+
+  const canUpload = userRole === "teacher"
+
+  const canManageMaterial = (material: StudyMaterialRecord) => {
+    if (!canUpload) {
+      return false
+    }
+
+    if (teacherId) {
+      return material.teacherId === teacherId
+    }
+
+    if (teacherName) {
+      return material.teacherName.toLowerCase() === teacherName.toLowerCase()
+    }
+
+    return true
+  }
+
+  const loadMaterials = async () => {
+    try {
+      setLoading(true)
+      const filters: { className?: string; teacherId?: string } = {}
+
+      if (userRole === "student" && studentClass) {
+        filters.className = studentClass
+      }
+
+      if (userRole === "teacher" && teacherId) {
+        filters.teacherId = teacherId
+      }
+
+      const records = await dbManager.getStudyMaterials(filters)
+
+      const filtered =
+        userRole === "student" && studentClass
+          ? records.filter((material) => material.className.toLowerCase() === studentClass.toLowerCase())
+          : records
+
+      setMaterials(filtered)
+    } catch (error) {
+      console.error("Error loading study materials:", error)
+      toast({
+        variant: "destructive",
+        title: "Unable to load study materials",
+        description: "Please try again later.",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadMaterials()
+
     const handleMaterialsUpdate = () => {
-      loadMaterials()
+      void loadMaterials()
     }
 
     dbManager.on("studyMaterialsUpdated", handleMaterialsUpdate)
@@ -56,68 +185,136 @@ export function StudyMaterials({ userRole, teacherName, studentClass }: StudyMat
     return () => {
       dbManager.off("studyMaterialsUpdated", handleMaterialsUpdate)
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRole, teacherId, studentClass])
 
-  const loadMaterials = async () => {
-    try {
-      setLoading(true)
-      const allMaterials = await dbManager.getStudyMaterials()
+  const handleUpload: React.FormEventHandler<HTMLFormElement> = async (event) => {
+    event.preventDefault()
 
-      // Filter materials based on user role
-      const filteredMaterials =
-        userRole === "student" ? allMaterials.filter((m) => m.class === studentClass) : allMaterials
-
-      setMaterials(filteredMaterials)
-    } catch (error) {
-      console.error("Error loading study materials:", error)
-    } finally {
-      setLoading(false)
+    if (!uploadForm.file) {
+      toast({
+        variant: "destructive",
+        title: "File is required",
+        description: "Please attach a file before uploading.",
+      })
+      return
     }
-  }
 
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!uploadForm.file) return
+    if (!uploadForm.subject || !uploadForm.className) {
+      toast({
+        variant: "destructive",
+        title: "Incomplete details",
+        description: "Select both the subject and the class for the material.",
+      })
+      return
+    }
 
     try {
-      const newMaterial: StudyMaterial = {
-        id: Date.now().toString(),
-        title: uploadForm.title,
-        description: uploadForm.description,
+      setIsUploading(true)
+      const dataUrl = await readFileAsDataUrl(uploadForm.file)
+
+      await dbManager.saveStudyMaterial({
+        title: uploadForm.title.trim(),
+        description: uploadForm.description.trim(),
         subject: uploadForm.subject,
-        class: uploadForm.class,
-        fileType: uploadForm.file.name.split(".").pop()?.toUpperCase() || "FILE",
-        uploadDate: new Date().toISOString().split("T")[0],
-        downloadCount: 0,
-        teacherName: teacherName || "Unknown Teacher",
-      }
+        className: uploadForm.className,
+        teacherId: teacherId ?? undefined,
+        teacherName: teacherName ?? "Unknown Teacher",
+        fileName: uploadForm.file.name,
+        fileSize: uploadForm.file.size,
+        fileType: uploadForm.file.type || "application/octet-stream",
+        fileUrl: dataUrl,
+      })
 
-      await dbManager.saveStudyMaterial(newMaterial)
-      setUploadForm({ title: "", description: "", subject: "", class: "", file: null })
+      toast({
+        title: "Material uploaded",
+        description: "The study material is now available to students.",
+      })
+
+      setUploadForm({ title: "", description: "", subject: "", className: "", file: null })
       setShowUploadForm(false)
-
-      // Trigger real-time update
-      dbManager.emit("studyMaterialsUpdated")
     } catch (error) {
       console.error("Error uploading study material:", error)
+      toast({
+        variant: "destructive",
+        title: "Upload failed",
+        description: "We could not upload the material. Please try again.",
+      })
+    } finally {
+      setIsUploading(false)
     }
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (material: StudyMaterialRecord) => {
+    if (!canManageMaterial(material)) {
+      toast({
+        variant: "destructive",
+        title: "Action not allowed",
+        description: "You can only remove materials you uploaded.",
+      })
+      return
+    }
+
+    const runtime = getBrowserRuntime()
+    const confirmed = runtime?.confirm
+      ? runtime.confirm(`Delete “${material.title}”? This action cannot be undone.`)
+      : true
+    if (!confirmed) {
+      return
+    }
+
     try {
-      await dbManager.deleteStudyMaterial(id)
-      dbManager.emit("studyMaterialsUpdated")
+      await dbManager.deleteStudyMaterial(material.id)
+      toast({
+        title: "Material removed",
+        description: "The study material has been deleted successfully.",
+      })
     } catch (error) {
       console.error("Error deleting study material:", error)
+      toast({
+        variant: "destructive",
+        title: "Unable to delete material",
+        description: "Please try again or contact the administrator.",
+      })
     }
   }
 
-  const handleDownload = async (materialId: string) => {
+  const handleDownload = async (material: StudyMaterialRecord) => {
     try {
-      await dbManager.incrementDownloadCount(materialId)
-      dbManager.emit("studyMaterialsUpdated")
+      if (!material.fileUrl) {
+        toast({
+          variant: "destructive",
+          title: "File unavailable",
+          description: "This material does not have an attachment to download.",
+        })
+        return
+      }
+
+      const runtime = getBrowserRuntime()
+      if (!runtime?.document) {
+        toast({
+          variant: "destructive",
+          title: "Download unavailable",
+          description: "Attachments can only be downloaded in a browser environment.",
+        })
+        return
+      }
+
+      const link = runtime.document.createElement("a")
+      link.href = material.fileUrl
+      link.download = material.fileName || `${material.title}.file`
+      runtime.document.body?.appendChild(link)
+      link.click()
+      runtime.document.body?.removeChild(link)
+
+      await dbManager.incrementDownloadCount(material.id)
     } catch (error) {
-      console.error("Error updating download count:", error)
+      console.error("Error downloading study material:", error)
+      toast({
+        variant: "destructive",
+        title: "Download failed",
+        description: "We could not start the download. Please try again.",
+      })
     }
   }
 
@@ -126,7 +323,7 @@ export function StudyMaterials({ userRole, teacherName, studentClass }: StudyMat
       <div className="space-y-6">
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#2d682d] mx-auto mb-4"></div>
+            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-b-2 border-[#2d682d]"></div>
             <p className="text-gray-600">Loading study materials...</p>
           </div>
         </div>
@@ -140,19 +337,23 @@ export function StudyMaterials({ userRole, teacherName, studentClass }: StudyMat
         <div>
           <h3 className="text-xl font-semibold text-[#2d682d]">Study Materials</h3>
           <p className="text-gray-600">
-            {userRole === "teacher" ? "Upload and manage study materials" : "Access study materials for your class"}
+            {userRole === "teacher"
+              ? "Upload and manage study materials"
+              : "Access study materials for your class"}
           </p>
         </div>
-        {userRole === "teacher" && (
-          <Button onClick={() => setShowUploadForm(true)} className="bg-[#2d682d] hover:bg-[#1a4a1a] text-white">
-            <Plus className="h-4 w-4 mr-2" />
-            Upload Material
+        {canUpload && (
+          <Button
+            onClick={() => setShowUploadForm((prev) => !prev)}
+            className="bg-[#2d682d] hover:bg-[#1a4a1a] text-white"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            {showUploadForm ? "Hide Form" : "Upload Material"}
           </Button>
         )}
       </div>
 
-      {/* Upload Form */}
-      {showUploadForm && userRole === "teacher" && (
+      {showUploadForm && canUpload && (
         <Card className="border-[#b29032]/20">
           <CardHeader>
             <CardTitle className="text-[#b29032]">Upload Study Material</CardTitle>
@@ -160,13 +361,15 @@ export function StudyMaterials({ userRole, teacherName, studentClass }: StudyMat
           </CardHeader>
           <CardContent>
             <form onSubmit={handleUpload} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="title">Title</Label>
                   <Input
                     id="title"
                     value={uploadForm.title}
-                    onChange={(e) => setUploadForm((prev) => ({ ...prev, title: e.target.value }))}
+                    onChange={(event) =>
+                      setUploadForm((prev) => ({ ...prev, title: event.target.value }))
+                    }
                     placeholder="Enter material title"
                     required
                   />
@@ -181,11 +384,11 @@ export function StudyMaterials({ userRole, teacherName, studentClass }: StudyMat
                       <SelectValue placeholder="Select subject" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Mathematics">Mathematics</SelectItem>
-                      <SelectItem value="English">English Language</SelectItem>
-                      <SelectItem value="Physics">Physics</SelectItem>
-                      <SelectItem value="Chemistry">Chemistry</SelectItem>
-                      <SelectItem value="Biology">Biology</SelectItem>
+                      {subjectOptions.map((subject) => (
+                        <SelectItem key={subject} value={subject}>
+                          {subject}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -193,19 +396,18 @@ export function StudyMaterials({ userRole, teacherName, studentClass }: StudyMat
               <div className="space-y-2">
                 <Label htmlFor="class">Class</Label>
                 <Select
-                  value={uploadForm.class}
-                  onValueChange={(value) => setUploadForm((prev) => ({ ...prev, class: value }))}
+                  value={uploadForm.className}
+                  onValueChange={(value) => setUploadForm((prev) => ({ ...prev, className: value }))}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select class" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="JSS 1">JSS 1</SelectItem>
-                    <SelectItem value="JSS 2">JSS 2</SelectItem>
-                    <SelectItem value="JSS 3">JSS 3</SelectItem>
-                    <SelectItem value="SS 1">SS 1</SelectItem>
-                    <SelectItem value="SS 2">SS 2</SelectItem>
-                    <SelectItem value="SS 3">SS 3</SelectItem>
+                    {classOptions.map((classOption) => (
+                      <SelectItem key={classOption} value={classOption}>
+                        {classOption}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -214,7 +416,9 @@ export function StudyMaterials({ userRole, teacherName, studentClass }: StudyMat
                 <Textarea
                   id="description"
                   value={uploadForm.description}
-                  onChange={(e) => setUploadForm((prev) => ({ ...prev, description: e.target.value }))}
+                  onChange={(event) =>
+                    setUploadForm((prev) => ({ ...prev, description: event.target.value }))
+                  }
                   placeholder="Enter material description"
                   rows={3}
                 />
@@ -224,17 +428,31 @@ export function StudyMaterials({ userRole, teacherName, studentClass }: StudyMat
                 <Input
                   id="file"
                   type="file"
-                  onChange={(e) => setUploadForm((prev) => ({ ...prev, file: e.target.files?.[0] || null }))}
-                  accept=".pdf,.doc,.docx,.ppt,.pptx"
+                  onChange={(event) =>
+                    setUploadForm((prev) => ({ ...prev, file: event.target.files?.[0] ?? null }))
+                  }
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
                   required
                 />
+                <p className="text-xs text-gray-500">
+                  Supported formats: PDF, Word, PowerPoint, Excel. Maximum size 10MB.
+                </p>
               </div>
               <div className="flex gap-2">
-                <Button type="submit" className="bg-[#2d682d] hover:bg-[#1a4a1a] text-white">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload Material
+                <Button
+                  type="submit"
+                  disabled={isUploading}
+                  className={cn("bg-[#2d682d] text-white", isUploading && "opacity-80")}
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  {isUploading ? "Uploading..." : "Upload Material"}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => setShowUploadForm(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowUploadForm(false)}
+                  disabled={isUploading}
+                >
                   Cancel
                 </Button>
               </div>
@@ -243,63 +461,76 @@ export function StudyMaterials({ userRole, teacherName, studentClass }: StudyMat
         </Card>
       )}
 
-      {/* Materials List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {materials.map((material) => (
-          <Card key={material.id} className="border-[#2d682d]/20 hover:border-[#2d682d]/40 transition-colors">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <CardTitle className="text-sm font-medium text-[#2d682d] line-clamp-2">{material.title}</CardTitle>
-                  <CardDescription className="text-xs mt-1">
-                    {material.subject} • {material.class}
-                  </CardDescription>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {materials.map((material) => {
+          const uploadedOn = new Date(material.uploadDate)
+          const formattedDate = Number.isNaN(uploadedOn.getTime())
+            ? material.uploadDate
+            : uploadedOn.toLocaleDateString()
+          const allowManagement = canManageMaterial(material)
+
+          return (
+            <Card
+              key={material.id}
+              className="border-[#2d682d]/20 transition-colors hover:border-[#2d682d]/40"
+            >
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1">
+                    <CardTitle className="line-clamp-2 text-sm font-medium text-[#2d682d]">
+                      {material.title}
+                    </CardTitle>
+                    <CardDescription className="mt-1 text-xs">
+                      {material.subject} • {material.className}
+                    </CardDescription>
+                  </div>
+                  <Badge variant="secondary" className="text-xs">
+                    {material.fileType.split("/").pop()?.toUpperCase() || "FILE"}
+                  </Badge>
                 </div>
-                <Badge variant="secondary" className="text-xs">
-                  {material.fileType}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <p className="text-sm text-gray-600 mb-3 line-clamp-2">{material.description}</p>
-              <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
-                <span>By {material.teacherName}</span>
-                <span>{material.downloadCount} downloads</span>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  className="flex-1 bg-[#2d682d] hover:bg-[#1a4a1a] text-white"
-                  onClick={() => handleDownload(material.id)}
-                >
-                  <Download className="h-3 w-3 mr-1" />
-                  Download
-                </Button>
-                <Button size="sm" variant="outline">
-                  <Eye className="h-3 w-3" />
-                </Button>
-                {userRole === "teacher" && (
+              </CardHeader>
+              <CardContent className="space-y-3 pt-0 text-sm text-gray-600">
+                <p className="line-clamp-3">{material.description}</p>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span>By {material.teacherName}</span>
+                  <span>Uploaded {formattedDate}</span>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+                  <span>{formatFileSize(material.fileSize)}</span>
+                  <span>{material.downloadCount} downloads</span>
+                </div>
+                <div className="flex gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
-                    onClick={() => handleDelete(material.id)}
-                    className="text-red-600 hover:text-red-700"
+                    className="flex-1 bg-[#2d682d] text-white hover:bg-[#1a4a1a]"
+                    onClick={() => void handleDownload(material)}
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Download className="mr-2 h-3 w-3" />
+                    Download
                   </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                  {allowManagement && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void handleDelete(material)}
+                      className="text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
       {materials.length === 0 && (
         <Card className="border-dashed border-2 border-gray-300">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <FileText className="h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No study materials</h3>
-            <p className="text-gray-500 text-center">
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <FileText className="mb-4 h-12 w-12 text-gray-400" />
+            <h3 className="mb-2 text-lg font-medium text-gray-900">No study materials</h3>
+            <p className="text-gray-500">
               {userRole === "teacher"
                 ? "Upload your first study material to get started"
                 : "No study materials available for your class yet"}

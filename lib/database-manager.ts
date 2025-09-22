@@ -54,6 +54,10 @@ interface AssignmentRecord {
   status: AssignmentStatus
   assignedStudentIds: string[]
   submissions: AssignmentSubmissionRecord[]
+  resourceName?: string | null
+  resourceSize?: number | null
+  resourceType?: string | null
+  resourceUrl?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -75,6 +79,49 @@ interface CreateAssignmentInput {
   dueDate: string
   status?: AssignmentStatus
   assignedStudentIds?: string[]
+  resourceName?: string | null
+  resourceSize?: number | null
+  resourceType?: string | null
+  resourceUrl?: string | null
+}
+
+interface StudyMaterialRecord {
+  id: string
+  title: string
+  description: string
+  subject: string
+  className: string
+  classId?: string | null
+  teacherId?: string | null
+  teacherName: string
+  fileName: string
+  fileSize: number
+  fileType: string
+  fileUrl?: string | null
+  uploadDate: string
+  downloadCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+interface StudyMaterialFilters {
+  className?: string
+  subject?: string
+  teacherId?: string
+}
+
+interface SaveStudyMaterialInput {
+  title: string
+  description: string
+  subject: string
+  className: string
+  classId?: string | null
+  teacherId?: string | null
+  teacherName: string
+  fileName: string
+  fileSize: number
+  fileType: string
+  fileUrl?: string | null
 }
 
 type AssignmentFileInput = { id?: string; name: string } | string
@@ -350,6 +397,15 @@ class DatabaseManager {
         assignedStudentIds: Array.isArray(assignment.assignedStudentIds)
           ? assignment.assignedStudentIds
           : [],
+        resourceName: assignment.resourceName ?? null,
+        resourceSize:
+          typeof assignment.resourceSize === "number"
+            ? assignment.resourceSize
+            : assignment.resourceSize
+              ? Number(assignment.resourceSize)
+              : null,
+        resourceType: assignment.resourceType ?? null,
+        resourceUrl: assignment.resourceUrl ?? null,
       }))
     } catch (error) {
       console.error("Error parsing assignments from storage:", error)
@@ -361,6 +417,35 @@ class DatabaseManager {
 
   private persistAssignments(assignments: AssignmentRecord[]) {
     safeStorage.setItem("assignments", JSON.stringify(assignments))
+  }
+
+  private ensureStudyMaterialsStorage(): StudyMaterialRecord[] {
+    const raw = safeStorage.getItem("studyMaterials")
+
+    if (!raw) {
+      const seeded = this.seedStudyMaterials()
+      safeStorage.setItem("studyMaterials", JSON.stringify(seeded))
+      return seeded
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as StudyMaterialRecord[]
+      return parsed.map((material) => ({
+        ...material,
+        classId: material.classId ?? null,
+        teacherId: material.teacherId ?? null,
+        fileUrl: material.fileUrl ?? null,
+      }))
+    } catch (error) {
+      console.error("Error parsing study materials from storage:", error)
+      const seeded = this.seedStudyMaterials()
+      safeStorage.setItem("studyMaterials", JSON.stringify(seeded))
+      return seeded
+    }
+  }
+
+  private persistStudyMaterials(materials: StudyMaterialRecord[]) {
+    safeStorage.setItem("studyMaterials", JSON.stringify(materials))
   }
 
   private seedAssignments(): AssignmentRecord[] {
@@ -386,6 +471,10 @@ class DatabaseManager {
         status: "sent",
         assignedStudentIds: ["student_john_doe"],
         submissions: [],
+        resourceName: "fraction-practice.pdf",
+        resourceSize: 10240,
+        resourceType: "application/pdf",
+        resourceUrl: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       },
@@ -403,6 +492,10 @@ class DatabaseManager {
         status: "sent",
         assignedStudentIds: ["student_john_doe"],
         submissions: [],
+        resourceName: "reading-comprehension.docx",
+        resourceSize: 20480,
+        resourceType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        resourceUrl: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       },
@@ -420,6 +513,10 @@ class DatabaseManager {
         status: "sent",
         assignedStudentIds: ["student_alice_smith"],
         submissions: [],
+        resourceName: "physics-practical-guide.pdf",
+        resourceSize: 16384,
+        resourceType: "application/pdf",
+        resourceUrl: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       },
@@ -1495,6 +1592,10 @@ class DatabaseManager {
       status: payload.status ?? "sent",
       assignedStudentIds: payload.assignedStudentIds ?? [],
       submissions: [],
+      resourceName: payload.resourceName ?? null,
+      resourceSize: payload.resourceSize ?? null,
+      resourceType: payload.resourceType ?? null,
+      resourceUrl: payload.resourceUrl ?? null,
       createdAt: timestamp,
       updatedAt: timestamp,
     }
@@ -1503,6 +1604,86 @@ class DatabaseManager {
     this.persistAssignments(assignments)
     this.triggerEvent("assignmentsUpdate", record)
     return record
+  }
+
+  async getStudyMaterials(filters: StudyMaterialFilters = {}) {
+    const materials = this.ensureStudyMaterialsStorage()
+
+    return materials
+      .filter((material) => {
+        if (filters.className && material.className.toLowerCase() !== filters.className.toLowerCase()) {
+          return false
+        }
+
+        if (filters.subject && material.subject.toLowerCase() !== filters.subject.toLowerCase()) {
+          return false
+        }
+
+        if (filters.teacherId && material.teacherId !== filters.teacherId) {
+          return false
+        }
+
+        return true
+      })
+      .sort((a, b) => b.uploadDate.localeCompare(a.uploadDate))
+  }
+
+  async saveStudyMaterial(input: SaveStudyMaterialInput) {
+    const materials = this.ensureStudyMaterialsStorage()
+    const timestamp = new Date().toISOString()
+
+    const record: StudyMaterialRecord = {
+      id: this.generateId("material"),
+      title: input.title,
+      description: input.description,
+      subject: input.subject,
+      className: input.className,
+      classId: input.classId ?? null,
+      teacherId: input.teacherId ?? null,
+      teacherName: input.teacherName,
+      fileName: input.fileName,
+      fileSize: input.fileSize,
+      fileType: input.fileType,
+      fileUrl: input.fileUrl ?? null,
+      uploadDate: timestamp,
+      downloadCount: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    materials.push(record)
+    this.persistStudyMaterials(materials)
+    this.triggerEvent("studyMaterialsUpdated", record)
+    return record
+  }
+
+  async deleteStudyMaterial(materialId: string) {
+    const materials = this.ensureStudyMaterialsStorage()
+    const index = materials.findIndex((material) => material.id === materialId)
+
+    if (index === -1) {
+      throw new Error("Study material not found")
+    }
+
+    const [removed] = materials.splice(index, 1)
+    this.persistStudyMaterials(materials)
+    this.triggerEvent("studyMaterialsUpdated", { id: removed.id, deleted: true })
+    return removed
+  }
+
+  async incrementDownloadCount(materialId: string) {
+    const materials = this.ensureStudyMaterialsStorage()
+    const index = materials.findIndex((material) => material.id === materialId)
+
+    if (index === -1) {
+      throw new Error("Study material not found")
+    }
+
+    materials[index].downloadCount = (materials[index].downloadCount ?? 0) + 1
+    materials[index].updatedAt = new Date().toISOString()
+    this.persistStudyMaterials(materials)
+    this.triggerEvent("studyMaterialsUpdated", materials[index])
+    return materials[index]
   }
 
   async createAssignmentSubmission(
@@ -1969,6 +2150,49 @@ class DatabaseManager {
 
     this.triggerEvent("libraryBooksUpdated", { studentId, books })
     return this.deepClone(books)
+  }
+
+  private seedStudyMaterials(): StudyMaterialRecord[] {
+    const timestamp = new Date().toISOString()
+
+    return [
+      {
+        id: this.generateId("material"),
+        title: "Mathematics Formulas Revision Guide",
+        description: "Comprehensive list of algebraic formulas covered this term.",
+        subject: "Mathematics",
+        className: "JSS 1A",
+        classId: "class_jss1a",
+        teacherId: "teacher_mathematics_default",
+        teacherName: "Mr. John Smith",
+        fileName: "mathematics-formulas.pdf",
+        fileSize: 24576,
+        fileType: "application/pdf",
+        fileUrl: null,
+        uploadDate: timestamp,
+        downloadCount: 12,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        id: this.generateId("material"),
+        title: "English Language Essay Writing Tips",
+        description: "Key pointers and structure for writing compelling essays.",
+        subject: "English Language",
+        className: "JSS 2B",
+        classId: "class_jss2b",
+        teacherId: "teacher_english_default",
+        teacherName: "Mrs. Sarah Johnson",
+        fileName: "essay-writing-tips.docx",
+        fileSize: 18432,
+        fileType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        fileUrl: null,
+        uploadDate: timestamp,
+        downloadCount: 8,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ]
   }
 
   async getBooks(): Promise<LibraryInventoryRecord[]> {

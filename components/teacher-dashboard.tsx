@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -17,16 +17,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { BookOpen, Users, FileText, GraduationCap, Clock, User, Download, Plus, Edit, Save, Loader2 } from "lucide-react"
+import { BookOpen, Users, FileText, GraduationCap, Clock, User, Plus, Save, Loader2 } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
-import { saveTeacherMarks } from "@/lib/report-card-data"
 import { InternalMessaging } from "@/components/internal-messaging"
 import { safeStorage } from "@/lib/safe-storage"
 import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
 import { useToast } from "@/hooks/use-toast"
 import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
+
+type BrowserRuntime = typeof globalThis & Partial<Window>
+
+const getBrowserRuntime = (): BrowserRuntime | null => {
+  if (typeof globalThis === "undefined") {
+    return null
+  }
+
+  return globalThis as BrowserRuntime
+}
 
 interface TeacherDashboardProps {
   teacher: {
@@ -76,24 +85,39 @@ interface MarksRecord {
   teacherRemark: string
 }
 
-interface AssignmentSummary {
-  id: number
+interface AssignmentSubmissionRecord {
+  id: string
+  studentId: string
+  status: "pending" | "submitted" | "graded"
+  submittedAt: string | null
+  files?: { id: string; name: string }[]
+  comment?: string | null
+  grade?: string | null
+}
+
+interface TeacherAssignmentSummary {
+  id: string
   title: string
+  description: string
   subject: string
-  class: string
+  className: string
   dueDate: string
-  submissions: number
-  totalStudents: number
+  status: string
+  submissions: AssignmentSubmissionRecord[]
+  assignedStudentIds: string[]
+  resourceName?: string | null
+  resourceType?: string | null
+  resourceUrl?: string | null
+  resourceSize?: number | null
+  updatedAt?: string
 }
 
 export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const { toast } = useToast()
   const [selectedTab, setSelectedTab] = useState("overview")
-  const [showProfile, setShowProfile] = useState(false)
-  const [showMarksEntry, setShowMarksEntry] = useState(false)
   const [showCreateAssignment, setShowCreateAssignment] = useState(false)
   const [showSubmissions, setShowSubmissions] = useState(false)
-  const [selectedAssignment, setSelectedAssignment] = useState<AssignmentSummary | null>(null)
+  const [selectedAssignment, setSelectedAssignment] = useState<TeacherAssignmentSummary | null>(null)
   const [selectedClass, setSelectedClass] = useState(teacher.classes[0] ?? "")
   const [selectedSubject, setSelectedSubject] = useState(teacher.subjects[0] ?? "")
   const [selectedTerm, setSelectedTerm] = useState("first")
@@ -109,14 +133,17 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     attendance: {} as Record<number, { present: number; absent: number; total: number }>,
   })
 
-  const [assignmentForm, setAssignmentForm] = useState({
+  const [assignmentForm, setAssignmentForm] = useState(() => ({
     title: "",
     description: "",
     dueDate: "",
-    subject: "",
-    class: "",
+    subject: teacher.subjects[0] ?? "",
+    className: teacher.classes[0] ?? "",
     file: null as File | null,
-  })
+  }))
+  const [assignments, setAssignments] = useState<TeacherAssignmentSummary[]>([])
+  const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(true)
+  const [isCreatingAssignment, setIsCreatingAssignment] = useState(false)
 
   const [teacherExams, setTeacherExams] = useState<TeacherExamSummary[]>([])
   const [isExamLoading, setIsExamLoading] = useState(true)
@@ -136,6 +163,14 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     setSelectedSubject(teacher.subjects[0] ?? "")
   }, [teacher.subjects])
 
+  useEffect(() => {
+    setAssignmentForm((prev) => ({
+      ...prev,
+      subject: prev.subject || teacher.subjects[0] ?? "",
+      className: prev.className || teacher.classes[0] ?? "",
+    }))
+  }, [teacher.classes, teacher.subjects])
+
   const mockStudents = [
     { id: 1, name: "John Doe", class: "JSS 1A", subjects: ["Mathematics", "English"] },
     { id: 2, name: "Jane Smith", class: "JSS 1A", subjects: ["Mathematics"] },
@@ -152,6 +187,61 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   const normalizeClassName = (value: string) => value.replace(/\s+/g, "").toLowerCase()
 
+  const readFileAsDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "")
+      reader.onerror = () => reject(new Error("Unable to read file"))
+      reader.readAsDataURL(file)
+    })
+
+  const loadAssignments = useCallback(async () => {
+    try {
+      setIsAssignmentsLoading(true)
+      const records = await dbManager.getAssignments({ teacherId: teacher.id })
+
+      const normalised = records.map((record) => {
+        const submissions = Array.isArray(record.submissions) ? record.submissions : []
+        const assignedStudentIds = Array.isArray(record.assignedStudentIds)
+          ? record.assignedStudentIds
+          : []
+
+        return {
+          id: String(record.id),
+          title: record.title,
+          description: record.description ?? "",
+          subject: record.subject,
+          className: record.className ?? (record as { class?: string }).class ?? "General",
+          dueDate: record.dueDate,
+          status: record.status ?? "sent",
+          submissions,
+          assignedStudentIds,
+          resourceName: record.resourceName ?? null,
+          resourceType: record.resourceType ?? null,
+          resourceUrl: record.resourceUrl ?? null,
+          resourceSize:
+            typeof record.resourceSize === "number"
+              ? record.resourceSize
+              : record.resourceSize
+                ? Number(record.resourceSize)
+                : null,
+          updatedAt: record.updatedAt,
+        } satisfies TeacherAssignmentSummary
+      })
+
+      setAssignments(normalised)
+    } catch (error) {
+      logger.error("Failed to load teacher assignments", { error })
+      toast({
+        variant: "destructive",
+        title: "Unable to load assignments",
+        description: "We could not retrieve your assignments. Please try again shortly.",
+      })
+    } finally {
+      setIsAssignmentsLoading(false)
+    }
+  }, [teacher.id, toast])
+
   const upcomingTeacherExams = useMemo(
     () =>
       teacherExams
@@ -164,6 +254,20 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     () => teacherTimetable.slice().sort((a, b) => a.time.localeCompare(b.time)),
     [teacherTimetable],
   )
+
+  useEffect(() => {
+    void loadAssignments()
+
+    const handleAssignmentsUpdate = () => {
+      void loadAssignments()
+    }
+
+    dbManager.on("assignmentsUpdate", handleAssignmentsUpdate)
+
+    return () => {
+      dbManager.off("assignmentsUpdate", handleAssignmentsUpdate)
+    }
+  }, [loadAssignments])
 
   useEffect(() => {
     let isMounted = true
@@ -342,71 +446,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     })
   }
 
-  const mockAssignments: AssignmentSummary[] = [
-    {
-      id: 1,
-      title: "Quadratic Equations",
-      subject: "Mathematics",
-      class: "JSS 1A",
-      dueDate: "2024-03-20",
-      submissions: 15,
-      totalStudents: 20,
-    },
-    {
-      id: 2,
-      title: "Essay Writing",
-      subject: "English",
-      class: "JSS 2B",
-      dueDate: "2024-03-18",
-      submissions: 18,
-      totalStudents: 22,
-    },
-  ]
-
-  const mockMaterials = [
-    {
-      id: 1,
-      title: "Mathematics Formulas",
-      subject: "Mathematics",
-      uploadDate: "2024-03-01",
-      downloads: 45,
-    },
-    {
-      id: 2,
-      title: "Grammar Rules",
-      subject: "English",
-      uploadDate: "2024-02-28",
-      downloads: 32,
-    },
-  ]
-
-  const mockSubmissions = [
-    {
-      id: 1,
-      studentName: "John Doe",
-      submissionDate: "2024-03-18",
-      status: "submitted",
-      file: "john_quadratic_equations.pdf",
-      grade: null,
-    },
-    {
-      id: 2,
-      studentName: "Jane Smith",
-      submissionDate: "2024-03-19",
-      status: "submitted",
-      file: "jane_quadratic_equations.pdf",
-      grade: null,
-    },
-    {
-      id: 3,
-      studentName: "Mike Johnson",
-      submissionDate: null,
-      status: "pending",
-      file: null,
-      grade: null,
-    },
-  ]
-
   const calculateGrade = (total: number) => {
     if (total >= 75) return "A"
     if (total >= 65) return "B"
@@ -456,25 +495,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   const getReportCardKey = () => `${selectedClass}-${selectedSubject}-${selectedTerm}-${selectedSession}`
 
-  const handleSendForApproval = () => {
-    const key = getReportCardKey()
-    const newStatus = {
-      ...reportCardStatus,
-      [key]: {
-        status: "pending",
-        submittedDate: new Date().toLocaleDateString(),
-      },
-    }
-    setReportCardStatus(newStatus)
-
-    safeStorage.setItem("reportCardStatus", JSON.stringify(newStatus))
-
-    toast({
-      title: "Report card submitted",
-      description: "The report card has been sent for administrative approval.",
-    })
-  }
-
   const getCurrentStatus = () => {
     const key = getReportCardKey()
     return reportCardStatus[key] || { status: "draft" }
@@ -487,77 +507,111 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
   }, [])
 
-  const handleSaveMarks = async () => {
-    try {
-      if (!selectedClass || !selectedSubject) {
-        toast({
-          variant: "destructive",
-          title: "Selection required",
-          description: "Please choose both a class and a subject before saving marks.",
-        })
-        return
-      }
-
-      const result = await saveTeacherMarks({
-        class: selectedClass,
-        subject: selectedSubject,
-        term: selectedTerm,
-        session: selectedSession,
-        marks: marksData.map((student) => ({
-          studentId: student.studentId,
-          studentName: student.studentName,
-          firstCA: student.firstCA,
-          secondCA: student.secondCA,
-          noteAssignment: student.noteAssignment,
-          exam: student.exam,
-          teacherRemark: student.teacherRemark,
-        })),
-        teacherId: teacher.id,
-      })
-
-      if (result.success) {
-        const key = getReportCardKey()
-        const newStatus = { ...reportCardStatus }
-        newStatus[key] = { status: "draft" }
-        setReportCardStatus(newStatus)
-        safeStorage.setItem("reportCardStatus", JSON.stringify(newStatus))
-
-        toast({
-          title: "Marks saved",
-          description: "Marks have been recorded and will reflect on student report cards.",
-        })
-        setShowMarksEntry(false)
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Unable to save marks",
-          description: result.message,
-        })
-      }
-    } catch (error) {
-      logger.error("Error saving marks", { error })
+  const handleDownloadAssignmentAttachment = (assignment: TeacherAssignmentSummary) => {
+    if (!assignment.resourceUrl) {
       toast({
         variant: "destructive",
-        title: "Error saving marks",
-        description: "Please try again or contact the administrator if the issue persists.",
+        title: "No attachment",
+        description: "This assignment does not have an attachment to download.",
       })
+      return
+    }
+
+    const runtime = getBrowserRuntime()
+    if (!runtime?.document) {
+      toast({
+        variant: "destructive",
+        title: "Download unavailable",
+        description: "Attachments can only be downloaded in a browser environment.",
+      })
+      return
+    }
+
+    const link = runtime.document.createElement("a")
+    link.href = assignment.resourceUrl
+    link.download = assignment.resourceName || `${assignment.title}.attachment`
+    runtime.document.body?.appendChild(link)
+    link.click()
+    runtime.document.body?.removeChild(link)
+  }
+
+  const handleCreateAssignment = async () => {
+    if (!assignmentForm.title || !assignmentForm.subject || !assignmentForm.className || !assignmentForm.dueDate) {
+      toast({
+        variant: "destructive",
+        title: "Incomplete details",
+        description: "Please provide the title, subject, class, and due date for the assignment.",
+      })
+      return
+    }
+
+    try {
+      setIsCreatingAssignment(true)
+      let attachmentData: string | null = null
+      let attachmentType: string | null = null
+      let attachmentSize: number | null = null
+      let attachmentName: string | null = null
+
+      if (assignmentForm.file) {
+        attachmentData = await readFileAsDataUrl(assignmentForm.file)
+        attachmentType = assignmentForm.file.type || "application/octet-stream"
+        attachmentSize = assignmentForm.file.size
+        attachmentName = assignmentForm.file.name
+      }
+
+      const response = await fetch("/api/assignments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: assignmentForm.title.trim(),
+          description: assignmentForm.description.trim(),
+          subject: assignmentForm.subject,
+          classId: null,
+          className: assignmentForm.className,
+          teacherId: teacher.id,
+          teacherName: teacher.name,
+          dueDate: assignmentForm.dueDate,
+          attachmentName,
+          attachmentSize,
+          attachmentType,
+          attachmentData,
+        }),
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
+        throw new Error(typeof payload.error === "string" ? payload.error : "Failed to create assignment")
+      }
+
+      toast({
+        title: "Assignment created",
+        description: "Students can now view the assignment details.",
+      })
+
+      setShowCreateAssignment(false)
+      setAssignmentForm({
+        title: "",
+        description: "",
+        dueDate: "",
+        subject: teacher.subjects[0] ?? "",
+        className: teacher.classes[0] ?? "",
+        file: null,
+      })
+
+      void loadAssignments()
+    } catch (error) {
+      logger.error("Failed to create assignment", { error })
+      toast({
+        variant: "destructive",
+        title: "Unable to create assignment",
+        description: error instanceof Error ? error.message : "Please try again or contact the administrator.",
+      })
+    } finally {
+      setIsCreatingAssignment(false)
     }
   }
 
-  const handleCreateAssignment = () => {
-    // In real implementation, this would save to database
-    setShowCreateAssignment(false)
-    setAssignmentForm({
-      title: "",
-      description: "",
-      dueDate: "",
-      subject: "",
-      class: "",
-      file: null,
-    })
-  }
-
-  const handleViewSubmissions = (assignment: AssignmentSummary) => {
+  const handleViewSubmissions = (assignment: TeacherAssignmentSummary) => {
     setSelectedAssignment(assignment)
     setShowSubmissions(true)
   }
@@ -1505,27 +1559,62 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {mockAssignments.map((assignment) => (
-                  <div key={assignment.id} className="flex justify-between items-center p-4 border rounded-lg">
-                    <div>
-                      <h3 className="font-medium">{assignment.title}</h3>
-                      <p className="text-sm text-gray-600">
-                        {assignment.subject} - {assignment.class}
-                      </p>
-                      <p className="text-sm text-gray-500">Due: {assignment.dueDate}</p>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Badge variant="outline">
-                        {assignment.submissions}/{assignment.totalStudents} submitted
-                      </Badge>
-                      <Button size="sm" variant="outline" onClick={() => handleViewSubmissions(assignment)}>
-                        View Submissions
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {isAssignmentsLoading ? (
+                <div className="flex items-center justify-center py-8 text-gray-500">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading assignments...
+                </div>
+              ) : assignments.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
+                  No assignments created yet. Click "Create Assignment" to share work with your students.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {assignments.map((assignment) => {
+                    const submittedCount = assignment.submissions.filter((submission) =>
+                      ["submitted", "graded"].includes(submission.status),
+                    ).length
+                    const totalAssigned = assignment.assignedStudentIds.length || assignment.submissions.length
+
+                    return (
+                      <div
+                        key={assignment.id}
+                        className="flex flex-col gap-3 rounded-lg border p-4 md:flex-row md:items-center md:justify-between"
+                      >
+                        <div>
+                          <h3 className="font-medium text-[#2d682d]">{assignment.title}</h3>
+                          <p className="text-sm text-gray-600">
+                            {assignment.subject} • {assignment.className}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Due: {formatExamDate(assignment.dueDate)}
+                            {assignment.updatedAt ? ` • Updated ${formatExamDate(assignment.updatedAt)}` : ""}
+                          </p>
+                          {assignment.description && (
+                            <p className="mt-1 text-xs text-gray-500 line-clamp-2">{assignment.description}</p>
+                          )}
+                          {assignment.resourceName && (
+                            <button
+                              type="button"
+                              className="mt-2 text-xs text-[#2d682d] underline"
+                              onClick={() => handleDownloadAssignmentAttachment(assignment)}
+                            >
+                              Download attachment ({assignment.resourceName})
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-start gap-2 md:items-end">
+                          <Badge variant="outline">
+                            {submittedCount}/{totalAssigned || "--"} submitted
+                          </Badge>
+                          <Button size="sm" variant="outline" onClick={() => handleViewSubmissions(assignment)}>
+                            View Submissions
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1602,7 +1691,13 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               <CardDescription>Upload and manage study materials for your students</CardDescription>
             </CardHeader>
             <CardContent>
-              <StudyMaterials userRole="teacher" teacherName={teacher.name} />
+              <StudyMaterials
+                userRole="teacher"
+                teacherName={teacher.name}
+                teacherId={teacher.id}
+                availableSubjects={teacher.subjects}
+                availableClasses={teacher.classes}
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -1665,8 +1760,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               <div>
                 <Label htmlFor="class">Class</Label>
                 <Select
-                  value={assignmentForm.class}
-                  onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, class: value }))}
+                  value={assignmentForm.className}
+                  onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, className: value }))}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select class" />
@@ -1703,8 +1798,13 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             <Button variant="outline" onClick={() => setShowCreateAssignment(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreateAssignment} className="bg-[#2d682d] hover:bg-[#2d682d]/90">
-              Create Assignment
+            <Button
+              onClick={handleCreateAssignment}
+              disabled={isCreatingAssignment}
+              className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+            >
+              {isCreatingAssignment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {isCreatingAssignment ? "Creating..." : "Create Assignment"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1716,41 +1816,50 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           <DialogHeader>
             <DialogTitle>Assignment Submissions - {selectedAssignment?.title}</DialogTitle>
             <DialogDescription>
-              {selectedAssignment?.subject} - {selectedAssignment?.class}
+              {selectedAssignment?.subject} - {selectedAssignment?.className}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {mockSubmissions.map((submission) => (
-              <div key={submission.id} className="flex justify-between items-center p-4 border rounded-lg">
-                <div>
-                  <h3 className="font-medium">{submission.studentName}</h3>
-                  <p className="text-sm text-gray-600">
-                    Status:{" "}
-                    <Badge variant={submission.status === "submitted" ? "default" : "secondary"}>
-                      {submission.status}
+            {selectedAssignment?.submissions && selectedAssignment.submissions.length > 0 ? (
+              selectedAssignment.submissions.map((submission) => (
+                <div
+                  key={submission.id}
+                  className="flex flex-col gap-3 rounded-lg border p-4 md:flex-row md:items-center md:justify-between"
+                >
+                  <div>
+                    <h3 className="font-medium">Student ID: {submission.studentId}</h3>
+                    <p className="text-sm text-gray-600">
+                      Status:{" "}
+                      <Badge variant={submission.status === "submitted" ? "default" : "secondary"}>
+                        {submission.status}
+                      </Badge>
+                    </p>
+                    {submission.submittedAt && (
+                      <p className="text-xs text-gray-500">
+                        Submitted: {formatExamDate(submission.submittedAt)}
+                      </p>
+                    )}
+                    {submission.comment && (
+                      <p className="text-xs text-gray-500">Comment: {submission.comment}</p>
+                    )}
+                    {submission.files && submission.files.length > 0 && (
+                      <p className="text-xs text-blue-600">
+                        File: {submission.files.map((file) => file.name).join(", ")}
+                      </p>
+                    )}
+                  </div>
+                  {submission.grade && (
+                    <Badge variant="outline" className="self-start md:self-center">
+                      Grade: {submission.grade}
                     </Badge>
-                  </p>
-                  {submission.submissionDate && (
-                    <p className="text-sm text-gray-500">Submitted: {submission.submissionDate}</p>
-                  )}
-                  {submission.file && <p className="text-sm text-blue-600">File: {submission.file}</p>}
-                </div>
-                <div className="flex space-x-2">
-                  {submission.file && (
-                    <Button size="sm" variant="outline">
-                      <Download className="w-4 h-4 mr-1" />
-                      Download
-                    </Button>
-                  )}
-                  {submission.status === "submitted" && (
-                    <Button size="sm" variant="outline">
-                      <Edit className="w-4 h-4 mr-1" />
-                      Grade
-                    </Button>
                   )}
                 </div>
+              ))
+            ) : (
+              <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
+                No submissions have been received for this assignment yet.
               </div>
-            ))}
+            )}
           </div>
           <DialogFooter>
             <Button onClick={() => setShowSubmissions(false)}>Close</Button>

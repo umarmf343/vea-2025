@@ -16,6 +16,16 @@ import { Bell, BookOpen, Calendar, Edit, Loader2, Pin, Plus, Trash2, Users } fro
 import { logger } from "@/lib/logger"
 import { useToast } from "@/hooks/use-toast"
 
+type BrowserRuntime = typeof globalThis & Partial<Window>
+
+const getBrowserRuntime = (): BrowserRuntime | null => {
+  if (typeof globalThis === "undefined") {
+    return null
+  }
+
+  return globalThis as BrowserRuntime
+}
+
 interface Notice {
   id: string
   title: string
@@ -207,6 +217,20 @@ export function Noticeboard({ userRole, userName }: NoticeboardProps) {
 
   const canCreateNotice = userRole === "admin" || userRole === "teacher"
 
+  const canModifyNotice = useCallback(
+    (notice: Notice) => {
+      if (!canCreateNotice || typeof userName !== "string") {
+        return false
+      }
+
+      const authorName = notice.author?.trim().toLowerCase() ?? ""
+      const currentUserName = userName.trim().toLowerCase()
+
+      return currentUserName.length > 0 && authorName === currentUserName
+    },
+    [canCreateNotice, userName],
+  )
+
   const resolveNoticeState = useCallback(
     (notice: Notice): Notice["status"] => {
       if (notice.status === "draft") {
@@ -355,6 +379,15 @@ export function Noticeboard({ userRole, userName }: NoticeboardProps) {
       return
     }
 
+    if (!canModifyNotice(target)) {
+      toast({
+        variant: "destructive",
+        title: "Permission denied",
+        description: "You can only pin or unpin notices that you created.",
+      })
+      return
+    }
+
     try {
       const response = await fetch(`/api/noticeboard/${id}`, {
         method: "PATCH",
@@ -379,6 +412,15 @@ export function Noticeboard({ userRole, userName }: NoticeboardProps) {
   }
 
   const handleStartEdit = (notice: Notice) => {
+    if (!canModifyNotice(notice)) {
+      toast({
+        variant: "destructive",
+        title: "Permission denied",
+        description: "You can only edit notices that you created.",
+      })
+      return
+    }
+
     setEditingNotice(notice)
     setEditForm({
       title: notice.title,
@@ -392,6 +434,15 @@ export function Noticeboard({ userRole, userName }: NoticeboardProps) {
 
   const handleUpdateNotice = async () => {
     if (!editingNotice) {
+      return
+    }
+
+    if (!canModifyNotice(editingNotice)) {
+      toast({
+        variant: "destructive",
+        title: "Permission denied",
+        description: "You can only update notices that you created.",
+      })
       return
     }
 
@@ -442,7 +493,19 @@ export function Noticeboard({ userRole, userName }: NoticeboardProps) {
   }
 
   const handleDeleteNotice = async (notice: Notice) => {
-    const confirmDelete = window.confirm(`Delete notice “${notice.title}”? This action cannot be undone.`)
+    if (!canModifyNotice(notice)) {
+      toast({
+        variant: "destructive",
+        title: "Permission denied",
+        description: "You can only delete notices that you created.",
+      })
+      return
+    }
+
+    const runtime = getBrowserRuntime()
+    const confirmDelete = runtime?.confirm
+      ? runtime.confirm(`Delete notice “${notice.title}”? This action cannot be undone.`)
+      : true
     if (!confirmDelete) {
       return
     }
@@ -695,30 +758,38 @@ export function Noticeboard({ userRole, userName }: NoticeboardProps) {
                         </CardDescription>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-[#2d682d] hover:text-[#1a4a1a]"
-                          onClick={() => handleStartEdit(notice)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-red-500 hover:text-red-600"
-                          onClick={() => handleDeleteNotice(notice)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-blue-500 hover:text-blue-600"
-                          onClick={() => togglePin(notice.id)}
-                        >
-                          <Pin className="h-4 w-4" />
-                        </Button>
+                        {canModifyNotice(notice) ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-[#2d682d] hover:text-[#1a4a1a]"
+                              onClick={() => handleStartEdit(notice)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-500 hover:text-red-600"
+                              onClick={() => handleDeleteNotice(notice)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-blue-500 hover:text-blue-600"
+                              onClick={() => togglePin(notice.id)}
+                            >
+                              <Pin className="h-4 w-4" />
+                            </Button>
+                          </>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-gray-500">
+                            View only
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </CardHeader>
@@ -769,34 +840,40 @@ export function Noticeboard({ userRole, userName }: NoticeboardProps) {
                           </span>
                         </CardDescription>
                       </div>
-                      {canCreateNotice && (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-[#2d682d] hover:text-[#1a4a1a]"
-                            onClick={() => handleStartEdit(notice)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-red-500 hover:text-red-600"
-                            onClick={() => handleDeleteNotice(notice)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => togglePin(notice.id)}
-                            className="text-[#b29032] hover:text-[#8a6b25]"
-                          >
-                            <Pin className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {canModifyNotice(notice) ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-[#2d682d] hover:text-[#1a4a1a]"
+                              onClick={() => handleStartEdit(notice)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-500 hover:text-red-600"
+                              onClick={() => handleDeleteNotice(notice)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => togglePin(notice.id)}
+                              className="text-[#b29032] hover:text-[#8a6b25]"
+                            >
+                              <Pin className="h-4 w-4" />
+                            </Button>
+                          </>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-gray-500">
+                            View only
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0">
@@ -833,34 +910,40 @@ export function Noticeboard({ userRole, userName }: NoticeboardProps) {
                         <span className="block">Published {publishedLabel}</span>
                       </CardDescription>
                     </div>
-                    {canCreateNotice && (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-[#2d682d] hover:text-[#1a4a1a]"
-                          onClick={() => handleStartEdit(notice)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-red-500 hover:text-red-600"
-                          onClick={() => handleDeleteNotice(notice)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => togglePin(notice.id)}
-                          className="text-gray-400 hover:text-[#b29032]"
-                        >
-                          <Pin className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {canModifyNotice(notice) ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-[#2d682d] hover:text-[#1a4a1a]"
+                            onClick={() => handleStartEdit(notice)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-500 hover:text-red-600"
+                            onClick={() => handleDeleteNotice(notice)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => togglePin(notice.id)}
+                            className="text-gray-400 hover:text-[#b29032]"
+                          >
+                            <Pin className="h-4 w-4" />
+                          </Button>
+                        </>
+                      ) : (
+                        <Badge variant="outline" className="text-xs text-gray-500">
+                          View only
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">

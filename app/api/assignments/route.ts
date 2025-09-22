@@ -26,7 +26,21 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { title, description, subject, classId, teacherId, dueDate, type } = body
+    const {
+      title,
+      description,
+      subject,
+      classId,
+      className,
+      teacherId,
+      teacherName,
+      dueDate,
+      type,
+      attachmentName,
+      attachmentSize,
+      attachmentType,
+      attachmentData,
+    } = body
 
     if (type === "submission") {
       const { assignmentId, studentId, files } = body
@@ -48,9 +62,20 @@ export async function POST(request: NextRequest) {
         description,
         subject,
         classId,
+        className,
         teacherId,
+        teacherName,
         dueDate,
-        status: "active",
+        status: "sent",
+        resourceName: attachmentName ?? null,
+        resourceSize:
+          typeof attachmentSize === "number"
+            ? attachmentSize
+            : attachmentSize
+              ? Number(attachmentSize)
+              : null,
+        resourceType: attachmentType ?? null,
+        resourceUrl: typeof attachmentData === "string" ? attachmentData : null,
       })
 
       return NextResponse.json({
