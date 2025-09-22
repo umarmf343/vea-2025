@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { CheckCircle, XCircle, Loader2 } from "lucide-react"
 import { safeStorage } from "@/lib/safe-storage"
+import { grantReportCardAccess, normalizeTermLabel } from "@/lib/report-card-access"
 import type { Viewport } from "next"
 
 export const viewport: Viewport = {
@@ -43,10 +44,31 @@ export default function PaymentCallback() {
         safeStorage.setItem("paymentSuccess", "true")
         safeStorage.setItem("paymentData", JSON.stringify(data.data))
 
-        const studentId = data.data.metadata?.student_id || "1" // Default to student 1 if not provided
-        const grantedAccess = JSON.parse(safeStorage.getItem("grantedAccess") || "{}")
-        grantedAccess[studentId] = true
-        safeStorage.setItem("grantedAccess", JSON.stringify(grantedAccess))
+        try {
+          const storedUser = safeStorage.getItem("vea_current_user")
+          if (storedUser) {
+            const parsedUser = JSON.parse(storedUser) as { id?: string; metadata?: Record<string, unknown> }
+            if (parsedUser?.id) {
+              const studentId = String(
+                data.data.metadata?.student_id ??
+                  (parsedUser.metadata?.linkedStudentId as string | undefined) ??
+                  "1",
+              )
+              const term = normalizeTermLabel(data.data.metadata?.term as string | undefined)
+              const session = (data.data.metadata?.session as string | undefined) ?? "2024/2025"
+
+              grantReportCardAccess({
+                parentId: parsedUser.id,
+                studentId,
+                term,
+                session,
+                grantedBy: "payment",
+              })
+            }
+          }
+        } catch (error) {
+          console.error("Unable to update report card access after payment:", error)
+        }
       } else {
         setVerificationStatus("failed")
       }

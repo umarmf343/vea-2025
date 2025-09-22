@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -46,6 +46,13 @@ import { toast } from "@/hooks/use-toast"
 import type { Viewport } from "next"
 import { SchoolCalendarManager } from "@/components/admin/school-calendar-manager"
 import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
+import {
+  grantReportCardAccess,
+  normalizeTermLabel,
+  REPORT_CARD_ACCESS_EVENT,
+  type ReportCardAccessRecord,
+  syncReportCardAccess,
+} from "@/lib/report-card-access"
 
 export const dynamic = "force-dynamic"
 export const viewport: Viewport = {
@@ -904,42 +911,18 @@ function ParentDashboard({ user }: { user: User }) {
   const [showReportCard, setShowReportCard] = useState(false)
   const [adminGrantedAccess, setAdminGrantedAccess] = useState(false)
   const [reportCardData, setReportCardData] = useState<any>(null)
+  const [academicPeriod, setAcademicPeriod] = useState({ term: "First Term", session: "2024/2025" })
 
-  useEffect(() => {
-    const paymentSuccess = safeStorage.getItem("paymentSuccess")
-    const grantedAccess = safeStorage.getItem("grantedAccess")
-
-    let accessGranted = false
-
-    if (paymentSuccess === "true") {
-      accessGranted = true
-      safeStorage.removeItem("paymentSuccess")
-    }
-
-    if (grantedAccess) {
-      const accessData = JSON.parse(grantedAccess)
-      if (accessData[user.id]) {
-        setAdminGrantedAccess(true)
-        accessGranted = true
-      }
-    }
-
-    if (accessGranted) {
-      setHasAccess(true)
-    }
-  }, [user.id])
-
-  const handlePaymentSuccess = () => {
-    const grantedAccess = JSON.parse(safeStorage.getItem("grantedAccess") || "{}")
-    grantedAccess[user.id] = true
-    safeStorage.setItem("grantedAccess", JSON.stringify(grantedAccess))
-
-    setHasAccess(true)
-    setShowPaymentModal(false)
-  }
+  const linkedStudentId =
+    typeof user.metadata?.linkedStudentId === "string"
+      ? user.metadata.linkedStudentId
+      : Array.isArray((user.metadata as { studentIds?: string[] })?.studentIds) &&
+          (user.metadata as { studentIds?: string[] })?.studentIds?.length
+        ? String((user.metadata as { studentIds?: string[] })?.studentIds?.[0])
+        : "1"
 
   const studentData = {
-    id: "1",
+    id: linkedStudentId,
     name: "John Doe",
     class: "10",
     section: "A",
@@ -949,6 +932,120 @@ function ParentDashboard({ user }: { user: User }) {
     phone: "+234 801 234 5678",
     email: "john.doe@student.vea.edu.ng",
     status: "active" as const,
+  }
+
+  const setAccessFromRecords = useCallback(
+    (records: ReportCardAccessRecord[], term?: string, session?: string) => {
+      const activeTerm = term ?? academicPeriod.term
+      const activeSession = session ?? academicPeriod.session
+      const matchingRecord = records
+        .filter((record) => record.term === activeTerm && record.session === activeSession)
+        .find((record) => record.parentId === user.id && record.studentId === studentData.id)
+
+      setHasAccess(Boolean(matchingRecord))
+      setAdminGrantedAccess(matchingRecord?.grantedBy === "manual")
+    },
+    [academicPeriod.session, academicPeriod.term, studentData.id, user.id],
+  )
+
+  useEffect(() => {
+    safeStorage.removeItem("grantedAccess")
+  }, [])
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const response = await fetch("/api/system/settings")
+        if (!response.ok) {
+          throw new Error("Unable to load settings")
+        }
+
+        const payload = (await response.json()) as {
+          settings?: { currentTerm?: string; academicYear?: string }
+        }
+
+        const term = normalizeTermLabel(payload.settings?.currentTerm ?? "First Term")
+        const session = payload.settings?.academicYear ?? "2024/2025"
+
+        setAcademicPeriod({ term, session })
+        const records = syncReportCardAccess(term, session)
+        setAccessFromRecords(records, term, session)
+      } catch (error) {
+        logger.error("Unable to load academic period", { error })
+        const records = syncReportCardAccess(academicPeriod.term, academicPeriod.session)
+        setAccessFromRecords(records)
+      }
+    }
+
+    void loadSettings()
+  }, [academicPeriod.session, academicPeriod.term, setAccessFromRecords])
+
+  useEffect(() => {
+    if (!academicPeriod.term || !academicPeriod.session) {
+      return
+    }
+
+    const paymentSuccess = safeStorage.getItem("paymentSuccess")
+    const paymentDataRaw = safeStorage.getItem("paymentData")
+
+    if (paymentSuccess === "true" && paymentDataRaw) {
+      try {
+        const paymentData = JSON.parse(paymentDataRaw) as { metadata?: Record<string, unknown> }
+        const studentId = String(paymentData.metadata?.student_id ?? studentData.id)
+        const term = normalizeTermLabel((paymentData.metadata?.term as string | undefined) ?? academicPeriod.term)
+        const session = (paymentData.metadata?.session as string | undefined) ?? academicPeriod.session
+
+        const updated = grantReportCardAccess({
+          parentId: user.id,
+          studentId,
+          term,
+          session,
+          grantedBy: "payment",
+        })
+        setAccessFromRecords(updated, term, session)
+      } catch (error) {
+        logger.error("Unable to process payment confirmation", { error })
+      } finally {
+        safeStorage.removeItem("paymentSuccess")
+      }
+    } else {
+      const records = syncReportCardAccess(academicPeriod.term, academicPeriod.session)
+      setAccessFromRecords(records)
+    }
+  }, [academicPeriod.session, academicPeriod.term, setAccessFromRecords, studentData.id, user.id])
+
+  useEffect(() => {
+    const globalScope = typeof globalThis === "undefined" ? undefined : (globalThis as Window)
+    if (!globalScope || typeof globalScope.addEventListener !== "function") {
+      return
+    }
+
+    const handleUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ records?: ReportCardAccessRecord[] }>).detail
+      if (!detail) {
+        return
+      }
+
+      const incoming = Array.isArray(detail.records) ? detail.records : []
+      setAccessFromRecords(incoming)
+    }
+
+    globalScope.addEventListener(REPORT_CARD_ACCESS_EVENT, handleUpdate as EventListener)
+    return () => {
+      globalScope.removeEventListener(REPORT_CARD_ACCESS_EVENT, handleUpdate as EventListener)
+    }
+  }, [setAccessFromRecords])
+
+  const handlePaymentSuccess = () => {
+    const updated = grantReportCardAccess({
+      parentId: user.id,
+      studentId: studentData.id,
+      term: academicPeriod.term,
+      session: academicPeriod.session,
+      grantedBy: "payment",
+    })
+    setAccessFromRecords(updated)
+    setShowPaymentModal(false)
   }
 
   const academicData = {
@@ -985,9 +1082,12 @@ function ParentDashboard({ user }: { user: User }) {
       try {
         const brandingInfo = getBrandingFromStorage()
 
-        const approvedReports = JSON.parse(safeStorage.getItem("approvedReports") || "[]")
+        const approvedReports = JSON.parse(safeStorage.getItem("approvedReports") || "[]") as string[]
+        const approvalKeys = [studentData.id, linkedStudentId, "1"].filter(
+          (value, index, array) => value && array.indexOf(value) === index,
+        )
 
-        if (!approvedReports.includes(studentData.id)) {
+        if (!approvalKeys.some((key) => approvedReports.includes(key))) {
           toast({
             variant: "destructive",
             title: "Report card pending approval",
@@ -996,13 +1096,10 @@ function ParentDashboard({ user }: { user: User }) {
           return
         }
 
-        const completeData = getCompleteReportCard(
-          Number.parseInt(studentData.id),
-          "JSS 1A",
-          "Mathematics",
-          "first",
-          "2024/2025",
-        )
+        const numericId = Number.parseInt(studentData.id, 10)
+        const completeData = Number.isNaN(numericId)
+          ? null
+          : getCompleteReportCard(numericId, "JSS 1A", "Mathematics", "first", "2024/2025")
 
         if (completeData) {
           setReportCardData(completeData)
@@ -1010,7 +1107,9 @@ function ParentDashboard({ user }: { user: User }) {
           return
         }
 
-        const data = await getStudentReportCardData(studentData.id, "First Term", "2024/2025")
+        const data =
+          getStudentReportCardData(studentData.id, "First Term", "2024/2025") ??
+          (studentData.id !== "1" ? getStudentReportCardData("1", "First Term", "2024/2025") : null)
 
         if (data && data.subjects && data.subjects.length > 0) {
           setReportCardData({

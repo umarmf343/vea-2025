@@ -852,14 +852,14 @@ export default function ExamManagement() {
               <CardTitle className="text-[#2d682d]">Exam Results Consolidation</CardTitle>
               <CardDescription>Track cumulative performance and publish assessments.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="md:col-span-2">
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_repeat(2,minmax(0,1fr))]">
+                <div className="flex flex-col gap-2 rounded-lg border border-[#2d682d]/15 bg-white p-4 shadow-sm">
                   <Label htmlFor="exam-select" className="text-sm font-medium text-gray-700">
                     Select Exam
                   </Label>
                   <Select value={selectedExamId} onValueChange={setSelectedExamId}>
-                    <SelectTrigger id="exam-select">
+                    <SelectTrigger id="exam-select" className="h-10">
                       <SelectValue placeholder="Choose an exam" />
                     </SelectTrigger>
                     <SelectContent>
@@ -870,23 +870,28 @@ export default function ExamManagement() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-gray-500">
+                    Switch between scheduled exams to consolidate marks for each subject.
+                  </p>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-sm font-medium text-gray-700">Average Score</Label>
-                  <div className="flex items-center gap-2 text-lg font-semibold">
-                    <BarChart3 className="w-4 h-4 text-[#2d682d]" />
+                <div className="rounded-lg border border-[#2d682d]/15 bg-[#f8faf5] p-4">
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Average Score</p>
+                  <div className="mt-2 flex items-center gap-2 text-xl font-semibold text-[#2d682d]">
+                    <BarChart3 className="w-5 h-5" />
                     {examResultsSummary ? `${examResultsSummary.average}%` : "--"}
                   </div>
+                  <p className="mt-1 text-xs text-gray-500">Overall performance across recorded students.</p>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-sm font-medium text-gray-700">Publication Status</Label>
-                  <Badge variant={allResultsPublished ? "success" : "secondary"} className="uppercase">
+                <div className="rounded-lg border border-[#2d682d]/15 bg-[#fdfaf4] p-4">
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Publication Status</p>
+                  <Badge variant={allResultsPublished ? "success" : "secondary"} className="mt-2 w-max uppercase">
                     {examResults.length === 0 ? "No results" : allResultsPublished ? "Published" : "Pending"}
                   </Badge>
+                  <p className="mt-1 text-xs text-gray-500">Results become visible to families once published.</p>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-3">
                 <Button
                   variant="outline"
                   size="sm"
@@ -920,7 +925,7 @@ export default function ExamManagement() {
                   No results recorded yet for this exam.
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-6">
                   {examResultsSummary && (
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       <Card className="bg-[#2d682d]/5">
@@ -1247,6 +1252,7 @@ export default function ExamManagement() {
                                     updateResultEntry(entry.id, { studentName: event.target.value })
                                   }
                                   placeholder="Student name"
+                                  className="h-9"
                                 />
                                 <Input
                                   value={entry.studentId}
@@ -1254,6 +1260,7 @@ export default function ExamManagement() {
                                     updateResultEntry(entry.id, { studentId: event.target.value })
                                   }
                                   placeholder="Student ID"
+                                  className="h-9"
                                 />
                               </div>
                             </TableCell>
@@ -1266,6 +1273,7 @@ export default function ExamManagement() {
                                 onChange={(event) =>
                                   updateResultEntry(entry.id, { ca1: event.target.value })
                                 }
+                                className="mx-auto h-9 w-20 text-center"
                               />
                             </TableCell>
                             <TableCell className="text-center">
@@ -1277,6 +1285,7 @@ export default function ExamManagement() {
                                 onChange={(event) =>
                                   updateResultEntry(entry.id, { ca2: event.target.value })
                                 }
+                                className="mx-auto h-9 w-20 text-center"
                               />
                             </TableCell>
                             <TableCell className="text-center">
@@ -1288,6 +1297,7 @@ export default function ExamManagement() {
                                 onChange={(event) =>
                                   updateResultEntry(entry.id, { assignment: event.target.value })
                                 }
+                                className="mx-auto h-9 w-20 text-center"
                               />
                             </TableCell>
                             <TableCell className="text-center">
@@ -1299,6 +1309,7 @@ export default function ExamManagement() {
                                 onChange={(event) =>
                                   updateResultEntry(entry.id, { exam: event.target.value })
                                 }
+                                className="mx-auto h-9 w-20 text-center"
                               />
                             </TableCell>
                             <TableCell className="text-center font-semibold text-[#2d682d]">
@@ -1315,6 +1326,7 @@ export default function ExamManagement() {
                                 onChange={(event) =>
                                   updateResultEntry(entry.id, { position: event.target.value })
                                 }
+                                className="mx-auto h-9 w-20 text-center"
                               />
                             </TableCell>
                             <TableCell>
@@ -1324,6 +1336,7 @@ export default function ExamManagement() {
                                   updateResultEntry(entry.id, { remarks: event.target.value })
                                 }
                                 rows={3}
+                                className="min-h-[90px]"
                                 placeholder="Optional remark"
                               />
                             </TableCell>

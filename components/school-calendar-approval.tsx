@@ -231,7 +231,13 @@ export function SchoolCalendarApprovalPanel() {
           )}
         </div>
 
-        <SchoolCalendarViewer role="super_admin" triggerText="Preview published calendar" />
+        <SchoolCalendarViewer
+          role="super_admin"
+          allowDraftPreview
+          triggerText={
+            calendar.status === "published" ? "Preview published calendar" : "Preview submitted calendar"
+          }
+        />
       </CardContent>
 
       <Dialog open={approvalDialogOpen} onOpenChange={setApprovalDialogOpen}>

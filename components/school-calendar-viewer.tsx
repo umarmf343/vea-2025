@@ -30,6 +30,7 @@ interface SchoolCalendarViewerProps {
   triggerText?: string
   role?: "parent" | "teacher" | "admin" | "super_admin"
   className?: string
+  allowDraftPreview?: boolean
 }
 
 const CATEGORY_STYLE: Record<CalendarCategory, string> = {
@@ -77,12 +78,19 @@ const roleMessage: Record<NonNullable<SchoolCalendarViewerProps["role"]>, string
   super_admin: "Final published view with full branding for quality assurance.",
 }
 
-export function SchoolCalendarViewer({ triggerText, role = "parent", className }: SchoolCalendarViewerProps) {
+export function SchoolCalendarViewer({
+  triggerText,
+  role = "parent",
+  className,
+  allowDraftPreview = false,
+}: SchoolCalendarViewerProps) {
   const calendar = useSchoolCalendar()
   const branding = useBranding()
   const [isOpen, setIsOpen] = useState(false)
 
   const isPublished = calendar.status === "published"
+  const canPreview = isPublished || allowDraftPreview
+  const isDraftPreview = allowDraftPreview && !isPublished
 
   const sortedEvents = useMemo(
     () =>
@@ -96,7 +104,14 @@ export function SchoolCalendarViewer({ triggerText, role = "parent", className }
   )
 
   const publishedAt = calendar.publishedAt ? formatDateDisplay(calendar.publishedAt) : null
-  const effectiveTriggerText = triggerText ?? "View School Calendar"
+  const statusBadge = isPublished
+    ? publishedAt
+      ? { label: `Published ${publishedAt}`, tone: "bg-emerald-100 text-emerald-800" }
+      : null
+    : allowDraftPreview
+      ? { label: "Awaiting publication", tone: "bg-amber-100 text-amber-800" }
+      : null
+  const effectiveTriggerText = triggerText ?? (isDraftPreview ? "Preview submitted calendar" : "View School Calendar")
 
   return (
     <Card className={cn("border-[#2d682d]/20", className)}>
@@ -114,9 +129,9 @@ export function SchoolCalendarViewer({ triggerText, role = "parent", className }
           <Badge variant="outline" className="border-[#2d682d]/30 text-[#2d682d]">
             {calendar.term} • {calendar.session}
           </Badge>
-          {isPublished && publishedAt && (
-            <Badge className="bg-emerald-100 text-emerald-800">
-              <Megaphone className="mr-1 h-3 w-3" /> Published {publishedAt}
+          {statusBadge && (
+            <Badge className={statusBadge.tone}>
+              <Megaphone className="mr-1 h-3 w-3" /> {statusBadge.label}
             </Badge>
           )}
         </div>
@@ -126,12 +141,12 @@ export function SchoolCalendarViewer({ triggerText, role = "parent", className }
           <Button
             className="bg-[#2d682d] text-white hover:bg-[#1a4a1a]"
             onClick={() => setIsOpen(true)}
-            disabled={!isPublished}
+            disabled={!canPreview}
           >
             <Sparkles className="mr-2 h-4 w-4" />
             {effectiveTriggerText}
           </Button>
-          {!isPublished && (
+          {!isPublished && !allowDraftPreview && (
             <span className="text-sm text-gray-500">
               Calendar will appear once the administrator publishes the latest schedule.
             </span>
@@ -139,7 +154,7 @@ export function SchoolCalendarViewer({ triggerText, role = "parent", className }
         </div>
       </CardContent>
 
-      <Dialog open={isOpen && isPublished} onOpenChange={setIsOpen}>
+      <Dialog open={isOpen && canPreview} onOpenChange={setIsOpen}>
         <DialogContent className="max-w-4xl overflow-hidden p-0">
           <DialogHeader className="sr-only">
             <DialogTitle>{branding.schoolName ?? "Victory Educational Academy"} School Calendar</DialogTitle>
@@ -169,6 +184,13 @@ export function SchoolCalendarViewer({ triggerText, role = "parent", className }
               </div>
             </div>
           </div>
+
+          {isDraftPreview && (
+            <div className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-sm text-amber-800">
+              This is a preview of the submitted calendar. Publishing will make these updates visible to parents and
+              teachers.
+            </div>
+          )}
 
           <div className="space-y-6 p-6">
             {sortedEvents.length === 0 ? (
