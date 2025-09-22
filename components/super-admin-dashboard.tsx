@@ -63,6 +63,7 @@ import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
 import {
   BarChart3,
   Calendar,
+  CreditCard,
   Download,
   Edit,
   GraduationCap,
@@ -75,6 +76,7 @@ import {
   TrendingUp,
   Users,
   DollarSign,
+  Wallet,
   X,
 } from "lucide-react"
 
@@ -160,16 +162,26 @@ interface SystemSettingsState {
   reportCardDeadline: string
 }
 
+type PaymentStatus = "pending" | "completed" | "failed"
+type PaymentMethod = "online" | "offline"
+type PaymentSource = "api" | "accountant"
+
 interface PaymentRow {
   id: string
   studentId: string | null
   studentName: string
+  parentName: string | null
+  className: string | null
   amount: number
-  status: "pending" | "completed" | "failed"
+  status: PaymentStatus
+  method: PaymentMethod
   reference: string
   paymentType: string
   email: string
   updatedAt: string
+  createdAt?: string | null
+  source: PaymentSource
+  hasAccess?: boolean
 }
 
 interface ReportCardRow extends Omit<ReportCardRecord, "subjects"> {
@@ -355,17 +367,134 @@ function mapSystemSettings(record: SystemSettingsRecord): SystemSettingsState {
   }
 }
 
+function normalizePaymentStatus(status?: string | null): PaymentStatus {
+  const value = (status ?? "").toString().toLowerCase()
+  if (value === "completed" || value === "success" || value === "successful" || value === "paid") {
+    return "completed"
+  }
+  if (value === "failed" || value === "declined" || value === "reversed") {
+    return "failed"
+  }
+  return "pending"
+}
+
+function inferPaymentMethod(
+  metadata?: Record<string, unknown> | null,
+  fallback?: string | null,
+): PaymentMethod {
+  const method = (metadata?.method as string | undefined) ?? fallback ?? ""
+  return method.toLowerCase() === "offline" ? "offline" : "online"
+}
+
+function extractMetadataString(
+  metadata: Record<string, unknown> | null | undefined,
+  keys: string[],
+  defaultValue: string | null = null,
+): string | null {
+  for (const key of keys) {
+    const value = metadata?.[key]
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value
+    }
+  }
+  return defaultValue
+}
+
+function getPaymentKey(record: { reference?: string | null; id: string }): string {
+  const reference = typeof record.reference === "string" ? record.reference.trim() : ""
+  return reference.length > 0 ? reference.toLowerCase() : record.id.toLowerCase()
+}
+
+function mergePaymentRows(base: PaymentRow[], additions: PaymentRow[]): PaymentRow[] {
+  if (!additions.length) {
+    return [...base]
+  }
+
+  const map = new Map<string, PaymentRow>()
+  const order: string[] = []
+
+  for (const record of base) {
+    const key = getPaymentKey(record)
+    if (!map.has(key)) {
+      order.push(key)
+    }
+    map.set(key, record)
+  }
+
+  for (const record of additions) {
+    const key = getPaymentKey(record)
+    if (!map.has(key)) {
+      order.push(key)
+    }
+    map.set(key, record)
+  }
+
+  return order
+    .map((key) => map.get(key))
+    .filter((record): record is PaymentRow => Boolean(record))
+}
+
 function mapPayment(record: PaymentInitializationRecord): PaymentRow {
+  const metadata = (record.metadata ?? {}) as Record<string, unknown>
+  const status = normalizePaymentStatus(record.status)
+  const method = inferPaymentMethod(metadata, (metadata.method as string | undefined) ?? null)
+  const updatedAt = record.updatedAt ?? record.createdAt ?? new Date().toISOString()
+  const parentName = extractMetadataString(metadata, ["parentName", "guardianName", "customerName"], null)
+  const className = extractMetadataString(metadata, ["className", "class", "classroom"], null)
+
   return {
     id: record.id,
     studentId: record.studentId,
-    studentName: record.metadata?.studentName ?? record.metadata?.student ?? "Unknown",
+    studentName: extractMetadataString(metadata, ["studentName", "student"], "Unknown") ?? "Unknown",
+    parentName,
+    className,
     amount: Number(record.amount ?? 0),
-    status: record.status,
+    status,
+    method,
     reference: record.reference,
-    paymentType: record.paymentType,
+    paymentType: record.paymentType ?? (metadata.paymentType as string) ?? "general",
     email: record.email,
-    updatedAt: record.updatedAt ?? record.createdAt,
+    updatedAt,
+    createdAt: record.createdAt ?? null,
+    source: "api",
+    hasAccess: Boolean((metadata.accessGranted as boolean | undefined) ?? metadata.hasAccess ?? false),
+  }
+}
+
+function mapManualPayment(entry: Record<string, unknown>): PaymentRow {
+  const rawStatus = typeof entry.status === "string" ? entry.status : undefined
+  const status = normalizePaymentStatus(rawStatus)
+  const method = inferPaymentMethod(entry as Record<string, unknown>, entry.method as string | undefined)
+  const reference =
+    typeof entry.reference === "string" && entry.reference.trim().length > 0
+      ? entry.reference
+      : String(entry.id ?? `manual-${Date.now()}`)
+  const dateSource =
+    typeof entry.updatedAt === "string"
+      ? entry.updatedAt
+      : typeof entry.date === "string"
+        ? entry.date
+        : typeof entry.createdAt === "string"
+          ? entry.createdAt
+          : undefined
+  const timestamp = dateSource ? new Date(dateSource).toISOString() : new Date().toISOString()
+
+  return {
+    id: String(entry.id ?? reference),
+    studentId: null,
+    studentName: typeof entry.studentName === "string" ? entry.studentName : "Unknown",
+    parentName: typeof entry.parentName === "string" ? entry.parentName : null,
+    className: typeof entry.className === "string" ? entry.className : null,
+    amount: Number(entry.amount ?? 0),
+    status,
+    method,
+    reference,
+    paymentType: typeof entry.paymentType === "string" ? entry.paymentType : "general",
+    email: typeof entry.email === "string" ? entry.email : "",
+    updatedAt: timestamp,
+    createdAt: timestamp,
+    source: "accountant",
+    hasAccess: Boolean(entry.hasAccess ?? status === "completed"),
   }
 }
 
@@ -495,12 +624,24 @@ export default function SuperAdminDashboard() {
 
   const refreshPayments = useCallback(async () => {
     const data = await fetchJson<{ payments: PaymentInitializationRecord[] }>("/api/payments/records")
-    const mapped = data.payments.map(mapPayment)
-    setPayments(mapped)
+    const apiPayments = data.payments.map(mapPayment)
 
-    safeStorage.setItem("payments", JSON.stringify(mapped))
+    let manualPayments: PaymentRow[] = []
+    try {
+      const stored = await dbManager.getPayments()
+      if (Array.isArray(stored)) {
+        manualPayments = stored.map((entry: any) => mapManualPayment(entry as Record<string, unknown>))
+      }
+    } catch (error) {
+      console.warn("Unable to load accountant payment entries", error)
+    }
 
-    dbManager.triggerEvent("paymentsUpdated", mapped)
+    const combined = mergePaymentRows(apiPayments, manualPayments)
+    setPayments(combined)
+
+    safeStorage.setItem("superAdminPayments", JSON.stringify(combined))
+
+    dbManager.triggerEvent("paymentsSynced", combined)
   }, [])
 
   const refreshReportCards = useCallback(async () => {
@@ -558,6 +699,20 @@ export default function SuperAdminDashboard() {
   }, [refreshAll, toast])
 
   useEffect(() => {
+    const handlePaymentsChange = () => {
+      void refreshPayments()
+    }
+
+    dbManager.on("paymentsUpdated", handlePaymentsChange)
+    dbManager.on("paymentCompleted", handlePaymentsChange)
+
+    return () => {
+      dbManager.off("paymentsUpdated", handlePaymentsChange)
+      dbManager.off("paymentCompleted", handlePaymentsChange)
+    }
+  }, [refreshPayments])
+
+  useEffect(() => {
     if (!systemSettings.currentTerm || !systemSettings.academicYear) {
       return
     }
@@ -587,6 +742,18 @@ export default function SuperAdminDashboard() {
     }
   }, [systemSettings.academicYear, systemSettings.currentTerm])
 
+  const sortedPayments = useMemo(() => {
+    const getTime = (value?: string | null) => {
+      if (!value) {
+        return 0
+      }
+      const parsed = new Date(value).getTime()
+      return Number.isNaN(parsed) ? 0 : parsed
+    }
+
+    return [...payments].sort((a, b) => getTime(b.updatedAt ?? b.createdAt) - getTime(a.updatedAt ?? a.createdAt))
+  }, [payments])
+
   const systemStats = useMemo(() => {
     const totalUsers = users.length
     const totalStudents = users.filter((user) => user.role === "student").length
@@ -613,6 +780,27 @@ export default function SuperAdminDashboard() {
       attendanceRate,
     }
   }, [metrics, payments, reportCards, users])
+
+  const paymentInsights = useMemo(() => {
+    const manual = payments.filter((payment) => payment.source === "accountant")
+    const online = payments.filter((payment) => payment.source === "api")
+
+    const manualTotal = manual
+      .filter((payment) => payment.status === "completed")
+      .reduce((sum, payment) => sum + payment.amount, 0)
+    const onlineTotal = online
+      .filter((payment) => payment.status === "completed")
+      .reduce((sum, payment) => sum + payment.amount, 0)
+
+    return {
+      manual,
+      manualCount: manual.length,
+      manualTotal,
+      onlineCount: online.length,
+      onlineTotal,
+      pendingFollowUps: payments.filter((payment) => payment.status !== "completed").length,
+    }
+  }, [payments])
 
   const sortedReportCards = useMemo(
     () => [...reportCards].sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")),
@@ -1039,8 +1227,11 @@ export default function SuperAdminDashboard() {
             <div class="section">
               <div><span class="label">Receipt No:</span> ${payment.reference}</div>
               <div><span class="label">Student:</span> ${payment.studentName}</div>
+              <div><span class="label">Parent:</span> ${payment.parentName ?? "—"}</div>
+              <div><span class="label">Class:</span> ${payment.className ?? "—"}</div>
               <div><span class="label">Amount:</span> ${formatCurrency(payment.amount)}</div>
               <div><span class="label">Status:</span> ${payment.status.toUpperCase()}</div>
+              <div><span class="label">Channel:</span> ${payment.method === "online" ? "Online" : "Manual (Accountant)"}</div>
               <div><span class="label">Updated:</span> ${formatDate(payment.updatedAt)}</div>
             </div>
             <p style="text-align: center; font-size: 12px; color: #6b7280;">Thank you for your payment.</p>
@@ -1066,8 +1257,12 @@ export default function SuperAdminDashboard() {
     const payload = {
       reference: payment.reference,
       studentName: payment.studentName,
+      parentName: payment.parentName,
+      className: payment.className,
       amount: payment.amount,
       status: payment.status,
+      method: payment.method,
+      source: payment.source,
       updatedAt: payment.updatedAt,
     }
 
@@ -1159,6 +1354,45 @@ export default function SuperAdminDashboard() {
                 </Card>
               </div>
 
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <Card className="border-[#2d682d]/20">
+                  <CardContent className="flex items-center justify-between p-4">
+                    <div>
+                      <p className="text-sm text-gray-600">Online Collections</p>
+                      <p className="text-2xl font-semibold text-[#2d682d]">
+                        {formatCurrency(paymentInsights.onlineTotal)}
+                      </p>
+                      <p className="text-xs text-gray-500">{paymentInsights.onlineCount} transactions</p>
+                    </div>
+                    <CreditCard className="h-8 w-8 text-[#2d682d]" />
+                  </CardContent>
+                </Card>
+                <Card className="border-[#b29032]/30">
+                  <CardContent className="flex items-center justify-between p-4">
+                    <div>
+                      <p className="text-sm text-gray-600">Manual Entries</p>
+                      <p className="text-2xl font-semibold text-[#b29032]">
+                        {formatCurrency(paymentInsights.manualTotal)}
+                      </p>
+                      <p className="text-xs text-gray-500">{paymentInsights.manualCount} accountant records</p>
+                    </div>
+                    <Wallet className="h-8 w-8 text-[#b29032]" />
+                  </CardContent>
+                </Card>
+                <Card className="border-amber-300/40">
+                  <CardContent className="flex items-center justify-between p-4">
+                    <div>
+                      <p className="text-sm text-gray-600">Pending Follow-ups</p>
+                      <p className="text-2xl font-semibold text-amber-600">
+                        {paymentInsights.pendingFollowUps}
+                      </p>
+                      <p className="text-xs text-gray-500">Awaiting confirmation or approval</p>
+                    </div>
+                    <RefreshCw className="h-8 w-8 text-amber-500" />
+                  </CardContent>
+                </Card>
+              </div>
+
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
                 <Card>
                   <CardHeader>
@@ -1173,16 +1407,29 @@ export default function SuperAdminDashboard() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Student</TableHead>
+                          <TableHead>Class</TableHead>
+                          <TableHead>Channel</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead className="text-right">Amount</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {payments.slice(0, 5).map((payment) => (
+                        {sortedPayments.slice(0, 5).map((payment) => (
                           <TableRow key={payment.id}>
                             <TableCell>
                               <div className="font-medium">{payment.studentName}</div>
                               <div className="text-xs text-gray-500">{formatDate(payment.updatedAt)}</div>
+                            </TableCell>
+                            <TableCell>{payment.className ?? "—"}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="flex items-center gap-1">
+                                {payment.method === "online" ? (
+                                  <CreditCard className="h-3 w-3" />
+                                ) : (
+                                  <Wallet className="h-3 w-3" />
+                                )}
+                                {payment.method === "online" ? "Online" : "Manual"}
+                              </Badge>
                             </TableCell>
                             <TableCell>
                               <Badge
@@ -1200,9 +1447,9 @@ export default function SuperAdminDashboard() {
                             <TableCell className="text-right">{formatCurrency(payment.amount)}</TableCell>
                           </TableRow>
                         ))}
-                        {!payments.length && (
+                        {!sortedPayments.length && (
                           <TableRow>
-                            <TableCell colSpan={3} className="text-center text-sm text-gray-500">
+                            <TableCell colSpan={5} className="text-center text-sm text-gray-500">
                               No payment records yet.
                             </TableCell>
                           </TableRow>
@@ -1260,6 +1507,42 @@ export default function SuperAdminDashboard() {
                   limit={6}
                   emptyState="No upcoming exams scheduled by administrators yet."
                 />
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <span>Manual Accounting Entries</span>
+                      <Badge variant="outline">{paymentInsights.manualCount}</Badge>
+                    </CardTitle>
+                    <CardDescription>Offline payments recorded from the accountant console.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {paymentInsights.manual.length ? (
+                      paymentInsights.manual.slice(0, 5).map((payment) => (
+                        <div key={payment.id} className="rounded-lg border border-[#b29032]/30 bg-[#fffaf2] p-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium text-[#2d682d]">{payment.studentName}</p>
+                              <p className="text-xs text-gray-500">
+                                {payment.className ?? "—"} • {formatDate(payment.updatedAt)}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="border-[#b29032]/60 text-[#b29032]">
+                              {formatCurrency(payment.amount)}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-gray-600">Parent: {payment.parentName ?? "—"}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500">No manual entries recorded yet.</p>
+                    )}
+                    {paymentInsights.manual.length > 5 && (
+                      <p className="text-xs text-gray-500">
+                        {paymentInsights.manual.length - 5} additional entries available in the receipts tab.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
 
               <Card>
@@ -1559,6 +1842,8 @@ export default function SuperAdminDashboard() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Student</TableHead>
+                    <TableHead>Class</TableHead>
+                    <TableHead>Channel</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Reference</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
@@ -1566,10 +1851,21 @@ export default function SuperAdminDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {payments.length ? (
-                    payments.map((payment) => (
+                  {sortedPayments.length ? (
+                    sortedPayments.map((payment) => (
                       <TableRow key={payment.id}>
                         <TableCell>{payment.studentName}</TableCell>
+                        <TableCell>{payment.className ?? "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="flex items-center gap-1">
+                            {payment.method === "online" ? (
+                              <CreditCard className="h-3 w-3" />
+                            ) : (
+                              <Wallet className="h-3 w-3" />
+                            )}
+                            {payment.method === "online" ? "Online" : "Manual"}
+                          </Badge>
+                        </TableCell>
                         <TableCell>
                           <Badge
                             variant={
@@ -1599,7 +1895,7 @@ export default function SuperAdminDashboard() {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-sm text-gray-500">
+                      <TableCell colSpan={7} className="text-center text-sm text-gray-500">
                         No payment records yet.
                       </TableCell>
                     </TableRow>

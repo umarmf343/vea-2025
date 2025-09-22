@@ -4013,6 +4013,103 @@ class DatabaseManager {
     return filterMap[classFilter]?.includes(studentClass) || false
   }
 
+  private normaliseClassIdentifier(value: unknown): string {
+    if (typeof value !== "string") {
+      return ""
+    }
+
+    return value.replace(/\s+/g, "").toLowerCase()
+  }
+
+  private resolveStudentClass(user: any): string | null {
+    const candidates = [
+      user?.class,
+      user?.className,
+      user?.classname,
+      user?.classroom,
+      user?.metadata?.className,
+      user?.metadata?.class,
+    ]
+
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim().length > 0) {
+        return candidate
+      }
+    }
+
+    return null
+  }
+
+  private normaliseAttendanceRecord(record: any) {
+    const present = Number(record?.present ?? record?.presentDays ?? 0)
+    const total = Number(record?.total ?? record?.totalDays ?? 0)
+    const absent = Number(record?.absent ?? record?.absentDays ?? Math.max(total - present, 0))
+    const percentage = Number.isFinite(record?.percentage)
+      ? Number(record.percentage)
+      : total > 0
+        ? Math.round((present / total) * 100)
+        : 0
+
+    return {
+      presentDays: present,
+      totalDays: total,
+      absentDays: absent,
+      percentage,
+      present,
+      total,
+      absent,
+    }
+  }
+
+  private deriveAcademicPercentage(record: any): number | null {
+    const directValues = [
+      record?.totalPercentage,
+      record?.percentage,
+      record?.total,
+      record?.totalScore,
+      record?.grandTotal,
+    ].filter((value) => typeof value === "number" && Number.isFinite(value)) as number[]
+
+    if (directValues.length > 0) {
+      return directValues[0]
+    }
+
+    const ca1 = Number(record?.firstCA ?? record?.ca1 ?? 0)
+    const ca2 = Number(record?.secondCA ?? record?.ca2 ?? 0)
+    const assignment = Number(record?.noteAssignment ?? record?.assignment ?? 0)
+    const exam = Number(record?.exam ?? 0)
+    const earned = ca1 + ca2 + assignment + exam
+
+    const obtainable = Number(record?.totalObtainable ?? record?.totalMarksObtainable ?? 100)
+
+    if (!Number.isFinite(earned) || earned <= 0) {
+      return null
+    }
+
+    const safeObtainable = Number.isFinite(obtainable) && obtainable > 0 ? obtainable : 100
+    return (earned / safeObtainable) * 100
+  }
+
+  private normaliseAcademicRecord(record: any) {
+    if (!record) {
+      return null
+    }
+
+    const subjectCandidate =
+      record.subject ?? record.subjectName ?? record.name ?? record.title ?? "Subject"
+    const subject = typeof subjectCandidate === "string" ? subjectCandidate : "Subject"
+    const percentage = this.deriveAcademicPercentage(record)
+
+    if (percentage === null) {
+      return null
+    }
+
+    return {
+      subject,
+      totalPercentage: Math.max(0, Math.min(100, Math.round(percentage))),
+    }
+  }
+
   async saveAnalyticsReport(reportData: any) {
     try {
       const reports = await this.getAllAnalyticsReports()
@@ -4056,7 +4153,31 @@ class DatabaseManager {
   async getStudentsByClass(className: string) {
     try {
       const users = await this.getAllUsers()
-      return users.filter((user: any) => user.role === "Student" && user.class === className)
+      const target = this.normaliseClassIdentifier(className)
+
+      if (!target) {
+        return []
+      }
+
+      return users
+        .filter((user: any) => {
+          const role = typeof user.role === "string" ? user.role.toLowerCase() : ""
+          if (role !== "student") {
+            return false
+          }
+
+          const resolvedClass = this.resolveStudentClass(user)
+          if (!resolvedClass) {
+            return false
+          }
+
+          return this.normaliseClassIdentifier(resolvedClass) === target
+        })
+        .map((user: any) => ({
+          ...user,
+          id: String(user.id ?? this.generateId("student")),
+          class: this.resolveStudentClass(user) ?? className,
+        }))
     } catch (error) {
       console.error("Error getting students by class:", error)
       throw error
@@ -4067,19 +4188,48 @@ class DatabaseManager {
     try {
       const marksKey = `marks_${studentId}`
       const marks = safeStorage.getItem(marksKey)
+      const normalisedRecords: Array<{ subject: string; totalPercentage: number }> = []
 
-      if (!marks) {
-        // Return sample data for demonstration
-        return [
-          { subject: "Mathematics", totalPercentage: 75 },
-          { subject: "English", totalPercentage: 82 },
-          { subject: "Science", totalPercentage: 68 },
-          { subject: "Social Studies", totalPercentage: 79 },
-          { subject: "French", totalPercentage: 71 },
-        ]
+      if (marks) {
+        try {
+          const parsed = JSON.parse(marks)
+          const values = Array.isArray(parsed) ? parsed : Object.values(parsed ?? {})
+          for (const entry of values) {
+            const normalised = this.normaliseAcademicRecord(entry)
+            if (normalised) {
+              normalisedRecords.push(normalised)
+            }
+          }
+        } catch (error) {
+          console.warn("Unable to parse stored academic data", error)
+        }
       }
 
-      return JSON.parse(marks)
+      if (normalisedRecords.length === 0) {
+        const examResults = this.ensureExamResults().filter((result) => result.studentId === studentId)
+        for (const result of examResults) {
+          const normalised = this.normaliseAcademicRecord({
+            subject: result.subject,
+            total: result.total ?? result.ca1 + result.ca2 + result.assignment + result.exam,
+            totalObtainable: 100,
+          })
+          if (normalised) {
+            normalisedRecords.push(normalised)
+          }
+        }
+      }
+
+      if (normalisedRecords.length > 0) {
+        return normalisedRecords
+      }
+
+      return [
+        { subject: "Mathematics", totalPercentage: 75 },
+        { subject: "English", totalPercentage: 82 },
+        { subject: "Science", totalPercentage: 68 },
+        { subject: "Social Studies", totalPercentage: 79 },
+        { subject: "French", totalPercentage: 71 },
+      ]
     } catch (error) {
       console.error("Error getting student academic data:", error)
       throw error
@@ -4097,22 +4247,24 @@ class DatabaseManager {
         const total = 180
         const percentage = Math.round((present / total) * 100)
 
-        const attendanceData = {
+        const attendanceData = this.normaliseAttendanceRecord({
           present,
           total,
           percentage,
           absent: total - present,
-        }
+        })
 
-        // Save generated data
         safeStorage.setItem(attendanceKey, JSON.stringify(attendanceData))
         return attendanceData
       }
 
-      return JSON.parse(attendance)
+      const parsed = JSON.parse(attendance)
+      const normalised = this.normaliseAttendanceRecord(parsed)
+      safeStorage.setItem(attendanceKey, JSON.stringify(normalised))
+      return normalised
     } catch (error) {
       console.error("Error getting student attendance:", error)
-      throw error
+      return this.normaliseAttendanceRecord({ present: 0, total: 0 })
     }
   }
 
@@ -4173,17 +4325,26 @@ class DatabaseManager {
     const attendance = safeStorage.getItem(attendanceKey)
 
     if (!attendance) {
-      const attendanceData = {
-        present: Math.floor(Math.random() * 20) + 80,
-        total: 100,
-        percentage: 0,
-      }
-      attendanceData.percentage = Math.round((attendanceData.present / attendanceData.total) * 100)
+      const present = Math.floor(Math.random() * 20) + 80
+      const total = 100
+      const attendanceData = this.normaliseAttendanceRecord({
+        present,
+        total,
+        percentage: Math.round((present / total) * 100),
+      })
       safeStorage.setItem(attendanceKey, JSON.stringify(attendanceData))
       return attendanceData
     }
 
-    return JSON.parse(attendance)
+    try {
+      const parsed = JSON.parse(attendance)
+      const normalised = this.normaliseAttendanceRecord(parsed)
+      safeStorage.setItem(attendanceKey, JSON.stringify(normalised))
+      return normalised
+    } catch (error) {
+      console.error("Error parsing attendance record", error)
+      return this.normaliseAttendanceRecord({ present: 0, total: 0 })
+    }
   }
 
   async getUpcomingEvents(): any[] {
@@ -4352,7 +4513,26 @@ class DatabaseManager {
       const studentIndex = users.findIndex((u: any) => u.id === studentId)
 
       if (studentIndex >= 0) {
+        const currentRecord = users[studentIndex]
+        const previousClass = this.resolveStudentClass(currentRecord)
+        if (previousClass) {
+          users[studentIndex].previousClass = previousClass
+        }
+
         users[studentIndex].class = promotionData.toClass
+        if ("className" in users[studentIndex]) {
+          users[studentIndex].className = promotionData.toClass
+        }
+
+        if (typeof users[studentIndex].metadata === "object" && users[studentIndex].metadata !== null) {
+          users[studentIndex].metadata = {
+            ...users[studentIndex].metadata,
+            className: promotionData.toClass,
+            class: promotionData.toClass,
+            lastPromotion: promotionData.promotedAt ?? new Date().toISOString(),
+          }
+        }
+
         users[studentIndex].session = promotionData.session
         users[studentIndex].promotedAt = promotionData.promotedAt
 
@@ -4378,6 +4558,66 @@ class DatabaseManager {
       console.error("Error saving batch promotion:", error)
       throw error
     }
+  }
+
+  private ensurePromotionAnalysesStorage() {
+    const raw = safeStorage.getItem("promotionAnalyses")
+    if (!raw) {
+      return []
+    }
+
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch (error) {
+      console.error("Error parsing promotion analyses from storage:", error)
+      return []
+    }
+  }
+
+  async getPromotionAnalyses(filters: { className?: string; session?: string } = {}) {
+    const analyses = this.ensurePromotionAnalysesStorage()
+    const normalisedClass = filters.className ? this.normaliseClassIdentifier(filters.className) : ""
+
+    return analyses.filter((entry: any) => {
+      const matchesClass =
+        !normalisedClass || this.normaliseClassIdentifier(entry.class ?? entry.className ?? "") === normalisedClass
+      const matchesSession = !filters.session || entry.session === filters.session
+      return matchesClass && matchesSession
+    })
+  }
+
+  async savePromotionAnalysis(analysisData: any) {
+    const analyses = this.ensurePromotionAnalysesStorage()
+    const now = new Date().toISOString()
+    const classLabel = analysisData.class ?? analysisData.className ?? analysisData.selectedClass ?? ""
+    const normalisedClass = this.normaliseClassIdentifier(classLabel)
+    const session = analysisData.session ?? analysisData.criteria?.currentSession ?? null
+
+    const existingIndex = analyses.findIndex(
+      (entry: any) =>
+        this.normaliseClassIdentifier(entry.class ?? entry.className ?? "") === normalisedClass &&
+        (!session || entry.session === session),
+    )
+
+    const record = {
+      ...analysisData,
+      id: existingIndex >= 0 ? analyses[existingIndex].id : this.generateId("promotion_analysis"),
+      class: classLabel,
+      session,
+      savedAt: existingIndex >= 0 ? analyses[existingIndex].savedAt ?? now : now,
+      updatedAt: now,
+    }
+
+    if (existingIndex >= 0) {
+      analyses[existingIndex] = { ...analyses[existingIndex], ...record }
+    } else {
+      analyses.push(record)
+    }
+
+    safeStorage.setItem("promotionAnalyses", JSON.stringify(analyses))
+    this.triggerEvent("promotionAnalysisSaved", record)
+    return record
   }
 }
 

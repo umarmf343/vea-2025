@@ -155,8 +155,8 @@ export function SchoolCalendarViewer({
       </CardContent>
 
       <Dialog open={isOpen && canPreview} onOpenChange={setIsOpen}>
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden p-0 sm:max-w-5xl">
-          <div className="flex max-h-[85vh] flex-col">
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0 sm:max-w-5xl">
+          <div className="flex max-h-[90vh] flex-col overflow-hidden">
             <DialogHeader className="sr-only">
               <DialogTitle>{branding.schoolName ?? "Victory Educational Academy"} School Calendar</DialogTitle>
               <DialogDescription>Published school calendar view</DialogDescription>

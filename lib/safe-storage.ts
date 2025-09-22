@@ -27,41 +27,46 @@ function resolveStorage(kind: StorageKind): Storage | null {
 }
 
 function createSafeStorage(kind: StorageKind): SafeStorage {
+  const memoryStore = new Map<string, string>()
+
   return {
     getItem: (key: string) => {
       const storage = resolveStorage(kind)
       if (!storage) {
-        return null
+        return memoryStore.get(key) ?? null
       }
 
       try {
-        return storage.getItem(key)
+        const value = storage.getItem(key)
+        return value ?? memoryStore.get(key) ?? null
       } catch (error) {
-        return null
+        return memoryStore.get(key) ?? null
       }
     },
     setItem: (key: string, value: string) => {
       const storage = resolveStorage(kind)
       if (!storage) {
+        memoryStore.set(key, value)
         return
       }
 
       try {
         storage.setItem(key, value)
       } catch (error) {
-        // Ignore storage quota errors
+        memoryStore.set(key, value)
       }
     },
     removeItem: (key: string) => {
       const storage = resolveStorage(kind)
       if (!storage) {
+        memoryStore.delete(key)
         return
       }
 
       try {
         storage.removeItem(key)
       } catch (error) {
-        // Ignore removal issues
+        memoryStore.delete(key)
       }
     },
   }

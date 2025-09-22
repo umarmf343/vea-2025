@@ -106,6 +106,8 @@ export function AutomaticPromotionSystem() {
         const academicData = await dbManager.getStudentAcademicData(student.id)
         const attendanceData = await dbManager.getStudentAttendance(student.id)
 
+        const currentClass = student.class ?? student.className ?? student.metadata?.className ?? selectedClass
+
         // Calculate academic average from all subjects
         const academicAverage =
           academicData.length > 0
@@ -114,18 +116,22 @@ export function AutomaticPromotionSystem() {
 
         // Calculate attendance rate
         const attendanceRate =
-          attendanceData.totalDays > 0 ? (attendanceData.presentDays / attendanceData.totalDays) * 100 : 0
+          typeof attendanceData?.percentage === "number"
+            ? attendanceData.percentage
+            : attendanceData?.totalDays > 0
+              ? (attendanceData.presentDays / attendanceData.totalDays) * 100
+              : 0
 
         // Determine promotion status
         let status: "eligible" | "review" | "repeat" = "eligible"
         let remarks = ""
-        let nextClass = getNextClass(student.class)
+        let nextClass = getNextClass(currentClass)
 
         if (academicAverage < promotionCriteria.minimumAverage) {
           if (academicAverage < 40) {
             status = "repeat"
-            nextClass = student.class // Stay in same class
             remarks = "Academic average below 40%"
+            nextClass = currentClass
           } else {
             status = "review"
             remarks = "Academic average below minimum requirement"
@@ -144,7 +150,7 @@ export function AutomaticPromotionSystem() {
         results.push({
           id: student.id,
           name: student.name,
-          currentClass: student.class,
+          currentClass: currentClass,
           nextClass,
           academicAverage: Math.round(academicAverage),
           attendanceRate: Math.round(attendanceRate),
@@ -213,21 +219,26 @@ export function AutomaticPromotionSystem() {
 
   // Helper function to determine next class
   const getNextClass = (currentClass: string): string => {
-    const classMap: { [key: string]: string } = {
-      "JSS 1A": "JSS 2A",
-      "JSS 1B": "JSS 2B",
-      "JSS 2A": "JSS 3A",
-      "JSS 2B": "JSS 3B",
-      "JSS 3A": "SS 1A",
-      "JSS 3B": "SS 1B",
-      "SS 1A": "SS 2A",
-      "SS 1B": "SS 2B",
-      "SS 2A": "SS 3A",
-      "SS 2B": "SS 3B",
-      "SS 3A": "Graduate",
-      "SS 3B": "Graduate",
+    if (!currentClass) {
+      return "Graduate"
     }
-    return classMap[currentClass] || currentClass
+
+    const classMap: { [key: string]: string } = {
+      JSS1A: "JSS 2A",
+      JSS1B: "JSS 2B",
+      JSS2A: "JSS 3A",
+      JSS2B: "JSS 3B",
+      JSS3A: "SS 1A",
+      JSS3B: "SS 1B",
+      SS1A: "SS 2A",
+      SS1B: "SS 2B",
+      SS2A: "SS 3A",
+      SS2B: "SS 3B",
+      SS3A: "Graduate",
+      SS3B: "Graduate",
+    }
+    const normalized = currentClass.replace(/\s+/g, "").toUpperCase()
+    return classMap[normalized] ?? currentClass
   }
 
   const getStatusColor = (status: string) => {
