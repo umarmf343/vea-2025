@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 
-import { listFeeStructures, upsertFeeStructure } from "@/lib/database"
+import { deleteFeeStructureRecord, listFeeStructures, upsertFeeStructure } from "@/lib/database"
 import { sanitizeInput } from "@/lib/security"
 
 export const runtime = "nodejs"
@@ -48,5 +48,27 @@ export async function POST(request: NextRequest) {
     console.error("Failed to update fee structure:", error)
     const message = error instanceof Error ? error.message : "Failed to update fee structure"
     return NextResponse.json({ error: message }, { status: 400 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const identifier = searchParams.get("id")
+
+    if (!identifier) {
+      return NextResponse.json({ error: "Fee structure ID is required" }, { status: 400 })
+    }
+
+    const deleted = await deleteFeeStructureRecord(identifier)
+
+    if (!deleted) {
+      return NextResponse.json({ error: "Fee structure not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Failed to delete fee structure:", error)
+    return NextResponse.json({ error: "Failed to delete fee structure" }, { status: 500 })
   }
 }

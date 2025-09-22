@@ -21,6 +21,7 @@ import {
   DollarSign,
   Download,
   Edit,
+  Loader2,
   Plus,
   Printer,
   Receipt,
@@ -30,12 +31,29 @@ import {
 } from "lucide-react"
 import { useBranding } from "@/hooks/use-branding"
 
+type BrowserRuntime = typeof globalThis & Partial<Window>
+
+const getBrowserRuntime = (): BrowserRuntime | null => {
+  if (typeof globalThis === "undefined") {
+    return null
+  }
+
+  return globalThis as BrowserRuntime
+}
+
 interface AccountantDashboardProps {
   accountant: {
     id: string
     name: string
     email: string
   }
+}
+
+interface ParentRecipient {
+  studentId: string
+  studentName: string
+  parentName: string
+  parentEmail: string
 }
 
 interface ApiPaymentRecord {
@@ -182,12 +200,25 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
   })
   const [updatingFee, setUpdatingFee] = useState(false)
   const [processingReceiptId, setProcessingReceiptId] = useState<string | null>(null)
+  const [editingFeeId, setEditingFeeId] = useState<string | null>(null)
+  const [deletingFeeId, setDeletingFeeId] = useState<string | null>(null)
+  const [sendDialogOpen, setSendDialogOpen] = useState(false)
+  const [feeToSend, setFeeToSend] = useState<FeeStructureEntry | null>(null)
+  const [parentOptions, setParentOptions] = useState<ParentRecipient[]>([])
+  const [selectedParentEmail, setSelectedParentEmail] = useState("")
+  const [isLoadingParents, setIsLoadingParents] = useState(false)
+  const [isSendingFee, setIsSendingFee] = useState(false)
 
   const feeFormTotal = useMemo(() => {
     return [feeForm.tuition, feeForm.development, feeForm.exam, feeForm.sports, feeForm.library]
       .map((value) => Number(value) || 0)
       .reduce((sum, value) => sum + value, 0)
   }, [feeForm])
+
+  const resetFeeForm = useCallback(() => {
+    setFeeForm({ className: "", tuition: "0", development: "0", exam: "0", sports: "0", library: "0" })
+    setEditingFeeId(null)
+  }, [])
 
   const loadFinancialData = useCallback(async () => {
     setLoading(true)
@@ -232,6 +263,19 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
     void loadFinancialData()
   }, [loadFinancialData])
 
+  const handleEditFeeStructure = useCallback((fee: FeeStructureEntry) => {
+    setFeeForm({
+      className: fee.className,
+      tuition: String(fee.tuition ?? 0),
+      development: String(fee.development ?? 0),
+      exam: String(fee.exam ?? 0),
+      sports: String(fee.sports ?? 0),
+      library: String(fee.library ?? 0),
+    })
+    setEditingFeeId(fee.id)
+    setShowFeeDialog(true)
+  }, [])
+
   const totalRevenue = useMemo(
     () => payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + payment.amount, 0),
     [payments],
@@ -241,6 +285,154 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
     () => payments.filter((payment) => payment.status === "pending").length,
     [payments],
   )
+
+  const handleDeleteFeeStructure = useCallback(
+    async (fee: FeeStructureEntry) => {
+      const runtime = getBrowserRuntime()
+      const confirmDelete = runtime?.confirm
+        ? runtime.confirm(`Remove fee structure for ${fee.className}? This action cannot be undone.`)
+        : true
+      if (!confirmDelete) {
+        return
+      }
+
+      setDeletingFeeId(fee.id)
+      setBanner(null)
+
+      try {
+        const response = await fetch(`/api/payments/fee-structure?id=${encodeURIComponent(fee.id)}`, {
+          method: "DELETE",
+        })
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => ({}))) as { error?: string }
+          throw new Error(payload.error ?? "Unable to delete fee structure")
+        }
+
+        setFeeStructure((previous) => previous.filter((entry) => entry.id !== fee.id))
+        setBanner({ type: "success", message: `${fee.className} fee structure deleted successfully.` })
+      } catch (error) {
+        console.error("Failed to delete fee structure:", error)
+        const message = error instanceof Error ? error.message : "Unable to delete fee structure"
+        setBanner({ type: "error", message })
+      } finally {
+        setDeletingFeeId(null)
+      }
+    },
+    [],
+  )
+
+  const loadParentsForClass = useCallback(async (className: string) => {
+    try {
+      setIsLoadingParents(true)
+      const response = await fetch(`/api/students?class=${encodeURIComponent(className)}`)
+
+      if (!response.ok) {
+        throw new Error("Unable to load parents for the selected class")
+      }
+
+      const payload = (await response.json()) as { students: Array<{ id: string; name: string; parentName: string; parentEmail: string }> }
+
+      const recipients: ParentRecipient[] = Array.isArray(payload.students)
+        ? payload.students
+            .filter((student) => Boolean(student.parentEmail))
+            .map((student) => ({
+              studentId: student.id,
+              studentName: student.name,
+              parentName: student.parentName,
+              parentEmail: student.parentEmail,
+            }))
+        : []
+
+      setParentOptions(recipients)
+      if (recipients.length === 1) {
+        setSelectedParentEmail(recipients[0]!.parentEmail)
+      }
+    } catch (error) {
+      console.error("Failed to load parents for class:", error)
+      setParentOptions([])
+      setBanner({
+        type: "error",
+        message: "Unable to load parents for the selected class. Please try again.",
+      })
+    } finally {
+      setIsLoadingParents(false)
+    }
+  }, [setBanner])
+
+  const handleOpenSendDialog = useCallback(
+    (fee: FeeStructureEntry) => {
+      setFeeToSend(fee)
+      setSelectedParentEmail("")
+      setParentOptions([])
+      setSendDialogOpen(true)
+      void loadParentsForClass(fee.className)
+    },
+    [loadParentsForClass],
+  )
+
+  const handleSendFeeStructure = useCallback(async () => {
+    if (!feeToSend) {
+      return
+    }
+
+    if (!selectedParentEmail) {
+      setBanner({ type: "error", message: "Select a parent to send the fee structure." })
+      return
+    }
+
+    const recipient = parentOptions.find((option) => option.parentEmail === selectedParentEmail)
+    if (!recipient) {
+      setBanner({ type: "error", message: "The selected parent could not be found." })
+      return
+    }
+
+    setIsSendingFee(true)
+    setBanner(null)
+
+    try {
+      const response = await fetch("/api/payments/fee-structure/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          feeId: feeToSend.id,
+          className: feeToSend.className,
+          parentEmail: recipient.parentEmail,
+          parentName: recipient.parentName,
+          studentName: recipient.studentName,
+          sentBy: accountant.name,
+          breakdown: {
+            tuition: feeToSend.tuition,
+            development: feeToSend.development,
+            exam: feeToSend.exam,
+            sports: feeToSend.sports,
+            library: feeToSend.library,
+            total: feeToSend.total,
+          },
+        }),
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string }
+        throw new Error(payload.error ?? "Unable to send fee structure")
+      }
+
+      setBanner({
+        type: "success",
+        message: `Fee structure sent to ${recipient.parentName}.`,
+      })
+      setSendDialogOpen(false)
+      setFeeToSend(null)
+      setParentOptions([])
+      setSelectedParentEmail("")
+    } catch (error) {
+      console.error("Failed to send fee structure:", error)
+      const message = error instanceof Error ? error.message : "Unable to send fee structure"
+      setBanner({ type: "error", message })
+    } finally {
+      setIsSendingFee(false)
+    }
+  }, [accountant.name, feeToSend, parentOptions, selectedParentEmail, setBanner])
 
   const ensureReceipt = useCallback(
     async (payment: PaymentRecord): Promise<ReceiptRecord | null> => {
@@ -305,7 +497,8 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
         return
       }
 
-      if (typeof window === "undefined") {
+      const runtime = getBrowserRuntime()
+      if (!runtime?.document || !runtime.URL?.createObjectURL) {
         console.log("Generated receipt", receipt)
         setBanner({ type: "success", message: "Receipt generated" })
         return
@@ -323,14 +516,14 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       }
 
       const blob = new Blob([JSON.stringify(receiptPayload, null, 2)], { type: "application/json" })
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement("a")
+      const url = runtime.URL.createObjectURL(blob)
+      const link = runtime.document.createElement("a")
       link.href = url
       link.download = `receipt-${receipt.receiptNumber.replace(/\W+/g, "-")}.json`
-      document.body.appendChild(link)
+      runtime.document.body?.appendChild(link)
       link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
+      runtime.document.body?.removeChild(link)
+      runtime.URL.revokeObjectURL(url)
       setBanner({ type: "success", message: "Receipt downloaded" })
     },
     [accountant.name, ensureReceipt],
@@ -391,7 +584,7 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       })
 
       setShowFeeDialog(false)
-      setFeeForm({ className: "", tuition: "0", development: "0", exam: "0", sports: "0", library: "0" })
+      resetFeeForm()
       setBanner({ type: "success", message: "Fee structure saved successfully." })
     } catch (error) {
       console.error("Failed to update fee structure:", error)
@@ -685,7 +878,13 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                 <CardTitle className="text-[#2d682d]">Fee Structure</CardTitle>
                 <CardDescription>Manage tuition and levies across classes</CardDescription>
               </div>
-              <Button className="bg-[#2d682d] hover:bg-[#2d682d]/90" onClick={() => setShowFeeDialog(true)}>
+              <Button
+                className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+                onClick={() => {
+                  resetFeeForm()
+                  setShowFeeDialog(true)
+                }}
+              >
                 <Edit className="mr-2 h-4 w-4" />
                 Update Structure
               </Button>
@@ -718,6 +917,28 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                       <div className="flex justify-between">
                         <span>Library</span>
                         <span>{formatCurrency(fee.library)}</span>
+                      </div>
+                      <div className="mt-4 flex flex-col gap-2 border-t pt-3 md:flex-row md:items-center md:justify-between">
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => handleEditFeeStructure(fee)}>
+                            <Edit className="mr-2 h-4 w-4" /> Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDeleteFeeStructure(fee)}
+                            disabled={deletingFeeId === fee.id}
+                          >
+                            {deletingFeeId === fee.id ? "Deleting..." : "Delete"}
+                          </Button>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+                          onClick={() => handleOpenSendDialog(fee)}
+                        >
+                          <Users className="mr-2 h-4 w-4" /> Send to Parent
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -784,10 +1005,18 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={showFeeDialog} onOpenChange={setShowFeeDialog}>
+      <Dialog
+        open={showFeeDialog}
+        onOpenChange={(open) => {
+          setShowFeeDialog(open)
+          if (!open) {
+            resetFeeForm()
+          }
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Update Fee Structure</DialogTitle>
+            <DialogTitle>{editingFeeId ? "Edit Fee Structure" : "Update Fee Structure"}</DialogTitle>
             <DialogDescription>Set fee amounts for each category</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -857,13 +1086,13 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
                 />
               </div>
               <div>
-                <Label>Total</Label>
+                <Label>Total Payable</Label>
                 <div className="rounded bg-gray-100 p-2 font-bold text-[#2d682d]">₦{feeFormTotal.toLocaleString()}</div>
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowFeeDialog(false)}>
+            <Button variant="outline" onClick={() => setShowFeeDialog(false)} disabled={updatingFee}>
               Cancel
             </Button>
             <Button
@@ -871,7 +1100,102 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
               className="bg-[#2d682d] hover:bg-[#2d682d]/90"
               disabled={updatingFee}
             >
-              {updatingFee ? "Saving..." : "Update Fee Structure"}
+              {updatingFee ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save Fee Structure
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={sendDialogOpen}
+        onOpenChange={(open) => {
+          setSendDialogOpen(open)
+          if (!open) {
+            setFeeToSend(null)
+            setParentOptions([])
+            setSelectedParentEmail("")
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Send Fee Structure to Parent</DialogTitle>
+            <DialogDescription>
+              {feeToSend
+                ? `Share the ${feeToSend.className} fee breakdown with a parent.`
+                : "Select a parent to receive the fee details."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="parent-select">Parent</Label>
+              {isLoadingParents ? (
+                <div className="flex items-center justify-center py-4 text-sm text-gray-500">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading parents...
+                </div>
+              ) : parentOptions.length > 0 ? (
+                <Select value={selectedParentEmail} onValueChange={setSelectedParentEmail}>
+                  <SelectTrigger id="parent-select">
+                    <SelectValue placeholder="Select a parent" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {parentOptions.map((parent) => (
+                      <SelectItem key={parent.parentEmail} value={parent.parentEmail}>
+                        {parent.parentName} — {parent.studentName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="rounded border border-dashed border-gray-300 p-3 text-sm text-gray-500">
+                  No parents found for this class yet.
+                </p>
+              )}
+            </div>
+            {feeToSend && (
+              <div className="rounded-lg border bg-gray-50 p-3 text-sm text-gray-600">
+                <p className="font-medium text-[#2d682d]">{feeToSend.className} Fee Summary</p>
+                <div className="mt-2 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Tuition</span>
+                    <span>{formatCurrency(feeToSend.tuition)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Development</span>
+                    <span>{formatCurrency(feeToSend.development)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Exam</span>
+                    <span>{formatCurrency(feeToSend.exam)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Sports</span>
+                    <span>{formatCurrency(feeToSend.sports)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Library</span>
+                    <span>{formatCurrency(feeToSend.library)}</span>
+                  </div>
+                  <div className="mt-2 flex justify-between border-t pt-2 font-medium text-[#2d682d]">
+                    <span>Total</span>
+                    <span>{formatCurrency(feeToSend.total)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSendDialogOpen(false)} disabled={isSendingFee}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+              onClick={() => void handleSendFeeStructure()}
+              disabled={isSendingFee || !feeToSend || parentOptions.length === 0}
+            >
+              {isSendingFee ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Send Fee Structure
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -962,9 +1286,10 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
             </Button>
             <Button
               onClick={() => {
-                if (typeof window !== "undefined" && selectedReceipt) {
-                  const printWindow = window.open("", "PRINT", "height=600,width=400")
-                  if (printWindow) {
+                const runtime = getBrowserRuntime()
+                if (runtime?.open && selectedReceipt) {
+                  const printWindow = runtime.open("", "PRINT", "height=600,width=400")
+                  if (printWindow && printWindow.document) {
                     const logoMarkup = resolvedLogo
                       ? `<div style="text-align:center;margin-bottom:12px;"><img src="${resolvedLogo}" alt="${resolvedSchoolName} logo" style="height:64px;object-fit:contain;" /></div>`
                       : `<h2 style="color:#2d682d;text-align:center;margin-bottom:4px;">${resolvedSchoolName}</h2>`

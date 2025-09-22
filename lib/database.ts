@@ -134,6 +134,24 @@ export interface UpsertFeeStructurePayload
   total?: number
 }
 
+export interface FeeStructureDeliveryRecord extends CollectionRecord {
+  feeId: string
+  className: string
+  parentName: string
+  parentEmail: string
+  studentName: string
+  sentBy: string
+  message: string
+  breakdown: {
+    tuition: number
+    development: number
+    exam: number
+    sports: number
+    library: number
+    total: number
+  }
+}
+
 export interface ReceiptRecord extends CollectionRecord {
   paymentId: string
   receiptNumber: string
@@ -404,6 +422,7 @@ const STORAGE_KEYS = {
   MARKS: "vea_marks",
   PAYMENTS: "vea_payment_initializations",
   FEE_STRUCTURE: "vea_fee_structure",
+  FEE_COMMUNICATIONS: "vea_fee_structure_communications",
   RECEIPTS: "vea_payment_receipts",
   NOTICES: "vea_noticeboard",
   TIMETABLES: "vea_class_timetables",
@@ -613,6 +632,10 @@ function createDefaultFeeStructures(): FeeStructureRecord[] {
     updatedAt: timestamp,
     ...entry,
   }))
+}
+
+function createDefaultFeeStructureDeliveries(): FeeStructureDeliveryRecord[] {
+  return []
 }
 
 function createDefaultReceipts(): ReceiptRecord[] {
@@ -2218,6 +2241,74 @@ export async function upsertFeeStructure(payload: UpsertFeeStructurePayload): Pr
   feeStructures[index] = updated
   persistCollection(STORAGE_KEYS.FEE_STRUCTURE, feeStructures)
   return deepClone(updated)
+}
+
+export async function deleteFeeStructureRecord(identifier: string): Promise<boolean> {
+  const feeStructures = ensureCollection<FeeStructureRecord>(STORAGE_KEYS.FEE_STRUCTURE, createDefaultFeeStructures)
+  const index = feeStructures.findIndex(
+    (entry) => entry.id === identifier || entry.className.toLowerCase() === identifier.toLowerCase(),
+  )
+
+  if (index === -1) {
+    return false
+  }
+
+  feeStructures.splice(index, 1)
+  persistCollection(STORAGE_KEYS.FEE_STRUCTURE, feeStructures)
+  return true
+}
+
+export async function recordFeeStructureDelivery(payload: {
+  feeId: string
+  className: string
+  parentName: string
+  parentEmail: string
+  studentName: string
+  sentBy: string
+  breakdown: {
+    tuition: number
+    development: number
+    exam: number
+    sports: number
+    library: number
+    total: number
+  }
+  message?: string
+}): Promise<FeeStructureDeliveryRecord> {
+  const deliveries = ensureCollection<FeeStructureDeliveryRecord>(
+    STORAGE_KEYS.FEE_COMMUNICATIONS,
+    createDefaultFeeStructureDeliveries,
+  )
+
+  const timestamp = new Date().toISOString()
+  const normalisedBreakdown = {
+    tuition: Number(payload.breakdown.tuition ?? 0),
+    development: Number(payload.breakdown.development ?? 0),
+    exam: Number(payload.breakdown.exam ?? 0),
+    sports: Number(payload.breakdown.sports ?? 0),
+    library: Number(payload.breakdown.library ?? 0),
+    total: Number(payload.breakdown.total ?? 0),
+  }
+
+  const record: FeeStructureDeliveryRecord = {
+    id: generateId("fee_delivery"),
+    feeId: payload.feeId,
+    className: payload.className.trim(),
+    parentName: payload.parentName.trim(),
+    parentEmail: payload.parentEmail.trim().toLowerCase(),
+    studentName: payload.studentName.trim(),
+    sentBy: payload.sentBy.trim(),
+    message:
+      (payload.message ?? `Fee structure for ${payload.className} sent to ${payload.parentName}.`).trim() ||
+      `Fee structure for ${payload.className} sent to ${payload.parentName}.`,
+    breakdown: normalisedBreakdown,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  deliveries.push(record)
+  persistCollection(STORAGE_KEYS.FEE_COMMUNICATIONS, deliveries)
+  return deepClone(record)
 }
 
 function generateReceiptNumber(timestamp: string): string {
