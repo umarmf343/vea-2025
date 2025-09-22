@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { AlertCircle, Edit, Plus, Trash2 } from "lucide-react"
+import { dbManager } from "@/lib/database-manager"
 
 interface ClassRecord {
   id: string
@@ -99,6 +100,16 @@ export function ClassSubjectManagement() {
 
   useEffect(() => {
     void loadData()
+
+    const handleRefresh = () => {
+      void loadData()
+    }
+
+    dbManager.on("classesRefreshed", handleRefresh)
+
+    return () => {
+      dbManager.off("classesRefreshed", handleRefresh)
+    }
   }, [loadData])
 
   const handleCreateClass = useCallback(async () => {

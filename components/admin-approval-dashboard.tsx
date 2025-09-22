@@ -16,8 +16,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Download, Check, X, Calendar, Clock, User, BookOpen, Youtube } from "lucide-react"
+import { Download, Check, X, Calendar, Clock, User, BookOpen } from "lucide-react"
 import { safeStorage } from "@/lib/safe-storage"
+import { TutorialLink } from "@/components/tutorial-link"
 
 interface StudentReportCard {
   studentId: string
@@ -202,15 +203,11 @@ export function AdminApprovalDashboard() {
             <h1 className="text-2xl font-bold">Report Card Approval Center</h1>
             <p className="text-white/90">Review and approve student report cards submitted by teachers</p>
           </div>
-          <a
+          <TutorialLink
             href="https://www.youtube.com/watch?v=ysz5S6PUM-U"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 self-start rounded-md bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-          >
-            <Youtube className="h-4 w-4" />
-            Tutorial
-          </a>
+            variant="inverse"
+            className="self-start text-white"
+          />
         </div>
       </div>
 

@@ -28,8 +28,8 @@ import {
   Search,
   TrendingUp,
   Users,
-  Youtube,
 } from "lucide-react"
+import { TutorialLink } from "@/components/tutorial-link"
 import { useBranding } from "@/hooks/use-branding"
 import { dbManager } from "@/lib/database-manager"
 
@@ -850,15 +850,7 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
             <h1 className="text-2xl font-bold">Welcome, {accountant.name}</h1>
             <p className="text-green-100">Financial Management - VEA 2025</p>
           </div>
-          <a
-            href="https://www.youtube.com/watch?v=6Dh-RL__uN4"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 self-start rounded-md bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-          >
-            <Youtube className="h-4 w-4" />
-            Tutorial
-          </a>
+          <TutorialLink href="https://www.youtube.com/watch?v=6Dh-RL__uN4" variant="inverse" />
         </div>
       </div>
 

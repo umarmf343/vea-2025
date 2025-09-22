@@ -17,9 +17,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { BookOpen, Calendar, FileText, User, Clock, Trophy, Upload, CheckCircle, Youtube } from "lucide-react"
+import { BookOpen, Calendar, FileText, User, Clock, Trophy, Upload, CheckCircle } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
+import { TutorialLink } from "@/components/tutorial-link"
+import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
 import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
 
@@ -326,15 +328,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
             <p className="text-green-100">Student Portal - {student.class} - VEA 2025</p>
             <p className="text-sm text-green-200">Admission No: {student.admissionNumber}</p>
           </div>
-          <a
-            href="https://www.youtube.com/watch?v=1FJD7jZqZEk"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 self-start rounded-md bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-          >
-            <Youtube className="h-4 w-4" />
-            Tutorial
-          </a>
+          <TutorialLink href="https://www.youtube.com/watch?v=1FJD7jZqZEk" variant="inverse" />
         </div>
       </div>
 
@@ -401,7 +395,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
             <Card>
               <CardHeader>
                 <CardTitle className="text-[#2d682d]">Academic Performance</CardTitle>
@@ -441,6 +435,16 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                 </div>
               </CardContent>
             </Card>
+
+            <ExamScheduleOverview
+              role="student"
+              title="Upcoming Exams"
+              description="Plan ahead with the latest exam schedule for your class."
+              classNames={[studentProfile.class]}
+              className="h-full"
+              emptyState="No upcoming exams scheduled for your class yet."
+              limit={4}
+            />
           </div>
 
           <div className="mt-8">

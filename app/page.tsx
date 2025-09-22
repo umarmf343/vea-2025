@@ -45,6 +45,8 @@ import { toast } from "@/hooks/use-toast"
 import type { Viewport } from "next"
 import { SchoolCalendarManager } from "@/components/admin/school-calendar-manager"
 import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
+import { TutorialLink } from "@/components/tutorial-link"
+import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
 import {
   grantReportCardAccess,
   normalizeTermLabel,
@@ -725,7 +727,13 @@ function AdminDashboard() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-[#2d682d]">Admin Dashboard</h2>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-[#2d682d]">Admin Dashboard</h2>
+          <p className="text-sm text-gray-600">Manage daily school operations and oversight</p>
+        </div>
+        <TutorialLink href="https://www.youtube.com/watch?v=ysz5S6PUM-U" />
+      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="w-full overflow-x-auto">
@@ -824,11 +832,12 @@ function AdminDashboard() {
         </div>
 
         <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div className="space-y-6 xl:col-span-2">
               <SystemOverview />
+              <ExamScheduleOverview role="admin" description="Track upcoming school-wide examinations" />
             </div>
-            <div>
+            <div className="space-y-6">
               <NotificationCenter userRole="admin" />
             </div>
           </div>
@@ -913,7 +922,7 @@ function ParentDashboard({ user }: { user: User }) {
   const studentData = {
     id: linkedStudentId,
     name: "John Doe",
-    class: "10",
+    class: "JSS 2A",
     section: "A",
     admissionNumber: "VEA2025001",
     dateOfBirth: "2008-05-15",
@@ -1286,6 +1295,12 @@ function ParentDashboard({ user }: { user: User }) {
                 </Button>
               </CardContent>
             </Card>
+
+            <ExamScheduleOverview
+              role="parent"
+              classNames={[studentData.class]}
+              description="Upcoming exams relevant to your child"
+            />
 
             <SchoolCalendarViewer role="parent" />
           </div>
