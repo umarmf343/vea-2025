@@ -22,6 +22,7 @@ import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
 import { TutorialLink } from "@/components/tutorial-link"
 import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
+import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
 import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
 
@@ -436,20 +437,21 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
               </CardContent>
             </Card>
 
-            <ExamScheduleOverview
-              role="student"
-              title="Upcoming Exams"
-              description="Plan ahead with the latest exam schedule for your class."
-              classNames={[studentProfile.class]}
-              className="h-full"
-              emptyState="No upcoming exams scheduled for your class yet."
-              limit={4}
-            />
-          </div>
+          <ExamScheduleOverview
+            role="student"
+            title="Upcoming Exams"
+            description="Plan ahead with the latest exam schedule for your class."
+            classNames={[studentProfile.class]}
+            className="h-full"
+            emptyState="No upcoming exams scheduled for your class yet."
+            limit={4}
+          />
+          <SchoolCalendarViewer role="student" className="md:col-span-2 xl:col-span-3" />
+        </div>
 
-          <div className="mt-8">
-            <Noticeboard userRole="student" userName={studentProfile.name} />
-          </div>
+        <div className="mt-8">
+          <Noticeboard userRole="student" userName={studentProfile.name} />
+        </div>
         </TabsContent>
 
         <TabsContent value="subjects" className="space-y-4">
