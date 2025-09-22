@@ -166,8 +166,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   useEffect(() => {
     setAssignmentForm((prev) => ({
       ...prev,
-      subject: prev.subject || teacher.subjects[0] ?? "",
-      className: prev.className || teacher.classes[0] ?? "",
+      subject: prev.subject || (teacher.subjects[0] ?? ""),
+      className: prev.className || (teacher.classes[0] ?? ""),
     }))
   }, [teacher.classes, teacher.subjects])
 
