@@ -1,10 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server"
+
 import { recordPaymentInitialization } from "@/lib/database"
 import { sanitizeInput } from "@/lib/security"
+import {
+  ensurePartnerSplitConfiguration,
+  getPaystackSecretKey,
+  REVENUE_PARTNER_DETAILS,
+} from "@/lib/paystack"
 
 export const runtime = "nodejs"
 
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "sk_test_your_secret_key_here"
+const PAYSTACK_SECRET_KEY = getPaystackSecretKey()
 
 function sanitizeMetadataInput(metadata: unknown): Record<string, unknown> {
   if (!metadata || typeof metadata !== "object") {
@@ -59,18 +65,42 @@ export async function POST(request: NextRequest) {
 
     sanitizedMetadata.payment_type = normalizedPaymentType
 
+    let splitConfiguration
+    try {
+      splitConfiguration = await ensurePartnerSplitConfiguration()
+    } catch (splitError) {
+      console.error("Failed to prepare Paystack split configuration:", splitError)
+      const message =
+        splitError instanceof Error && splitError.message
+          ? splitError.message
+          : "Unable to prepare payment split configuration"
+      return NextResponse.json({ status: false, message }, { status: 500 })
+    }
+
+    sanitizedMetadata.revenue_share = {
+      beneficiary: REVENUE_PARTNER_DETAILS.accountName,
+      account_number: REVENUE_PARTNER_DETAILS.accountNumber,
+      bank: REVENUE_PARTNER_DETAILS.bankName,
+      percentage: REVENUE_PARTNER_DETAILS.splitPercentage,
+      split_code: splitConfiguration.splitCode,
+      subaccount_code: splitConfiguration.subaccountCode,
+    }
+
+    const initializePayload: Record<string, unknown> = {
+      email: sanitizedEmail,
+      amount: amountInKobo,
+      metadata: sanitizedMetadata,
+      callback_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/payment/callback`,
+      split_code: splitConfiguration.splitCode,
+    }
+
     const response = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        email: sanitizedEmail,
-        amount: amountInKobo,
-        metadata: sanitizedMetadata,
-        callback_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/payment/callback`,
-      }),
+      body: JSON.stringify(initializePayload),
     })
 
     const data = await response.json()

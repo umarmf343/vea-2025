@@ -92,8 +92,10 @@ DATABASE_URL=mysql://username:password@localhost:3306/vea_portal
 JWT_SECRET=your-super-secret-jwt-key-here
 
 # Paystack Integration
-PAYSTACK_SECRET_KEY=sk_test_your_paystack_secret_key
-NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY=pk_test_your_paystack_public_key
+PAYSTACK_SECRET_KEY=sk_test_7dd51e291a986b6462d0f4198668ce07c296eb5d
+NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY=
+PAYSTACK_PARTNER_SUBACCOUNT_CODE=
+PAYSTACK_PARTNER_SPLIT_CODE=
 
 # App URL
 NEXT_PUBLIC_APP_URL=https://portal2.victoryeducationalacademy.com.ng

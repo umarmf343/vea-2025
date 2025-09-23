@@ -4,6 +4,7 @@
 
 ### 1. Environment Configuration
 - [ ] Replace test Paystack keys with live keys in `.env.local`
+- [ ] Confirm Paystack split configuration routes 1% to Umar Umar Muhammad (First Bank 3066490309)
 - [ ] Update `NEXT_PUBLIC_APP_URL` to production domain
 - [ ] Set `NODE_ENV=production`
 - [ ] Configure production database connection
