@@ -1,3 +1,5 @@
+import { calculateFinancialAnalytics, normaliseFinancialPeriodKey, normalisePaymentForAnalytics } from "./financial-analytics"
+import type { AnalyticsPayment, FinancialAnalyticsPeriod, FinancialAnalyticsSnapshot } from "./financial-analytics"
 import { deriveGradeFromScore } from "./grade-utils"
 import { safeStorage } from "./safe-storage"
 
@@ -2587,8 +2589,58 @@ class DatabaseManager {
     return data ? JSON.parse(data) : []
   }
 
+  private parseFinancialAnalyticsSnapshot(): FinancialAnalyticsSnapshot | null {
+    const stored = safeStorage.getItem("financialAnalytics")
+    if (!stored) {
+      return null
+    }
+
+    try {
+      const parsed = JSON.parse(stored) as FinancialAnalyticsSnapshot
+      if (!parsed || typeof parsed !== "object" || !parsed.periods) {
+        return null
+      }
+      return parsed
+    } catch (error) {
+      console.error("Error parsing financial analytics snapshot:", error)
+      return null
+    }
+  }
+
+  private getFinancialAnalyticsPeriod(period: string): FinancialAnalyticsPeriod | null {
+    const snapshot = this.parseFinancialAnalyticsSnapshot()
+    if (!snapshot) {
+      return null
+    }
+
+    const key = normaliseFinancialPeriodKey(period)
+    const resolved = snapshot.periods?.[key]
+    return resolved ?? null
+  }
+
+  async syncFinancialAnalytics(payments: unknown[]) {
+    try {
+      const normalised = payments
+        .map((payment) => normalisePaymentForAnalytics(payment))
+        .filter((payment): payment is AnalyticsPayment => Boolean(payment))
+
+      const snapshot = calculateFinancialAnalytics(normalised)
+      safeStorage.setItem("financialAnalytics", JSON.stringify(snapshot))
+      this.triggerEvent("financialAnalyticsUpdated", snapshot)
+      return snapshot
+    } catch (error) {
+      console.error("Error syncing financial analytics:", error)
+      throw error
+    }
+  }
+
   async getFeeCollectionData(period: string) {
     try {
+      const analytics = this.getFinancialAnalyticsPeriod(period)
+      if (analytics?.feeCollection) {
+        return analytics.feeCollection
+      }
+
       const key = `feeCollection_${period}`
       const data = safeStorage.getItem(key)
       return data
@@ -2607,6 +2659,15 @@ class DatabaseManager {
 
   async getClassWiseCollection(period: string, classFilter: string) {
     try {
+      const analytics = this.getFinancialAnalyticsPeriod(period)
+      if (analytics?.classCollection) {
+        const baseCollection = analytics.classCollection
+        if (classFilter && classFilter !== "all") {
+          return baseCollection.filter((item) => item.class === classFilter)
+        }
+        return baseCollection
+      }
+
       const key = `classCollection_${period}`
       const data = safeStorage.getItem(key)
       let classData = data
@@ -2652,12 +2713,22 @@ class DatabaseManager {
   }
 
   async getFeeDefaulters() {
+    const snapshot = this.parseFinancialAnalyticsSnapshot()
+    if (snapshot?.defaulters) {
+      return snapshot.defaulters
+    }
+
     const data = safeStorage.getItem("feeDefaulters")
     return data ? JSON.parse(data) : []
   }
 
   async getFinancialSummary(period: string) {
     try {
+      const analytics = this.getFinancialAnalyticsPeriod(period)
+      if (analytics?.summary) {
+        return analytics.summary
+      }
+
       const key = `financialSummary_${period}`
       const data = safeStorage.getItem(key)
       return data
@@ -2686,6 +2757,11 @@ class DatabaseManager {
   }
 
   getFinancialSummary(): any {
+    const analytics = this.getFinancialAnalyticsPeriod("current-term")
+    if (analytics?.summary) {
+      return analytics.summary
+    }
+
     const key = "financialSummary"
     const data = safeStorage.getItem(key)
     return data ? JSON.parse(data) : {}

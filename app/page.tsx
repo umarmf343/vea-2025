@@ -66,6 +66,12 @@ type UserRole = "super-admin" | "admin" | "teacher" | "student" | "parent" | "li
 
 const SELECTABLE_LOGIN_ROLES: readonly UserRole[] = ["teacher", "student", "parent"]
 
+const CONTACT_DEVELOPER_URL =
+  "https://wa.me/8100362023?text=" +
+  encodeURIComponent(
+    "Hello! I'd love to learn more about the Advanced SchoolPortal and how it can elevate our school's experience.",
+  )
+
 interface User {
   id: string
   email: string
@@ -513,6 +519,17 @@ export default function HomePage() {
                     {isLoggingIn ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Sign In
                   </Button>
+                  <div className="pt-2 text-center">
+                    <Button
+                      variant="link"
+                      className="h-auto p-0 text-sm text-[#2d682d] hover:text-[#b29032]"
+                      asChild
+                    >
+                      <a href={CONTACT_DEVELOPER_URL} target="_blank" rel="noopener noreferrer">
+                        Contact Developer
+                      </a>
+                    </Button>
+                  </div>
                 </form>
               </TabsContent>
 

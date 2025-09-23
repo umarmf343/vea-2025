@@ -651,6 +651,12 @@ export default function SuperAdminDashboard() {
 
     safeStorage.setItem("superAdminPayments", JSON.stringify(combined))
 
+    try {
+      await dbManager.syncFinancialAnalytics(combined)
+    } catch (error) {
+      console.error("Failed to sync financial analytics from super admin dashboard:", error)
+    }
+
     dbManager.triggerEvent("paymentsSynced", combined)
   }, [])
 
