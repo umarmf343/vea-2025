@@ -23,6 +23,7 @@ import { Noticeboard } from "@/components/noticeboard"
 import { InternalMessaging } from "@/components/internal-messaging"
 import { TutorialLink } from "@/components/tutorial-link"
 import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
+import { EnhancedReportCard } from "@/components/enhanced-report-card"
 import {
   CONTINUOUS_ASSESSMENT_MAXIMUMS,
   calculateContinuousAssessmentTotal,
@@ -44,6 +45,13 @@ import {
   submitReportCardsForApproval,
   type ReportCardWorkflowRecord,
 } from "@/lib/report-card-workflow"
+import {
+  AFFECTIVE_TRAITS,
+  BEHAVIORAL_RATING_OPTIONS,
+  PSYCHOMOTOR_SKILLS,
+  normalizeBehavioralRating,
+} from "@/lib/report-card-constants"
+import type { RawReportCardData } from "@/lib/report-card-types"
 
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
@@ -85,6 +93,33 @@ interface TeacherTimetableSlot {
   teacher: string
   location?: string | null
 }
+
+type BehavioralDomainState = Record<number, Record<string, string>>
+type AttendanceState = Record<number, { present: number; absent: number; total: number }>
+type StudentStatusState = Record<number, string>
+
+type TermInfoState = {
+  numberInClass: string
+  nextTermBegins: string
+  vacationEnds: string
+  nextTermFees: string
+  feesBalance: string
+}
+
+const STUDENT_STATUS_OPTIONS = [
+  { value: "promoted", label: "Promoted" },
+  { value: "promoted-on-trial", label: "Promoted on Trial" },
+  { value: "repeat", label: "Repeat Class" },
+  { value: "withdrawn", label: "Withdrawn" },
+] as const
+
+const createEmptyTermInfo = (): TermInfoState => ({
+  numberInClass: "",
+  nextTermBegins: "",
+  vacationEnds: "",
+  nextTermFees: "",
+  feesBalance: "",
+})
 
 interface MarksRecord {
   studentId: number
@@ -143,13 +178,18 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [workflowRecords, setWorkflowRecords] = useState<ReportCardWorkflowRecord[]>([])
   const [isSubmittingForApproval, setIsSubmittingForApproval] = useState(false)
   const [isCancellingSubmission, setIsCancellingSubmission] = useState(false)
-  const [additionalData, setAdditionalData] = useState({
+  const [additionalData, setAdditionalData] = useState(() => ({
     classPositions: {} as Record<number, number>,
-    affectiveDomain: {} as Record<number, { neatness: string; honesty: string; punctuality: string }>,
-    psychomotorDomain: {} as Record<number, { sport: string; handwriting: string }>,
+    affectiveDomain: {} as BehavioralDomainState,
+    psychomotorDomain: {} as BehavioralDomainState,
     classTeacherRemarks: {} as Record<number, string>,
-    attendance: {} as Record<number, { present: number; absent: number; total: number }>,
-  })
+    attendance: {} as AttendanceState,
+    studentStatus: {} as StudentStatusState,
+    termInfo: createEmptyTermInfo(),
+  }))
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
+  const [previewStudentId, setPreviewStudentId] = useState<number | null>(null)
+  const [previewData, setPreviewData] = useState<RawReportCardData | null>(null)
 
   const [assignmentForm, setAssignmentForm] = useState(() => ({
     title: "",
@@ -519,6 +559,99 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     })
   }
 
+  const openPreviewForStudent = useCallback(
+    (student: MarksRecord) => {
+      if (!selectedClass || !selectedSubject) {
+        toast({
+          variant: "destructive",
+          title: "Selection required",
+          description: "Choose a class and subject to generate a report card preview.",
+        })
+        return
+      }
+
+      const attendanceStats = additionalData.attendance[student.studentId] ?? {
+        present: 0,
+        absent: 0,
+        total: 0,
+      }
+      const totalAttendance =
+        attendanceStats.total && attendanceStats.total > 0
+          ? attendanceStats.total
+          : attendanceStats.present + attendanceStats.absent
+
+      const summaryGrade = deriveGradeFromScore(student.averageScore)
+      const preview: RawReportCardData = {
+        student: {
+          id: String(student.studentId),
+          name: student.studentName,
+          admissionNumber: `VEA/${student.studentId}`,
+          class: selectedClass,
+          term: normalizedTermLabel,
+          session: selectedSession,
+          numberInClass: additionalData.termInfo.numberInClass,
+          status: additionalData.studentStatus[student.studentId],
+        },
+        subjects: [
+          {
+            name: selectedSubject || "Subject",
+            ca1: student.firstCA,
+            ca2: student.secondCA,
+            assignment: student.noteAssignment,
+            caTotal: student.caTotal,
+            exam: student.exam,
+            total: student.grandTotal,
+            grade: student.grade,
+            remarks: student.teacherRemark,
+          },
+        ],
+        summary: {
+          totalMarksObtainable: student.totalMarksObtainable,
+          totalMarksObtained: student.totalMarksObtained,
+          averageScore: student.averageScore,
+          position: student.position,
+          numberOfStudents: marksData.length,
+          grade: summaryGrade,
+        },
+        totalObtainable: student.totalMarksObtainable,
+        totalObtained: student.totalMarksObtained,
+        average: student.averageScore,
+        position: student.position,
+        affectiveDomain: additionalData.affectiveDomain[student.studentId] ?? {},
+        psychomotorDomain: additionalData.psychomotorDomain[student.studentId] ?? {},
+        classTeacherRemarks: additionalData.classTeacherRemarks[student.studentId] ?? "",
+        remarks: {
+          classTeacher: additionalData.classTeacherRemarks[student.studentId] ?? student.teacherRemark,
+        },
+        attendance: {
+          present: attendanceStats.present ?? 0,
+          absent: attendanceStats.absent ?? 0,
+          total: totalAttendance,
+        },
+        termInfo: {
+          numberInClass: additionalData.termInfo.numberInClass,
+          vacationEnds: additionalData.termInfo.vacationEnds,
+          nextTermBegins: additionalData.termInfo.nextTermBegins,
+          nextTermFees: additionalData.termInfo.nextTermFees,
+          feesBalance: additionalData.termInfo.feesBalance,
+        },
+      }
+
+      setPreviewStudentId(student.studentId)
+      setPreviewData(preview)
+      setPreviewDialogOpen(true)
+    },
+    [
+      additionalData,
+      marksData.length,
+      normalizedTermLabel,
+      selectedClass,
+      selectedSession,
+      selectedSubject,
+      toast,
+    ],
+  )
+
   const handleSyncAcademicMarks = async () => {
     try {
       if (!selectedClass || !selectedSubject) {
@@ -606,9 +739,152 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
   }
 
-  const getReportCardKey = () => `${selectedClass}-${selectedSubject}-${selectedTerm}-${selectedSession}`
-
   const normalizedTermLabel = useMemo(() => mapTermKeyToLabel(selectedTerm), [selectedTerm])
+
+  const loadAdditionalData = useCallback(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    const parseStorageRecord = (key: string) => {
+      try {
+        const storedValue = safeStorage.getItem(key)
+        if (!storedValue) {
+          return {}
+        }
+        const parsed = JSON.parse(storedValue)
+        return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {}
+      } catch (error) {
+        logger.error(`Failed to parse ${key} storage`, { error })
+        return {}
+      }
+    }
+
+    const behavioralStore = parseStorageRecord("behavioralAssessments")
+    const attendanceStore = parseStorageRecord("attendancePositions")
+    const remarksStore = parseStorageRecord("classTeacherRemarks")
+
+    const nextState = {
+      classPositions: {} as Record<number, number>,
+      affectiveDomain: {} as BehavioralDomainState,
+      psychomotorDomain: {} as BehavioralDomainState,
+      classTeacherRemarks: {} as Record<number, string>,
+      attendance: {} as AttendanceState,
+      studentStatus: {} as StudentStatusState,
+      termInfo: createEmptyTermInfo(),
+    }
+
+    let termInfoLoaded = false
+
+    marksData.forEach((student) => {
+      const studentKey = `${student.studentId}-${normalizedTermLabel}-${selectedSession}`
+
+      const behavioralRecord = behavioralStore[studentKey] as
+        | {
+            affectiveDomain?: Record<string, unknown>
+            psychomotorDomain?: Record<string, unknown>
+          }
+        | undefined
+
+      if (behavioralRecord) {
+        const affectiveRatings: Record<string, string> = {}
+        const storedAffective = behavioralRecord.affectiveDomain ?? {}
+        AFFECTIVE_TRAITS.forEach(({ key }) => {
+          const rating = normalizeBehavioralRating(
+            typeof storedAffective[key] === "string" ? (storedAffective[key] as string) : undefined,
+          )
+          if (rating) {
+            affectiveRatings[key] = rating
+          }
+        })
+        if (Object.keys(affectiveRatings).length > 0) {
+          nextState.affectiveDomain[student.studentId] = affectiveRatings
+        }
+
+        const psychomotorRatings: Record<string, string> = {}
+        const storedPsychomotor = behavioralRecord.psychomotorDomain ?? {}
+        PSYCHOMOTOR_SKILLS.forEach(({ key }) => {
+          const rating = normalizeBehavioralRating(
+            typeof storedPsychomotor[key] === "string" ? (storedPsychomotor[key] as string) : undefined,
+          )
+          if (rating) {
+            psychomotorRatings[key] = rating
+          }
+        })
+        if (Object.keys(psychomotorRatings).length > 0) {
+          nextState.psychomotorDomain[student.studentId] = psychomotorRatings
+        }
+      }
+
+      const attendanceRecord = attendanceStore[studentKey] as
+        | {
+            position?: number | string | null
+            attendance?: { present?: number; absent?: number; total?: number }
+            status?: string
+            termInfo?: Partial<TermInfoState>
+          }
+        | undefined
+
+      if (attendanceRecord) {
+        const positionValue = attendanceRecord.position
+        if (typeof positionValue === "number" && Number.isFinite(positionValue)) {
+          nextState.classPositions[student.studentId] = positionValue
+        } else if (typeof positionValue === "string" && positionValue.trim().length > 0) {
+          const parsedPosition = Number.parseInt(positionValue, 10)
+          if (!Number.isNaN(parsedPosition)) {
+            nextState.classPositions[student.studentId] = parsedPosition
+          }
+        }
+
+        if (attendanceRecord.attendance && typeof attendanceRecord.attendance === "object") {
+          const { present = 0, absent = 0, total = 0 } = attendanceRecord.attendance
+          nextState.attendance[student.studentId] = {
+            present: Number.isFinite(present) ? present : 0,
+            absent: Number.isFinite(absent) ? absent : 0,
+            total: Number.isFinite(total) ? total : 0,
+          }
+        }
+
+        if (typeof attendanceRecord.status === "string") {
+          nextState.studentStatus[student.studentId] = attendanceRecord.status
+        }
+
+        if (attendanceRecord.termInfo && typeof attendanceRecord.termInfo === "object") {
+          termInfoLoaded = true
+          nextState.termInfo = {
+            numberInClass:
+              typeof attendanceRecord.termInfo.numberInClass === "number"
+                ? String(attendanceRecord.termInfo.numberInClass)
+                : attendanceRecord.termInfo.numberInClass ?? nextState.termInfo.numberInClass,
+            nextTermBegins: attendanceRecord.termInfo.nextTermBegins ?? nextState.termInfo.nextTermBegins,
+            vacationEnds: attendanceRecord.termInfo.vacationEnds ?? nextState.termInfo.vacationEnds,
+            nextTermFees: attendanceRecord.termInfo.nextTermFees ?? nextState.termInfo.nextTermFees,
+            feesBalance: attendanceRecord.termInfo.feesBalance ?? nextState.termInfo.feesBalance,
+          }
+        }
+      }
+
+      const remarksRecord = remarksStore[studentKey] as { remark?: string } | undefined
+      if (remarksRecord?.remark) {
+        nextState.classTeacherRemarks[student.studentId] = remarksRecord.remark
+      }
+    })
+
+    setAdditionalData((prev) => ({
+      ...prev,
+      classPositions: nextState.classPositions,
+      affectiveDomain: nextState.affectiveDomain,
+      psychomotorDomain: nextState.psychomotorDomain,
+      classTeacherRemarks: nextState.classTeacherRemarks,
+      attendance: nextState.attendance,
+      studentStatus: nextState.studentStatus,
+      termInfo: termInfoLoaded ? nextState.termInfo : createEmptyTermInfo(),
+    }))
+  }, [marksData, normalizedTermLabel, selectedSession])
+
+  useEffect(() => {
+    loadAdditionalData()
+  }, [loadAdditionalData])
 
   useEffect(() => {
     setWorkflowRecords(getWorkflowRecords())
@@ -854,27 +1130,52 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         return
       }
 
-      const key = getReportCardKey()
-      const behavioralData = {
-        class: selectedClass,
-        subject: selectedSubject,
-        term: selectedTerm,
-        session: selectedSession,
-        affectiveDomain: additionalData.affectiveDomain,
-        psychomotorDomain: additionalData.psychomotorDomain,
-        teacherId: teacher.id,
-        timestamp: new Date().toISOString(),
-      }
+      const timestamp = new Date().toISOString()
+      const termLabel = normalizedTermLabel
+      const existingData = JSON.parse(safeStorage.getItem("behavioralAssessments") || "{}") as Record<string, unknown>
 
-      // Save to localStorage (simulating database)
-      const existingData = JSON.parse(safeStorage.getItem("behavioralAssessments") || "{}")
-      existingData[key] = behavioralData
+      marksData.forEach((student) => {
+        const studentKey = `${student.studentId}-${termLabel}-${selectedSession}`
+        const storedAffective = additionalData.affectiveDomain[student.studentId] ?? {}
+        const storedPsychomotor = additionalData.psychomotorDomain[student.studentId] ?? {}
+
+        const affectiveEntries: Record<string, string> = {}
+        AFFECTIVE_TRAITS.forEach(({ key }) => {
+          const rating = normalizeBehavioralRating(storedAffective[key])
+          if (rating) {
+            affectiveEntries[key] = rating
+          }
+        })
+
+        const psychomotorEntries: Record<string, string> = {}
+        PSYCHOMOTOR_SKILLS.forEach(({ key }) => {
+          const rating = normalizeBehavioralRating(storedPsychomotor[key])
+          if (rating) {
+            psychomotorEntries[key] = rating
+          }
+        })
+
+        existingData[studentKey] = {
+          studentId: student.studentId,
+          studentName: student.studentName,
+          class: selectedClass,
+          subject: selectedSubject,
+          term: termLabel,
+          session: selectedSession,
+          affectiveDomain: affectiveEntries,
+          psychomotorDomain: psychomotorEntries,
+          teacherId: teacher.id,
+          timestamp,
+        }
+      })
+
       safeStorage.setItem("behavioralAssessments", JSON.stringify(existingData))
 
       toast({
         title: "Behavioral assessment saved",
-        description: "Affective and psychomotor records have been updated for this class.",
+        description: "Affective and psychomotor records have been updated for the selected students.",
       })
+      loadAdditionalData()
     } catch (error) {
       logger.error("Error saving behavioral assessment", { error })
       toast({
@@ -896,27 +1197,55 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         return
       }
 
-      const key = getReportCardKey()
-      const attendanceData = {
-        class: selectedClass,
-        subject: selectedSubject,
-        term: selectedTerm,
-        session: selectedSession,
-        classPositions: additionalData.classPositions,
-        attendance: additionalData.attendance,
-        teacherId: teacher.id,
-        timestamp: new Date().toISOString(),
+      const timestamp = new Date().toISOString()
+      const termLabel = normalizedTermLabel
+      const existingData = JSON.parse(safeStorage.getItem("attendancePositions") || "{}") as Record<string, unknown>
+      const normalizedTermInfo = {
+        numberInClass: additionalData.termInfo.numberInClass.trim(),
+        nextTermBegins: additionalData.termInfo.nextTermBegins,
+        vacationEnds: additionalData.termInfo.vacationEnds,
+        nextTermFees: additionalData.termInfo.nextTermFees,
+        feesBalance: additionalData.termInfo.feesBalance,
       }
 
-      // Save to localStorage (simulating database)
-      const existingData = JSON.parse(safeStorage.getItem("attendancePositions") || "{}")
-      existingData[key] = attendanceData
+      marksData.forEach((student) => {
+        const studentKey = `${student.studentId}-${termLabel}-${selectedSession}`
+        const attendanceStats = additionalData.attendance[student.studentId] ?? {
+          present: 0,
+          absent: 0,
+          total: 0,
+        }
+
+        const present = Number.isFinite(attendanceStats.present) ? attendanceStats.present : 0
+        const absent = Number.isFinite(attendanceStats.absent) ? attendanceStats.absent : 0
+        const total =
+          Number.isFinite(attendanceStats.total) && attendanceStats.total > 0
+            ? attendanceStats.total
+            : present + absent
+
+        existingData[studentKey] = {
+          studentId: student.studentId,
+          studentName: student.studentName,
+          class: selectedClass,
+          subject: selectedSubject,
+          term: termLabel,
+          session: selectedSession,
+          position: additionalData.classPositions[student.studentId] ?? null,
+          attendance: { present, absent, total },
+          status: additionalData.studentStatus[student.studentId] ?? "promoted",
+          termInfo: normalizedTermInfo,
+          teacherId: teacher.id,
+          timestamp,
+        }
+      })
+
       safeStorage.setItem("attendancePositions", JSON.stringify(existingData))
 
       toast({
         title: "Attendance saved",
-        description: "Attendance and class position data have been updated for this class.",
+        description: "Attendance, status, and class summaries have been updated for the selected students.",
       })
+      loadAdditionalData()
     } catch (error) {
       logger.error("Error saving attendance/position", { error })
       toast({
@@ -938,26 +1267,34 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         return
       }
 
-      const key = getReportCardKey()
-      const remarksData = {
-        class: selectedClass,
-        subject: selectedSubject,
-        term: selectedTerm,
-        session: selectedSession,
-        classTeacherRemarks: additionalData.classTeacherRemarks,
-        teacherId: teacher.id,
-        timestamp: new Date().toISOString(),
-      }
+      const timestamp = new Date().toISOString()
+      const termLabel = normalizedTermLabel
+      const existingData = JSON.parse(safeStorage.getItem("classTeacherRemarks") || "{}") as Record<string, unknown>
 
-      // Save to localStorage (simulating database)
-      const existingData = JSON.parse(safeStorage.getItem("classTeacherRemarks") || "{}")
-      existingData[key] = remarksData
+      marksData.forEach((student) => {
+        const studentKey = `${student.studentId}-${termLabel}-${selectedSession}`
+        const remark = additionalData.classTeacherRemarks[student.studentId]?.trim() ?? ""
+
+        existingData[studentKey] = {
+          studentId: student.studentId,
+          studentName: student.studentName,
+          class: selectedClass,
+          subject: selectedSubject,
+          term: termLabel,
+          session: selectedSession,
+          remark,
+          teacherId: teacher.id,
+          timestamp,
+        }
+      })
+
       safeStorage.setItem("classTeacherRemarks", JSON.stringify(existingData))
 
       toast({
         title: "Remarks saved",
-        description: "Class teacher remarks have been updated for this class.",
+        description: "Class teacher remarks have been updated for the selected students.",
       })
+      loadAdditionalData()
     } catch (error) {
       logger.error("Error saving class teacher remarks", { error })
       toast({
@@ -1290,7 +1627,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                     </div>
 
                     <div className="border rounded-lg overflow-hidden">
-                      <div className="bg-gray-50 p-2 grid grid-cols-12 gap-2 font-medium text-xs">
+                      <div className="bg-gray-50 p-2 grid grid-cols-13 gap-2 font-medium text-xs">
                         <div>Student Name</div>
                         <div>1st C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1})</div>
                         <div>2nd C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2})</div>
@@ -1310,9 +1647,10 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                         <div>Position</div>
                         <div>GRADE</div>
                         <div>Subject Remarks</div>
+                        <div className="text-center">Preview</div>
                       </div>
                       {marksData.map((student) => (
-                        <div key={student.studentId} className="p-2 grid grid-cols-12 gap-2 items-center border-t">
+                        <div key={student.studentId} className="p-2 grid grid-cols-13 gap-2 items-center border-t">
                           <div className="font-medium text-sm">{student.studentName}</div>
                           <div>
                             <Input
@@ -1405,6 +1743,16 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                               disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                             />
                           </div>
+                          <div className="flex justify-center">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => openPreviewForStudent(student)}
+                            >
+                              Preview
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1456,183 +1804,103 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                   </TabsContent>
 
                   <TabsContent value="behavioral" className="space-y-4">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm">Affective Domain Assessment</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          {marksData.map((student) => (
-                            <div key={student.studentId} className="mb-4 p-3 border rounded-lg">
-                              <h4 className="font-medium mb-3">{student.studentName}</h4>
-                              <div className="grid grid-cols-3 gap-4">
-                                <div>
-                                  <Label className="text-xs">Neatness</Label>
-                                  <Select
-                                    value={additionalData.affectiveDomain[student.studentId]?.neatness || ""}
-                                    onValueChange={(value) =>
-                                      setAdditionalData((prev) => ({
-                                        ...prev,
-                                        affectiveDomain: {
-                                          ...prev.affectiveDomain,
-                                          [student.studentId]: {
-                                            ...prev.affectiveDomain[student.studentId],
-                                            neatness: value,
-                                          },
-                                        },
-                                      }))
-                                    }
-                                  >
-                                    <SelectTrigger className="h-8">
-                                      <SelectValue placeholder="Rate" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="excel">Excel.</SelectItem>
-                                      <SelectItem value="vgood">V.Good</SelectItem>
-                                      <SelectItem value="good">Good</SelectItem>
-                                      <SelectItem value="poor">Poor</SelectItem>
-                                      <SelectItem value="vpoor">V.Poor</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div>
-                                  <Label className="text-xs">Honesty</Label>
-                                  <Select
-                                    value={additionalData.affectiveDomain[student.studentId]?.honesty || ""}
-                                    onValueChange={(value) =>
-                                      setAdditionalData((prev) => ({
-                                        ...prev,
-                                        affectiveDomain: {
-                                          ...prev.affectiveDomain,
-                                          [student.studentId]: {
-                                            ...prev.affectiveDomain[student.studentId],
-                                            honesty: value,
-                                          },
-                                        },
-                                      }))
-                                    }
-                                  >
-                                    <SelectTrigger className="h-8">
-                                      <SelectValue placeholder="Rate" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="excel">Excel.</SelectItem>
-                                      <SelectItem value="vgood">V.Good</SelectItem>
-                                      <SelectItem value="good">Good</SelectItem>
-                                      <SelectItem value="poor">Poor</SelectItem>
-                                      <SelectItem value="vpoor">V.Poor</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div>
-                                  <Label className="text-xs">Punctuality</Label>
-                                  <Select
-                                    value={additionalData.affectiveDomain[student.studentId]?.punctuality || ""}
-                                    onValueChange={(value) =>
-                                      setAdditionalData((prev) => ({
-                                        ...prev,
-                                        affectiveDomain: {
-                                          ...prev.affectiveDomain,
-                                          [student.studentId]: {
-                                            ...prev.affectiveDomain[student.studentId],
-                                            punctuality: value,
-                                          },
-                                        },
-                                      }))
-                                    }
-                                  >
-                                    <SelectTrigger className="h-8">
-                                      <SelectValue placeholder="Rate" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="excel">Excel.</SelectItem>
-                                      <SelectItem value="vgood">V.Good</SelectItem>
-                                      <SelectItem value="good">Good</SelectItem>
-                                      <SelectItem value="poor">Poor</SelectItem>
-                                      <SelectItem value="vpoor">V.Poor</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
+                    <div className="space-y-4">
+                      {marksData.map((student) => (
+                        <Card key={student.studentId}>
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-sm text-[#2d682d]">{student.studentName}</CardTitle>
+                            <CardDescription className="text-xs text-gray-500">
+                              Provide affective and psychomotor ratings for this term.
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="space-y-5">
+                            <div>
+                              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
+                                Affective Domain
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {AFFECTIVE_TRAITS.map(({ key, label }) => (
+                                  <div key={key}>
+                                    <Label className="text-xs">{label}</Label>
+                                    <Select
+                                      value={additionalData.affectiveDomain[student.studentId]?.[key] ?? ""}
+                                      onValueChange={(value) =>
+                                        setAdditionalData((prev) => {
+                                          const previous = prev.affectiveDomain[student.studentId] ?? {}
+                                          return {
+                                            ...prev,
+                                            affectiveDomain: {
+                                              ...prev.affectiveDomain,
+                                              [student.studentId]: {
+                                                ...previous,
+                                                [key]: value,
+                                              },
+                                            },
+                                          }
+                                        })
+                                      }
+                                    >
+                                      <SelectTrigger className="h-8">
+                                        <SelectValue placeholder="Rate" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {BEHAVIORAL_RATING_OPTIONS.map((option) => (
+                                          <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                ))}
                               </div>
                             </div>
-                          ))}
-                        </CardContent>
-                      </Card>
-
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm">Psychomotor Domain Assessment</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          {marksData.map((student) => (
-                            <div key={student.studentId} className="mb-4 p-3 border rounded-lg">
-                              <h4 className="font-medium mb-3">{student.studentName}</h4>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <Label className="text-xs">Sport</Label>
-                                  <Select
-                                    value={additionalData.psychomotorDomain[student.studentId]?.sport || ""}
-                                    onValueChange={(value) =>
-                                      setAdditionalData((prev) => ({
-                                        ...prev,
-                                        psychomotorDomain: {
-                                          ...prev.psychomotorDomain,
-                                          [student.studentId]: {
-                                            ...prev.psychomotorDomain[student.studentId],
-                                            sport: value,
-                                          },
-                                        },
-                                      }))
-                                    }
-                                  >
-                                    <SelectTrigger className="h-8">
-                                      <SelectValue placeholder="Rate" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="excel">Excel.</SelectItem>
-                                      <SelectItem value="vgood">V.Good</SelectItem>
-                                      <SelectItem value="good">Good</SelectItem>
-                                      <SelectItem value="poor">Poor</SelectItem>
-                                      <SelectItem value="vpoor">V.Poor</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div>
-                                  <Label className="text-xs">Handwriting</Label>
-                                  <Select
-                                    value={additionalData.psychomotorDomain[student.studentId]?.handwriting || ""}
-                                    onValueChange={(value) =>
-                                      setAdditionalData((prev) => ({
-                                        ...prev,
-                                        psychomotorDomain: {
-                                          ...prev.psychomotorDomain,
-                                          [student.studentId]: {
-                                            ...prev.psychomotorDomain[student.studentId],
-                                            handwriting: value,
-                                          },
-                                        },
-                                      }))
-                                    }
-                                  >
-                                    <SelectTrigger className="h-8">
-                                      <SelectValue placeholder="Rate" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="excel">Excel.</SelectItem>
-                                      <SelectItem value="vgood">V.Good</SelectItem>
-                                      <SelectItem value="good">Good</SelectItem>
-                                      <SelectItem value="poor">Poor</SelectItem>
-                                      <SelectItem value="vpoor">V.Poor</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
+                            <div>
+                              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
+                                Psychomotor Domain
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {PSYCHOMOTOR_SKILLS.map(({ key, label }) => (
+                                  <div key={key}>
+                                    <Label className="text-xs">{label}</Label>
+                                    <Select
+                                      value={additionalData.psychomotorDomain[student.studentId]?.[key] ?? ""}
+                                      onValueChange={(value) =>
+                                        setAdditionalData((prev) => {
+                                          const previous = prev.psychomotorDomain[student.studentId] ?? {}
+                                          return {
+                                            ...prev,
+                                            psychomotorDomain: {
+                                              ...prev.psychomotorDomain,
+                                              [student.studentId]: {
+                                                ...previous,
+                                                [key]: value,
+                                              },
+                                            },
+                                          }
+                                        })
+                                      }
+                                    >
+                                      <SelectTrigger className="h-8">
+                                        <SelectValue placeholder="Rate" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {BEHAVIORAL_RATING_OPTIONS.map((option) => (
+                                          <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                ))}
                               </div>
                             </div>
-                          ))}
-                        </CardContent>
-                      </Card>
+                          </CardContent>
+                        </Card>
+                      ))}
                     </div>
-                    <div className="flex justify-end mt-6">
+                    <div className="flex justify-end mt-2">
                       <Button
                         onClick={handleSaveBehavioralAssessment}
                         className="bg-[#2d682d] hover:bg-[#1f4a1f] text-white"
@@ -1644,36 +1912,64 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                   </TabsContent>
 
                   <TabsContent value="attendance" className="space-y-4">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                       <Card>
                         <CardHeader>
-                          <CardTitle className="text-sm">Class Position</CardTitle>
+                          <CardTitle className="text-sm">Position & Status</CardTitle>
+                          <CardDescription className="text-xs">
+                            Track promotion status alongside class positions.
+                          </CardDescription>
                         </CardHeader>
                         <CardContent>
                           {marksData.map((student) => (
-                            <div
-                              key={student.studentId}
-                              className="mb-3 flex items-center justify-between p-3 border rounded-lg"
-                            >
-                              <span className="font-medium">{student.studentName}</span>
-                              <div className="flex items-center space-x-2">
-                                <Label className="text-xs">Position:</Label>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  value={additionalData.classPositions[student.studentId] || ""}
-                                  onChange={(e) =>
-                                    setAdditionalData((prev) => ({
-                                      ...prev,
-                                      classPositions: {
-                                        ...prev.classPositions,
-                                        [student.studentId]: Number.parseInt(e.target.value) || 0,
-                                      },
-                                    }))
-                                  }
-                                  className="w-16 h-8 text-xs"
-                                  placeholder="1st"
-                                />
+                            <div key={student.studentId} className="mb-4 rounded-lg border p-3">
+                              <p className="font-medium text-sm mb-2">{student.studentName}</p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <Label className="text-xs">Position</Label>
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    value={additionalData.classPositions[student.studentId] || ""}
+                                    onChange={(e) =>
+                                      setAdditionalData((prev) => ({
+                                        ...prev,
+                                        classPositions: {
+                                          ...prev.classPositions,
+                                          [student.studentId]: Number.parseInt(e.target.value, 10) || 0,
+                                        },
+                                      }))
+                                    }
+                                    className="h-8 text-xs"
+                                    placeholder="1"
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs">Status</Label>
+                                  <Select
+                                    value={additionalData.studentStatus[student.studentId] || ""}
+                                    onValueChange={(value) =>
+                                      setAdditionalData((prev) => ({
+                                        ...prev,
+                                        studentStatus: {
+                                          ...prev.studentStatus,
+                                          [student.studentId]: value,
+                                        },
+                                      }))
+                                    }
+                                  >
+                                    <SelectTrigger className="h-8">
+                                      <SelectValue placeholder="Select status" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {STUDENT_STATUS_OPTIONS.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                          {option.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -1683,88 +1979,212 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                       <Card>
                         <CardHeader>
                           <CardTitle className="text-sm">Attendance Record</CardTitle>
+                          <CardDescription className="text-xs">
+                            These values are used to calculate attendance percentage.
+                          </CardDescription>
                         </CardHeader>
                         <CardContent>
-                          {marksData.map((student) => (
-                            <div key={student.studentId} className="mb-3 p-3 border rounded-lg">
-                              <h4 className="font-medium mb-2">{student.studentName}</h4>
-                              <div className="grid grid-cols-3 gap-2">
-                                <div>
-                                  <Label className="text-xs">Present</Label>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    value={additionalData.attendance[student.studentId]?.present || ""}
-                                    onChange={(e) =>
-                                      setAdditionalData((prev) => ({
-                                        ...prev,
-                                        attendance: {
-                                          ...prev.attendance,
-                                          [student.studentId]: {
-                                            ...prev.attendance[student.studentId],
-                                            present: Number.parseInt(e.target.value) || 0,
-                                          },
-                                        },
-                                      }))
-                                    }
-                                    className="h-8 text-xs"
-                                  />
+                          {marksData.map((student) => {
+                            const stats = additionalData.attendance[student.studentId] ?? {
+                              present: 0,
+                              absent: 0,
+                              total: 0,
+                            }
+                            const totalDays = stats.total && stats.total > 0 ? stats.total : stats.present + stats.absent
+                            const percentage = totalDays > 0 ? Math.round((stats.present / totalDays) * 100) : 0
+
+                            return (
+                              <div key={student.studentId} className="mb-4 rounded-lg border p-3">
+                                <p className="font-medium text-sm mb-2">{student.studentName}</p>
+                                <div className="grid grid-cols-3 gap-2">
+                                  <div>
+                                    <Label className="text-xs">Present</Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      value={stats.present}
+                                      onChange={(e) =>
+                                        setAdditionalData((prev) => {
+                                          const previous = prev.attendance[student.studentId] ?? {
+                                            present: 0,
+                                            absent: 0,
+                                            total: 0,
+                                          }
+                                          return {
+                                            ...prev,
+                                            attendance: {
+                                              ...prev.attendance,
+                                              [student.studentId]: {
+                                                ...previous,
+                                                present: Number.parseInt(e.target.value, 10) || 0,
+                                              },
+                                            },
+                                          }
+                                        })
+                                      }
+                                      className="h-8 text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs">Absent</Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      value={stats.absent}
+                                      onChange={(e) =>
+                                        setAdditionalData((prev) => {
+                                          const previous = prev.attendance[student.studentId] ?? {
+                                            present: 0,
+                                            absent: 0,
+                                            total: 0,
+                                          }
+                                          return {
+                                            ...prev,
+                                            attendance: {
+                                              ...prev.attendance,
+                                              [student.studentId]: {
+                                                ...previous,
+                                                absent: Number.parseInt(e.target.value, 10) || 0,
+                                              },
+                                            },
+                                          }
+                                        })
+                                      }
+                                      className="h-8 text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs">Total Days</Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      value={stats.total}
+                                      onChange={(e) =>
+                                        setAdditionalData((prev) => {
+                                          const previous = prev.attendance[student.studentId] ?? {
+                                            present: 0,
+                                            absent: 0,
+                                            total: 0,
+                                          }
+                                          return {
+                                            ...prev,
+                                            attendance: {
+                                              ...prev.attendance,
+                                              [student.studentId]: {
+                                                ...previous,
+                                                total: Number.parseInt(e.target.value, 10) || 0,
+                                              },
+                                            },
+                                          }
+                                        })
+                                      }
+                                      className="h-8 text-xs"
+                                    />
+                                  </div>
                                 </div>
-                                <div>
-                                  <Label className="text-xs">Absent</Label>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    value={additionalData.attendance[student.studentId]?.absent || ""}
-                                    onChange={(e) =>
-                                      setAdditionalData((prev) => ({
-                                        ...prev,
-                                        attendance: {
-                                          ...prev.attendance,
-                                          [student.studentId]: {
-                                            ...prev.attendance[student.studentId],
-                                            absent: Number.parseInt(e.target.value) || 0,
-                                          },
-                                        },
-                                      }))
-                                    }
-                                    className="h-8 text-xs"
-                                  />
-                                </div>
-                                <div>
-                                  <Label className="text-xs">Total Days</Label>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    value={additionalData.attendance[student.studentId]?.total || ""}
-                                    onChange={(e) =>
-                                      setAdditionalData((prev) => ({
-                                        ...prev,
-                                        attendance: {
-                                          ...prev.attendance,
-                                          [student.studentId]: {
-                                            ...prev.attendance[student.studentId],
-                                            total: Number.parseInt(e.target.value) || 0,
-                                          },
-                                        },
-                                      }))
-                                    }
-                                    className="h-8 text-xs"
-                                  />
-                                </div>
+                                <p className="text-[11px] text-gray-500 mt-2">
+                                  Attendance: {percentage}% ({stats.present} / {totalDays || 0})
+                                </p>
+                              </div>
+                            )
+                          })}
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-sm">Term Summary & Fees</CardTitle>
+                          <CardDescription className="text-xs">
+                            Shared information that appears on every report card for this class.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <div>
+                              <Label className="text-xs">Number in Class</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                value={additionalData.termInfo.numberInClass}
+                                onChange={(e) =>
+                                  setAdditionalData((prev) => ({
+                                    ...prev,
+                                    termInfo: { ...prev.termInfo, numberInClass: e.target.value },
+                                  }))
+                                }
+                                className="h-8 text-xs"
+                                placeholder="e.g. 25"
+                              />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <Label className="text-xs">Vacation Date</Label>
+                                <Input
+                                  type="date"
+                                  value={additionalData.termInfo.vacationEnds}
+                                  onChange={(e) =>
+                                    setAdditionalData((prev) => ({
+                                      ...prev,
+                                      termInfo: { ...prev.termInfo, vacationEnds: e.target.value },
+                                    }))
+                                  }
+                                  className="h-8 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Next Term Begins</Label>
+                                <Input
+                                  type="date"
+                                  value={additionalData.termInfo.nextTermBegins}
+                                  onChange={(e) =>
+                                    setAdditionalData((prev) => ({
+                                      ...prev,
+                                      termInfo: { ...prev.termInfo, nextTermBegins: e.target.value },
+                                    }))
+                                  }
+                                  className="h-8 text-xs"
+                                />
                               </div>
                             </div>
-                          ))}
+                            <div>
+                              <Label className="text-xs">Next Term Fees</Label>
+                              <Input
+                                value={additionalData.termInfo.nextTermFees}
+                                onChange={(e) =>
+                                  setAdditionalData((prev) => ({
+                                    ...prev,
+                                    termInfo: { ...prev.termInfo, nextTermFees: e.target.value },
+                                  }))
+                                }
+                                className="h-8 text-xs"
+                                placeholder="e.g. ₦45,000"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Outstanding Fees</Label>
+                              <Input
+                                value={additionalData.termInfo.feesBalance}
+                                onChange={(e) =>
+                                  setAdditionalData((prev) => ({
+                                    ...prev,
+                                    termInfo: { ...prev.termInfo, feesBalance: e.target.value },
+                                  }))
+                                }
+                                className="h-8 text-xs"
+                                placeholder="Optional"
+                              />
+                            </div>
+                          </div>
                         </CardContent>
                       </Card>
                     </div>
-                    <div className="flex justify-end mt-6">
+                    <div className="flex justify-end">
                       <Button
                         onClick={handleSaveAttendancePosition}
                         className="bg-[#2d682d] hover:bg-[#1f4a1f] text-white"
                       >
                         <Save className="w-4 h-4 mr-2" />
-                        Save Attendance & Position
+                        Save Attendance & Summary
                       </Button>
                     </div>
                   </TabsContent>
@@ -1980,6 +2400,49 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           <InternalMessaging currentUser={{ id: teacher.id, name: teacher.name, role: "teacher" }} />
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={previewDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewDialogOpen(false)
+            setPreviewStudentId(null)
+            setPreviewData(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-6xl">
+          <DialogHeader>
+            <DialogTitle>Report Card Preview</DialogTitle>
+            <DialogDescription>
+              {previewStudentId
+                ? `${marksData.find((s) => s.studentId === previewStudentId)?.studentName ?? "Student"} • ${selectedClass} • ${
+                    mapTermKeyToLabel(selectedTerm)
+                  } (${selectedSession})`
+                : "Select a student to preview their report card."}
+            </DialogDescription>
+          </DialogHeader>
+          {previewData ? (
+            <div className="max-h-[70vh] overflow-y-auto rounded-lg border bg-white p-2 shadow-sm">
+              <EnhancedReportCard data={previewData} />
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No preview data available yet.</p>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPreviewDialogOpen(false)
+                setPreviewStudentId(null)
+                setPreviewData(null)
+              }}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Assignment Dialog */}
       <Dialog open={showCreateAssignment} onOpenChange={setShowCreateAssignment}>
