@@ -60,6 +60,7 @@ import { UserManagement } from "@/components/admin/user-management"
 import { SchoolCalendarApprovalPanel } from "@/components/school-calendar-approval"
 import { TutorialLink } from "@/components/tutorial-link"
 import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
+import { EnhancedReportCard } from "@/components/enhanced-report-card"
 import {
   BarChart3,
   Calendar,
@@ -88,6 +89,8 @@ import {
   revokeReportCardAccess,
   syncReportCardAccess,
 } from "@/lib/report-card-access"
+import { mapReportCardRecordToRaw } from "@/lib/report-card-transformers"
+import type { RawReportCardData } from "@/lib/report-card-types"
 
 interface SystemMetrics {
   serverStatus: string
@@ -254,15 +257,6 @@ function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(
     value,
   )
-}
-
-function gradeFromScore(score: number): string {
-  if (score >= 75) return "A"
-  if (score >= 60) return "B"
-  if (score >= 50) return "C"
-  if (score >= 45) return "D"
-  if (score >= 40) return "E"
-  return "F"
 }
 
 function calculateReportAverage(report: ReportCardRow): number {
@@ -561,6 +555,22 @@ export default function SuperAdminDashboard() {
   const [reportRemarks, setReportRemarks] = useState({ classTeacherRemark: "", headTeacherRemark: "" })
   const [reportToDelete, setReportToDelete] = useState<ReportCardRow | null>(null)
   const [isSavingReport, setIsSavingReport] = useState(false)
+
+  const reportPreviewData = useMemo<RawReportCardData | null>(() => {
+    if (!selectedReportCard) {
+      return null
+    }
+
+    const base = mapReportCardRecordToRaw(selectedReportCard)
+    return {
+      ...base,
+      remarks: {
+        classTeacher: reportRemarks.classTeacherRemark || base.remarks?.classTeacher,
+        headTeacher: reportRemarks.headTeacherRemark || base.remarks?.headTeacher,
+      },
+      classTeacherRemarks: reportRemarks.classTeacherRemark || base.classTeacherRemarks,
+    }
+  }, [selectedReportCard, reportRemarks.classTeacherRemark, reportRemarks.headTeacherRemark])
 
   const refreshUsers = useCallback(async () => {
     const data = await fetchJson<{ users: StoredUser[] }>("/api/users")
@@ -2236,56 +2246,45 @@ export default function SuperAdminDashboard() {
       </Dialog>
 
       <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-6xl">
           <DialogHeader>
             <DialogTitle>Report Card Overview</DialogTitle>
             <DialogDescription>
               {selectedReportCard?.studentName} • {selectedReportCard?.className} • {selectedReportCard?.term} ({selectedReportCard?.session})
             </DialogDescription>
           </DialogHeader>
-          {selectedReportCard ? (
-            <div className="space-y-4">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Subject</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Grade</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {selectedReportCard.subjects.map((subject) => (
-                    <TableRow key={`${selectedReportCard.id}-${subject.name}`}>
-                      <TableCell>{subject.name}</TableCell>
-                      <TableCell className="text-right">{subject.total}</TableCell>
-                      <TableCell className="text-right">{subject.grade ?? gradeFromScore(subject.total)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {reportPreviewData ? (
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+              <div className="max-h-[70vh] overflow-y-auto rounded-lg border bg-white p-2 shadow-sm">
+                <EnhancedReportCard data={reportPreviewData} />
+              </div>
+              <div className="flex flex-col gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="report-class-remark">Class Teacher Remark</Label>
                   <Textarea
                     id="report-class-remark"
-                    rows={3}
+                    rows={4}
                     value={reportRemarks.classTeacherRemark}
                     onChange={(event) =>
                       setReportRemarks((prev) => ({ ...prev, classTeacherRemark: event.target.value }))
                     }
+                    placeholder="Enter the class teacher's overall remark..."
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="report-head-remark">Head Teacher Remark</Label>
                   <Textarea
                     id="report-head-remark"
-                    rows={3}
+                    rows={4}
                     value={reportRemarks.headTeacherRemark}
                     onChange={(event) =>
                       setReportRemarks((prev) => ({ ...prev, headTeacherRemark: event.target.value }))
                     }
+                    placeholder="Enter the head teacher's remark that will appear on the final report."
                   />
+                </div>
+                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                  Customize the remarks to match the school’s tone before publishing this report card to parents.
                 </div>
               </div>
             </div>
