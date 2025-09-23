@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,6 +17,8 @@ interface PaymentModalProps {
   studentName: string
   studentId: string
   amount: number
+  parentName: string
+  parentEmail?: string
 }
 
 export function PaymentModal({
@@ -26,14 +28,23 @@ export function PaymentModal({
   studentName,
   studentId,
   amount,
+  parentName,
+  parentEmail,
 }: PaymentModalProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [paymentForm, setPaymentForm] = useState({
-    email: "",
+    email: parentEmail ?? "",
     phone: "",
     term: "first",
     session: "2024/2025",
   })
+
+  useEffect(() => {
+    setPaymentForm((previous) => ({
+      ...previous,
+      email: parentEmail ?? previous.email,
+    }))
+  }, [parentEmail])
 
   const handlePayment = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -59,6 +70,11 @@ export function PaymentModal({
             term: paymentForm.term,
             session: paymentForm.session,
             phone: paymentForm.phone,
+            parent_name: parentName,
+            parentName,
+            parent_email: paymentForm.email,
+            parentEmail: paymentForm.email,
+            payer_role: "parent",
           },
         }),
       })

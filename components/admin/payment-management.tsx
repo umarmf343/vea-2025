@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -38,10 +38,27 @@ interface ApiPaymentRecord {
 
 function mapPayment(record: ApiPaymentRecord): PaymentRecord {
   const metadata = record.metadata ?? {}
-  const method = (metadata.method as string | undefined) ?? record.paymentType ?? "online"
-  const hasAccess = Boolean(metadata.accessGranted)
-  const studentName = (metadata.studentName as string | undefined) ?? "Unknown Student"
-  const parentName = (metadata.parentName as string | undefined) ?? "Parent"
+  const rawMethod =
+    (metadata.payment_channel as string | undefined) ??
+    (metadata.method as string | undefined) ??
+    record.paymentType ??
+    "online"
+  const normalizedMethod = rawMethod.toLowerCase()
+  const method: PaymentRecord["method"] =
+    normalizedMethod === "offline" || normalizedMethod === "manual" ? "offline" : "online"
+  const hasAccess = Boolean((metadata as Record<string, unknown>).accessGranted)
+  const studentName =
+    (metadata.studentName as string | undefined) ??
+    (metadata.student_name as string | undefined) ??
+    "Unknown Student"
+  const parentName =
+    (metadata.parentName as string | undefined) ??
+    (metadata.parent_name as string | undefined) ??
+    "Parent"
+  const parentEmail =
+    (metadata.parentEmail as string | undefined) ??
+    (metadata.parent_email as string | undefined) ??
+    record.email
   const status: PaymentRecord["status"] =
     record.status === "completed" ? "paid" : record.status === "failed" ? "failed" : "pending"
 
@@ -51,11 +68,11 @@ function mapPayment(record: ApiPaymentRecord): PaymentRecord {
     parentName,
     amount: Number(record.amount ?? 0),
     status,
-    method: method === "offline" ? "offline" : "online",
+    method,
     date: record.createdAt ? new Date(record.createdAt).toLocaleDateString() : "--",
     reference: record.reference,
     hasAccess,
-    email: record.email,
+    email: parentEmail,
   }
 }
 
@@ -65,6 +82,7 @@ export function PaymentManagement() {
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const eventSourceRef = useRef<EventSource | null>(null)
 
   const loadPayments = useCallback(async () => {
     setLoading(true)
@@ -88,6 +106,49 @@ export function PaymentManagement() {
 
   useEffect(() => {
     void loadPayments()
+  }, [loadPayments])
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    const url = new URL("/api/realtime/stream", window.location.origin)
+    url.searchParams.set("userId", "admin-payments")
+    url.searchParams.set("role", "admin")
+
+    const eventSource = new EventSource(url.toString())
+    eventSourceRef.current = eventSource
+
+    const handleNotification = (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data) as {
+          category?: string
+          meta?: Record<string, unknown>
+        }
+
+        if (payload.category?.toLowerCase() === "payment") {
+          void loadPayments()
+        }
+      } catch (parseError) {
+        console.error("Failed to parse realtime notification:", parseError)
+      }
+    }
+
+    eventSource.addEventListener("notification", handleNotification)
+
+    eventSource.addEventListener("error", () => {
+      console.warn("Realtime connection for payments interrupted. Retrying sync…")
+      setTimeout(() => {
+        void loadPayments()
+      }, 1000)
+    })
+
+    return () => {
+      eventSource.removeEventListener("notification", handleNotification)
+      eventSource.close()
+      eventSourceRef.current = null
+    }
   }, [loadPayments])
 
   const filteredPayments = useMemo(() => {

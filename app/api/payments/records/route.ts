@@ -64,11 +64,21 @@ export async function PUT(request: NextRequest) {
     }
 
     if (typeof body.studentName === "string") {
-      metadata.studentName = sanitizeInput(body.studentName)
+      const sanitizedStudentName = sanitizeInput(body.studentName)
+      metadata.studentName = sanitizedStudentName
+      metadata.student_name = sanitizedStudentName
     }
 
     if (typeof body.parentName === "string") {
-      metadata.parentName = sanitizeInput(body.parentName)
+      const sanitizedParentName = sanitizeInput(body.parentName)
+      metadata.parentName = sanitizedParentName
+      metadata.parent_name = sanitizedParentName
+    }
+
+    if (typeof body.parentEmail === "string") {
+      const sanitizedParentEmail = sanitizeInput(body.parentEmail).toLowerCase()
+      metadata.parentEmail = sanitizedParentEmail
+      metadata.parent_email = sanitizedParentEmail
     }
 
     if (typeof body.method === "string") {

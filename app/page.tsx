@@ -1575,6 +1575,8 @@ function ParentDashboard({ user }: { user: User }) {
         studentName={studentData.name}
         studentId={studentData.id}
         amount={50000}
+        parentName={user.name}
+        parentEmail={user.email}
       />
     </div>
   )

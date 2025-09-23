@@ -689,8 +689,8 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
   }
 
   return (
-    <Card className="mx-auto w-full max-w-6xl">
-      <CardHeader className="flex flex-col gap-2 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
+    <Card className="mx-auto w-full max-w-5xl rounded-[24px] border border-slate-200/70 bg-white/95 shadow-xl">
+      <CardHeader className="flex flex-col gap-2 border-b border-slate-200/60 bg-white/60 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <CardTitle className="flex items-center gap-2 text-lg font-semibold">
             <UserCircle className="h-5 w-5" /> Internal Messaging
@@ -711,8 +711,8 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
           )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-6 pt-4">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,260px)_1fr]">
+      <CardContent className="space-y-6 px-6 pb-6 pt-4">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,240px)_1fr]">
           <div className="flex flex-col gap-4">
             <div className="space-y-2">
               <Label htmlFor="search">Conversations</Label>
@@ -723,8 +723,8 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
                 onChange={(event) => setSearchTerm(event.target.value)}
               />
             </div>
-            <div className="rounded-xl border bg-card">
-              <ScrollArea className="h-[420px] pr-2">
+            <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
+              <ScrollArea className="h-[360px] pr-1">
                 <div className="flex flex-col divide-y">
                   {filteredConversations.length === 0 && (
                     <div className="p-6 text-center text-sm text-muted-foreground">
@@ -744,8 +744,9 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
                           void markConversationAsRead(conversation.id)
                         }}
                         className={cn(
-                          "flex w-full flex-col gap-1 px-4 py-3 text-left transition hover:bg-muted/70",
-                          activeConversation === conversation.id && "bg-muted",
+                          "flex w-full flex-col gap-1 rounded-2xl border border-transparent bg-white px-4 py-3 text-left transition hover:border-[#2d682d]/20 hover:bg-[#2d682d]/5",
+                          activeConversation === conversation.id &&
+                            "border-[#2d682d]/30 bg-[#2d682d]/10 shadow-sm",
                         )}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -773,9 +774,9 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
             </div>
           </div>
 
-          <div className="flex min-h-[420px] flex-col gap-4">
-            <div className="rounded-xl border bg-card">
-              <div className="flex items-center justify-between border-b px-5 py-3">
+          <div className="flex min-h-[360px] flex-col gap-4">
+            <div className="rounded-3xl border border-slate-200/70 bg-white/80 shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-200/60 px-6 py-3">
                 <div>
                   <p className="text-sm font-semibold text-foreground">
                     {composerParticipants.length > 0
@@ -795,7 +796,7 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
                   </div>
                 )}
               </div>
-              <ScrollArea className="h-[320px] px-5 py-4">
+              <ScrollArea className="h-[280px] px-6 py-4">
                 <div className="flex flex-col gap-4">
                   {activeConversationMessages.length === 0 && (
                     <div className="rounded-lg bg-muted/40 p-6 text-center text-sm text-muted-foreground">
@@ -808,8 +809,8 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
               </ScrollArea>
             </div>
 
-            <div className="rounded-xl border bg-card p-4">
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,280px)_1fr] sm:items-center">
+            <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-5 shadow-sm">
+              <div className="grid gap-4 md:grid-cols-[minmax(0,220px)_1fr] md:items-start">
                 <div className="space-y-2">
                   <Label>Send to</Label>
                   <Select
@@ -819,10 +820,10 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
                       setActiveConversation(null)
                     }}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="rounded-2xl border-slate-200/70 bg-white">
                       <SelectValue placeholder="Choose recipient" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="rounded-2xl">
                       {directory.map((participant) => (
                         <SelectItem key={participant.id} value={participant.id}>
                           <div className="flex items-center justify-between gap-3">
@@ -838,27 +839,75 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="message">Message</Label>
-                  <Textarea
-                    id="message"
-                    rows={3}
-                    value={messageText}
-                    onChange={(event) => handleMessageChange(event.target.value)}
-                    placeholder="Type your message…"
-                    className="min-h-[120px] resize-none"
-                  />
+                  <div className="relative rounded-2xl border border-slate-200/70 bg-white px-4 pb-12 pt-3 shadow-inner focus-within:border-[#2d682d]/60 focus-within:ring-1 focus-within:ring-[#2d682d]/20">
+                    <Textarea
+                      id="message"
+                      rows={3}
+                      value={messageText}
+                      onChange={(event) => handleMessageChange(event.target.value)}
+                      placeholder="Type your message…"
+                      className="min-h-[96px] w-full resize-none border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 pr-28"
+                    />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      onChange={(event) => void handleFilesSelected(event.target.files)}
+                      className="hidden"
+                    />
+                    <div className="pointer-events-none absolute bottom-3 left-4 text-[11px] uppercase tracking-wide text-muted-foreground">
+                      {isRecording ? "Recording voice note…" : "Secure message"}
+                    </div>
+                    <div className="pointer-events-auto absolute bottom-2 right-3 flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="h-9 w-9 rounded-full bg-slate-100 text-slate-500 shadow-sm transition hover:bg-[#2d682d]/10 hover:text-[#2d682d]"
+                        aria-label="Attach files"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={isRecording ? "destructive" : "ghost"}
+                        size="icon"
+                        onClick={() => {
+                          if (isRecording) {
+                            handleStopRecording()
+                          } else {
+                            void handleStartRecording()
+                          }
+                        }}
+                        className={cn(
+                          "h-9 w-9 rounded-full shadow-sm transition",
+                          isRecording
+                            ? "bg-[#d62d20] text-white hover:bg-[#b0231a]"
+                            : "bg-slate-100 text-slate-500 hover:bg-[#2d682d]/10 hover:text-[#2d682d]",
+                        )}
+                        aria-label={isRecording ? "Stop recording" : "Record voice note"}
+                      >
+                        <Mic className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  {isRecording && (
+                    <p className="text-xs font-medium text-[#d62d20]">Recording voice note… tap the mic to stop.</p>
+                  )}
                 </div>
               </div>
 
               {attachments.length > 0 && (
                 <div className="mt-4 space-y-2">
-                  <Label>Attachments</Label>
-                  <div className="flex flex-wrap gap-3">
+                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">Attachments</Label>
+                  <div className="flex flex-wrap gap-2">
                     {attachments.map((attachment) => (
                       <div
                         key={attachment.id}
-                        className="group flex items-center gap-3 rounded-lg border px-3 py-2 text-xs shadow-sm"
+                        className="group flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs shadow-sm"
                       >
-                        <span className="font-medium">{attachment.name}</span>
+                        <span className="font-medium text-slate-600">{attachment.name}</span>
                         <span className="text-muted-foreground">
                           {(attachment.size / 1024 / 1024).toFixed(1)} MB
                         </span>
@@ -866,7 +915,8 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
                           variant="ghost"
                           size="icon"
                           onClick={() => removeAttachment(attachment.id)}
-                          className="ml-1 h-7 w-7 opacity-0 transition group-hover:opacity-100"
+                          className="h-6 w-6 rounded-full bg-slate-100 text-slate-500 opacity-0 transition group-hover:opacity-100 hover:bg-destructive hover:text-destructive-foreground"
+                          aria-label="Remove attachment"
                         >
                           ×
                         </Button>
@@ -876,35 +926,26 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
                 </div>
               )}
 
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-                <div className="flex items-center gap-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    onChange={(event) => void handleFilesSelected(event.target.files)}
-                    className="hidden"
-                  />
-                  <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-                    <Paperclip className="mr-2 h-4 w-4" /> Attach
-                  </Button>
-                  <Button
-                    variant={isRecording ? "destructive" : "outline"}
-                    size="sm"
-                    onClick={() => {
-                      if (isRecording) {
-                        handleStopRecording()
-                      } else {
-                        void handleStartRecording()
-                      }
-                    }}
-                  >
-                    <Mic className="mr-2 h-4 w-4" /> {isRecording ? "Stop" : "Voice note"}
-                  </Button>
-                </div>
-                <Button onClick={() => void handleSendMessage()} disabled={isSending}>
-                  {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                  Send message
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Press enter for a new line. Use the icons above to share files or voice notes instantly.
+                </p>
+                <Button
+                  onClick={() => void handleSendMessage()}
+                  disabled={isSending}
+                  className="flex items-center gap-2 rounded-full bg-[#2d682d] px-6 py-2 text-sm font-medium text-white transition hover:bg-[#225122]"
+                >
+                  {isSending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Sending…
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      Send message
+                    </>
+                  )}
                 </Button>
               </div>
             </div>

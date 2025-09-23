@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+
 import { type NextRequest, NextResponse } from "next/server"
 
 import {
@@ -8,6 +10,7 @@ import {
 } from "@/lib/database"
 import { sanitizeInput } from "@/lib/security"
 import { getPaystackSecretKey } from "@/lib/paystack"
+import { publishNotification } from "@/lib/realtime-hub"
 
 export const runtime = "nodejs"
 
@@ -44,6 +47,45 @@ function resolveStudentName(metadata: Record<string, unknown>): string {
   }
 
   return "Student"
+}
+
+function resolveParentName(metadata: Record<string, unknown>): string | null {
+  const candidates = [
+    metadata.parent_name,
+    metadata.parentName,
+    metadata.guardian_name,
+    metadata.guardianName,
+    metadata.customer_name,
+    metadata.customerName,
+  ]
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return sanitizeInput(candidate)
+    }
+  }
+
+  return null
+}
+
+function resolveParentEmail(metadata: Record<string, unknown>): string | null {
+  const candidates = [
+    metadata.parent_email,
+    metadata.parentEmail,
+    metadata.guardian_email,
+    metadata.guardianEmail,
+    metadata.customer_email,
+    metadata.customerEmail,
+    metadata.email,
+  ]
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return sanitizeInput(candidate).toLowerCase()
+    }
+  }
+
+  return null
 }
 
 export async function GET(request: NextRequest) {
@@ -106,10 +148,31 @@ export async function GET(request: NextRequest) {
       metadata.verifiedAt = nowIso
       metadata.lastPaystackReference = paystackReference
 
+      let studentName = resolveStudentName(metadata)
+      const parentName = resolveParentName(metadata)
+      let parentEmail = resolveParentEmail(metadata)
+
+      metadata.studentName = studentName
+      metadata.student_name = studentName
+
+      if (parentName) {
+        metadata.parentName = parentName
+        metadata.parent_name = parentName
+      }
+
       const customerEmail =
         gatewayData.customer && typeof gatewayData.customer.email === "string"
           ? sanitizeInput(gatewayData.customer.email)
           : ""
+
+      if (!parentEmail && customerEmail) {
+        parentEmail = customerEmail.toLowerCase()
+      }
+
+      if (parentEmail) {
+        metadata.parentEmail = parentEmail
+        metadata.parent_email = parentEmail
+      }
 
       let paymentRecord = await findPaymentByReference(paystackReference)
 
@@ -145,7 +208,21 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      const studentName = resolveStudentName(metadata)
+      studentName = resolveStudentName(metadata)
+      metadata.studentName = studentName
+      metadata.student_name = studentName
+      const finalParentName = resolveParentName(metadata) ?? parentName
+      const finalParentEmail = resolveParentEmail(metadata) ?? parentEmail
+
+      if (finalParentName) {
+        metadata.parentName = finalParentName
+        metadata.parent_name = finalParentName
+      }
+
+      if (finalParentEmail) {
+        metadata.parentEmail = finalParentEmail
+        metadata.parent_email = finalParentEmail
+      }
       const receipt = await createOrUpdateReceipt({
         paymentId: paymentRecord.id,
         studentName,
@@ -160,6 +237,30 @@ export async function GET(request: NextRequest) {
           channel,
         },
       })
+
+      try {
+        publishNotification({
+          id: randomUUID(),
+          title: finalParentName ? `Payment received from ${finalParentName}` : "Payment verified",
+          body: `${studentName} • ₦${amountInNaira.toLocaleString()} (${paymentType})`,
+          category: "payment",
+          createdAt: nowIso,
+          targetUserIds: [],
+          targetRoles: ["admin", "super_admin", "accountant"],
+          actionUrl: "/?tab=payments",
+          meta: {
+            paymentId: paymentRecord.id,
+            studentId,
+            parentName: finalParentName,
+            parentEmail: finalParentEmail,
+            amount: amountInNaira,
+            paymentType,
+            reference: paystackReference,
+          },
+        })
+      } catch (notificationError) {
+        console.error("Failed to broadcast payment notification:", notificationError)
+      }
 
       return NextResponse.json({
         status: true,
