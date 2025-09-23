@@ -170,6 +170,8 @@ export const auth = {
     password: string
     role: UserRole
     metadata?: Record<string, any>
+    classId?: string | null
+    studentIds?: string[]
   }): Promise<User | null> => {
     const existing = await getUserByEmail(userData.email)
     if (existing) {
@@ -184,6 +186,8 @@ export const auth = {
       passwordHash: hashedPassword,
       metadata: userData.metadata ?? null,
       isActive: true,
+      classId: userData.classId ?? undefined,
+      studentIds: userData.studentIds ?? undefined,
     }
 
     const newUser = await createUserRecord(payload)

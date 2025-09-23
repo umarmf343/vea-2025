@@ -78,6 +78,8 @@ const ROLE_OPTIONS: { value: UserRole; label: string; api: string }[] = [
 
 const NO_CLASS_SELECT_VALUE = "__no_class__"
 
+const shouldAssignClass = (role: UserRole) => role === "teacher" || role === "student"
+
 const STATUS_BADGE: Record<UserStatus, string> = {
   active: "bg-green-100 text-green-800",
   inactive: "bg-gray-100 text-gray-800",
@@ -265,12 +267,32 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
     try {
       const normalizedClassId = newUser.classId.trim()
       const selectedClass = availableClasses.find((cls) => cls.id === normalizedClassId)
-      const teacherMetadata =
-        newUser.role === "teacher" && selectedClass
+
+      if (newUser.role === "parent" && newUser.studentIds.length === 0) {
+        setError("Please assign at least one student to the parent account")
+        return
+      }
+
+      if (shouldAssignClass(newUser.role) && !normalizedClassId) {
+        setError("Please select a class before creating this account")
+        return
+      }
+
+      const classMetadata = shouldAssignClass(newUser.role)
+        ? {
+            assignedClassName: selectedClass?.name ?? null,
+          }
+        : undefined
+
+      const parentMetadata =
+        newUser.role === "parent" && newUser.studentIds.length > 0
           ? {
-              assignedClassName: selectedClass.name,
+              linkedStudentId: newUser.studentIds[0],
+              linkedStudentIds: [...newUser.studentIds],
             }
           : undefined
+
+      const metadata = classMetadata || parentMetadata ? { ...parentMetadata, ...classMetadata } : undefined
       const response = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -280,9 +302,9 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
           role: ROLE_OPTIONS.find((option) => option.value === newUser.role)?.api ?? "Teacher",
           password: newUser.password,
           studentIds: newUser.role === "parent" ? newUser.studentIds : undefined,
-          classId: newUser.role === "teacher" ? (normalizedClassId || null) : undefined,
+          classId: shouldAssignClass(newUser.role) ? (normalizedClassId || null) : undefined,
           subjects: newUser.role === "teacher" ? newUser.subjects : undefined,
-          metadata: teacherMetadata,
+          metadata,
         }),
       })
 
@@ -319,13 +341,27 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
         normalizedClassId !== null
           ? availableClasses.find((cls) => cls.id === normalizedClassId)
           : undefined
-      const teacherMetadata =
-        editingUser.role === "teacher"
-          ? {
-              ...(editingUser.metadata ?? {}),
-              assignedClassName: selectedClass?.name ?? null,
-            }
-          : undefined
+      const metadataPayload: Record<string, any> = editingUser.metadata ? { ...editingUser.metadata } : {}
+
+      if (shouldAssignClass(editingUser.role)) {
+        metadataPayload.assignedClassName = selectedClass?.name ?? null
+      } else if ("assignedClassName" in metadataPayload) {
+        delete metadataPayload.assignedClassName
+      }
+
+      if (editingUser.role === "parent") {
+        metadataPayload.linkedStudentId = editingUser.studentIds[0] ?? null
+        metadataPayload.linkedStudentIds = [...editingUser.studentIds]
+      } else {
+        if ("linkedStudentId" in metadataPayload) {
+          delete metadataPayload.linkedStudentId
+        }
+        if ("linkedStudentIds" in metadataPayload) {
+          delete metadataPayload.linkedStudentIds
+        }
+      }
+
+      const metadata = Object.keys(metadataPayload).length > 0 ? metadataPayload : undefined
       const response = await fetch("/api/users", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -336,9 +372,9 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
           role: ROLE_OPTIONS.find((option) => option.value === editingUser.role)?.api ?? "Teacher",
           status: editingUser.status,
           studentIds: editingUser.role === "parent" ? editingUser.studentIds : undefined,
-          classId: editingUser.role === "teacher" ? normalizedClassId : undefined,
+          classId: shouldAssignClass(editingUser.role) ? normalizedClassId : undefined,
           subjects: editingUser.role === "teacher" ? editingUser.subjects : undefined,
-          metadata: teacherMetadata,
+          metadata,
         }),
       })
 
@@ -501,7 +537,7 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                       ...prev,
                       role: value,
                       studentIds: value === "parent" ? prev.studentIds : [],
-                      classId: value === "teacher" ? prev.classId : "",
+                      classId: shouldAssignClass(value) ? prev.classId : "",
                       subjects: value === "teacher" ? prev.subjects : [],
                     }))
                   }
@@ -554,70 +590,72 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                   </div>
                 </div>
               )}
-              {newUser.role === "teacher" && (
+              {shouldAssignClass(newUser.role) && (
                 <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Assign Class</Label>
-                  <Select
-                    value={
-                      newUser.classId && newUser.classId.trim().length > 0
-                        ? newUser.classId
-                        : NO_CLASS_SELECT_VALUE
-                    }
-                    onValueChange={(value) =>
-                      setNewUser((prev) => ({
-                        ...prev,
-                        classId: value === NO_CLASS_SELECT_VALUE ? "" : value,
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a class" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NO_CLASS_SELECT_VALUE}>No class assigned</SelectItem>
-                      {availableClasses.length === 0 ? (
-                        <SelectItem value="__no_classes__" disabled>
-                          No classes available
-                        </SelectItem>
-                      ) : (
-                        availableClasses.map((cls) => (
-                          <SelectItem key={cls.id} value={cls.id}>
-                            {cls.name}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
                   <div className="space-y-2">
-                    <Label>Assign Subjects</Label>
-                    <div className="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
-                      {availableSubjects.length === 0 ? (
-                        <p className="text-sm text-gray-500">Create subjects before assigning them to teachers.</p>
-                      ) : (
-                        availableSubjects.map((subject) => (
-                          <label key={subject.id} className="flex items-center gap-2 text-sm">
-                            <Checkbox
-                              checked={newUser.subjects.includes(subject.name)}
-                              onCheckedChange={(checked) =>
-                                setNewUser((prev) => ({
-                                  ...prev,
-                                  subjects: checked
-                                    ? [...prev.subjects, subject.name]
-                                    : prev.subjects.filter((item) => item !== subject.name),
-                                }))
-                              }
-                            />
-                            <span>
-                              {subject.name}
-                              <span className="ml-1 text-xs text-gray-500">({subject.code})</span>
-                            </span>
-                          </label>
-                        ))
-                      )}
-                    </div>
+                    <Label>Assign Class</Label>
+                    <Select
+                      value={
+                        newUser.classId && newUser.classId.trim().length > 0
+                          ? newUser.classId
+                          : NO_CLASS_SELECT_VALUE
+                      }
+                      onValueChange={(value) =>
+                        setNewUser((prev) => ({
+                          ...prev,
+                          classId: value === NO_CLASS_SELECT_VALUE ? "" : value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a class" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_CLASS_SELECT_VALUE}>No class assigned</SelectItem>
+                        {availableClasses.length === 0 ? (
+                          <SelectItem value="__no_classes__" disabled>
+                            No classes available
+                          </SelectItem>
+                        ) : (
+                          availableClasses.map((cls) => (
+                            <SelectItem key={cls.id} value={cls.id}>
+                              {cls.name}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
+                  {newUser.role === "teacher" && (
+                    <div className="space-y-2">
+                      <Label>Assign Subjects</Label>
+                      <div className="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
+                        {availableSubjects.length === 0 ? (
+                          <p className="text-sm text-gray-500">Create subjects before assigning them to teachers.</p>
+                        ) : (
+                          availableSubjects.map((subject) => (
+                            <label key={subject.id} className="flex items-center gap-2 text-sm">
+                              <Checkbox
+                                checked={newUser.subjects.includes(subject.name)}
+                                onCheckedChange={(checked) =>
+                                  setNewUser((prev) => ({
+                                    ...prev,
+                                    subjects: checked
+                                      ? [...prev.subjects, subject.name]
+                                      : prev.subjects.filter((item) => item !== subject.name),
+                                  }))
+                                }
+                              />
+                              <span>
+                                {subject.name}
+                                <span className="ml-1 text-xs text-gray-500">({subject.code})</span>
+                              </span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               <Button onClick={() => void handleCreateUser()} className="w-full bg-[#2d682d] hover:bg-[#1a4a1a] text-white">
@@ -665,7 +703,9 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                     <Badge className={STATUS_BADGE[user.status]}>{user.status}</Badge>
                   </TableCell>
                   <TableCell className="max-w-[160px] truncate">
-                    {user.role === "teacher" ? user.className ?? "Unassigned" : "—"}
+                    {shouldAssignClass(user.role)
+                      ? user.className ?? user.classId ?? "Unassigned"
+                      : "—"}
                   </TableCell>
                   <TableCell className="max-w-[240px]">
                     {user.role === "teacher" && user.subjects.length > 0 ? (
@@ -779,7 +819,7 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                             ...prev,
                             role: value,
                             studentIds: value === "parent" ? prev.studentIds : [],
-                            classId: value === "teacher" ? prev.classId : null,
+                            classId: shouldAssignClass(value) ? prev.classId : null,
                             subjects: value === "teacher" ? prev.subjects : [],
                           }
                         : prev,
@@ -845,7 +885,7 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                   </div>
                 </div>
               )}
-              {editingUser.role === "teacher" && (
+              {shouldAssignClass(editingUser.role) && (
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>Assigned Class</Label>
@@ -885,38 +925,40 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Assigned Subjects</Label>
-                    <div className="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
-                      {availableSubjects.length === 0 ? (
-                        <p className="text-sm text-gray-500">No subjects available.</p>
-                      ) : (
-                        availableSubjects.map((subject) => (
-                          <label key={subject.id} className="flex items-center gap-2 text-sm">
-                            <Checkbox
-                              checked={editingUser.subjects.includes(subject.name)}
-                              onCheckedChange={(checked) =>
-                                setEditingUser((prev) =>
-                                  prev
-                                    ? {
-                                        ...prev,
-                                        subjects: checked
-                                          ? [...prev.subjects, subject.name]
-                                          : prev.subjects.filter((item) => item !== subject.name),
-                                      }
-                                    : prev,
-                                )
-                              }
-                            />
-                            <span>
-                              {subject.name}
-                              <span className="ml-1 text-xs text-gray-500">({subject.code})</span>
-                            </span>
-                          </label>
-                        ))
-                      )}
+                  {editingUser.role === "teacher" && (
+                    <div className="space-y-2">
+                      <Label>Assigned Subjects</Label>
+                      <div className="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
+                        {availableSubjects.length === 0 ? (
+                          <p className="text-sm text-gray-500">No subjects available.</p>
+                        ) : (
+                          availableSubjects.map((subject) => (
+                            <label key={subject.id} className="flex items-center gap-2 text-sm">
+                              <Checkbox
+                                checked={editingUser.subjects.includes(subject.name)}
+                                onCheckedChange={(checked) =>
+                                  setEditingUser((prev) =>
+                                    prev
+                                      ? {
+                                          ...prev,
+                                          subjects: checked
+                                            ? [...prev.subjects, subject.name]
+                                            : prev.subjects.filter((item) => item !== subject.name),
+                                        }
+                                      : prev,
+                                  )
+                                }
+                              />
+                              <span>
+                                {subject.name}
+                                <span className="ml-1 text-xs text-gray-500">({subject.code})</span>
+                              </span>
+                            </label>
+                          ))
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
               <Button onClick={() => void handleUpdateUser()} className="w-full bg-[#2d682d] hover:bg-[#1a4a1a] text-white">

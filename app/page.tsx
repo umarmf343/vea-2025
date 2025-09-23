@@ -109,6 +109,10 @@ const roleHasPortalAccess = (role: UserRole): boolean => {
   return role === "admin" || role === "super-admin" || role === "teacher"
 }
 
+const requiresClassSelection = (role: UserRole): boolean => role === "teacher" || role === "student"
+
+const NO_CLASS_OPTION = "__no_class__"
+
 export default function HomePage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [loginForm, setLoginForm] = useState({ email: "", password: "", role: "parent" as UserRole })
@@ -118,12 +122,15 @@ export default function HomePage() {
     password: "",
     role: "parent" as UserRole,
     studentId: "",
+    classId: "",
   })
   const [registrationEnabled, setRegistrationEnabled] = useState(true)
   const [loginError, setLoginError] = useState<string | null>(null)
   const [registerError, setRegisterError] = useState<string | null>(null)
   const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
+  const [classOptions, setClassOptions] = useState<Array<{ id: string; name: string }>>([])
+  const [knownStudents, setKnownStudents] = useState<Array<{ id: string; name: string }>>([])
 
   useEffect(() => {
     if (currentUser) {
@@ -156,6 +163,57 @@ export default function HomePage() {
     }
 
     void fetchSettings()
+  }, [currentUser])
+
+  useEffect(() => {
+    if (currentUser) {
+      return
+    }
+
+    let isMounted = true
+
+    const loadRegistrationOptions = async () => {
+      try {
+        const response = await fetch("/api/classes")
+        if (response.ok) {
+          const payload = (await response.json()) as { classes?: Array<{ id: string; name: string }> }
+          if (isMounted) {
+            setClassOptions(
+              Array.isArray(payload.classes)
+                ? payload.classes.map((cls) => ({ id: String(cls.id), name: String(cls.name ?? cls.id) }))
+                : [],
+            )
+          }
+        }
+      } catch (error) {
+        logger.error("Unable to load registration classes", { error })
+      }
+
+      try {
+        const response = await fetch("/api/users?role=student")
+        if (response.ok) {
+          const payload = (await response.json()) as { users?: Array<{ id: string; name: string }> }
+          if (isMounted) {
+            setKnownStudents(
+              Array.isArray(payload.users)
+                ? payload.users.map((student) => ({
+                    id: String(student.id),
+                    name: String(student.name ?? student.id),
+                  }))
+                : [],
+            )
+          }
+        }
+      } catch (error) {
+        logger.error("Unable to load student directory for registration", { error })
+      }
+    }
+
+    void loadRegistrationOptions()
+
+    return () => {
+      isMounted = false
+    }
   }, [currentUser])
 
   useEffect(() => {
@@ -248,6 +306,32 @@ export default function HomePage() {
     setIsRegistering(true)
 
     try {
+      const normalizedClassId = registerForm.classId.trim()
+      const normalizedStudentId = registerForm.studentId.trim()
+
+      if (requiresClassSelection(registerForm.role) && !normalizedClassId) {
+        setRegisterError("Please select a class before creating your account.")
+        setIsRegistering(false)
+        return
+      }
+
+      if (registerForm.role === "parent" && !normalizedStudentId) {
+        setRegisterError("Please provide your child's student ID.")
+        setIsRegistering(false)
+        return
+      }
+
+      if (
+        registerForm.role === "parent" &&
+        normalizedStudentId &&
+        knownStudents.length > 0 &&
+        !knownStudents.some((student) => student.id === normalizedStudentId)
+      ) {
+        setRegisterError("We could not find a student with that ID. Please confirm and try again.")
+        setIsRegistering(false)
+        return
+      }
+
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -256,6 +340,8 @@ export default function HomePage() {
           email: registerForm.email,
           password: registerForm.password,
           role: mapUiRoleToApi(registerForm.role),
+          classId: requiresClassSelection(registerForm.role) ? normalizedClassId : undefined,
+          studentId: registerForm.role === "parent" ? normalizedStudentId : undefined,
         }),
       })
 
@@ -439,7 +525,14 @@ export default function HomePage() {
                       <Select
                         value={registerForm.role}
                         disabled={isRegistering}
-                        onValueChange={(value: UserRole) => setRegisterForm((prev) => ({ ...prev, role: value }))}
+                        onValueChange={(value: UserRole) =>
+                          setRegisterForm((prev) => ({
+                            ...prev,
+                            role: value,
+                            classId: requiresClassSelection(value) ? prev.classId : "",
+                            studentId: value === "parent" ? prev.studentId : "",
+                          }))
+                        }
                       >
                         <SelectTrigger className="border-[#2d682d]/20 focus:border-[#2d682d]">
                           <SelectValue />
@@ -449,6 +542,12 @@ export default function HomePage() {
                             <div className="flex items-center gap-2">
                               <UserCheck className="h-4 w-4" />
                               Teacher
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="student">
+                            <div className="flex items-center gap-2">
+                              <GraduationCap className="h-4 w-4" />
+                              Student
                             </div>
                           </SelectItem>
                           <SelectItem value="parent">
@@ -489,6 +588,47 @@ export default function HomePage() {
                         disabled={isRegistering}
                       />
                     </div>
+                    {requiresClassSelection(registerForm.role) && (
+                      <div className="space-y-2">
+                        <Label htmlFor="register-class" className="text-[#2d682d]">
+                          Class
+                        </Label>
+                        <Select
+                          value={
+                            registerForm.classId && registerForm.classId.trim().length > 0
+                              ? registerForm.classId
+                              : NO_CLASS_OPTION
+                          }
+                          disabled={isRegistering}
+                          onValueChange={(value) =>
+                            setRegisterForm((prev) => ({
+                              ...prev,
+                              classId: value === NO_CLASS_OPTION ? "" : value,
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="border-[#2d682d]/20 focus:border-[#2d682d]">
+                            <SelectValue placeholder="Select a class" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NO_CLASS_OPTION} disabled>
+                              Select a class
+                            </SelectItem>
+                            {classOptions.length === 0 ? (
+                              <SelectItem value="__no_classes__" disabled>
+                                No classes available
+                              </SelectItem>
+                            ) : (
+                              classOptions.map((cls) => (
+                                <SelectItem key={cls.id} value={cls.id}>
+                                  {cls.name}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                     {registerForm.role === "parent" && (
                       <div className="space-y-2">
                         <Label htmlFor="student-id" className="text-[#2d682d]">
@@ -502,7 +642,17 @@ export default function HomePage() {
                           className="border-[#2d682d]/20 focus:border-[#2d682d]"
                           required
                           disabled={isRegistering}
+                          list={knownStudents.length > 0 ? "available-student-ids" : undefined}
                         />
+                        {knownStudents.length > 0 && (
+                          <datalist id="available-student-ids">
+                            {knownStudents.map((student) => (
+                              <option key={student.id} value={student.id}>
+                                {student.name}
+                              </option>
+                            ))}
+                          </datalist>
+                        )}
                       </div>
                     )}
                     <div className="space-y-2">
@@ -565,9 +715,24 @@ export default function HomePage() {
 
 function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [teacherAssignments, setTeacherAssignments] = useState({
-    classes: user.role === "teacher" && user.className ? [user.className] : [],
+    classes:
+      user.role === "teacher"
+        ? user.className
+          ? [user.className]
+          : user.classId
+            ? [String(user.classId)]
+            : []
+        : [],
     subjects: user.role === "teacher" && Array.isArray(user.subjects) ? user.subjects : [],
   })
+  const [studentClassInfo, setStudentClassInfo] = useState<{ className: string; classId: string | null }>(
+    user.role === "student"
+      ? {
+          className: user.className ?? "",
+          classId: user.classId ?? null,
+        }
+      : { className: "", classId: null },
+  )
 
   useEffect(() => {
     if (user.role !== "teacher") {
@@ -620,6 +785,59 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     }
 
     void loadTeacherAssignments()
+
+    return () => {
+      isMounted = false
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (user.role !== "student") {
+      setStudentClassInfo({ className: "", classId: null })
+      return
+    }
+
+    let isMounted = true
+
+    const loadStudentClass = async () => {
+      const classId = typeof user.classId === "string" ? user.classId.trim() : ""
+      let className = user.className ?? ""
+
+      if (classId) {
+        try {
+          const response = await fetch(`/api/classes?id=${encodeURIComponent(classId)}`)
+          if (response.ok) {
+            const payload = (await response.json()) as {
+              class?: { id: string; name: string }
+              classes?: Array<{ id: string; name: string }>
+            }
+            const match = payload.class
+              ? payload.class
+              : payload.classes?.find((cls) => cls.id === classId)
+            if (match?.name) {
+              className = match.name
+            }
+          } else if (response.status !== 404) {
+            logger.error("Unable to load student class assignment", {
+              status: response.status,
+              statusText: response.statusText,
+            })
+          }
+        } catch (error) {
+          logger.error("Unable to load student class assignment", { error })
+        }
+      }
+
+      if (!className && classId) {
+        className = classId
+      }
+
+      if (isMounted) {
+        setStudentClassInfo({ className, classId: classId || null })
+      }
+    }
+
+    void loadStudentClass()
 
     return () => {
       isMounted = false
@@ -683,8 +901,11 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               id: user.id,
               name: user.name,
               email: user.email,
-              class: "JSS 2A",
-              admissionNumber: "VEA2025001",
+              class: studentClassInfo.className || studentClassInfo.classId || "Unassigned",
+              admissionNumber:
+                typeof user.metadata?.admissionNumber === "string"
+                  ? user.metadata.admissionNumber
+                  : user.id,
             }}
           />
         )}
