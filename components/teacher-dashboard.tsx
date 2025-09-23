@@ -603,6 +603,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             total: student.grandTotal,
             grade: student.grade,
             remarks: student.teacherRemark,
+            position: student.position,
           },
         ],
         summary: {

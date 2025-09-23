@@ -39,11 +39,30 @@ export interface RawReportCardTermInfo {
 
 export interface RawReportCardBranding {
   logo?: string | null
+  logoUrl?: string | null
+  schoolLogo?: string | null
   signature?: string | null
+  signatureUrl?: string | null
+  headmasterSignature?: string | null
   headmasterName?: string
+  principalName?: string
   schoolName?: string
   address?: string
+  schoolAddress?: string
+  educationZone?: string
+  educationDistrict?: string
+  councilArea?: string
+  lga?: string
+  localGovernmentArea?: string
+  contactPhone?: string
+  contactEmail?: string
   defaultRemark?: string
+  phone?: string
+  contactNumber?: string
+  email?: string
+  schoolEmail?: string
+  proprietorName?: string
+  headTeacherRemark?: string
 }
 
 export interface RawReportCardData {

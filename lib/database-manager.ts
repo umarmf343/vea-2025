@@ -3045,6 +3045,12 @@ class DatabaseManager {
         : {
             schoolLogo: null,
             headmasterSignature: null,
+            schoolAddress:
+              "No. 19, Abdulazeez Street, Zone 3 Duste Baumpaba, Bwari Area Council, Abuja",
+            educationZone: "Municipal Education Zone",
+            councilArea: "Bwari Area Council",
+            contactPhone: "+234 (0) 700-832-2025",
+            contactEmail: "info@victoryacademy.edu.ng",
             headmasterName: "Dr. Emmanuel Adebayo",
             defaultRemark: "Keep up the excellent work and continue to strive for academic excellence.",
             logoUrl: "",

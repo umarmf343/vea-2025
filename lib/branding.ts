@@ -3,6 +3,10 @@ import { safeStorage } from "./safe-storage"
 export interface BrandingInfo {
   schoolName: string
   schoolAddress: string
+  educationZone: string
+  councilArea: string
+  contactPhone: string
+  contactEmail: string
   headmasterName: string
   defaultRemark: string
   logoUrl: string | null
@@ -15,6 +19,10 @@ export const BRANDING_STORAGE_KEY = "schoolBranding"
 const FALLBACK_BRANDING: BrandingInfo = {
   schoolName: "Victory Educational Academy",
   schoolAddress: "No. 19, Abdulazeez Street, Zone 3 Duste Baumpaba, Bwari Area Council, Abuja",
+  educationZone: "Municipal Education Zone",
+  councilArea: "Bwari Area Council",
+  contactPhone: "+234 (0) 700-832-2025",
+  contactEmail: "info@victoryacademy.edu.ng",
   headmasterName: "Dr. Emmanuel Adebayo",
   defaultRemark: "Keep up the excellent work and continue to strive for academic excellence.",
   logoUrl: null,
@@ -31,24 +39,54 @@ const normalizeOptionalUrl = (value: unknown): string | null => {
   return null
 }
 
+const pickOptionalAsset = (value: Partial<BrandingInfo>, keys: readonly string[]) => {
+  const record = value as Record<string, unknown>
+  for (const key of keys) {
+    const candidate = record[key]
+    if (isNonEmptyString(candidate)) {
+      return candidate.trim()
+    }
+  }
+  return null
+}
+
 const normalizeBrandingObject = (value: Partial<BrandingInfo> | null | undefined): BrandingInfo => {
   if (!value || typeof value !== "object") {
     return { ...FALLBACK_BRANDING }
   }
+
+  const logoUrl =
+    pickOptionalAsset(value, ["logoUrl", "logo", "logoURL", "schoolLogo"]) ?? FALLBACK_BRANDING.logoUrl
+  const signatureUrl =
+    pickOptionalAsset(value, ["signatureUrl", "signature", "headmasterSignature", "principalSignature"]) ??
+    FALLBACK_BRANDING.signatureUrl
+
+  const headmasterName =
+    pickOptionalAsset(value, ["headmasterName", "principalName"]) ?? FALLBACK_BRANDING.headmasterName
 
   return {
     schoolName: isNonEmptyString(value.schoolName) ? value.schoolName.trim() : FALLBACK_BRANDING.schoolName,
     schoolAddress: isNonEmptyString(value.schoolAddress)
       ? value.schoolAddress.trim()
       : FALLBACK_BRANDING.schoolAddress,
-    headmasterName: isNonEmptyString(value.headmasterName)
-      ? value.headmasterName.trim()
-      : FALLBACK_BRANDING.headmasterName,
+    educationZone: isNonEmptyString(value.educationZone)
+      ? value.educationZone.trim()
+      : FALLBACK_BRANDING.educationZone,
+    councilArea: isNonEmptyString(value.councilArea)
+      ? value.councilArea.trim()
+      : FALLBACK_BRANDING.councilArea,
+    contactPhone: isNonEmptyString(value.contactPhone)
+      ? value.contactPhone.trim()
+      : FALLBACK_BRANDING.contactPhone,
+    contactEmail: isNonEmptyString(value.contactEmail)
+      ? value.contactEmail.trim()
+      : FALLBACK_BRANDING.contactEmail,
+    headmasterName,
     defaultRemark: isNonEmptyString(value.defaultRemark)
       ? value.defaultRemark.trim()
       : FALLBACK_BRANDING.defaultRemark,
-    logoUrl: normalizeOptionalUrl(value.logoUrl),
-    signatureUrl: normalizeOptionalUrl(value.signatureUrl),
+    logoUrl: normalizeOptionalUrl(logoUrl),
+    signatureUrl: normalizeOptionalUrl(signatureUrl),
     updatedAt: isNonEmptyString(value.updatedAt) ? value.updatedAt : undefined,
   }
 }

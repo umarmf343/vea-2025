@@ -28,6 +28,7 @@ export const completeReportCardData = {
         total: 95,
         grade: "A",
         teacherRemark: "Excellent performance in all areas. Shows strong analytical skills and consistent improvement.",
+        position: "1st",
       },
       {
         name: "English Language",
@@ -39,6 +40,7 @@ export const completeReportCardData = {
         total: 86,
         grade: "A",
         teacherRemark: "Very good grasp of language concepts. Excellent written and oral communication skills.",
+        position: "2nd",
       },
       {
         name: "Basic Science",
@@ -50,6 +52,7 @@ export const completeReportCardData = {
         total: 80,
         grade: "B",
         teacherRemark: "Good understanding of scientific principles. Participates actively in practical sessions.",
+        position: "3rd",
       },
       {
         name: "Social Studies",
@@ -61,6 +64,7 @@ export const completeReportCardData = {
         total: 87,
         grade: "A",
         teacherRemark: "Shows excellent knowledge of social concepts and current affairs.",
+        position: "4th",
       },
       {
         name: "French",
@@ -72,6 +76,7 @@ export const completeReportCardData = {
         total: 72,
         grade: "B",
         teacherRemark: "Good progress in language acquisition. Needs more practice in pronunciation.",
+        position: "6th",
       },
     ],
     summary: {
@@ -113,8 +118,12 @@ export const completeReportCardData = {
     branding: {
       schoolName: fallbackBrandingInfo.schoolName,
       address: fallbackBrandingInfo.schoolAddress,
+      educationZone: fallbackBrandingInfo.educationZone,
+      councilArea: fallbackBrandingInfo.councilArea,
+      contactPhone: fallbackBrandingInfo.contactPhone,
+      contactEmail: fallbackBrandingInfo.contactEmail,
       logo: fallbackBrandingInfo.logoUrl ?? "/generic-school-logo.png",
-      headmasterSignature: fallbackBrandingInfo.signatureUrl ?? "",
+      signature: fallbackBrandingInfo.signatureUrl ?? "",
       headmasterName: fallbackBrandingInfo.headmasterName,
     },
   },

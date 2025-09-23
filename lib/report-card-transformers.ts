@@ -1,6 +1,7 @@
 import type { ReportCardRecord, ReportCardSubjectRecord } from "@/lib/database"
 import { deriveGradeFromScore } from "@/lib/grade-utils"
 import type { RawReportCardData } from "@/lib/report-card-types"
+import { getBrandingFromStorage } from "@/lib/branding"
 
 const normaliseSubject = (subject: ReportCardSubjectRecord) => {
   const ca1 = Number.isFinite(subject.ca1) ? subject.ca1 : 0
@@ -21,6 +22,7 @@ const normaliseSubject = (subject: ReportCardSubjectRecord) => {
     total,
     grade,
     remarks: subject.remark ?? "",
+    position: subject.position ?? null,
   }
 }
 
@@ -31,6 +33,8 @@ export const mapReportCardRecordToRaw = (record: ReportCardRecord): RawReportCar
   const totalMarksObtainable = subjects.length > 0 ? subjects.length * 100 : 0
   const averageScore =
     totalMarksObtainable > 0 ? Number(((totalMarksObtained / totalMarksObtainable) * 100).toFixed(2)) : 0
+
+  const branding = getBrandingFromStorage()
 
   return {
     student: {
@@ -57,6 +61,18 @@ export const mapReportCardRecordToRaw = (record: ReportCardRecord): RawReportCar
     remarks: {
       classTeacher: record.classTeacherRemark ?? undefined,
       headTeacher: record.headTeacherRemark ?? undefined,
+    },
+    branding: {
+      schoolName: branding.schoolName,
+      address: branding.schoolAddress,
+      educationZone: branding.educationZone,
+      councilArea: branding.councilArea,
+      contactPhone: branding.contactPhone,
+      contactEmail: branding.contactEmail,
+      logo: branding.logoUrl,
+      signature: branding.signatureUrl,
+      headmasterName: branding.headmasterName,
+      defaultRemark: branding.defaultRemark,
     },
   }
 }
