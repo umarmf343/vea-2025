@@ -3543,6 +3543,26 @@ class DatabaseManager {
     }
   }
 
+  async deleteNotification(notificationId: string) {
+    try {
+      const notifications = await this.getAllNotifications()
+      const index = notifications.findIndex((notification: any) => notification.id === notificationId)
+
+      if (index === -1) {
+        return false
+      }
+
+      const [removed] = notifications.splice(index, 1)
+      safeStorage.setItem("notifications", JSON.stringify(notifications))
+      this.triggerEvent("notificationDeleted", { notificationId, notification: removed })
+
+      return true
+    } catch (error) {
+      console.error("Error deleting notification:", error)
+      throw error
+    }
+  }
+
   markNotificationAsRead(notificationId: string): void {
     const notifications = this.getNotifications()
     const index = notifications.findIndex((n) => n.id === notificationId)

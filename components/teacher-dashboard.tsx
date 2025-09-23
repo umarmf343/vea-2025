@@ -36,6 +36,14 @@ import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
 import { useToast } from "@/hooks/use-toast"
 import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
+import {
+  REPORT_CARD_WORKFLOW_EVENT,
+  getWorkflowRecords,
+  getWorkflowSummary,
+  resetReportCardSubmission,
+  submitReportCardsForApproval,
+  type ReportCardWorkflowRecord,
+} from "@/lib/report-card-workflow"
 
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
@@ -132,9 +140,9 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [selectedSubject, setSelectedSubject] = useState(teacher.subjects[0] ?? "")
   const [selectedTerm, setSelectedTerm] = useState("first")
   const [selectedSession, setSelectedSession] = useState("2024/2025")
-  const [reportCardStatus, setReportCardStatus] = useState<
-    Record<string, { status: "draft" | "pending" | "approved" | "revoked"; message?: string; submittedDate?: string }>
-  >({})
+  const [workflowRecords, setWorkflowRecords] = useState<ReportCardWorkflowRecord[]>([])
+  const [isSubmittingForApproval, setIsSubmittingForApproval] = useState(false)
+  const [isCancellingSubmission, setIsCancellingSubmission] = useState(false)
   const [additionalData, setAdditionalData] = useState({
     classPositions: {} as Record<number, number>,
     affectiveDomain: {} as Record<number, { neatness: string; honesty: string; punctuality: string }>,
@@ -600,17 +608,131 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   const getReportCardKey = () => `${selectedClass}-${selectedSubject}-${selectedTerm}-${selectedSession}`
 
-  const getCurrentStatus = () => {
-    const key = getReportCardKey()
-    return reportCardStatus[key] || { status: "draft" }
-  }
+  const normalizedTermLabel = useMemo(() => mapTermKeyToLabel(selectedTerm), [selectedTerm])
 
   useEffect(() => {
-    const savedStatus = safeStorage.getItem("reportCardStatus")
-    if (savedStatus) {
-      setReportCardStatus(JSON.parse(savedStatus))
+    setWorkflowRecords(getWorkflowRecords())
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    const handleWorkflowUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ records?: ReportCardWorkflowRecord[] }>).detail
+      if (Array.isArray(detail?.records)) {
+        setWorkflowRecords(detail.records)
+      }
+    }
+
+    window.addEventListener(REPORT_CARD_WORKFLOW_EVENT, handleWorkflowUpdate as EventListener)
+    return () => {
+      window.removeEventListener(REPORT_CARD_WORKFLOW_EVENT, handleWorkflowUpdate as EventListener)
     }
   }, [])
+
+  const currentWorkflowRecords = useMemo(
+    () =>
+      workflowRecords.filter(
+        (record) =>
+          record.className === selectedClass &&
+          record.subject === selectedSubject &&
+          record.term === normalizedTermLabel &&
+          record.session === selectedSession &&
+          record.teacherId === teacher.id,
+      ),
+    [normalizedTermLabel, selectedClass, selectedSession, selectedSubject, teacher.id, workflowRecords],
+  )
+
+  const currentStatus = useMemo(() => getWorkflowSummary(currentWorkflowRecords), [currentWorkflowRecords])
+
+  const handleSubmitForApproval = useCallback(async () => {
+    if (!selectedClass || !selectedSubject) {
+      toast({
+        variant: "destructive",
+        title: "Select class & subject",
+        description: "Choose a class and subject before sending report cards for approval.",
+      })
+      return
+    }
+
+    if (!marksData.length) {
+      toast({
+        variant: "destructive",
+        title: "No student results",
+        description: "Add student scores before submitting for approval.",
+      })
+      return
+    }
+
+    try {
+      setIsSubmittingForApproval(true)
+      const updated = submitReportCardsForApproval({
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        className: selectedClass,
+        subject: selectedSubject,
+        term: normalizedTermLabel,
+        session: selectedSession,
+        students: marksData.map((student) => ({
+          id: student.studentId,
+          name: student.studentName,
+        })),
+      })
+
+      setWorkflowRecords(updated)
+      toast({
+        title: "Sent for approval",
+        description: "Admin has been notified to review this result batch.",
+      })
+    } catch (error) {
+      logger.error("Failed to submit report cards for approval", { error })
+      toast({
+        variant: "destructive",
+        title: "Unable to submit",
+        description: error instanceof Error ? error.message : "Please try again.",
+      })
+    } finally {
+      setIsSubmittingForApproval(false)
+    }
+  }, [
+    marksData,
+    normalizedTermLabel,
+    selectedClass,
+    selectedSession,
+    selectedSubject,
+    teacher.id,
+    teacher.name,
+    toast,
+  ])
+
+  const handleCancelSubmission = useCallback(async () => {
+    try {
+      setIsCancellingSubmission(true)
+      const updated = resetReportCardSubmission({
+        teacherId: teacher.id,
+        className: selectedClass,
+        subject: selectedSubject,
+        term: normalizedTermLabel,
+        session: selectedSession,
+      })
+      setWorkflowRecords(updated)
+      toast({
+        title: "Submission cancelled",
+        description: "You can continue editing the report card details before resubmitting.",
+      })
+    } catch (error) {
+      logger.error("Failed to cancel report card submission", { error })
+      toast({
+        variant: "destructive",
+        title: "Unable to cancel submission",
+        description: error instanceof Error ? error.message : "Please try again.",
+      })
+    } finally {
+      setIsCancellingSubmission(false)
+    }
+  }, [normalizedTermLabel, selectedClass, selectedSession, selectedSubject, teacher.id, toast])
 
   const handleDownloadAssignmentAttachment = (assignment: TeacherAssignmentSummary) => {
     if (!assignment.resourceUrl) {
@@ -1014,24 +1136,67 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 <div className="mt-2">
                   <Badge
                     variant={
-                      getCurrentStatus().status === "approved"
+                      currentStatus.status === "approved"
                         ? "default"
-                        : getCurrentStatus().status === "pending"
+                        : currentStatus.status === "pending"
                           ? "secondary"
-                          : getCurrentStatus().status === "revoked"
+                          : currentStatus.status === "revoked"
                             ? "destructive"
                             : "outline"
                     }
                     className="text-sm"
                   >
-                    Status: {getCurrentStatus().status.charAt(0).toUpperCase() + getCurrentStatus().status.slice(1)}
+                    Status: {currentStatus.status.charAt(0).toUpperCase() + currentStatus.status.slice(1)}
                   </Badge>
-                  {getCurrentStatus().status === "revoked" && getCurrentStatus().message && (
+                  {currentStatus.status === "revoked" && currentStatus.message && (
                     <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
                       <p className="text-sm text-red-700 font-medium">Admin Feedback:</p>
-                      <p className="text-sm text-red-600">{getCurrentStatus().message}</p>
+                      <p className="text-sm text-red-600">{currentStatus.message}</p>
                     </div>
                   )}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button
+                      className="bg-[#2d682d] hover:bg-[#1f4a1f] text-white"
+                      onClick={() => void handleSubmitForApproval()}
+                      disabled={
+                        isSubmittingForApproval ||
+                        currentStatus.status === "pending" ||
+                        currentStatus.status === "approved"
+                      }
+                    >
+                      {isSubmittingForApproval ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <FileText className="mr-2 h-4 w-4" />
+                      )}
+                      {currentStatus.status === "approved"
+                        ? "Published"
+                        : currentStatus.status === "pending"
+                          ? "Awaiting Approval"
+                          : "Send for Approval"}
+                    </Button>
+                    {currentStatus.status === "revoked" && (
+                      <Button
+                        variant="outline"
+                        onClick={() => void handleSubmitForApproval()}
+                        disabled={isSubmittingForApproval}
+                      >
+                        Resubmit to Admin
+                      </Button>
+                    )}
+                    {currentStatus.status === "pending" && (
+                      <Button
+                        variant="ghost"
+                        onClick={() => void handleCancelSubmission()}
+                        disabled={isCancellingSubmission}
+                      >
+                        {isCancellingSubmission ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        Cancel Submission
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </CardHeader>
@@ -1158,9 +1323,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                 handleMarksUpdate(student.studentId, "firstCA", Number.parseInt(e.target.value) || 0)
                               }
                               className="w-14 h-8 text-xs"
-                              disabled={
-                                getCurrentStatus().status === "pending" || getCurrentStatus().status === "approved"
-                              }
+                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                             />
                           </div>
                           <div>
@@ -1172,9 +1335,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                 handleMarksUpdate(student.studentId, "secondCA", Number.parseInt(e.target.value) || 0)
                               }
                               className="w-14 h-8 text-xs"
-                              disabled={
-                                getCurrentStatus().status === "pending" || getCurrentStatus().status === "approved"
-                              }
+                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                             />
                           </div>
                           <div>
@@ -1190,9 +1351,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                 )
                               }
                               className="w-14 h-8 text-xs"
-                              disabled={
-                                getCurrentStatus().status === "pending" || getCurrentStatus().status === "approved"
-                              }
+                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                             />
                           </div>
                           <div className="font-bold text-[#2d682d] text-sm">{student.caTotal}</div>
@@ -1205,9 +1364,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                 handleMarksUpdate(student.studentId, "exam", Number.parseInt(e.target.value) || 0)
                               }
                               className="w-14 h-8 text-xs"
-                              disabled={
-                                getCurrentStatus().status === "pending" || getCurrentStatus().status === "approved"
-                              }
+                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                             />
                           </div>
                           <div className="font-bold text-[#b29032] text-sm">{student.grandTotal}</div>
@@ -1223,9 +1380,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                 )
                               }
                               className="w-16 h-8 text-xs"
-                              disabled={
-                                getCurrentStatus().status === "pending" || getCurrentStatus().status === "approved"
-                              }
+                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                             />
                           </div>
                           <div className="font-bold text-blue-600 text-sm">{student.totalMarksObtained}</div>
@@ -1247,9 +1402,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                               onChange={(e) => handleMarksUpdate(student.studentId, "teacherRemark", e.target.value)}
                               className="w-24 h-8 text-xs"
                               placeholder="Subject remark"
-                              disabled={
-                                getCurrentStatus().status === "pending" || getCurrentStatus().status === "approved"
-                              }
+                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                             />
                           </div>
                         </div>

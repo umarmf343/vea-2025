@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -16,184 +16,251 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Download, Check, X, Calendar, Clock, User, BookOpen } from "lucide-react"
+import { Download, Check, X, Calendar, Clock, User, BookOpen, Loader2 } from "lucide-react"
 import { safeStorage } from "@/lib/safe-storage"
 import { TutorialLink } from "@/components/tutorial-link"
+import {
+  REPORT_CARD_WORKFLOW_EVENT,
+  getWorkflowRecords,
+  updateReportCardWorkflowStatus,
+  type ReportCardWorkflowRecord,
+} from "@/lib/report-card-workflow"
+import { useToast } from "@/hooks/use-toast"
 
-interface StudentReportCard {
-  studentId: string
-  studentName: string
-  class: string
-  term: string
-  session: string
-  status: "draft" | "pending" | "approved" | "revoked"
-  teacherName: string
-  submittedDate: string
-  message?: string
-  subjects: string[]
+const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "all", label: "All Statuses" },
+  { value: "pending", label: "Pending Approval" },
+  { value: "approved", label: "Published" },
+  { value: "revoked", label: "Needs Revision" },
+]
+
+const STATUS_STYLES: Record<ReportCardWorkflowRecord["status"], { label: string; className: string }> = {
+  draft: { label: "Draft", className: "bg-gray-100 text-gray-800" },
+  pending: { label: "Pending Approval", className: "bg-yellow-100 text-yellow-800" },
+  approved: { label: "Published", className: "bg-green-100 text-green-800" },
+  revoked: { label: "Needs Revision", className: "bg-red-100 text-red-800" },
+}
+
+const ADMIN_METADATA = { id: "admin-panel", name: "Administrator" }
+
+const formatDate = (value?: string) => {
+  if (!value) {
+    return "—"
+  }
+
+  try {
+    return new Intl.DateTimeFormat("en-NG", { dateStyle: "medium" }).format(new Date(value))
+  } catch (error) {
+    return value
+  }
 }
 
 export function AdminApprovalDashboard() {
-  const [reportCards, setReportCards] = useState<StudentReportCard[]>([])
-  const [filteredReports, setFilteredReports] = useState<StudentReportCard[]>([])
+  const { toast } = useToast()
+  const [records, setRecords] = useState<ReportCardWorkflowRecord[]>([])
+  const [filterStatus, setFilterStatus] = useState<string>("pending")
+  const [filterClass, setFilterClass] = useState<string>("all")
   const [revokeMessage, setRevokeMessage] = useState("")
-  const [selectedReport, setSelectedReport] = useState<StudentReportCard | null>(null)
+  const [selectedRecord, setSelectedRecord] = useState<ReportCardWorkflowRecord | null>(null)
   const [showRevokeDialog, setShowRevokeDialog] = useState(false)
   const [submissionDeadline, setSubmissionDeadline] = useState("")
   const [showDeadlineDialog, setShowDeadlineDialog] = useState(false)
-  const [filterStatus, setFilterStatus] = useState<string>("all")
-  const [filterClass, setFilterClass] = useState<string>("all")
+  const [processingRecordId, setProcessingRecordId] = useState<string | null>(null)
 
-  const mockStudents = [
-    { id: "1", name: "John Doe", class: "JSS1A" },
-    { id: "2", name: "Jane Smith", class: "JSS1A" },
-    { id: "3", name: "Mike Johnson", class: "JSS1B" },
-    { id: "4", name: "Sarah Wilson", class: "JSS2A" },
-    { id: "5", name: "David Brown", class: "JSS2B" },
-  ]
+  const loadRecords = useCallback(() => {
+    setRecords(getWorkflowRecords())
+  }, [])
 
   useEffect(() => {
-    loadReportCards()
+    loadRecords()
     const savedDeadline = safeStorage.getItem("reportCardDeadline")
     if (savedDeadline) {
       setSubmissionDeadline(savedDeadline)
     }
-  }, [])
+  }, [loadRecords])
 
   useEffect(() => {
-    filterReportCards()
-  }, [reportCards, filterStatus, filterClass])
+    if (typeof window === "undefined") {
+      return
+    }
 
-  const loadReportCards = () => {
-    const savedStatus = safeStorage.getItem("reportCardStatus")
-    const reportCardData: StudentReportCard[] = []
-
-    mockStudents.forEach((student) => {
-      const key = `${student.id}-2024-1st-2024/2025`
-      let status = "draft"
-      let message = ""
-      let submittedDate = ""
-
-      if (savedStatus) {
-        const statusData = JSON.parse(savedStatus)
-        if (statusData[key]) {
-          status = statusData[key].status
-          message = statusData[key].message || ""
-          submittedDate = statusData[key].submittedDate || new Date().toLocaleDateString()
-        }
+    const handleUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ records?: ReportCardWorkflowRecord[] }>).detail
+      if (Array.isArray(detail?.records)) {
+        setRecords(detail.records)
+      } else {
+        loadRecords()
       }
+    }
 
-      reportCardData.push({
-        studentId: student.id,
-        studentName: student.name,
-        class: student.class,
-        term: "1st Term",
-        session: "2024/2025",
-        status: status as "draft" | "pending" | "approved" | "revoked",
-        teacherName: "Class Teacher",
-        submittedDate: submittedDate || new Date().toLocaleDateString(),
-        message,
-        subjects: ["Mathematics", "English", "Science", "Social Studies"],
-      })
+    window.addEventListener(REPORT_CARD_WORKFLOW_EVENT, handleUpdate as EventListener)
+    return () => {
+      window.removeEventListener(REPORT_CARD_WORKFLOW_EVENT, handleUpdate as EventListener)
+    }
+  }, [loadRecords])
+
+  const actionableRecords = useMemo(
+    () => records.filter((record) => record.status !== "draft"),
+    [records],
+  )
+
+  const classOptions = useMemo(() => {
+    const classes = new Set<string>()
+    actionableRecords.forEach((record) => {
+      if (record.className) {
+        classes.add(record.className)
+      }
     })
+    return Array.from(classes).sort()
+  }, [actionableRecords])
 
-    setReportCards(reportCardData)
-  }
-
-  const filterReportCards = () => {
-    let filtered = reportCards
+  const filteredRecords = useMemo(() => {
+    let scoped = actionableRecords
 
     if (filterStatus !== "all") {
-      filtered = filtered.filter((report) => report.status === filterStatus)
+      scoped = scoped.filter((record) => record.status === filterStatus)
     }
 
     if (filterClass !== "all") {
-      filtered = filtered.filter((report) => report.class === filterClass)
+      scoped = scoped.filter((record) => record.className === filterClass)
     }
 
-    setFilteredReports(filtered)
-  }
+    return scoped
+  }, [actionableRecords, filterClass, filterStatus])
 
-  const handleSetDeadline = () => {
+  const stats = useMemo(
+    () => ({
+      pending: actionableRecords.filter((record) => record.status === "pending").length,
+      published: actionableRecords.filter((record) => record.status === "approved").length,
+      revisions: actionableRecords.filter((record) => record.status === "revoked").length,
+    }),
+    [actionableRecords],
+  )
+
+  const handleSetDeadline = useCallback(() => {
     if (!submissionDeadline) {
-      alert("Please select a deadline date.")
+      toast({
+        variant: "destructive",
+        title: "Select a deadline",
+        description: "Please pick a deadline date before saving.",
+      })
       return
     }
 
     safeStorage.setItem("reportCardDeadline", submissionDeadline)
     setShowDeadlineDialog(false)
-    alert("Report card submission deadline has been set successfully!")
-  }
+    toast({
+      title: "Deadline saved",
+      description: "Teachers will see the updated submission deadline.",
+    })
+  }, [submissionDeadline, toast])
 
-  const isDeadlinePassed = () => {
-    if (!submissionDeadline) return false
+  const isDeadlinePassed = useMemo(() => {
+    if (!submissionDeadline) {
+      return false
+    }
     return new Date() > new Date(submissionDeadline)
-  }
+  }, [submissionDeadline])
 
-  const handleApprove = (studentId: string) => {
-    const key = `${studentId}-2024-1st-2024/2025`
-    const savedStatus = JSON.parse(safeStorage.getItem("reportCardStatus") || "{}")
-    savedStatus[key] = {
-      status: "approved",
-      submittedDate: new Date().toLocaleDateString(),
-    }
-    safeStorage.setItem("reportCardStatus", JSON.stringify(savedStatus))
+  const handleDownload = useCallback(
+    (record: ReportCardWorkflowRecord) => {
+      toast({
+        title: "Preparing report",
+        description: `Generating report card for ${record.studentName}.`,
+      })
+    },
+    [toast],
+  )
 
-    const approvedReports = JSON.parse(safeStorage.getItem("approvedReports") || "[]")
-    if (!approvedReports.includes(studentId)) {
-      approvedReports.push(studentId)
-    }
-    safeStorage.setItem("approvedReports", JSON.stringify(approvedReports))
+  const handleApprove = useCallback(
+    (record: ReportCardWorkflowRecord) => {
+      try {
+        setProcessingRecordId(record.id)
+        const updated = updateReportCardWorkflowStatus({
+          studentId: record.studentId,
+          className: record.className,
+          subject: record.subject,
+          term: record.term,
+          session: record.session,
+          status: "approved",
+          adminId: ADMIN_METADATA.id,
+          adminName: ADMIN_METADATA.name,
+        })
+        setRecords(updated)
+        toast({
+          title: "Report published",
+          description: `${record.studentName}'s results are now available to parents.`,
+        })
+      } catch (error) {
+        toast({
+          variant: "destructive",
+          title: "Unable to publish",
+          description: error instanceof Error ? error.message : "Please try again.",
+        })
+      } finally {
+        setProcessingRecordId(null)
+      }
+    },
+    [toast],
+  )
 
-    loadReportCards()
-    alert("Report card approved and made available to parents!")
-  }
+  const handleOpenRevoke = useCallback((record: ReportCardWorkflowRecord) => {
+    setSelectedRecord(record)
+    setRevokeMessage(record.feedback ?? "")
+    setShowRevokeDialog(true)
+  }, [])
 
-  const handleRevoke = () => {
-    if (!selectedReport || !revokeMessage.trim()) {
-      alert("Please provide a reason for revoking the report card.")
+  const handleConfirmRevoke = useCallback(() => {
+    if (!selectedRecord) {
       return
     }
 
-    const key = `${selectedReport.studentId}-2024-1st-2024/2025`
-    const savedStatus = JSON.parse(safeStorage.getItem("reportCardStatus") || "{}")
-    savedStatus[key] = {
-      status: "revoked",
-      message: revokeMessage,
-      submittedDate: new Date().toLocaleDateString(),
+    if (!revokeMessage.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Feedback required",
+        description: "Provide guidance so the teacher knows what to correct.",
+      })
+      return
     }
-    safeStorage.setItem("reportCardStatus", JSON.stringify(savedStatus))
 
+    try {
+      setProcessingRecordId(selectedRecord.id)
+      const updated = updateReportCardWorkflowStatus({
+        studentId: selectedRecord.studentId,
+        className: selectedRecord.className,
+        subject: selectedRecord.subject,
+        term: selectedRecord.term,
+        session: selectedRecord.session,
+        status: "revoked",
+        feedback: revokeMessage.trim(),
+        adminId: ADMIN_METADATA.id,
+        adminName: ADMIN_METADATA.name,
+      })
+      setRecords(updated)
+      setShowRevokeDialog(false)
+      setSelectedRecord(null)
+      setRevokeMessage("")
+      toast({
+        title: "Sent for revision",
+        description: "The teacher has been notified to update this report card.",
+      })
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Unable to send back",
+        description: error instanceof Error ? error.message : "Please try again.",
+      })
+    } finally {
+      setProcessingRecordId(null)
+    }
+  }, [revokeMessage, selectedRecord, toast])
+
+  const closeRevokeDialog = useCallback(() => {
     setShowRevokeDialog(false)
+    setSelectedRecord(null)
     setRevokeMessage("")
-    setSelectedReport(null)
-    loadReportCards()
-    alert("Report card revoked and sent back to teacher with feedback.")
-  }
-
-  const handleDownload = (report: StudentReportCard) => {
-    alert(`Downloading report card for ${report.studentName} (${report.class})`)
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "draft":
-        return "bg-gray-100 text-gray-800"
-      case "pending":
-        return "bg-yellow-100 text-yellow-800"
-      case "approved":
-        return "bg-green-100 text-green-800"
-      case "revoked":
-        return "bg-red-100 text-red-800"
-      default:
-        return "bg-gray-100 text-gray-800"
-    }
-  }
-
-  const getUniqueClasses = () => {
-    const classes = [...new Set(reportCards.map((report) => report.class))]
-    return classes.sort()
-  }
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -201,7 +268,9 @@ export function AdminApprovalDashboard() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">Report Card Approval Center</h1>
-            <p className="text-white/90">Review and approve student report cards submitted by teachers</p>
+            <p className="text-white/90">
+              {stats.pending} pending • {stats.revisions} needs revision • {stats.published} published
+            </p>
           </div>
           <TutorialLink
             href="https://www.youtube.com/watch?v=ysz5S6PUM-U"
@@ -246,7 +315,7 @@ export function AdminApprovalDashboard() {
           <CardTitle>Filter Report Cards</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-4">
+          <div className="flex flex-col gap-4 md:flex-row">
             <div className="flex-1">
               <Label htmlFor="status-filter">Filter by Status</Label>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
@@ -254,11 +323,11 @@ export function AdminApprovalDashboard() {
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="pending">Pending Approval</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="revoked">Revoked</SelectItem>
+                  {STATUS_FILTER_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -270,7 +339,7 @@ export function AdminApprovalDashboard() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Classes</SelectItem>
-                  {getUniqueClasses().map((className) => (
+                  {classOptions.map((className) => (
                     <SelectItem key={className} value={className}>
                       {className}
                     </SelectItem>
@@ -283,85 +352,112 @@ export function AdminApprovalDashboard() {
       </Card>
 
       <div className="grid gap-4">
-        {filteredReports.length === 0 ? (
+        {filteredRecords.length === 0 ? (
           <Card>
             <CardContent className="p-6 text-center">
               <p className="text-gray-500">No report cards match the current filters</p>
             </CardContent>
           </Card>
         ) : (
-          filteredReports.map((report) => (
-            <Card key={`${report.studentId}-${report.term}-${report.session}`}>
-              <CardHeader>
-                <div className="flex justify-between items-start">
-                  <div className="flex items-start gap-3">
-                    <div className="bg-[#2d682d] text-white p-2 rounded-full">
-                      <User className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{report.studentName}</CardTitle>
-                      <CardDescription className="flex items-center gap-4">
-                        <span className="flex items-center gap-1">
-                          <BookOpen className="h-3 w-3" />
-                          {report.class}
-                        </span>
-                        <span>
-                          {report.term}, {report.session}
-                        </span>
-                        <span>Teacher: {report.teacherName}</span>
-                      </CardDescription>
-                      <div className="mt-1 text-xs text-gray-500">Subjects: {report.subjects.join(", ")}</div>
-                      {report.message && (
-                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-                          <strong>Admin Feedback:</strong> {report.message}
+          filteredRecords.map((record) => {
+            const statusStyle = STATUS_STYLES[record.status]
+            return (
+              <Card key={record.id}>
+                <CardHeader>
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-start gap-3">
+                      <div className="bg-[#2d682d] text-white p-2 rounded-full">
+                        <User className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">{record.studentName}</CardTitle>
+                        <CardDescription className="flex flex-wrap items-center gap-3">
+                          <span className="flex items-center gap-1">
+                            <BookOpen className="h-3 w-3" />
+                            {record.className}
+                          </span>
+                          <span>
+                            {record.term}, {record.session}
+                          </span>
+                          <span>Teacher: {record.teacherName}</span>
+                        </CardDescription>
+                        <div className="mt-1 text-xs text-gray-500">
+                          Submitted: {formatDate(record.submittedAt)} • Last update: {formatDate(record.updatedAt)}
                         </div>
-                      )}
+                        {record.feedback && record.status === "revoked" && (
+                          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                            <strong>Admin Feedback:</strong> {record.feedback}
+                          </div>
+                        )}
+                      </div>
                     </div>
+                    <Badge className={statusStyle.className}>{statusStyle.label}</Badge>
                   </div>
-                  <Badge className={getStatusColor(report.status)}>
-                    {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => handleDownload(report)}
-                    variant="outline"
-                    size="sm"
-                    className="flex items-center gap-2"
-                  >
-                    <Download className="h-4 w-4" />
-                    Download
-                  </Button>
-                  {report.status === "pending" && (
-                    <>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={() => handleDownload(record)}
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      Download
+                    </Button>
+                    {record.status === "pending" && (
+                      <>
+                        <Button
+                          onClick={() => handleApprove(record)}
+                          size="sm"
+                          className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
+                          disabled={processingRecordId === record.id}
+                        >
+                          {processingRecordId === record.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Check className="h-4 w-4" />
+                          )}
+                          Publish to Parents
+                        </Button>
+                        <Button
+                          onClick={() => handleOpenRevoke(record)}
+                          variant="destructive"
+                          size="sm"
+                          disabled={processingRecordId === record.id}
+                          className="flex items-center gap-2"
+                        >
+                          <X className="h-4 w-4" />
+                          Request Changes
+                        </Button>
+                      </>
+                    )}
+                    {record.status === "approved" && (
                       <Button
-                        onClick={() => handleApprove(report.studentId)}
+                        onClick={() => handleOpenRevoke(record)}
+                        variant="outline"
                         size="sm"
-                        className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
-                      >
-                        <Check className="h-4 w-4" />
-                        Approve
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          setSelectedReport(report)
-                          setShowRevokeDialog(true)
-                        }}
-                        variant="destructive"
-                        size="sm"
+                        disabled={processingRecordId === record.id}
                         className="flex items-center gap-2"
                       >
-                        <X className="h-4 w-4" />
-                        Revoke
+                        {processingRecordId === record.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <X className="h-4 w-4" />
+                        )}
+                        Revoke Access
                       </Button>
-                    </>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))
+                    )}
+                    {record.status === "revoked" && (
+                      <Badge variant="outline" className="border-red-200 text-red-700 bg-red-50">
+                        Awaiting teacher updates
+                      </Badge>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })
         )}
       </div>
 
@@ -391,17 +487,28 @@ export function AdminApprovalDashboard() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showRevokeDialog} onOpenChange={setShowRevokeDialog}>
+      <Dialog
+        open={showRevokeDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeRevokeDialog()
+          } else {
+            setShowRevokeDialog(true)
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Revoke Report Card</DialogTitle>
+            <DialogTitle>Send Back for Revision</DialogTitle>
             <DialogDescription>
-              Please provide a reason for revoking this report card. The teacher will see this message.
+              {selectedRecord
+                ? `Provide guidance for ${selectedRecord.studentName}’s report card. The teacher will see this message.`
+                : "Provide guidance so the teacher understands the required corrections."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="message">Reason for Revocation</Label>
+              <Label htmlFor="message">Admin Feedback</Label>
               <Textarea
                 id="message"
                 value={revokeMessage}
@@ -412,11 +519,18 @@ export function AdminApprovalDashboard() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRevokeDialog(false)}>
+            <Button variant="outline" onClick={closeRevokeDialog}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleRevoke}>
-              Revoke Report Card
+            <Button
+              variant="destructive"
+              onClick={handleConfirmRevoke}
+              disabled={processingRecordId === selectedRecord?.id}
+            >
+              {processingRecordId === selectedRecord?.id ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Send Back to Teacher
             </Button>
           </DialogFooter>
         </DialogContent>
