@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { CreditCard, Search, CheckCircle, XCircle, Clock, DollarSign, Loader2 } from "lucide-react"
+import { ParentAccessManager } from "@/components/parent-access-manager"
 
 interface PaymentRecord {
   id: string
@@ -321,6 +322,8 @@ export function PaymentManagement() {
           </div>
         </CardContent>
       </Card>
+
+      <ParentAccessManager description="Toggle report card access for parents who paid offline." />
     </div>
   )
 }
