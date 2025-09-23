@@ -56,6 +56,8 @@ import type {
 import { AdminApprovalDashboard } from "@/components/admin-approval-dashboard"
 import { FinancialReports } from "@/components/financial-reports"
 import { InternalMessaging } from "@/components/internal-messaging"
+import { PaymentManagement } from "@/components/admin/payment-management"
+import { StudentManagement } from "@/components/admin/student-management"
 import { UserManagement } from "@/components/admin/user-management"
 import { SchoolCalendarApprovalPanel } from "@/components/school-calendar-approval"
 import { TutorialLink } from "@/components/tutorial-link"
@@ -65,11 +67,9 @@ import {
   BarChart3,
   Calendar,
   CreditCard,
-  Download,
   Edit,
   GraduationCap,
   Plus,
-  Printer,
   RefreshCw,
   Save,
   Shield,
@@ -110,6 +110,7 @@ type DashboardTab =
   | "reportcards"
   | "approval"
   | "receipts"
+  | "students"
   | "users"
   | "system"
   | "reports"
@@ -224,21 +225,40 @@ const DEFAULT_SETTINGS: SystemSettingsState = {
 }
 
 function normalizeRole(role: string): PanelRole {
-  const normalized = role.trim().toLowerCase()
+  const normalized = role.trim().toLowerCase().replace(/[\s-]+/g, "_")
   switch (normalized) {
-    case "super admin":
     case "super_admin":
+    case "superadmin":
       return "super_admin"
     case "admin":
+    case "administrator":
       return "admin"
     case "teacher":
+    case "teachers":
+    case "instructor":
+    case "educator":
       return "teacher"
     case "parent":
+    case "parents":
+    case "guardian":
+    case "guardians":
       return "parent"
     case "librarian":
+    case "libarian":
+    case "library_admin":
       return "librarian"
     case "accountant":
+    case "accountants":
+    case "bursar":
+    case "finance":
       return "accountant"
+    case "student":
+    case "students":
+    case "pupil":
+    case "pupils":
+    case "learner":
+    case "learners":
+      return "student"
     default:
       return "student"
   }
@@ -1211,98 +1231,6 @@ export default function SuperAdminDashboard() {
     }
   }, [refreshReportCards, reportToDelete, toast])
 
-  const handlePrintReceipt = useCallback(
-    (payment: PaymentRow) => {
-      const browserWindow =
-        typeof globalThis !== "undefined" && typeof (globalThis as Record<string, unknown>).window === "object"
-          ? (globalThis as { window: Window }).window
-          : undefined
-
-      if (!browserWindow) {
-        return
-      }
-
-      const printWindow = browserWindow.open("", "_blank")
-      if (!printWindow) {
-        return
-      }
-
-      const brandingHeading = branding.schoolName
-        ? `<h2 style="margin: 0; color: #2d682d;">${branding.schoolName}</h2>`
-        : "<h2 style=\"margin: 0; color: #2d682d;\">Payment Receipt</h2>"
-
-      const doc = printWindow.document
-
-      doc.write(`
-        <html>
-          <head>
-            <title>Payment Receipt - ${payment.reference}</title>
-            <style>
-              body { font-family: Arial, sans-serif; padding: 24px; color: #1f2937; }
-              .header { text-align: center; margin-bottom: 24px; }
-              .section { border: 1px solid #d1d5db; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-              .label { font-weight: 600; color: #4b5563; }
-            </style>
-          </head>
-          <body>
-            <div class="header">
-              ${brandingUploads.logoUrl
-                ? `<img src="${brandingUploads.logoUrl}" alt="School Logo" style="max-height: 64px; margin-bottom: 12px;" />`
-                : ""}
-              ${brandingHeading}
-              <p style="margin-top: 4px;">Official payment acknowledgement</p>
-            </div>
-            <div class="section">
-              <div><span class="label">Receipt No:</span> ${payment.reference}</div>
-              <div><span class="label">Student:</span> ${payment.studentName}</div>
-              <div><span class="label">Parent:</span> ${payment.parentName ?? "—"}</div>
-              <div><span class="label">Class:</span> ${payment.className ?? "—"}</div>
-              <div><span class="label">Amount:</span> ${formatCurrency(payment.amount)}</div>
-              <div><span class="label">Status:</span> ${payment.status.toUpperCase()}</div>
-              <div><span class="label">Channel:</span> ${payment.method === "online" ? "Online" : "Manual (Accountant)"}</div>
-              <div><span class="label">Updated:</span> ${formatDate(payment.updatedAt)}</div>
-            </div>
-            <p style="text-align: center; font-size: 12px; color: #6b7280;">Thank you for your payment.</p>
-          </body>
-        </html>
-      `)
-      doc.close()
-      printWindow.print()
-    },
-    [branding.schoolName, brandingUploads.logoUrl],
-  )
-
-  const handleDownloadReceipt = useCallback((payment: PaymentRow) => {
-    const browserWindow =
-      typeof globalThis !== "undefined" && typeof (globalThis as Record<string, unknown>).window === "object"
-        ? (globalThis as { window: Window }).window
-        : undefined
-
-    if (!browserWindow) {
-      return
-    }
-
-    const payload = {
-      reference: payment.reference,
-      studentName: payment.studentName,
-      parentName: payment.parentName,
-      className: payment.className,
-      amount: payment.amount,
-      status: payment.status,
-      method: payment.method,
-      source: payment.source,
-      updatedAt: payment.updatedAt,
-    }
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
-    const url = URL.createObjectURL(blob)
-    const link = browserWindow.document.createElement("a")
-    link.href = url
-    link.download = `receipt-${payment.reference}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-  }, [])
-
   return (
     <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1324,13 +1252,14 @@ export default function SuperAdminDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DashboardTab)}>
-        <TabsList className="grid w-full grid-cols-9">
+        <TabsList className="grid w-full grid-cols-10">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="branding">Branding</TabsTrigger>
           <TabsTrigger value="messages">Messages</TabsTrigger>
           <TabsTrigger value="reportcards">Report Cards</TabsTrigger>
           <TabsTrigger value="approval">Report Approval</TabsTrigger>
-          <TabsTrigger value="receipts">Receipts</TabsTrigger>
+          <TabsTrigger value="receipts">Payments</TabsTrigger>
+          <TabsTrigger value="students">Students</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
@@ -1897,78 +1826,11 @@ export default function SuperAdminDashboard() {
         </TabsContent>
 
         <TabsContent value="receipts" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Payment Receipts</CardTitle>
-              <CardDescription>Generate official receipts for parents and guardians.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Student</TableHead>
-                    <TableHead>Class</TableHead>
-                    <TableHead>Channel</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Reference</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedPayments.length ? (
-                    sortedPayments.map((payment) => (
-                      <TableRow key={payment.id}>
-                        <TableCell>{payment.studentName}</TableCell>
-                        <TableCell>{payment.className ?? "—"}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="flex items-center gap-1">
-                            {payment.method === "online" ? (
-                              <CreditCard className="h-3 w-3" />
-                            ) : (
-                              <Wallet className="h-3 w-3" />
-                            )}
-                            {payment.method === "online" ? "Online" : "Manual"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              payment.status === "completed"
-                                ? "default"
-                                : payment.status === "pending"
-                                  ? "secondary"
-                                  : "destructive"
-                            }
-                          >
-                            {payment.status.toUpperCase()}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{payment.reference}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(payment.amount)}</TableCell>
-                        <TableCell className="flex justify-end gap-2">
-                          <Button variant="outline" size="sm" onClick={() => handlePrintReceipt(payment)}>
-                            <Printer className="mr-2 h-4 w-4" />
-                            Print
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDownloadReceipt(payment)}>
-                            <Download className="mr-2 h-4 w-4" />
-                            Export
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center text-sm text-gray-500">
-                        No payment records yet.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+          <PaymentManagement />
+        </TabsContent>
+
+        <TabsContent value="students" className="space-y-6">
+          <StudentManagement />
         </TabsContent>
 
         <TabsContent value="users" className="space-y-6">

@@ -219,6 +219,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [isTeacherTimetableLoading, setIsTeacherTimetableLoading] = useState(true)
   const [isSyncingGrades, setIsSyncingGrades] = useState(false)
 
+  const normalizedTermLabel = useMemo(() => mapTermKeyToLabel(selectedTerm), [selectedTerm])
+
   const subjectSummary =
     teacher.subjects.length > 0 ? teacher.subjects.join(", ") : "No subjects assigned yet"
   const classSummary =
@@ -899,8 +901,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       setIsSyncingGrades(false)
     }
   }
-
-  const normalizedTermLabel = useMemo(() => mapTermKeyToLabel(selectedTerm), [selectedTerm])
 
   const loadAdditionalData = useCallback(() => {
     if (typeof window === "undefined") {
