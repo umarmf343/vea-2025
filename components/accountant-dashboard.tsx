@@ -393,6 +393,7 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       setPayments(combinedPayments)
       setReceipts(receiptsData.receipts.map(mapReceipt))
       setFeeStructure(feeData.feeStructure)
+      await dbManager.syncFinancialAnalytics(combinedPayments)
     } catch (error) {
       console.error("Accountant dashboard load failed:", error)
       const message = error instanceof Error ? error.message : "Unable to load accountant data"
@@ -440,7 +441,11 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       })
 
       const mapped = mapLocalPayment(created as Record<string, unknown>)
-      setPayments((previous) => mergePaymentRecords(previous, [mapped]))
+      setPayments((previous) => {
+        const updated = mergePaymentRecords(previous, [mapped])
+        void dbManager.syncFinancialAnalytics(updated)
+        return updated
+      })
       setBanner({ type: "success", message: "Payment recorded successfully." })
       setPaymentDialogOpen(false)
       resetPaymentForm()

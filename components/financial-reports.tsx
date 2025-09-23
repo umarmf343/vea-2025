@@ -198,11 +198,13 @@ export function FinancialReports({ userRole }: FinancialReportsProps) {
     dbManager.on("financialDataUpdated", handleFinancialUpdate)
     dbManager.on("paymentProcessed", handleFinancialUpdate)
     dbManager.on("expenseAdded", handleFinancialUpdate)
+    dbManager.on("financialAnalyticsUpdated", handleFinancialUpdate)
 
     return () => {
       dbManager.off("financialDataUpdated", handleFinancialUpdate)
       dbManager.off("paymentProcessed", handleFinancialUpdate)
       dbManager.off("expenseAdded", handleFinancialUpdate)
+      dbManager.off("financialAnalyticsUpdated", handleFinancialUpdate)
     }
   }, [loadFinancialData])
 
