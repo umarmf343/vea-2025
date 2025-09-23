@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 
 import { auth, type UserRole } from "@/lib/auth"
+import { getClassRecordById, getUserByIdFromDb } from "@/lib/database"
 import { sanitizeInput, validateEmail, validatePassword } from "@/lib/security"
 import { logger } from "@/lib/logger"
 
@@ -44,11 +45,50 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: passwordValidation.message }, { status: 400 })
     }
 
+    const rawClassId = typeof body?.classId === "string" ? sanitizeInput(body.classId) : ""
+    const classId = rawClassId.trim()
+    const rawStudentId = typeof body?.studentId === "string" ? sanitizeInput(body.studentId) : ""
+    const studentId = rawStudentId.trim()
+
+    let assignedClassName: string | null = null
+    if (classId) {
+      const classRecord = await getClassRecordById(classId)
+      if (!classRecord) {
+        return NextResponse.json({ error: "Selected class could not be found" }, { status: 400 })
+      }
+      assignedClassName = classRecord.name
+    } else if (resolvedRole === "teacher" || resolvedRole === "student") {
+      return NextResponse.json({ error: "A valid class assignment is required" }, { status: 400 })
+    }
+
+    let linkedStudentId: string | null = null
+    if (studentId) {
+      const studentRecord = await getUserByIdFromDb(studentId)
+      if (!studentRecord || studentRecord.role !== "student") {
+        return NextResponse.json({ error: "The specified student ID is not valid" }, { status: 400 })
+      }
+      linkedStudentId = studentRecord.id
+    } else if (resolvedRole === "parent") {
+      return NextResponse.json({ error: "Parents must link to an existing student" }, { status: 400 })
+    }
+
+    const metadata: Record<string, any> = {}
+    if (assignedClassName !== null) {
+      metadata.assignedClassName = assignedClassName
+    }
+    if (linkedStudentId) {
+      metadata.linkedStudentId = linkedStudentId
+      metadata.linkedStudentIds = [linkedStudentId]
+    }
+
     const user = await auth.register({
       name,
       email,
       password,
       role: resolvedRole,
+      classId: classId || undefined,
+      studentIds: linkedStudentId ? [linkedStudentId] : undefined,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     })
 
     if (!user) {
