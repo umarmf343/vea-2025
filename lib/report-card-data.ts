@@ -1,8 +1,9 @@
 import type { ReportCardRecord } from "./database"
 import { mapReportCardRecordToRaw } from "./report-card-transformers"
-import type { RawReportCardData } from "./report-card-types"
+import type { RawReportCardData, StoredStudentMarkRecord, StoredSubjectRecord } from "./report-card-types"
 import { safeStorage } from "./safe-storage"
 import { logger } from "./logger"
+import { normalizeTermLabel } from "./report-card-access"
 
 export interface StudentMarks {
   studentId: string
@@ -67,6 +68,154 @@ let reportCardSettings: ReportCardSettings = {
   },
 }
 
+export const STUDENT_MARKS_STORAGE_KEY = "studentMarks"
+
+type StudentMarksStore = Record<string, StoredStudentMarkRecord>
+
+const toFiniteNumber = (value: unknown, fallback = 0): number => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number.parseFloat(value)
+    return Number.isNaN(parsed) ? fallback : parsed
+  }
+
+  return fallback
+}
+
+const normalizeOptionalString = (value: unknown): string | undefined => {
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : undefined
+  }
+
+  return undefined
+}
+
+const parseStudentMarksStore = (): StudentMarksStore => {
+  const raw = safeStorage.getItem(STUDENT_MARKS_STORAGE_KEY)
+  if (!raw) {
+    return {}
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (!parsed || typeof parsed !== "object") {
+      return {}
+    }
+
+    const store: StudentMarksStore = {}
+
+    Object.entries(parsed).forEach(([key, value]) => {
+      if (!value || typeof value !== "object") {
+        return
+      }
+
+      const candidate = value as Partial<StoredStudentMarkRecord>
+      if (typeof candidate.studentId !== "string") {
+        return
+      }
+
+      const subjectsSource = candidate.subjects
+      if (!subjectsSource || typeof subjectsSource !== "object") {
+        return
+      }
+
+      const normalizedSubjects: Record<string, StoredSubjectRecord> = {}
+
+      Object.entries(subjectsSource).forEach(([subjectKey, subjectValue]) => {
+        if (!subjectValue || typeof subjectValue !== "object") {
+          return
+        }
+
+        const subject = subjectValue as Partial<StoredSubjectRecord>
+        const subjectName =
+          typeof subject.subject === "string" && subject.subject.trim().length > 0
+            ? subject.subject.trim()
+            : subjectKey
+
+        const ca1 = toFiniteNumber(subject.ca1)
+        const ca2 = toFiniteNumber(subject.ca2)
+        const assignment = toFiniteNumber(subject.assignment)
+        const caTotal = toFiniteNumber(subject.caTotal, ca1 + ca2 + assignment)
+        const exam = toFiniteNumber(subject.exam)
+        const total = toFiniteNumber(
+          subject.total,
+          toFiniteNumber(subject.totalObtained, caTotal + exam),
+        )
+
+        normalizedSubjects[subjectKey] = {
+          subject: subjectName,
+          className: subject.className ?? candidate.className ?? "",
+          ca1,
+          ca2,
+          assignment,
+          caTotal,
+          exam,
+          total,
+          grade: normalizeOptionalString(subject.grade)?.toUpperCase() ?? "",
+          remark: normalizeOptionalString(subject.remark),
+          position: subject.position ?? null,
+          totalObtainable:
+            typeof subject.totalObtainable === "number" && Number.isFinite(subject.totalObtainable)
+              ? subject.totalObtainable
+              : undefined,
+          totalObtained:
+            typeof subject.totalObtained === "number" && Number.isFinite(subject.totalObtained)
+              ? subject.totalObtained
+              : undefined,
+          averageScore:
+            typeof subject.averageScore === "number" && Number.isFinite(subject.averageScore)
+              ? subject.averageScore
+              : undefined,
+          teacherId: normalizeOptionalString(subject.teacherId),
+          teacherName: normalizeOptionalString(subject.teacherName),
+          updatedAt: normalizeOptionalString(subject.updatedAt),
+        }
+      })
+
+      store[key] = {
+        studentId: candidate.studentId,
+        studentName: candidate.studentName ?? "",
+        className: candidate.className ?? "",
+        term: candidate.term ?? "",
+        session: candidate.session ?? "",
+        subjects: normalizedSubjects,
+        lastUpdated: candidate.lastUpdated,
+        status: normalizeOptionalString(candidate.status),
+        numberInClass: candidate.numberInClass,
+        overallAverage:
+          typeof candidate.overallAverage === "number" && Number.isFinite(candidate.overallAverage)
+            ? candidate.overallAverage
+            : undefined,
+        overallPosition: candidate.overallPosition ?? null,
+      }
+    })
+
+    return store
+  } catch (error) {
+    logger.error("Failed to parse stored student marks", { error })
+    return {}
+  }
+}
+
+export const readStudentMarksStore = (): StudentMarksStore => {
+  return parseStudentMarksStore()
+}
+
+export const getStoredStudentMarksRecord = (
+  studentId: string,
+  term: string,
+  session: string,
+): StoredStudentMarkRecord | null => {
+  const store = parseStudentMarksStore()
+  const normalizedTerm = normalizeTermLabel(term)
+  const key = `${studentId}-${normalizedTerm}-${session}`
+  return store[key] ?? null
+}
+
 export const calculateGrade = (total: number): string => {
   const { gradingScale } = reportCardSettings
   for (const [grade, range] of Object.entries(gradingScale)) {
@@ -75,6 +224,82 @@ export const calculateGrade = (total: number): string => {
     }
   }
   return "F"
+}
+
+export const buildRawReportCardFromStoredRecord = (
+  record: StoredStudentMarkRecord,
+): RawReportCardData | null => {
+  const subjectEntries = Object.values(record.subjects ?? {})
+  if (subjectEntries.length === 0) {
+    return null
+  }
+
+  let totalMarksObtainable = 0
+  let totalMarksObtained = 0
+
+  const normalizedSubjects = subjectEntries.map((subject) => {
+    const ca1 = toFiniteNumber(subject.ca1)
+    const ca2 = toFiniteNumber(subject.ca2)
+    const assignment = toFiniteNumber(subject.assignment)
+    const caTotal = toFiniteNumber(subject.caTotal, ca1 + ca2 + assignment)
+    const exam = toFiniteNumber(subject.exam)
+    const total = toFiniteNumber(subject.total, caTotal + exam)
+    const grade = subject.grade && subject.grade.trim().length > 0 ? subject.grade.toUpperCase() : calculateGrade(total)
+    const remarks = subject.remark ?? ""
+
+    const obtainable =
+      typeof subject.totalObtainable === "number" && Number.isFinite(subject.totalObtainable)
+        ? subject.totalObtainable
+        : 100
+
+    totalMarksObtainable += obtainable
+    totalMarksObtained += total
+
+    return {
+      name: subject.subject,
+      ca1,
+      ca2,
+      assignment,
+      caTotal,
+      exam,
+      total,
+      grade,
+      remarks,
+      position: subject.position ?? undefined,
+    }
+  })
+
+  const averageScore =
+    totalMarksObtainable > 0 ? Number(((totalMarksObtained / totalMarksObtainable) * 100).toFixed(2)) : 0
+  const normalizedTerm = record.term ? normalizeTermLabel(record.term) : ""
+
+  const summary = {
+    totalMarksObtainable,
+    totalMarksObtained,
+    averageScore,
+    grade: calculateGrade(averageScore),
+    position: record.overallPosition ?? undefined,
+    numberOfStudents: record.numberInClass,
+  }
+
+  return {
+    student: {
+      id: record.studentId,
+      name: record.studentName,
+      admissionNumber: record.studentId ? `VEA/${record.studentId}` : record.studentName,
+      class: record.className,
+      term: normalizedTerm,
+      session: record.session,
+      numberInClass: record.numberInClass,
+      status: record.status,
+    },
+    subjects: normalizedSubjects,
+    summary,
+    totalObtainable: totalMarksObtainable,
+    totalObtained: totalMarksObtained,
+    average: averageScore,
+    position: summary.position,
+  }
 }
 
 export const saveTeacherMarks = async (marksData: {
@@ -143,13 +368,18 @@ export const getStudentReportCardData = (
   term: string,
   session: string,
 ): RawReportCardData | null => {
+  const normalizedTerm = normalizeTermLabel(term)
+
   try {
     const stored = safeStorage.getItem("reportCards")
     if (stored) {
       const parsed = JSON.parse(stored) as ReportCardRecord[]
       if (Array.isArray(parsed)) {
         const match = parsed.find(
-          (record) => record.studentId === studentId && record.term === term && record.session === session,
+          (record) =>
+            record.studentId === studentId &&
+            normalizeTermLabel(record.term) === normalizedTerm &&
+            record.session === session,
         )
 
         if (match) {
@@ -161,13 +391,24 @@ export const getStudentReportCardData = (
     logger.error("Failed to load stored report card", { error })
   }
 
+  const storedRecord = getStoredStudentMarksRecord(studentId, normalizedTerm, session)
+  if (storedRecord) {
+    const mapped = buildRawReportCardFromStoredRecord(storedRecord)
+    if (mapped) {
+      return mapped
+    }
+  }
+
   const studentData = studentMarksDatabase[studentId]
   if (!studentData) {
     return null
   }
 
   const subjects = Object.entries(studentData.subjects)
-    .filter(([, subjectData]) => subjectData.term === term && subjectData.session === session)
+    .filter(
+      ([, subjectData]) =>
+        normalizeTermLabel(subjectData.term) === normalizedTerm && subjectData.session === session,
+    )
     .map(([subjectName, subjectData]) => {
       const caTotal = subjectData.firstCA + subjectData.secondCA + subjectData.noteAssignment
       const grandTotal = caTotal + subjectData.exam
@@ -201,7 +442,7 @@ export const getStudentReportCardData = (
       name: studentData.studentName,
       admissionNumber: `VEA/${studentId}/2024`,
       class: studentData.class,
-      term,
+      term: normalizedTerm,
       session,
     },
     subjects,

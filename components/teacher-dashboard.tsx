@@ -38,6 +38,12 @@ import { logger } from "@/lib/logger"
 import { useToast } from "@/hooks/use-toast"
 import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
 import {
+  STUDENT_MARKS_STORAGE_KEY,
+  buildRawReportCardFromStoredRecord,
+  getStoredStudentMarksRecord,
+  readStudentMarksStore,
+} from "@/lib/report-card-data"
+import {
   REPORT_CARD_WORKFLOW_EVENT,
   getWorkflowRecords,
   getWorkflowSummary,
@@ -51,7 +57,11 @@ import {
   PSYCHOMOTOR_SKILLS,
   normalizeBehavioralRating,
 } from "@/lib/report-card-constants"
-import type { RawReportCardData } from "@/lib/report-card-types"
+import type {
+  RawReportCardData,
+  StoredStudentMarkRecord,
+  StoredSubjectRecord,
+} from "@/lib/report-card-types"
 
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
@@ -559,6 +569,86 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     })
   }
 
+  const persistAcademicMarksToStorage = useCallback(() => {
+    if (!selectedClass || !selectedSubject || marksData.length === 0) {
+      return
+    }
+
+    try {
+      const timestamp = new Date().toISOString()
+      const store = readStudentMarksStore()
+      const updatedStore: Record<string, StoredStudentMarkRecord> = { ...store }
+
+      marksData.forEach((student) => {
+        const studentKey = `${student.studentId}-${normalizedTermLabel}-${selectedSession}`
+        const previousRecord = updatedStore[studentKey]
+        const subjects: Record<string, StoredSubjectRecord> = { ...(previousRecord?.subjects ?? {}) }
+
+        subjects[selectedSubject] = {
+          subject: selectedSubject,
+          className: selectedClass,
+          ca1: student.firstCA,
+          ca2: student.secondCA,
+          assignment: student.noteAssignment,
+          caTotal: student.caTotal,
+          exam: student.exam,
+          total: student.grandTotal,
+          grade: student.grade,
+          remark: student.teacherRemark,
+          position: additionalData.classPositions[student.studentId] ?? student.position ?? null,
+          totalObtainable: student.totalMarksObtainable,
+          totalObtained: student.totalMarksObtained,
+          averageScore: student.averageScore,
+          teacherId: teacher.id,
+          teacherName: teacher.name,
+          updatedAt: timestamp,
+        }
+
+        const aggregatedSubjects = Object.values(subjects)
+        const totalMarksObtainable = aggregatedSubjects.reduce(
+          (sum, subject) => sum + (subject.totalObtainable ?? 100),
+          0,
+        )
+        const totalMarksObtained = aggregatedSubjects.reduce((sum, subject) => sum + subject.total, 0)
+        const overallAverage =
+          totalMarksObtainable > 0
+            ? Number(((totalMarksObtained / totalMarksObtainable) * 100).toFixed(2))
+            : undefined
+
+        updatedStore[studentKey] = {
+          studentId: String(student.studentId),
+          studentName: student.studentName,
+          className: selectedClass,
+          term: normalizedTermLabel,
+          session: selectedSession,
+          subjects,
+          lastUpdated: timestamp,
+          status: additionalData.studentStatus[student.studentId] ?? previousRecord?.status,
+          numberInClass: additionalData.termInfo.numberInClass || previousRecord?.numberInClass,
+          overallAverage: overallAverage ?? previousRecord?.overallAverage,
+          overallPosition:
+            additionalData.classPositions[student.studentId] ?? previousRecord?.overallPosition ?? null,
+        }
+      })
+
+      safeStorage.setItem(STUDENT_MARKS_STORAGE_KEY, JSON.stringify(updatedStore))
+      dbManager.triggerEvent(STUDENT_MARKS_STORAGE_KEY, updatedStore)
+    } catch (error) {
+      logger.error("Failed to persist academic marks", { error })
+    }
+  }, [
+    additionalData.classPositions,
+    additionalData.studentStatus,
+    additionalData.termInfo.numberInClass,
+    marksData,
+    normalizedTermLabel,
+    selectedClass,
+    selectedSession,
+    selectedSubject,
+    teacher.id,
+    teacher.name,
+  ])
+
   const openPreviewForStudent = useCallback(
     (student: MarksRecord) => {
       if (!selectedClass || !selectedSubject) {
@@ -569,6 +659,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         })
         return
       }
+
+      persistAcademicMarksToStorage()
 
       const attendanceStats = additionalData.attendance[student.studentId] ?? {
         present: 0,
@@ -581,7 +673,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           : attendanceStats.present + attendanceStats.absent
 
       const summaryGrade = deriveGradeFromScore(student.averageScore)
-      const preview: RawReportCardData = {
+      const basePreview: RawReportCardData = {
         student: {
           id: String(student.studentId),
           name: student.studentName,
@@ -638,17 +730,85 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         },
       }
 
+      const timestamp = new Date().toISOString()
+      const storedRecord = getStoredStudentMarksRecord(
+        String(student.studentId),
+        normalizedTermLabel,
+        selectedSession,
+      )
+      const mergedSubjects: Record<string, StoredSubjectRecord> = {
+        ...(storedRecord?.subjects ?? {}),
+      }
+      mergedSubjects[selectedSubject] = {
+        subject: selectedSubject,
+        className: selectedClass,
+        ca1: student.firstCA,
+        ca2: student.secondCA,
+        assignment: student.noteAssignment,
+        caTotal: student.caTotal,
+        exam: student.exam,
+        total: student.grandTotal,
+        grade: student.grade,
+        remark: student.teacherRemark,
+        position: additionalData.classPositions[student.studentId] ?? student.position ?? null,
+        totalObtainable: student.totalMarksObtainable,
+        totalObtained: student.totalMarksObtained,
+        averageScore: student.averageScore,
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        updatedAt: timestamp,
+      }
+
+      const mergedRecord: StoredStudentMarkRecord = {
+        studentId: String(student.studentId),
+        studentName: student.studentName,
+        className: selectedClass,
+        term: normalizedTermLabel,
+        session: selectedSession,
+        subjects: mergedSubjects,
+        lastUpdated: timestamp,
+        status: additionalData.studentStatus[student.studentId] ?? storedRecord?.status,
+        numberInClass: additionalData.termInfo.numberInClass || storedRecord?.numberInClass,
+        overallAverage: storedRecord?.overallAverage,
+        overallPosition:
+          additionalData.classPositions[student.studentId] ?? storedRecord?.overallPosition ?? null,
+      }
+
+      const aggregatedRaw = buildRawReportCardFromStoredRecord(mergedRecord)
+
+      const previewPayload = aggregatedRaw
+        ? {
+            ...aggregatedRaw,
+            attendance: basePreview.attendance,
+            affectiveDomain: basePreview.affectiveDomain,
+            psychomotorDomain: basePreview.psychomotorDomain,
+            classTeacherRemarks: basePreview.classTeacherRemarks,
+            remarks: basePreview.remarks,
+            termInfo: basePreview.termInfo,
+            summary: aggregatedRaw.summary
+              ? {
+                  ...aggregatedRaw.summary,
+                  numberOfStudents:
+                    additionalData.termInfo.numberInClass ?? aggregatedRaw.summary.numberOfStudents,
+                }
+              : aggregatedRaw.summary,
+          }
+        : basePreview
+
       setPreviewStudentId(student.studentId)
-      setPreviewData(preview)
+      setPreviewData(previewPayload)
       setPreviewDialogOpen(true)
     },
     [
       additionalData,
-      marksData.length,
       normalizedTermLabel,
+      persistAcademicMarksToStorage,
       selectedClass,
       selectedSession,
       selectedSubject,
+      teacher.id,
+      teacher.name,
+      marksData.length,
       toast,
     ],
   )
@@ -886,6 +1046,10 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   useEffect(() => {
     loadAdditionalData()
   }, [loadAdditionalData])
+
+  useEffect(() => {
+    persistAcademicMarksToStorage()
+  }, [persistAcademicMarksToStorage])
 
   useEffect(() => {
     setWorkflowRecords(getWorkflowRecords())
