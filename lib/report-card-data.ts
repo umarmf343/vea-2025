@@ -1,3 +1,9 @@
+import type { ReportCardRecord } from "./database"
+import { mapReportCardRecordToRaw } from "./report-card-transformers"
+import type { RawReportCardData } from "./report-card-types"
+import { safeStorage } from "./safe-storage"
+import { logger } from "./logger"
+
 export interface StudentMarks {
   studentId: string
   studentName: string
@@ -127,20 +133,41 @@ export const saveTeacherMarks = async (marksData: {
 
     return { success: true, message: "Marks saved and will appear on report cards" }
   } catch (error) {
-    console.error("Error saving marks:", error)
+    logger.error("Error saving marks", { error })
     return { success: false, message: "Error saving marks" }
   }
 }
 
-export const getStudentReportCardData = (studentId: string, term: string, session: string) => {
+export const getStudentReportCardData = (
+  studentId: string,
+  term: string,
+  session: string,
+): RawReportCardData | null => {
+  try {
+    const stored = safeStorage.getItem("reportCards")
+    if (stored) {
+      const parsed = JSON.parse(stored) as ReportCardRecord[]
+      if (Array.isArray(parsed)) {
+        const match = parsed.find(
+          (record) => record.studentId === studentId && record.term === term && record.session === session,
+        )
+
+        if (match) {
+          return mapReportCardRecordToRaw(match)
+        }
+      }
+    }
+  } catch (error) {
+    logger.error("Failed to load stored report card", { error })
+  }
+
   const studentData = studentMarksDatabase[studentId]
   if (!studentData) {
     return null
   }
 
-  // Filter subjects for the specific term and session
   const subjects = Object.entries(studentData.subjects)
-    .filter(([_, subjectData]) => subjectData.term === term && subjectData.session === session)
+    .filter(([, subjectData]) => subjectData.term === term && subjectData.session === session)
     .map(([subjectName, subjectData]) => {
       const caTotal = subjectData.firstCA + subjectData.secondCA + subjectData.noteAssignment
       const grandTotal = caTotal + subjectData.exam
@@ -151,6 +178,7 @@ export const getStudentReportCardData = (studentId: string, term: string, sessio
         ca1: subjectData.firstCA,
         ca2: subjectData.secondCA,
         assignment: subjectData.noteAssignment,
+        caTotal,
         exam: subjectData.exam,
         total: grandTotal,
         grade,
@@ -158,15 +186,18 @@ export const getStudentReportCardData = (studentId: string, term: string, sessio
       }
     })
 
+  if (subjects.length === 0) {
+    return null
+  }
+
   const totalObtainable = subjects.length * 100
   const totalObtained = subjects.reduce((sum, subject) => sum + subject.total, 0)
   const average = totalObtainable > 0 ? Math.round((totalObtained / totalObtainable) * 100) : 0
-
-  // Calculate position (mock implementation)
   const position = average >= 80 ? "1st" : average >= 70 ? "2nd" : average >= 60 ? "3rd" : "4th"
 
   return {
     student: {
+      id: studentId,
       name: studentData.studentName,
       admissionNumber: `VEA/${studentId}/2024`,
       class: studentData.class,
@@ -174,13 +205,23 @@ export const getStudentReportCardData = (studentId: string, term: string, sessio
       session,
     },
     subjects,
-    affectiveDomain: studentData.affectiveDomain,
-    psychomotorDomain: studentData.psychomotorDomain,
-    classTeacherRemarks: studentData.classTeacherRemarks,
+    summary: {
+      totalMarksObtainable: totalObtainable,
+      totalMarksObtained: totalObtained,
+      averageScore: average,
+      position,
+      grade: calculateGrade(average),
+    },
     totalObtainable,
     totalObtained,
     average,
     position,
+    affectiveDomain: studentData.affectiveDomain,
+    psychomotorDomain: studentData.psychomotorDomain,
+    classTeacherRemarks: studentData.classTeacherRemarks,
+    remarks: {
+      classTeacher: studentData.classTeacherRemarks,
+    },
   }
 }
 

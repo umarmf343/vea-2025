@@ -6,19 +6,35 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { EnhancedReportCard } from "@/components/enhanced-report-card"
 import { getStudentReportCardData } from "@/lib/report-card-data"
+import type { RawReportCardData } from "@/lib/report-card-types"
 
 interface ReportCardViewerProps {
   studentId: string
   studentName: string
   userRole: string
   hasAccess: boolean
+  initialReportCard?: RawReportCardData | null
 }
 
-export function ReportCardViewer({ studentId, studentName, userRole, hasAccess }: ReportCardViewerProps) {
-  const [selectedTerm, setSelectedTerm] = useState("First Term")
-  const [selectedSession, setSelectedSession] = useState("2024/2025")
-  const [reportCardData, setReportCardData] = useState<any>(null)
+export function ReportCardViewer({
+  studentId,
+  studentName,
+  userRole,
+  hasAccess,
+  initialReportCard,
+}: ReportCardViewerProps) {
+  const [selectedTerm, setSelectedTerm] = useState(initialReportCard?.student.term ?? "First Term")
+  const [selectedSession, setSelectedSession] = useState(initialReportCard?.student.session ?? "2024/2025")
+  const [reportCardData, setReportCardData] = useState<RawReportCardData | null>(initialReportCard ?? null)
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (initialReportCard) {
+      setReportCardData(initialReportCard)
+      setSelectedTerm(initialReportCard.student.term)
+      setSelectedSession(initialReportCard.student.session)
+    }
+  }, [initialReportCard])
 
   const loadReportCard = async () => {
     if (!hasAccess) {
@@ -30,11 +46,13 @@ export function ReportCardViewer({ studentId, studentName, userRole, hasAccess }
     try {
       const data = getStudentReportCardData(studentId, selectedTerm, selectedSession)
 
-      if (data) {
-        setReportCardData(data)
-      } else {
+      if (!data) {
         alert("No report card data found for the selected term and session.")
+        setReportCardData(null)
+        return
       }
+
+      setReportCardData(data)
     } catch (error) {
       console.error("Error loading report card:", error)
       alert("Error loading report card. Please try again.")
@@ -94,7 +112,7 @@ export function ReportCardViewer({ studentId, studentName, userRole, hasAccess }
       </div>
 
       {/* Report Card Display */}
-      {reportCardData && <EnhancedReportCard data={reportCardData} />}
+      {reportCardData ? <EnhancedReportCard data={reportCardData} /> : null}
     </div>
   )
 }

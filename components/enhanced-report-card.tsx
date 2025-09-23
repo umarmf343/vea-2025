@@ -1,14 +1,41 @@
 "use client"
 
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { useEffect, useMemo, useState } from "react"
 import { Download, PrinterIcon as Print } from "lucide-react"
-import { useEffect, useState } from "react"
 
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import { useBranding } from "@/hooks/use-branding"
+import {
+  AFFECTIVE_TRAITS,
+  BEHAVIORAL_RATING_COLUMNS,
+  PSYCHOMOTOR_SKILLS,
+  normalizeBehavioralRating,
+} from "@/lib/report-card-constants"
+import type { RawReportCardData } from "@/lib/report-card-types"
+import { deriveGradeFromScore } from "@/lib/grade-utils"
 import { safeStorage } from "@/lib/safe-storage"
 
-interface ReportCardData {
+interface SubjectScore {
+  name: string
+  ca1: number
+  ca2: number
+  assignment: number
+  caTotal: number
+  exam: number
+  total: number
+  grade: string
+  remarks: string
+}
+
+interface AttendanceSummary {
+  present: number
+  absent: number
+  total: number
+  percentage: number
+}
+
+interface NormalizedReportCard {
   student: {
     id: string
     name: string
@@ -17,142 +44,413 @@ interface ReportCardData {
     term: string
     session: string
     numberInClass?: number
-    status?: string
+    statusLabel?: string
+    positionLabel?: string
   }
-  subjects: Array<{
-    name: string
-    ca1: number
-    ca2: number
-    assignment: number
-    exam: number
-    total: number
-    grade: string
-    remarks: string
-  }>
-  affectiveDomain: {
-    neatness: string
-    honesty: string
-    punctuality: string
+  subjects: SubjectScore[]
+  summary: {
+    totalMarksObtainable: number
+    totalMarksObtained: number
+    averageScore: number
+    positionLabel: string
+    numberOfStudents?: number
+    classAverage?: number
+    highestScore?: number
+    lowestScore?: number
+    grade?: string
   }
-  psychomotorDomain: {
-    sport: string
-    handwriting: string
+  attendance: AttendanceSummary
+  affectiveDomain: Record<string, string>
+  psychomotorDomain: Record<string, string>
+  remarks: {
+    classTeacher: string
+    headTeacher: string
   }
-  classTeacherRemarks: string
-  totalObtainable: number
-  totalObtained: number
-  average: number
-  position: string
-  vacationDate?: string
-  resumptionDate?: string
+  termInfo: {
+    numberInClass?: number
+    vacationEnds?: string
+    nextTermBegins?: string
+    nextTermFees?: string
+    feesBalance?: string
+  }
+  branding: {
+    schoolName: string
+    address: string
+    logo: string | null
+    signature: string | null
+    headmasterName: string
+    defaultRemark: string
+  }
 }
 
-export function EnhancedReportCard({ data }: { data?: ReportCardData }) {
-  const branding = useBranding()
-  const [studentPhoto, setStudentPhoto] = useState<string>("")
-  const [reportCardData, setReportCardData] = useState<ReportCardData | null>(data || null)
+const STORAGE_KEYS_TO_WATCH = [
+  "studentMarks",
+  "behavioralAssessments",
+  "attendancePositions",
+  "classTeacherRemarks",
+]
 
-  useEffect(() => {
-    const loadReportCardData = async () => {
-      if (data?.student?.id) {
-        try {
-          const [marksRes, behavioralRes, attendanceRes, remarksRes] = await Promise.all([
-            fetch(
-              `/api/student-marks?studentId=${data.student.id}&term=${data.student.term}&session=${data.student.session}`,
-            ),
-            fetch(
-              `/api/behavioral-assessments?studentId=${data.student.id}&term=${data.student.term}&session=${data.student.session}`,
-            ),
-            fetch(
-              `/api/attendance-records?studentId=${data.student.id}&term=${data.student.term}&session=${data.student.session}`,
-            ),
-            fetch(
-              `/api/class-teacher-remarks?studentId=${data.student.id}&term=${data.student.term}&session=${data.student.session}`,
-            ),
-          ])
+const parseJsonRecord = (value: string | null) => {
+  if (!value) {
+    return {}
+  }
 
-          const marks = marksRes.ok ? await marksRes.json() : []
-          const behavioral = behavioralRes.ok ? await behavioralRes.json() : []
-          const attendance = attendanceRes.ok ? await attendanceRes.json() : []
-          const remarks = remarksRes.ok ? await remarksRes.json() : []
+  try {
+    const parsed = JSON.parse(value)
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {}
+  } catch (error) {
+    return {}
+  }
+}
 
-          if (marks.length > 0) {
-            const subjects = marks.map((mark: any) => ({
-              name: mark.subject,
-              ca1: mark.ca1,
-              ca2: mark.ca2,
-              assignment: mark.assignment,
-              exam: mark.exam,
-              total: mark.grandTotal,
-              grade: mark.grade,
-              remarks: mark.remarks,
-            }))
+const formatStatusLabel = (value?: string) => {
+  if (!value || value.trim().length === 0) {
+    return undefined
+  }
 
-            const totalObtained = subjects.reduce((sum: number, subject: any) => sum + subject.total, 0)
-            const totalObtainable = subjects.length * 100
-            const average = totalObtainable > 0 ? (totalObtained / totalObtainable) * 100 : 0
+  return value
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1).toLowerCase())
+    .join(" ")
+}
 
-            const enhancedData: ReportCardData = {
-              ...data,
-              subjects,
-              totalObtained,
-              totalObtainable,
-              average,
-              affectiveDomain: behavioral[0]?.affectiveDomain || data.affectiveDomain,
-              psychomotorDomain: behavioral[0]?.psychomotorDomain || data.psychomotorDomain,
-              classTeacherRemarks: remarks[0]?.remarks || data.classTeacherRemarks,
-              position: attendance[0]?.position
-                ? `${attendance[0].position}${getOrdinalSuffix(attendance[0].position)}`
-                : data.position,
-            }
+const parseNumeric = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
 
-            setReportCardData(enhancedData)
-          }
-        } catch (error) {
-          console.error("Error loading report card data:", error)
-          setReportCardData(data)
-        }
-      }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number.parseFloat(value.replace(/[^0-9.]/g, ""))
+    return Number.isNaN(parsed) ? undefined : parsed
+  }
+
+  return undefined
+}
+
+const parsePositionValue = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string") {
+    const match = value.match(/\d+/)
+    if (match) {
+      const parsed = Number.parseInt(match[0], 10)
+      return Number.isNaN(parsed) ? undefined : parsed
     }
+  }
 
-    loadReportCardData()
+  return undefined
+}
 
-    const handleStorageChange = (e: StorageEvent) => {
-      if (
-        e.key &&
-        ["studentMarks", "behavioralAssessments", "attendancePositions", "classTeacherRemarks"].includes(e.key)
-      ) {
-        loadReportCardData()
-      }
-    }
+const formatOrdinal = (position?: number) => {
+  if (!position || !Number.isFinite(position)) {
+    return undefined
+  }
 
-    window.addEventListener("storage", handleStorageChange)
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange)
-    }
-  }, [data])
-
-  const getOrdinalSuffix = (num: number): string => {
-    const j = num % 10
-    const k = num % 100
+  const suffix = (() => {
+    const j = position % 10
+    const k = position % 100
     if (j === 1 && k !== 11) return "st"
     if (j === 2 && k !== 12) return "nd"
     if (j === 3 && k !== 13) return "rd"
     return "th"
+  })()
+
+  return `${position}${suffix}`
+}
+
+const normalizeSubjects = (subjects: Array<Record<string, unknown>> | undefined): SubjectScore[] => {
+  if (!Array.isArray(subjects)) {
+    return []
   }
 
-  useEffect(() => {
-    if (reportCardData?.student?.id) {
-      const studentPhotos = safeStorage.getItem("studentPhotos")
-      if (studentPhotos) {
-        const photos = JSON.parse(studentPhotos)
-        setStudentPhoto(photos[reportCardData.student.id] || "")
-      }
-    }
-  }, [reportCardData?.student?.id])
+  return subjects.map((subject) => {
+    const ca1 = Number(subject.ca1 ?? subject.firstCA ?? subject.first_ca ?? 0)
+    const ca2 = Number(subject.ca2 ?? subject.secondCA ?? subject.second_ca ?? 0)
+    const assignment = Number(subject.assignment ?? subject.noteAssignment ?? subject.continuousAssessment ?? 0)
+    const exam = Number(subject.exam ?? subject.examScore ?? subject.exam_score ?? 0)
+    const caTotal = Number(subject.caTotal ?? ca1 + ca2 + assignment)
+    const total = Number(subject.total ?? subject.grandTotal ?? caTotal + exam)
+    const grade = String(subject.grade ?? subject.letterGrade ?? "").toUpperCase()
+    const remarks = String(subject.remarks ?? subject.teacherRemark ?? "")
 
-  if (!reportCardData || !reportCardData.student) {
+    return {
+      name: String(subject.name ?? subject.subject ?? "Unknown Subject"),
+      ca1,
+      ca2,
+      assignment,
+      caTotal,
+      exam,
+      total,
+      grade,
+      remarks,
+    }
+  })
+}
+
+const normalizeDomainRatings = (
+  rawRatings: Record<string, string | undefined> | undefined,
+  defaultRatings: Record<string, string | undefined>,
+) => {
+  const normalized: Record<string, string> = {}
+
+  const merged = { ...defaultRatings, ...rawRatings }
+  Object.entries(merged).forEach(([trait, rating]) => {
+    const normalizedRating = normalizeBehavioralRating(rating)
+    if (normalizedRating) {
+      normalized[trait] = normalizedRating
+    }
+  })
+
+  return normalized
+}
+
+const normalizeReportCard = (
+  source: RawReportCardData | undefined,
+  defaultBranding: ReturnType<typeof useBranding>,
+): NormalizedReportCard | null => {
+  if (!source || !source.student) {
+    return null
+  }
+
+  const studentId = source.student.id ?? source.student.admissionNumber ?? source.student.name
+  const termLabel = source.student.term
+  const sessionLabel = source.student.session
+  const storageKey = `${studentId}-${termLabel}-${sessionLabel}`
+
+  const behavioralStore = parseJsonRecord(safeStorage.getItem("behavioralAssessments"))
+  const attendanceStore = parseJsonRecord(safeStorage.getItem("attendancePositions"))
+  const remarksStore = parseJsonRecord(safeStorage.getItem("classTeacherRemarks"))
+
+  const behavioralRecord = behavioralStore[storageKey] as
+    | {
+        affectiveDomain?: Record<string, string>
+        psychomotorDomain?: Record<string, string>
+      }
+    | undefined
+
+  const attendanceRecord = attendanceStore[storageKey] as
+    | {
+        position?: number | string | null
+        attendance?: { present?: number; absent?: number; total?: number }
+        status?: string
+        termInfo?: Record<string, unknown>
+      }
+    | undefined
+
+  const remarkRecord = remarksStore[storageKey] as { remark?: string } | undefined
+
+  const normalizedSubjects = normalizeSubjects(source.subjects)
+  const computedTotalObtained = normalizedSubjects.reduce((sum, subject) => sum + subject.total, 0)
+  const computedTotalObtainable = normalizedSubjects.length * 100
+  const computedAverage = computedTotalObtainable > 0 ? (computedTotalObtained / computedTotalObtainable) * 100 : 0
+
+  const summaryTotalObtainable =
+    source.summary?.totalMarksObtainable ?? source.totalObtainable ?? computedTotalObtainable
+  const summaryTotalObtained = source.summary?.totalMarksObtained ?? source.totalObtained ?? computedTotalObtained
+  const summaryAverageScore = source.summary?.averageScore ?? source.average ?? computedAverage
+
+  const positionNumber =
+    parsePositionValue(attendanceRecord?.position) ??
+    parsePositionValue(source.summary?.position) ??
+    parsePositionValue(source.position)
+
+  const positionLabel = formatOrdinal(positionNumber) ?? source.summary?.position?.toString() ?? source.position ?? ""
+  const numberInClass =
+    parseNumeric(attendanceRecord?.termInfo?.numberInClass) ??
+    parseNumeric(source.termInfo?.numberInClass) ??
+    parseNumeric(source.summary?.numberOfStudents) ??
+    parseNumeric(source.student.numberInClass)
+
+  const attendancePresent =
+    parseNumeric(attendanceRecord?.attendance?.present) ?? parseNumeric(source.attendance?.present) ?? 0
+  const attendanceAbsent =
+    parseNumeric(attendanceRecord?.attendance?.absent) ?? parseNumeric(source.attendance?.absent) ?? 0
+  const attendanceTotal =
+    parseNumeric(attendanceRecord?.attendance?.total) ?? parseNumeric(source.attendance?.total) ?? 0
+
+  const normalizedAttendance = {
+    present: Math.max(0, Math.round(attendancePresent)),
+    absent: Math.max(0, Math.round(attendanceAbsent)),
+    total: Math.max(0, Math.round(attendanceTotal)),
+  }
+  const inferredTotal =
+    normalizedAttendance.total > 0
+      ? normalizedAttendance.total
+      : normalizedAttendance.present + normalizedAttendance.absent
+  const attendanceStats = {
+    present: normalizedAttendance.present,
+    absent: normalizedAttendance.absent,
+    total: inferredTotal,
+  }
+  const attendancePercentage = inferredTotal > 0 ? Math.round((attendanceStats.present / inferredTotal) * 100) : 0
+
+  const affectiveRatings = normalizeDomainRatings(behavioralRecord?.affectiveDomain, source.affectiveDomain ?? {})
+  const psychomotorRatings = normalizeDomainRatings(
+    behavioralRecord?.psychomotorDomain,
+    source.psychomotorDomain ?? {},
+  )
+
+  const resolvedBranding = {
+    schoolName: source.branding?.schoolName?.trim() || defaultBranding.schoolName,
+    address: source.branding?.address?.trim() || defaultBranding.schoolAddress,
+    logo: source.branding?.logo ?? defaultBranding.logoUrl ?? null,
+    signature: source.branding?.signature ?? defaultBranding.signatureUrl ?? null,
+    headmasterName: source.branding?.headmasterName?.trim() || defaultBranding.headmasterName,
+    defaultRemark: source.branding?.defaultRemark?.trim() || defaultBranding.defaultRemark,
+  }
+
+  const termInfo = {
+    numberInClass,
+    vacationEnds: source.termInfo?.vacationEnds ?? source.vacationDate ?? attendanceRecord?.termInfo?.vacationEnds,
+    nextTermBegins:
+      source.termInfo?.nextTermBegins ?? source.resumptionDate ?? attendanceRecord?.termInfo?.nextTermBegins,
+    nextTermFees: source.termInfo?.nextTermFees ?? source.fees?.nextTerm ?? attendanceRecord?.termInfo?.nextTermFees,
+    feesBalance: source.termInfo?.feesBalance ?? source.fees?.outstanding ?? attendanceRecord?.termInfo?.feesBalance,
+  }
+
+  return {
+    student: {
+      id: String(studentId),
+      name: source.student.name,
+      admissionNumber: source.student.admissionNumber,
+      class: source.student.class,
+      term: termLabel,
+      session: sessionLabel,
+      numberInClass,
+      statusLabel: formatStatusLabel(attendanceRecord?.status ?? source.student.status),
+      positionLabel,
+    },
+    subjects: normalizedSubjects,
+    summary: {
+      totalMarksObtainable: summaryTotalObtainable,
+      totalMarksObtained: summaryTotalObtained,
+      averageScore: summaryAverageScore,
+      positionLabel,
+      numberOfStudents: numberInClass,
+      classAverage: source.summary?.classAverage,
+      highestScore: source.summary?.highestScore,
+      lowestScore: source.summary?.lowestScore,
+      grade: source.summary?.grade ?? deriveGradeFromScore(summaryAverageScore),
+    },
+    attendance: {
+      present: attendanceStats.present,
+      absent: attendanceStats.absent,
+      total: inferredTotal,
+      percentage: attendancePercentage,
+    },
+    affectiveDomain: affectiveRatings,
+    psychomotorDomain: psychomotorRatings,
+    remarks: {
+      classTeacher:
+        remarkRecord?.remark?.trim() ??
+        source.classTeacherRemarks?.trim() ??
+        source.remarks?.classTeacher?.trim() ??
+        "",
+      headTeacher: source.remarks?.headTeacher?.trim() || resolvedBranding.defaultRemark,
+    },
+    termInfo,
+    branding: resolvedBranding,
+  }
+}
+
+const getBehavioralMark = (ratings: Record<string, string>, traitKey: string, target: string) => {
+  const rating = normalizeBehavioralRating(ratings[traitKey])
+  if (!rating) {
+    return "○"
+  }
+
+  if (rating === target) {
+    return "●"
+  }
+
+  if (rating === "poor" && target === "poor") {
+    return "●"
+  }
+
+  return "○"
+}
+
+export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
+  const branding = useBranding()
+  const [reportCardData, setReportCardData] = useState<NormalizedReportCard | null>(() =>
+    normalizeReportCard(data, branding),
+  )
+  const [studentPhoto, setStudentPhoto] = useState<string>("")
+
+  useEffect(() => {
+    const updateData = () => {
+      setReportCardData(normalizeReportCard(data, branding))
+    }
+
+    updateData()
+
+    const handleStorageChange = (event: StorageEvent) => {
+      if (!event.key || !STORAGE_KEYS_TO_WATCH.includes(event.key)) {
+        return
+      }
+      updateData()
+    }
+
+    window.addEventListener("storage", handleStorageChange)
+    return () => {
+      window.removeEventListener("storage", handleStorageChange)
+    }
+  }, [data, branding])
+
+  useEffect(() => {
+    if (!reportCardData?.student.id) {
+      return
+    }
+
+    try {
+      const storedPhotos = safeStorage.getItem("studentPhotos")
+      if (!storedPhotos) {
+        setStudentPhoto("")
+        return
+      }
+      const parsed = JSON.parse(storedPhotos) as Record<string, string>
+      setStudentPhoto(parsed[reportCardData.student.id] ?? "")
+    } catch (error) {
+      setStudentPhoto("")
+    }
+  }, [reportCardData?.student.id])
+
+  const handlePrint = () => window.print()
+  const handleDownload = () => alert("Report card downloaded as PDF")
+
+  const summaryItems = useMemo(() => {
+    if (!reportCardData) {
+      return []
+    }
+
+    return [
+      {
+        label: "Total Marks Obtainable",
+        value: reportCardData.summary.totalMarksObtainable.toLocaleString(),
+      },
+      {
+        label: "Total Marks Obtained",
+        value: reportCardData.summary.totalMarksObtained.toLocaleString(),
+      },
+      {
+        label: "Average Score",
+        value: `${reportCardData.summary.averageScore.toFixed(1)}%`,
+      },
+      {
+        label: "Class Position",
+        value: reportCardData.summary.positionLabel,
+        helper:
+          reportCardData.student.numberInClass && reportCardData.student.numberInClass > 0
+            ? `of ${reportCardData.student.numberInClass}`
+            : undefined,
+      },
+    ]
+  }, [reportCardData])
+
+  if (!reportCardData) {
     return (
       <div className="max-w-4xl mx-auto bg-white p-8">
         <Card className="border-2 border-gray-300">
@@ -167,21 +465,8 @@ export function EnhancedReportCard({ data }: { data?: ReportCardData }) {
     )
   }
 
-  const getRatingCheckbox = (currentRating: string, targetRating: string) => {
-    return currentRating === targetRating ? "●" : "○"
-  }
-
-  const handlePrint = () => {
-    window.print()
-  }
-
-  const handleDownload = () => {
-    alert("Report card downloaded as PDF")
-  }
-
   return (
-    <div className="max-w-4xl mx-auto bg-white">
-      {/* Print Controls */}
+    <div className="max-w-5xl mx-auto bg-white">
       <div className="flex gap-2 mb-4 print:hidden">
         <Button onClick={handlePrint} className="bg-[#2d682d] hover:bg-[#1a4a1a] text-white">
           <Print className="h-4 w-4 mr-2" />
@@ -198,15 +483,14 @@ export function EnhancedReportCard({ data }: { data?: ReportCardData }) {
       </div>
 
       <div className="border-8 border-[#2d682d] print:border-black bg-white print:shadow-none">
-        <div className="bg-white p-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between mb-6">
-            {/* Left: School Logo */}
-            <div className="w-20 h-20 border-2 border-[#2d682d] print:border-black flex items-center justify-center bg-white mx-auto md:mx-0">
-              {branding.logoUrl ? (
+        <div className="px-6 pt-6 pb-4">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="w-24 h-24 border-2 border-[#2d682d] print:border-black flex items-center justify-center bg-white">
+              {reportCardData.branding.logo ? (
                 <img
-                  src={branding.logoUrl}
-                  alt={`${branding.schoolName} logo`}
-                  className="w-full h-full object-contain p-1"
+                  src={reportCardData.branding.logo}
+                  alt={`${reportCardData.branding.schoolName} logo`}
+                  className="w-full h-full object-contain p-2"
                 />
               ) : (
                 <div className="text-[10px] text-[#2d682d] print:text-gray-600 text-center font-bold leading-tight">
@@ -217,24 +501,21 @@ export function EnhancedReportCard({ data }: { data?: ReportCardData }) {
               )}
             </div>
 
-            {/* Center: School Information */}
-            <div className="flex-1 text-center md:mx-8">
+            <div className="flex-1 text-center md:px-4">
               <h1 className="text-3xl font-bold text-[#2d682d] print:text-black mb-2 uppercase tracking-wide font-serif">
-                {branding.schoolName.toUpperCase()}
+                {reportCardData.branding.schoolName}
               </h1>
-              <p className="text-sm text-[#2d682d]/80 print:text-black mb-4 font-medium">
-                {branding.schoolAddress}
+              <p className="text-sm text-[#2d682d]/80 print:text-black mb-2 font-medium">
+                {reportCardData.branding.address}
               </p>
+              <div className="bg-[#b29032] print:bg-gray-200 inline-block px-6 py-2 border-2 border-[#2d682d] print:border-black">
+                <p className="text-base font-bold text-white print:text-black uppercase tracking-wider">Terminal Report Sheet</p>
+              </div>
             </div>
 
-            {/* Right: Student Photo placeholder */}
-            <div className="w-20 h-24 border-2 border-[#2d682d] print:border-black flex items-center justify-center bg-white mx-auto md:mx-0">
+            <div className="w-24 h-28 border-2 border-[#2d682d] print:border-black flex items-center justify-center bg-white">
               {studentPhoto ? (
-                <img
-                  src={studentPhoto || "/placeholder.svg"}
-                  alt="Student Photo"
-                  className="w-full h-full object-cover p-1"
-                />
+                <img src={studentPhoto} alt="Student" className="w-full h-full object-cover p-1" />
               ) : (
                 <div className="text-xs text-[#2d682d] print:text-gray-600 text-center font-bold">
                   STUDENT
@@ -244,405 +525,338 @@ export function EnhancedReportCard({ data }: { data?: ReportCardData }) {
               )}
             </div>
           </div>
+        </div>
 
-          <div className="text-center mb-6">
-            <div className="bg-[#b29032] print:bg-gray-200 py-3 px-6 border-2 border-[#2d682d] print:border-black">
-              <h2 className="text-xl font-bold text-white print:text-black uppercase tracking-wider font-serif">
-                TERMINAL REPORT SHEET
-              </h2>
-            </div>
+        <div className="px-6 pb-6 space-y-6">
+          <table className="w-full border-2 border-[#2d682d] print:border-black text-sm">
+            <tbody>
+              <tr>
+                <td className="bg-[#2d682d]/10 print:bg-gray-100 font-semibold uppercase text-[#2d682d] print:text-black border border-[#2d682d] print:border-black px-3 py-2">
+                  Name of Student
+                </td>
+                <td className="border border-[#2d682d] print:border-black px-3 py-2 font-medium">
+                  {reportCardData.student.name}
+                </td>
+                <td className="bg-[#2d682d]/10 print:bg-gray-100 font-semibold uppercase text-[#2d682d] print:text-black border border-[#2d682d] print:border-black px-3 py-2">
+                  Admission Number
+                </td>
+                <td className="border border-[#2d682d] print:border-black px-3 py-2 font-medium">
+                  {reportCardData.student.admissionNumber}
+                </td>
+              </tr>
+              <tr>
+                <td className="bg-[#2d682d]/10 print:bg-gray-100 font-semibold uppercase text-[#2d682d] print:text-black border border-[#2d682d] print:border-black px-3 py-2">
+                  Term
+                </td>
+                <td className="border border-[#2d682d] print:border-black px-3 py-2 font-medium">
+                  {reportCardData.student.term}
+                </td>
+                <td className="bg-[#2d682d]/10 print:bg-gray-100 font-semibold uppercase text-[#2d682d] print:text-black border border-[#2d682d] print:border-black px-3 py-2">
+                  Session
+                </td>
+                <td className="border border-[#2d682d] print:border-black px-3 py-2 font-medium">
+                  {reportCardData.student.session}
+                </td>
+              </tr>
+              <tr>
+                <td className="bg-[#2d682d]/10 print:bg-gray-100 font-semibold uppercase text-[#2d682d] print:text-black border border-[#2d682d] print:border-black px-3 py-2">
+                  Class
+                </td>
+                <td className="border border-[#2d682d] print:border-black px-3 py-2 font-medium">
+                  {reportCardData.student.class}
+                </td>
+                <td className="bg-[#2d682d]/10 print:bg-gray-100 font-semibold uppercase text-[#2d682d] print:text-black border border-[#2d682d] print:border-black px-3 py-2">
+                  Number in Class
+                </td>
+                <td className="border border-[#2d682d] print:border-black px-3 py-2 font-medium">
+                  {reportCardData.student.numberInClass ?? "N/A"}
+                </td>
+              </tr>
+              <tr>
+                <td className="bg-[#2d682d]/10 print:bg-gray-100 font-semibold uppercase text-[#2d682d] print:text-black border border-[#2d682d] print:border-black px-3 py-2">
+                  Status
+                </td>
+                <td className="border border-[#2d682d] print:border-black px-3 py-2 font-semibold text-[#b29032] print:text-black">
+                  {reportCardData.student.statusLabel ?? "Awaiting Update"}
+                </td>
+                <td className="bg-[#2d682d]/10 print:bg-gray-100 font-semibold uppercase text-[#2d682d] print:text-black border border-[#2d682d] print:border-black px-3 py-2">
+                  Position
+                </td>
+                <td className="border border-[#2d682d] print:border-black px-3 py-2 font-semibold text-[#b29032] print:text-black">
+                  {reportCardData.summary.positionLabel}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {summaryItems.map((item) => (
+              <div
+                key={item.label}
+                className="border-2 border-[#2d682d] print:border-black bg-[#2d682d]/5 print:bg-gray-100 px-4 py-3 text-center"
+              >
+                <p className="text-xs uppercase tracking-wide text-[#2d682d] print:text-black font-semibold">
+                  {item.label}
+                </p>
+                <p className="text-lg font-bold text-[#b29032] print:text-black">
+                  {item.value}
+                </p>
+                {item.helper ? (
+                  <p className="text-[11px] text-[#2d682d] print:text-gray-600">{item.helper}</p>
+                ) : null}
+              </div>
+            ))}
           </div>
 
-          <div className="mb-6">
-            <table className="w-full border-2 border-[#2d682d] print:border-black">
+          <div className="border-2 border-[#2d682d] print:border-black">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[#2d682d] print:bg-gray-300 text-white print:text-black">
+                  <th className="border border-[#2d682d] print:border-black px-3 py-2 text-left">Subject</th>
+                  <th className="border border-[#2d682d] print:border-black px-3 py-2 text-center">1st C.A.</th>
+                  <th className="border border-[#2d682d] print:border-black px-3 py-2 text-center">2nd C.A.</th>
+                  <th className="border border-[#2d682d] print:border-black px-3 py-2 text-center">Assignment</th>
+                  <th className="border border-[#2d682d] print:border-black px-3 py-2 text-center">Total C.A.</th>
+                  <th className="border border-[#2d682d] print:border-black px-3 py-2 text-center">Exam</th>
+                  <th className="border border-[#2d682d] print:border-black px-3 py-2 text-center">Total</th>
+                  <th className="border border-[#2d682d] print:border-black px-3 py-2 text-center">Grade</th>
+                  <th className="border border-[#2d682d] print:border-black px-3 py-2 text-left">Teacher's Remark</th>
+                </tr>
+              </thead>
               <tbody>
-                <tr>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold uppercase text-sm bg-[#2d682d]/10 text-[#2d682d] print:bg-gray-100 print:text-black">
-                    NAME OF STUDENT
+                {reportCardData.subjects.map((subject, index) => (
+                  <tr key={`${subject.name}-${index}`} className="odd:bg-white even:bg-[#2d682d]/5 print:even:bg-gray-100">
+                    <td className="border border-[#2d682d] print:border-black px-3 py-2 font-semibold text-left">
+                      {subject.name}
+                    </td>
+                    <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center">{subject.ca1}</td>
+                    <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center">{subject.ca2}</td>
+                    <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center">
+                      {subject.assignment}
+                    </td>
+                    <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center font-semibold">
+                      {subject.caTotal}
+                    </td>
+                    <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center">{subject.exam}</td>
+                    <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center font-bold text-[#b29032] print:text-black">
+                      {subject.total}
+                    </td>
+                    <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center font-bold">
+                      {subject.grade}
+                    </td>
+                    <td className="border border-[#2d682d] print:border-black px-3 py-2 text-left text-xs">
+                      {subject.remarks}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="bg-[#2d682d]/10 print:bg-gray-100 font-semibold text-[#2d682d] print:text-black">
+                  <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center uppercase">Totals</td>
+                  <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center">
+                    {reportCardData.subjects.reduce((sum, subject) => sum + subject.ca1, 0)}
                   </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-semibold">
-                    {reportCardData.student.name}
+                  <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center">
+                    {reportCardData.subjects.reduce((sum, subject) => sum + subject.ca2, 0)}
                   </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold uppercase text-sm bg-[#2d682d]/10 text-[#2d682d] print:bg-gray-100 print:text-black">
-                    TERM
+                  <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center">
+                    {reportCardData.subjects.reduce((sum, subject) => sum + subject.assignment, 0)}
                   </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-semibold">
-                    {reportCardData.student.term}
+                  <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center">
+                    {reportCardData.subjects.reduce((sum, subject) => sum + subject.caTotal, 0)}
                   </td>
-                </tr>
-                <tr>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold uppercase text-sm bg-[#2d682d]/10 text-[#2d682d] print:bg-gray-100 print:text-black">
-                    ADMISSION NUMBER
+                  <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center">
+                    {reportCardData.subjects.reduce((sum, subject) => sum + subject.exam, 0)}
                   </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-semibold">
-                    {reportCardData.student.admissionNumber}
+                  <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center text-[#b29032] print:text-black">
+                    {reportCardData.summary.totalMarksObtained}
                   </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold uppercase text-sm bg-[#2d682d]/10 text-[#2d682d] print:bg-gray-100 print:text-black">
-                    SESSION
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-semibold">
-                    {reportCardData.student.session}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold uppercase text-sm bg-[#2d682d]/10 text-[#2d682d] print:bg-gray-100 print:text-black">
-                    CLASS
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-semibold">
-                    {reportCardData.student.class}
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold uppercase text-sm bg-[#2d682d]/10 text-[#2d682d] print:bg-gray-100 print:text-black">
-                    STATUS
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-semibold">
-                    {reportCardData.student.status || "ACTIVE"}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold uppercase text-sm bg-[#2d682d]/10 text-[#2d682d] print:bg-gray-100 print:text-black">
-                    NUMBER IN CLASS
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-semibold">
-                    {reportCardData.student.numberInClass || "N/A"}
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold uppercase text-sm bg-[#2d682d]/10 text-[#2d682d] print:bg-gray-100 print:text-black">
-                    POSITION
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold text-[#b29032] print:text-black bg-[#b29032]/10 print:bg-gray-50">
-                    {reportCardData.position}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold uppercase text-sm bg-[#2d682d]/10 text-[#2d682d] print:bg-gray-100 print:text-black">
-                    TOTAL MARKS OBTAINABLE
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold">
-                    {reportCardData.totalObtainable}
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold uppercase text-sm bg-[#2d682d]/10 text-[#2d682d] print:bg-gray-100 print:text-black">
-                    TOTAL MARKS OBTAINED
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold text-[#b29032] print:text-black bg-[#b29032]/10 print:bg-gray-50">
-                    {reportCardData.totalObtained}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold uppercase text-sm bg-[#2d682d]/10 text-[#2d682d] print:bg-gray-100 print:text-black">
-                    AVERAGE
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-2 font-bold text-[#b29032] print:text-black bg-[#b29032]/10 print:bg-gray-50">
-                    {reportCardData.average.toFixed(1)}%
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-2"></td>
-                  <td className="border border-[#2d682d] print:border-black p-2"></td>
+                  <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center">-</td>
+                  <td className="border border-[#2d682d] print:border-black px-3 py-2 text-center">&nbsp;</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
-          <div className="border-t-4 border-[#2d682d] print:border-black mb-6"></div>
-        </div>
-
-        <div className="bg-white px-6">
-          <table className="w-full border-2 border-[#2d682d] print:border-black mb-6">
-            <thead>
-              <tr className="bg-[#2d682d] print:bg-gray-300 text-white print:text-black">
-                <th className="border border-[#2d682d] print:border-black p-3 font-bold text-sm">SUBJECT</th>
-                <th className="border border-[#2d682d] print:border-black p-3 font-bold text-sm">1ST C.A.</th>
-                <th className="border border-[#2d682d] print:border-black p-3 font-bold text-sm">2ND C.A.</th>
-                <th className="border border-[#2d682d] print:border-black p-3 font-bold text-sm">NOTE/ASSIGNMENT</th>
-                <th className="border border-[#2d682d] print:border-black p-3 font-bold text-sm">TOTAL C.A.</th>
-                <th className="border border-[#2d682d] print:border-black p-3 font-bold text-sm">EXAM</th>
-                <th className="border border-[#2d682d] print:border-black p-3 font-bold text-sm">TOTAL</th>
-                <th className="border border-[#2d682d] print:border-black p-3 font-bold text-sm">GRADE</th>
-                <th className="border border-[#2d682d] print:border-black p-3 font-bold text-sm">TEACHER'S REMARKS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reportCardData.subjects.map((subject, index) => (
-                <tr key={index} className="hover:bg-[#2d682d]/5 print:hover:bg-transparent">
-                  <td className="border border-[#2d682d] print:border-black p-3 font-semibold text-left">
-                    {subject.name}
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-3 text-center">{subject.ca1}</td>
-                  <td className="border border-[#2d682d] print:border-black p-3 text-center">{subject.ca2}</td>
-                  <td className="border border-[#2d682d] print:border-black p-3 text-center">{subject.assignment}</td>
-                  <td className="border border-[#2d682d] print:border-black p-3 text-center font-bold">
-                    {subject.ca1 + subject.ca2 + subject.assignment}
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-3 text-center">{subject.exam}</td>
-                  <td className="border border-[#2d682d] print:border-black p-3 text-center font-bold">
-                    {subject.total}
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-3 text-center font-bold text-lg text-[#b29032] print:text-black">
-                    {subject.grade}
-                  </td>
-                  <td className="border border-[#2d682d] print:border-black p-3 text-right text-sm">
-                    {subject.remarks}
-                  </td>
-                </tr>
-              ))}
-              <tr className="bg-[#2d682d]/10 print:bg-gray-100">
-                <td className="border border-[#2d682d] print:border-black p-3 font-bold text-center text-[#2d682d] print:text-black">
-                  TOTALS
-                </td>
-                <td className="border border-[#2d682d] print:border-black p-3 text-center font-bold">
-                  {reportCardData.subjects.reduce((sum, subject) => sum + subject.ca1, 0)}
-                </td>
-                <td className="border border-[#2d682d] print:border-black p-3 text-center font-bold">
-                  {reportCardData.subjects.reduce((sum, subject) => sum + subject.ca2, 0)}
-                </td>
-                <td className="border border-[#2d682d] print:border-black p-3 text-center font-bold">
-                  {reportCardData.subjects.reduce((sum, subject) => sum + subject.assignment, 0)}
-                </td>
-                <td className="border border-[#2d682d] print:border-black p-3 text-center font-bold">
-                  {reportCardData.subjects.reduce(
-                    (sum, subject) => sum + subject.ca1 + subject.ca2 + subject.assignment,
-                    0,
-                  )}
-                </td>
-                <td className="border border-[#2d682d] print:border-black p-3 text-center font-bold">
-                  {reportCardData.subjects.reduce((sum, subject) => sum + subject.exam, 0)}
-                </td>
-                <td className="border border-[#2d682d] print:border-black p-3 text-center font-bold text-lg text-[#b29032] print:text-black">
-                  {reportCardData.totalObtained}
-                </td>
-                <td className="border border-[#2d682d] print:border-black p-3 text-center font-bold">-</td>
-                <td className="border border-[#2d682d] print:border-black p-3"></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div className="bg-white p-6">
-          <div className="grid grid-cols-2 gap-8 mb-6">
-            <div>
-              {/* Class Teacher Remarks */}
-              <div className="mb-6">
-                <h4 className="font-bold text-[#2d682d] print:text-black mb-2 uppercase font-serif">
-                  CLASS TEACHER REMARKS
-                </h4>
-                <div className="border-2 border-[#2d682d] print:border-black p-4 min-h-[120px] bg-white">
-                  <p className="text-sm">{reportCardData.classTeacherRemarks}</p>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-4">
+              <div className="border-2 border-[#2d682d] print:border-black">
+                <div className="bg-[#2d682d]/10 print:bg-gray-100 px-4 py-2 border-b-2 border-[#2d682d] print:border-black">
+                  <h3 className="text-sm font-semibold text-[#2d682d] print:text-black uppercase">Class Teacher's Remark</h3>
+                </div>
+                <div className="px-4 py-3 min-h-[100px] text-sm leading-relaxed">
+                  {reportCardData.remarks.classTeacher || "No remark provided"}
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <div className="flex items-center gap-4">
-                  <span className="font-bold uppercase text-sm text-[#2d682d] print:text-black">VACATION DATE:</span>
-                  <div className="border-b-2 border-[#2d682d] print:border-black flex-1 pb-1">
-                    {reportCardData.vacationDate || ""}
-                  </div>
+              <div className="border-2 border-[#2d682d] print:border-black">
+                <div className="bg-[#2d682d]/10 print:bg-gray-100 px-4 py-2 border-b-2 border-[#2d682d] print:border-black">
+                  <h3 className="text-sm font-semibold text-[#2d682d] print:text-black uppercase">Head Teacher's Remark</h3>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span className="font-bold uppercase text-sm text-[#2d682d] print:text-black">RESUMPTION DATE:</span>
-                  <div className="border-b-2 border-[#2d682d] print:border-black flex-1 pb-1">
-                    {reportCardData.resumptionDate || ""}
-                  </div>
+                <div className="px-4 py-3 min-h-[80px] text-sm italic leading-relaxed text-[#2d682d] print:text-black">
+                  {reportCardData.remarks.headTeacher}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="border border-dashed border-[#2d682d] print:border-black px-3 py-2 text-sm">
+                  <span className="font-semibold text-[#2d682d] print:text-black">Vacation Date:</span>
+                  <span className="ml-2 text-gray-700 print:text-black">
+                    {reportCardData.termInfo.vacationEnds || "________________"}
+                  </span>
+                </div>
+                <div className="border border-dashed border-[#2d682d] print:border-black px-3 py-2 text-sm">
+                  <span className="font-semibold text-[#2d682d] print:text-black">Next Term Begins:</span>
+                  <span className="ml-2 text-gray-700 print:text-black">
+                    {reportCardData.termInfo.nextTermBegins || "________________"}
+                  </span>
+                </div>
+                <div className="border border-dashed border-[#2d682d] print:border-black px-3 py-2 text-sm">
+                  <span className="font-semibold text-[#2d682d] print:text-black">Next Term Fees:</span>
+                  <span className="ml-2 text-gray-700 print:text-black">
+                    {reportCardData.termInfo.nextTermFees || "________________"}
+                  </span>
+                </div>
+                <div className="border border-dashed border-[#2d682d] print:border-black px-3 py-2 text-sm">
+                  <span className="font-semibold text-[#2d682d] print:text-black">Outstanding Fees:</span>
+                  <span className="ml-2 text-gray-700 print:text-black">
+                    {reportCardData.termInfo.feesBalance || "________________"}
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-6">
-              {/* Affective Domain Table */}
-              <div>
-                <h4 className="font-bold text-[#2d682d] print:text-black mb-2 uppercase text-center font-serif">
-                  AFFECTIVE DOMAIN
-                </h4>
-                <table className="w-full border-2 border-[#2d682d] print:border-black text-xs">
+            <div className="space-y-4">
+              <div className="border-2 border-[#2d682d] print:border-black">
+                <div className="bg-[#2d682d] print:bg-gray-300 text-white print:text-black px-3 py-2 font-semibold text-sm text-center">
+                  Affective Domain
+                </div>
+                <table className="w-full text-xs">
                   <thead>
-                    <tr className="bg-[#2d682d]/10 print:bg-gray-100">
-                      <th className="border border-[#2d682d] print:border-black p-2 font-bold text-[#2d682d] print:text-black">
-                        TRAITS
-                      </th>
-                      <th className="border border-[#2d682d] print:border-black p-1 font-bold text-[#2d682d] print:text-black">
-                        EXCELLENT
-                      </th>
-                      <th className="border border-[#2d682d] print:border-black p-1 font-bold text-[#2d682d] print:text-black">
-                        V.GOOD
-                      </th>
-                      <th className="border border-[#2d682d] print:border-black p-1 font-bold text-[#2d682d] print:text-black">
-                        GOOD
-                      </th>
-                      <th className="border border-[#2d682d] print:border-black p-1 font-bold text-[#2d682d] print:text-black">
-                        POOR
-                      </th>
-                      <th className="border border-[#2d682d] print:border-black p-1 font-bold text-[#2d682d] print:text-black">
-                        V.POOR
-                      </th>
+                    <tr className="bg-[#2d682d]/10 print:bg-gray-100 text-[#2d682d] print:text-black">
+                      <th className="border border-[#2d682d] print:border-black px-2 py-1 text-left">Traits</th>
+                      {BEHAVIORAL_RATING_COLUMNS.map((column) => (
+                        <th
+                          key={`affective-header-${column.key}`}
+                          className="border border-[#2d682d] print:border-black px-2 py-1 text-center"
+                        >
+                          {column.label}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      <td className="border border-[#2d682d] print:border-black p-2 font-semibold">Neatness</td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.neatness, "excel")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.neatness, "vgood")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.neatness, "good")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.neatness, "poor")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.neatness, "vpoor")}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-[#2d682d] print:border-black p-2 font-semibold">Honesty</td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.honesty, "excel")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.honesty, "vgood")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.honesty, "good")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.honesty, "poor")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.honesty, "vpoor")}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-[#2d682d] print:border-black p-2 font-semibold">Punctuality</td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.punctuality, "excel")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.punctuality, "vgood")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.punctuality, "good")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.punctuality, "poor")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.affectiveDomain.punctuality, "vpoor")}
-                      </td>
-                    </tr>
+                    {AFFECTIVE_TRAITS.map((trait) => (
+                      <tr key={`affective-${trait.key}`}>
+                        <td className="border border-[#2d682d] print:border-black px-2 py-1 font-medium text-left">
+                          {trait.label}
+                        </td>
+                        {BEHAVIORAL_RATING_COLUMNS.map((column) => (
+                          <td
+                            key={`${trait.key}-${column.key}`}
+                            className="border border-[#2d682d] print:border-black px-2 py-1 text-center text-[#b29032] print:text-black"
+                          >
+                            {getBehavioralMark(reportCardData.affectiveDomain, trait.key, column.key)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
 
-              {/* Psychomotor Domain Table */}
-              <div>
-                <h4 className="font-bold text-[#2d682d] print:text-black mb-2 uppercase text-center font-serif">
-                  PSYCHOMOTOR DOMAIN
-                </h4>
-                <table className="w-full border-2 border-[#2d682d] print:border-black text-xs">
+              <div className="border-2 border-[#2d682d] print:border-black">
+                <div className="bg-[#2d682d] print:bg-gray-300 text-white print:text-black px-3 py-2 font-semibold text-sm text-center">
+                  Psychomotor Domain
+                </div>
+                <table className="w-full text-xs">
                   <thead>
-                    <tr className="bg-[#2d682d]/10 print:bg-gray-100">
-                      <th className="border border-[#2d682d] print:border-black p-2 font-bold text-[#2d682d] print:text-black">
-                        SKILLS
-                      </th>
-                      <th className="border border-[#2d682d] print:border-black p-1 font-bold text-[#2d682d] print:text-black">
-                        EXCELLENT
-                      </th>
-                      <th className="border border-[#2d682d] print:border-black p-1 font-bold text-[#2d682d] print:text-black">
-                        V.GOOD
-                      </th>
-                      <th className="border border-[#2d682d] print:border-black p-1 font-bold text-[#2d682d] print:text-black">
-                        GOOD
-                      </th>
-                      <th className="border border-[#2d682d] print:border-black p-1 font-bold text-[#2d682d] print:text-black">
-                        POOR
-                      </th>
-                      <th className="border border-[#2d682d] print:border-black p-1 font-bold text-[#2d682d] print:text-black">
-                        V.POOR
-                      </th>
+                    <tr className="bg-[#2d682d]/10 print:bg-gray-100 text-[#2d682d] print:text-black">
+                      <th className="border border-[#2d682d] print:border-black px-2 py-1 text-left">Skills</th>
+                      {BEHAVIORAL_RATING_COLUMNS.map((column) => (
+                        <th
+                          key={`psychomotor-header-${column.key}`}
+                          className="border border-[#2d682d] print:border-black px-2 py-1 text-center"
+                        >
+                          {column.label}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      <td className="border border-[#2d682d] print:border-black p-2 font-semibold">Sport</td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.psychomotorDomain.sport, "excel")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.psychomotorDomain.sport, "vgood")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.psychomotorDomain.sport, "good")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.psychomotorDomain.sport, "poor")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.psychomotorDomain.sport, "vpoor")}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-[#2d682d] print:border-black p-2 font-semibold">Handwriting</td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.psychomotorDomain.handwriting, "excel")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.psychomotorDomain.handwriting, "vgood")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.psychomotorDomain.handwriting, "good")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.psychomotorDomain.handwriting, "poor")}
-                      </td>
-                      <td className="border border-[#2d682d] print:border-black p-1 text-center text-[#b29032] print:text-black">
-                        {getRatingCheckbox(reportCardData.psychomotorDomain.handwriting, "vpoor")}
-                      </td>
-                    </tr>
+                    {PSYCHOMOTOR_SKILLS.map((skill) => (
+                      <tr key={`psychomotor-${skill.key}`}>
+                        <td className="border border-[#2d682d] print:border-black px-2 py-1 font-medium text-left">
+                          {skill.label}
+                        </td>
+                        {BEHAVIORAL_RATING_COLUMNS.map((column) => (
+                          <td
+                            key={`${skill.key}-${column.key}`}
+                            className="border border-[#2d682d] print:border-black px-2 py-1 text-center text-[#b29032] print:text-black"
+                          >
+                            {getBehavioralMark(reportCardData.psychomotorDomain, skill.key, column.key)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
-            </div>
-          </div>
 
-          <div className="mb-6">
-            <h4 className="font-bold text-[#2d682d] print:text-black mb-3 uppercase text-center font-serif">
-              GRADING SCALE
-            </h4>
-            <div className="border-2 border-[#2d682d] print:border-black p-4 bg-[#2d682d]/5 print:bg-gray-50">
-              <div className="grid grid-cols-6 gap-2 text-xs text-center">
-                <div className="font-bold text-[#2d682d] print:text-black">A: 75-100</div>
-                <div className="font-bold text-[#2d682d] print:text-black">B: 60-74</div>
-                <div className="font-bold text-[#2d682d] print:text-black">C: 50-59</div>
-                <div className="font-bold text-[#2d682d] print:text-black">D: 40-49</div>
-                <div className="font-bold text-[#2d682d] print:text-black">E: 30-39</div>
-                <div className="font-bold text-[#2d682d] print:text-black">F: 0-29</div>
+              <div className="border-2 border-[#2d682d] print:border-black">
+                <div className="bg-[#2d682d]/10 print:bg-gray-100 px-3 py-2 font-semibold text-sm text-[#2d682d] print:text-black">
+                  Attendance Summary
+                </div>
+                <div className="px-3 py-2 text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="font-semibold">Times Present:</span>
+                    <span>{reportCardData.attendance.present}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold">Times Absent:</span>
+                    <span>{reportCardData.attendance.absent}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold">Times School Opened:</span>
+                    <span>{reportCardData.attendance.total}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold">Attendance %:</span>
+                    <span>{reportCardData.attendance.percentage}%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-dashed border-[#2d682d] print:border-black px-3 py-2 text-xs text-[#2d682d] print:text-black">
+                <p className="font-semibold uppercase mb-1">Key to Ratings</p>
+                <p>Excellent • Very Good • Good • Fair • Needs Improvement</p>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between mb-6">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between mt-6 gap-6">
             <div className="text-center md:text-left">
-              <div className="border-b-2 border-[#2d682d] print:border-black w-48 h-16 mb-2"></div>
-              <p className="text-sm font-bold text-[#2d682d] print:text-black">CLASS TEACHER</p>
+              <div className="border-b-2 border-dashed border-[#2d682d] print:border-black w-48 h-10 mb-2"></div>
+              <p className="text-sm font-bold text-[#2d682d] print:text-black">Class Teacher's Signature</p>
             </div>
-            <div className="flex flex-col items-center md:items-end text-center md:text-right">
-              {branding.signatureUrl ? (
+            <div className="text-center md:text-right">
+              {reportCardData.branding.signature ? (
                 <img
-                  src={branding.signatureUrl}
-                  alt={`${branding.headmasterName} signature`}
-                  className="h-16 w-48 object-contain mb-2 md:ml-auto"
+                  src={reportCardData.branding.signature}
+                  alt={`${reportCardData.branding.headmasterName} signature`}
+                  className="h-16 w-48 object-contain mb-1 md:ml-auto"
                 />
               ) : (
-                <div className="border-b-2 border-[#2d682d] print:border-black w-48 h-16 mb-2 md:ml-auto"></div>
+                <div className="border-b-2 border-dashed border-[#2d682d] print:border-black w-48 h-10 mb-1 md:ml-auto"></div>
               )}
               <p className="text-sm font-bold text-[#2d682d] print:text-black">
-                {branding.headmasterName.toUpperCase()}
+                {reportCardData.branding.headmasterName}
               </p>
-              <p className="text-sm font-bold text-[#2d682d] print:text-black">HEADMASTER</p>
+              <p className="text-xs font-semibold text-[#2d682d] print:text-black uppercase tracking-wide">Head Teacher</p>
             </div>
           </div>
 
-          <div className="text-center">
+          <div className="text-center pt-4">
             <p className="text-xs text-[#2d682d] print:text-gray-600 font-medium">
-              © {branding.schoolName}. All rights reserved.
+              © {reportCardData.branding.schoolName}. All rights reserved.
             </p>
           </div>
         </div>

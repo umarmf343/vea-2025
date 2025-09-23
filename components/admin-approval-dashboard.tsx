@@ -16,7 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Download, Check, X, Calendar, Clock, User, BookOpen, Loader2 } from "lucide-react"
+import { Download, Check, X, Calendar, Clock, User, BookOpen, Loader2, Eye } from "lucide-react"
 import { safeStorage } from "@/lib/safe-storage"
 import { TutorialLink } from "@/components/tutorial-link"
 import {
@@ -26,6 +26,10 @@ import {
   type ReportCardWorkflowRecord,
 } from "@/lib/report-card-workflow"
 import { useToast } from "@/hooks/use-toast"
+import { EnhancedReportCard } from "@/components/enhanced-report-card"
+import { mapReportCardRecordToRaw } from "@/lib/report-card-transformers"
+import type { RawReportCardData } from "@/lib/report-card-types"
+import type { ReportCardRecord } from "@/lib/database"
 
 const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "all", label: "All Statuses" },
@@ -66,6 +70,61 @@ export function AdminApprovalDashboard() {
   const [submissionDeadline, setSubmissionDeadline] = useState("")
   const [showDeadlineDialog, setShowDeadlineDialog] = useState(false)
   const [processingRecordId, setProcessingRecordId] = useState<string | null>(null)
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
+  const [previewRecord, setPreviewRecord] = useState<ReportCardWorkflowRecord | null>(null)
+  const [previewData, setPreviewData] = useState<RawReportCardData | null>(null)
+  const [previewMessage, setPreviewMessage] = useState<string | null>(null)
+  const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null)
+  const isPreviewLoading = previewLoadingId !== null
+
+  const closePreviewDialog = useCallback(() => {
+    setPreviewDialogOpen(false)
+    setPreviewRecord(null)
+    setPreviewData(null)
+    setPreviewMessage(null)
+    setPreviewLoadingId(null)
+  }, [])
+
+  const handlePreview = useCallback(
+    (record: ReportCardWorkflowRecord) => {
+      setPreviewRecord(record)
+      setPreviewDialogOpen(true)
+      setPreviewLoadingId(record.id)
+      setPreviewData(null)
+      setPreviewMessage(null)
+
+      try {
+        const stored = safeStorage.getItem("reportCards")
+        if (!stored) {
+          setPreviewMessage("No report card data found for this student yet.")
+          return
+        }
+
+        const parsed = JSON.parse(stored) as ReportCardRecord[]
+        if (!Array.isArray(parsed)) {
+          setPreviewMessage("No report card data found for this student yet.")
+          return
+        }
+
+        const match = parsed.find(
+          (entry) => entry.studentId === record.studentId && entry.term === record.term && entry.session === record.session,
+        )
+
+        if (!match) {
+          setPreviewMessage("No report card data found for this student yet.")
+          return
+        }
+
+        setPreviewData(mapReportCardRecordToRaw(match))
+      } catch (error) {
+        console.error("Failed to load report card preview", error)
+        setPreviewMessage("Failed to load report card preview. Please try again.")
+      } finally {
+        setPreviewLoadingId(null)
+      }
+    },
+    [],
+  )
 
   const loadRecords = useCallback(() => {
     setRecords(getWorkflowRecords())
@@ -397,6 +456,20 @@ export function AdminApprovalDashboard() {
                 <CardContent>
                   <div className="flex flex-wrap gap-2">
                     <Button
+                      onClick={() => handlePreview(record)}
+                      variant="secondary"
+                      size="sm"
+                      className="flex items-center gap-2"
+                      disabled={previewLoadingId === record.id}
+                    >
+                      {previewLoadingId === record.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                      Preview
+                    </Button>
+                    <Button
                       onClick={() => handleDownload(record)}
                       variant="outline"
                       size="sm"
@@ -460,6 +533,37 @@ export function AdminApprovalDashboard() {
           })
         )}
       </div>
+
+      <Dialog open={previewDialogOpen} onOpenChange={(open) => (open ? setPreviewDialogOpen(true) : closePreviewDialog())}>
+        <DialogContent className="max-w-6xl">
+          <DialogHeader>
+            <DialogTitle>Report Card Preview</DialogTitle>
+            <DialogDescription>
+              {previewRecord
+                ? `${previewRecord.studentName} • ${previewRecord.className} • ${previewRecord.term} (${previewRecord.session})`
+                : "Select a report card to preview the final layout before approval."}
+            </DialogDescription>
+          </DialogHeader>
+          {isPreviewLoading ? (
+            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Preparing preview…
+            </div>
+          ) : previewData ? (
+            <div className="max-h-[70vh] overflow-y-auto rounded-lg border bg-white p-2 shadow-sm">
+              <EnhancedReportCard data={previewData} />
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {previewMessage ?? "No report card data is available for this student yet."}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={closePreviewDialog}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showDeadlineDialog} onOpenChange={setShowDeadlineDialog}>
         <DialogContent>

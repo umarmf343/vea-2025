@@ -1,14 +1,14 @@
 "use client"
 
 import type React from "react"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { GraduationCap, Users, BookOpen, DollarSign, UserCheck, Key, Loader2 } from "lucide-react"
+import { AlertTriangle, GraduationCap, Users, BookOpen, DollarSign, UserCheck, Key, Loader2 } from "lucide-react"
 import { PaymentModal } from "@/components/payment-modal"
 import { StudentProfileCard } from "@/components/student-profile-card"
 import { AcademicProgress } from "@/components/academic-progress"
@@ -32,6 +32,7 @@ import { CumulativeReportTrigger } from "@/components/cumulative-report"
 import { SystemHealthMonitor } from "@/components/system-health-monitor"
 import { NotificationCenter } from "@/components/notification-center"
 import { ReportCardViewer } from "@/components/report-card-viewer"
+import type { RawReportCardData } from "@/lib/report-card-types"
 import { AutomaticPromotionSystem } from "@/components/automatic-promotion-system"
 import { getStudentReportCardData } from "@/lib/report-card-data"
 import { InternalMessaging } from "@/components/internal-messaging"
@@ -1129,8 +1130,10 @@ function ParentDashboard({ user }: { user: User }) {
   const [hasAccess, setHasAccess] = useState(user.hasAccess)
   const [showReportCard, setShowReportCard] = useState(false)
   const [adminGrantedAccess, setAdminGrantedAccess] = useState(false)
-  const [reportCardData, setReportCardData] = useState<any>(null)
+  const [reportCardData, setReportCardData] = useState<RawReportCardData | null>(null)
   const [academicPeriod, setAcademicPeriod] = useState({ term: "First Term", session: "2024/2025" })
+  const [pendingApprovalNotice, setPendingApprovalNotice] = useState(false)
+  const autoPreviewTriggered = useRef(false)
 
   const linkedStudentId =
     typeof user.metadata?.linkedStudentId === "string"
@@ -1296,99 +1299,136 @@ function ParentDashboard({ user }: { user: User }) {
     ],
   }
 
-  const handleViewReportCard = async () => {
-    if (hasAccess) {
-      try {
-        const brandingInfo = getBrandingFromStorage()
+  const handleViewReportCard = useCallback(async () => {
+    if (!hasAccess) {
+      setShowPaymentModal(true)
+      return
+    }
 
-        const approvedReports = JSON.parse(safeStorage.getItem("approvedReports") || "[]") as string[]
-        const approvalKeys = [studentData.id, linkedStudentId, "1"].filter(
-          (value, index, array) => value && array.indexOf(value) === index,
-        )
+    try {
+      const brandingInfo = getBrandingFromStorage()
 
-        if (!approvalKeys.some((key) => approvedReports.includes(key))) {
+      let approvedReports: string[] = []
+      const approvedRaw = safeStorage.getItem("approvedReports")
+      if (approvedRaw) {
+        try {
+          const parsed = JSON.parse(approvedRaw) as unknown
+          if (Array.isArray(parsed)) {
+            approvedReports = parsed.map((entry) => String(entry))
+          }
+        } catch (error) {
+          logger.error("Unable to parse approved report cache", { error })
+        }
+      }
+
+      const approvalKeys = [studentData.id, linkedStudentId, "1"].filter(
+        (value, index, array) => value && array.indexOf(value) === index,
+      )
+      const hasApproval = approvalKeys.some((key) => approvedReports.includes(key))
+
+      if (!hasApproval) {
+        if (!pendingApprovalNotice) {
           toast({
             variant: "destructive",
             title: "Report card pending approval",
-            description: "Please wait for the administrator to approve this report card before viewing.",
+            description: "Showing the latest teacher draft while administrative approval is in progress.",
           })
-          return
         }
+        setPendingApprovalNotice(true)
+      } else {
+        setPendingApprovalNotice(false)
+      }
 
-        const numericId = Number.parseInt(studentData.id, 10)
-        const completeData = Number.isNaN(numericId)
-          ? null
-          : getCompleteReportCard(numericId, "JSS 1A", "Mathematics", "first", "2024/2025")
-
-        if (completeData) {
-          setReportCardData(completeData)
-          setShowReportCard(true)
-          return
-        }
-
-        const data =
-          getStudentReportCardData(studentData.id, "First Term", "2024/2025") ??
-          (studentData.id !== "1" ? getStudentReportCardData("1", "First Term", "2024/2025") : null)
-
-        if (data && data.subjects && data.subjects.length > 0) {
-          setReportCardData({
-            student: {
-              name: data.student.name,
-              admissionNumber: data.student.admissionNumber,
-              class: data.student.class,
-              term: data.student.term,
-              session: data.student.session,
+      const augmentReportData = (data: RawReportCardData): RawReportCardData => {
+        const summary = data.summary
+          ? { ...data.summary, numberOfStudents: data.summary.numberOfStudents ?? academicData.totalStudents }
+          : {
+              totalMarksObtainable: data.totalObtainable ?? 0,
+              totalMarksObtained: data.totalObtained ?? 0,
+              averageScore: data.average ?? 0,
               position: data.position,
-              totalStudents: academicData.totalStudents,
-              photo: "/diverse-students.png",
-            },
-            subjects: data.subjects,
-            summary: {
-              totalObtainable: data.totalObtainable,
-              totalObtained: data.totalObtained,
-              average: data.average,
-            },
-            affectiveDomain: data.affectiveDomain,
-            psychomotorDomain: data.psychomotorDomain,
-            remarks: {
-              classTeacher: data.classTeacherRemarks,
-              headmaster:
-                brandingInfo.defaultRemark ||
-                "An exemplary student who continues to excel in academics and character development.",
-            },
-            branding: {
-              logo: brandingInfo.logoUrl ?? "",
-              signature: brandingInfo.signatureUrl ?? "",
-              headmasterName: brandingInfo.headmasterName,
-              schoolName: brandingInfo.schoolName,
-              address: brandingInfo.schoolAddress,
-            },
-            attendance: {
+              numberOfStudents: academicData.totalStudents,
+            }
+
+        const classTeacherRemark = data.remarks?.classTeacher ?? data.classTeacherRemarks ?? ""
+        const headTeacherRemark =
+          data.remarks?.headTeacher ??
+          data.branding?.defaultRemark ??
+          brandingInfo.defaultRemark ??
+          "She is improving in her studies."
+
+        return {
+          ...data,
+          summary,
+          attendance:
+            data.attendance ?? {
               present: attendanceData.presentDays,
               absent: attendanceData.absentDays,
               total: attendanceData.totalDays,
             },
-          })
-          setShowReportCard(true)
-        } else {
-          toast({
-            variant: "destructive",
-            title: "No report card data",
-            description: "Please ensure teachers have entered marks for this student before trying again.",
-          })
+          remarks: {
+            classTeacher: classTeacherRemark,
+            headTeacher: headTeacherRemark,
+          },
+          branding: {
+            logo: data.branding?.logo ?? brandingInfo.logoUrl ?? null,
+            signature: data.branding?.signature ?? brandingInfo.signatureUrl ?? null,
+            headmasterName: data.branding?.headmasterName ?? brandingInfo.headmasterName,
+            schoolName: data.branding?.schoolName ?? brandingInfo.schoolName,
+            address: data.branding?.address ?? brandingInfo.schoolAddress,
+            defaultRemark: data.branding?.defaultRemark ?? brandingInfo.defaultRemark,
+          },
         }
-      } catch (error) {
-        logger.error("Error loading report card data", { error })
+      }
+
+      const numericId = Number.parseInt(studentData.id, 10)
+      const completeData = Number.isNaN(numericId)
+        ? null
+        : (getCompleteReportCard(numericId, "JSS 1A", "Mathematics", "first", "2024/2025") as RawReportCardData | null)
+
+      if (completeData) {
+        setReportCardData(augmentReportData(completeData))
+        setShowReportCard(true)
+        return
+      }
+
+      const fetchedData =
+        getStudentReportCardData(studentData.id, "First Term", "2024/2025") ??
+        (studentData.id !== "1" ? getStudentReportCardData("1", "First Term", "2024/2025") : null)
+
+      if (fetchedData && fetchedData.subjects && fetchedData.subjects.length > 0) {
+        setReportCardData(augmentReportData(fetchedData))
+        setShowReportCard(true)
+      } else {
+        setPendingApprovalNotice(false)
         toast({
           variant: "destructive",
-          title: "Unable to load report card",
-          description: "Please try again later or contact the administrator if the issue persists.",
+          title: "No report card data",
+          description: "Please ensure teachers have entered marks for this student before trying again.",
         })
       }
-    } else {
-      setShowPaymentModal(true)
+    } catch (error) {
+      logger.error("Error loading report card data", { error })
+      setPendingApprovalNotice(false)
+      toast({
+        variant: "destructive",
+        title: "Unable to load report card",
+        description: "Please try again later or contact the administrator if the issue persists.",
+      })
     }
-  }
+  }, [
+    academicData.totalStudents,
+    attendanceData.absentDays,
+    attendanceData.presentDays,
+    attendanceData.totalDays,
+    hasAccess,
+    linkedStudentId,
+    pendingApprovalNotice,
+    studentData.class,
+    studentData.id,
+    studentData.name,
+    toast,
+  ])
 
   const getAccessStatus = () => {
     if (adminGrantedAccess) {
@@ -1423,6 +1463,20 @@ function ParentDashboard({ user }: { user: User }) {
 
   const accessStatus = getAccessStatus()
 
+  useEffect(() => {
+    if (!hasAccess) {
+      autoPreviewTriggered.current = false
+      setShowReportCard(false)
+      setPendingApprovalNotice(false)
+      return
+    }
+
+    if (!showReportCard && !autoPreviewTriggered.current) {
+      autoPreviewTriggered.current = true
+      void handleViewReportCard()
+    }
+  }, [handleViewReportCard, hasAccess, showReportCard])
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1455,16 +1509,35 @@ function ParentDashboard({ user }: { user: User }) {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-semibold text-blue-900">Student Report Card</h3>
-            <Button variant="outline" onClick={() => setShowReportCard(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowReportCard(false)
+                setReportCardData(null)
+                setPendingApprovalNotice(false)
+              }}
+            >
               Back to Dashboard
             </Button>
           </div>
+          {pendingApprovalNotice ? (
+            <div className="flex items-start gap-2 rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <div>
+                <p className="font-semibold">Awaiting administrative approval</p>
+                <p className="text-xs text-yellow-700">
+                  You are viewing the latest teacher submission. The officially approved copy will appear here once the
+                  administrator publishes this report card.
+                </p>
+              </div>
+            </div>
+          ) : null}
           <ReportCardViewer
             studentId={studentData.id}
             studentName={studentData.name}
             userRole="parent"
             hasAccess={hasAccess || false}
-            reportCardData={reportCardData}
+            initialReportCard={reportCardData}
           />
         </div>
       ) : (
