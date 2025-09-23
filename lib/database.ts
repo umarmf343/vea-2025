@@ -177,6 +177,7 @@ export interface ReportCardSubjectRecord {
   total: number
   grade: string
   remark?: string
+  position?: number | string | null
 }
 
 export interface ReportCardRecord extends CollectionRecord {
@@ -216,6 +217,10 @@ export interface UpsertReportCardPayload
 export interface BrandingRecord extends CollectionRecord {
   schoolName: string
   schoolAddress: string
+  educationZone: string
+  councilArea: string
+  contactPhone: string
+  contactEmail: string
   headmasterName: string
   defaultRemark: string
   logoUrl?: string | null
@@ -879,6 +884,10 @@ function createDefaultBrandingRecord(): BrandingRecord {
     id: "branding_default",
     schoolName: "Victory Educational Academy",
     schoolAddress: "No. 19, Abdulazeez Street, Zone 3 Duste Baumpaba, Bwari Area Council, Abuja",
+    educationZone: "Municipal Education Zone",
+    councilArea: "Bwari Area Council",
+    contactPhone: "+234 (0) 700-832-2025",
+    contactEmail: "info@victoryacademy.edu.ng",
     headmasterName: "Dr. Emmanuel Adebayo",
     defaultRemark: "Keep up the excellent work and continue to strive for academic excellence.",
     logoUrl: null,
@@ -1871,6 +1880,15 @@ function normalizeReportSubject(subject: ReportCardSubjectInput): ReportCardSubj
       : computedTotal,
   )
 
+  let position: ReportCardSubjectRecord["position"] = undefined
+
+  if (typeof (subject as ReportCardSubjectRecord).position === "number") {
+    position = (subject as ReportCardSubjectRecord).position
+  } else if (typeof (subject as ReportCardSubjectRecord).position === "string") {
+    const trimmed = (subject as ReportCardSubjectRecord).position?.trim()
+    position = trimmed && trimmed.length > 0 ? trimmed : undefined
+  }
+
   return {
     name: subject.name,
     ca1,
@@ -1880,6 +1898,7 @@ function normalizeReportSubject(subject: ReportCardSubjectInput): ReportCardSubj
     total,
     grade: (subject as ReportCardSubjectRecord).grade ?? determineGrade(total),
     remark: "remark" in subject ? (subject as ReportCardSubjectRecord).remark ?? undefined : undefined,
+    position: position ?? null,
   }
 }
 

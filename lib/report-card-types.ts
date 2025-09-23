@@ -43,6 +43,10 @@ export interface RawReportCardBranding {
   headmasterName?: string
   schoolName?: string
   address?: string
+  educationZone?: string
+  councilArea?: string
+  contactPhone?: string
+  contactEmail?: string
   defaultRemark?: string
 }
 

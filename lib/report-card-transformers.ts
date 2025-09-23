@@ -21,6 +21,7 @@ const normaliseSubject = (subject: ReportCardSubjectRecord) => {
     total,
     grade,
     remarks: subject.remark ?? "",
+    position: subject.position ?? null,
   }
 }
 

@@ -22,6 +22,10 @@ export async function PUT(request: NextRequest) {
     const updated = await updateBrandingSettings({
       schoolName: typeof body.schoolName === "string" ? sanitizeInput(body.schoolName) : undefined,
       schoolAddress: typeof body.schoolAddress === "string" ? sanitizeInput(body.schoolAddress) : undefined,
+      educationZone: typeof body.educationZone === "string" ? sanitizeInput(body.educationZone) : undefined,
+      councilArea: typeof body.councilArea === "string" ? sanitizeInput(body.councilArea) : undefined,
+      contactPhone: typeof body.contactPhone === "string" ? sanitizeInput(body.contactPhone) : undefined,
+      contactEmail: typeof body.contactEmail === "string" ? sanitizeInput(body.contactEmail) : undefined,
       headmasterName: typeof body.headmasterName === "string" ? sanitizeInput(body.headmasterName) : undefined,
       defaultRemark: typeof body.defaultRemark === "string" ? sanitizeInput(body.defaultRemark) : undefined,
       logoUrl: typeof body.logoUrl === "string" ? body.logoUrl : null,
