@@ -151,6 +151,10 @@ interface ClassRow {
 interface BrandingState {
   schoolName: string
   schoolAddress: string
+  educationZone: string
+  councilArea: string
+  contactPhone: string
+  contactEmail: string
   headmasterName: string
   defaultRemark: string
   logoUrl: string | null
@@ -202,6 +206,10 @@ interface StudentRow {
 const DEFAULT_BRANDING: BrandingState = {
   schoolName: "Victory Educational Academy",
   schoolAddress: "No. 19, Abdulazeez Street, Zone 3 Duste Baumpaba, Bwari Area Council, Abuja",
+  educationZone: "Municipal Education Zone",
+  councilArea: "Bwari Area Council",
+  contactPhone: "+234 (0) 700-832-2025",
+  contactEmail: "info@victoryacademy.edu.ng",
   headmasterName: "Dr. Emmanuel Adebayo",
   defaultRemark: "Keep up the excellent work and continue to strive for academic excellence.",
   logoUrl: null,
@@ -344,6 +352,10 @@ function mapBranding(record: BrandingRecord): BrandingState {
   return {
     schoolName: record.schoolName,
     schoolAddress: record.schoolAddress,
+    educationZone: record.educationZone,
+    councilArea: record.councilArea,
+    contactPhone: record.contactPhone,
+    contactEmail: record.contactEmail,
     headmasterName: record.headmasterName,
     defaultRemark: record.defaultRemark,
     logoUrl: record.logoUrl ?? null,
@@ -1676,6 +1688,43 @@ export default function SuperAdminDashboard() {
                     rows={3}
                     value={branding.schoolAddress}
                     onChange={(event) => setBranding((prev) => ({ ...prev, schoolAddress: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="branding-zone">Education Zone</Label>
+                  <Input
+                    id="branding-zone"
+                    value={branding.educationZone}
+                    onChange={(event) => setBranding((prev) => ({ ...prev, educationZone: event.target.value }))}
+                    placeholder="e.g. Municipal Education Zone"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="branding-council">Local Council Area</Label>
+                  <Input
+                    id="branding-council"
+                    value={branding.councilArea}
+                    onChange={(event) => setBranding((prev) => ({ ...prev, councilArea: event.target.value }))}
+                    placeholder="e.g. Bwari Area Council"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="branding-phone">Contact Phone</Label>
+                  <Input
+                    id="branding-phone"
+                    value={branding.contactPhone}
+                    onChange={(event) => setBranding((prev) => ({ ...prev, contactPhone: event.target.value }))}
+                    placeholder="e.g. +234 (0) 700-832-2025"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="branding-email">Contact Email</Label>
+                  <Input
+                    id="branding-email"
+                    type="email"
+                    value={branding.contactEmail}
+                    onChange={(event) => setBranding((prev) => ({ ...prev, contactEmail: event.target.value }))}
+                    placeholder="e.g. info@victoryacademy.edu.ng"
                   />
                 </div>
                 <div className="space-y-2 md:col-span-2">

@@ -14,6 +14,10 @@ import { safeStorage } from "@/lib/safe-storage"
 interface BrandingPayload {
   schoolName: string
   schoolAddress: string
+  educationZone?: string
+  councilArea?: string
+  contactPhone?: string
+  contactEmail?: string
   headmasterName?: string
   defaultRemark?: string
 }
@@ -40,6 +44,10 @@ export function SystemSettings() {
   const [registrationEnabled, setRegistrationEnabled] = useState(true)
   const [schoolName, setSchoolName] = useState("")
   const [schoolAddress, setSchoolAddress] = useState("")
+  const [educationZone, setEducationZone] = useState("")
+  const [councilArea, setCouncilArea] = useState("")
+  const [contactPhone, setContactPhone] = useState("")
+  const [contactEmail, setContactEmail] = useState("")
   const [headmasterName, setHeadmasterName] = useState("")
   const [defaultRemark, setDefaultRemark] = useState("")
   const [currentSession, setCurrentSession] = useState("")
@@ -80,6 +88,10 @@ export function SystemSettings() {
         brandingData.branding?.schoolAddress ??
           "No. 19, Abdulazeez Street, Zone 3 Duste Baumpaba Bwari Area Council, Abuja",
       )
+      setEducationZone(brandingData.branding?.educationZone ?? "Municipal Education Zone")
+      setCouncilArea(brandingData.branding?.councilArea ?? "Bwari Area Council")
+      setContactPhone(brandingData.branding?.contactPhone ?? "+234 (0) 700-832-2025")
+      setContactEmail(brandingData.branding?.contactEmail ?? "info@victoryacademy.edu.ng")
       setHeadmasterName(brandingData.branding?.headmasterName ?? "")
       setDefaultRemark(
         brandingData.branding?.defaultRemark ??
@@ -98,8 +110,26 @@ export function SystemSettings() {
   }, [loadSettings])
 
   const canSave = useMemo(() => {
-    return Boolean(schoolName && schoolAddress && currentSession && currentTerm)
-  }, [schoolName, schoolAddress, currentSession, currentTerm])
+    return Boolean(
+      schoolName &&
+      schoolAddress &&
+      educationZone &&
+      councilArea &&
+      contactPhone &&
+      contactEmail &&
+      currentSession &&
+      currentTerm,
+    )
+  }, [
+    contactEmail,
+    contactPhone,
+    councilArea,
+    currentSession,
+    currentTerm,
+    educationZone,
+    schoolAddress,
+    schoolName,
+  ])
 
   const handleSaveSettings = useCallback(async () => {
     if (!canSave) {
@@ -129,6 +159,10 @@ export function SystemSettings() {
           body: JSON.stringify({
             schoolName,
             schoolAddress,
+            educationZone,
+            councilArea,
+            contactPhone,
+            contactEmail,
             headmasterName,
             defaultRemark,
           }),
@@ -156,11 +190,15 @@ export function SystemSettings() {
     currentSession,
     currentTerm,
     defaultRemark,
+    educationZone,
     headmasterName,
     registrationEnabled,
     reportCardDeadline,
     schoolAddress,
     schoolName,
+    contactPhone,
+    contactEmail,
+    councilArea,
   ])
 
   const handleResetPassword = useCallback(async (userEmail: string) => {
@@ -283,6 +321,51 @@ export function SystemSettings() {
                 rows={3}
                 disabled={saving}
               />
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="education-zone">Education Zone</Label>
+                <Input
+                  id="education-zone"
+                  value={educationZone}
+                  onChange={(event) => setEducationZone(event.target.value)}
+                  placeholder="e.g. Municipal Education Zone"
+                  disabled={saving}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="council-area">Local Council Area</Label>
+                <Input
+                  id="council-area"
+                  value={councilArea}
+                  onChange={(event) => setCouncilArea(event.target.value)}
+                  placeholder="e.g. Bwari Area Council"
+                  disabled={saving}
+                />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="contact-phone">Contact Phone</Label>
+                <Input
+                  id="contact-phone"
+                  value={contactPhone}
+                  onChange={(event) => setContactPhone(event.target.value)}
+                  placeholder="e.g. +234 (0) 700-832-2025"
+                  disabled={saving}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contact-email">Contact Email</Label>
+                <Input
+                  id="contact-email"
+                  type="email"
+                  value={contactEmail}
+                  onChange={(event) => setContactEmail(event.target.value)}
+                  placeholder="e.g. info@victoryacademy.edu.ng"
+                  disabled={saving}
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="headmaster-name">Headmaster/Principal</Label>

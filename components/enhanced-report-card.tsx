@@ -77,6 +77,10 @@ interface NormalizedReportCard {
   branding: {
     schoolName: string
     address: string
+    educationZone: string
+    councilArea: string
+    contactPhone: string
+    contactEmail: string
     logo: string | null
     signature: string | null
     headmasterName: string
@@ -197,6 +201,17 @@ const GRADING_SCALE = [
   { grade: "D", range: "50 - 59%", meaning: "Good" },
   { grade: "E", range: "40 - 49%", meaning: "Pass" },
   { grade: "F", range: "0 - 39%", meaning: "Needs Improvement" },
+] as const
+
+const PRIMARY_AFFECTIVE_TRAITS = [
+  { key: "neatness", label: "Neatness" },
+  { key: "honesty", label: "Honesty" },
+  { key: "punctuality", label: "Punctuality" },
+] as const
+
+const PRIMARY_PSYCHOMOTOR_SKILLS = [
+  { key: "gamesSports", label: "Sport" },
+  { key: "handwriting", label: "Handwriting" },
 ] as const
 
 const normalizeSubjects = (subjects: Array<Record<string, unknown>> | undefined): SubjectScore[] => {
@@ -343,6 +358,10 @@ const normalizeReportCard = (
   const resolvedBranding = {
     schoolName: source.branding?.schoolName?.trim() || defaultBranding.schoolName,
     address: source.branding?.address?.trim() || defaultBranding.schoolAddress,
+    educationZone: source.branding?.educationZone?.trim() || defaultBranding.educationZone,
+    councilArea: source.branding?.councilArea?.trim() || defaultBranding.councilArea,
+    contactPhone: source.branding?.contactPhone?.trim() || defaultBranding.contactPhone,
+    contactEmail: source.branding?.contactEmail?.trim() || defaultBranding.contactEmail,
     logo: source.branding?.logo ?? defaultBranding.logoUrl ?? null,
     signature: source.branding?.signature ?? defaultBranding.signatureUrl ?? null,
     headmasterName: source.branding?.headmasterName?.trim() || defaultBranding.headmasterName,
@@ -473,7 +492,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
       return []
     }
 
-    return [
+    const items = [
       {
         label: "Total Marks Obtainable",
         value: reportCardData.summary.totalMarksObtainable.toLocaleString(),
@@ -498,7 +517,30 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         label: "Overall Grade",
         value: reportCardData.summary.grade ?? "—",
       },
-    ]
+    ] as Array<{ label: string; value: string; helper?: string }>
+
+    if (typeof reportCardData.summary.classAverage === "number") {
+      items.push({
+        label: "Class Average",
+        value: `${reportCardData.summary.classAverage.toFixed(1)}%`,
+      })
+    }
+
+    if (typeof reportCardData.summary.highestScore === "number") {
+      items.push({
+        label: "Highest Score",
+        value: reportCardData.summary.highestScore.toLocaleString(),
+      })
+    }
+
+    if (typeof reportCardData.summary.lowestScore === "number") {
+      items.push({
+        label: "Lowest Score",
+        value: reportCardData.summary.lowestScore.toLocaleString(),
+      })
+    }
+
+    return items
   }, [reportCardData])
 
   const totalsRow = useMemo(() => {
@@ -519,6 +561,22 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
       { ca1: 0, ca2: 0, assignment: 0, caTotal: 0, exam: 0, total: 0 },
     )
   }, [reportCardData])
+
+  const additionalAffectiveTraits = useMemo(
+    () =>
+      AFFECTIVE_TRAITS.filter((trait) =>
+        PRIMARY_AFFECTIVE_TRAITS.every((primary) => primary.key !== trait.key),
+      ),
+    [],
+  )
+
+  const additionalPsychomotorSkills = useMemo(
+    () =>
+      PSYCHOMOTOR_SKILLS.filter((skill) =>
+        PRIMARY_PSYCHOMOTOR_SKILLS.every((primary) => primary.key !== skill.key),
+      ),
+    [],
+  )
 
   if (!reportCardData) {
     return (
@@ -557,10 +615,10 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
       <div className="bg-gradient-to-br from-emerald-50 via-white to-sky-50 p-1 rounded-[32px] shadow-2xl print:bg-white print:p-0 print:rounded-none print:shadow-none">
         <div className="bg-white rounded-[28px] border border-emerald-200 overflow-hidden print:border-black print:rounded-none">
-          <header className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-sky-500 text-white px-8 py-6 print:bg-white print:text-black print:border-b print:border-black">
-            <div className="grid gap-6 md:grid-cols-[auto_1fr_auto] md:items-center">
-              <div className="flex flex-col items-center gap-3 text-center">
-                <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white/70 bg-white/90 shadow-inner overflow-hidden print:border-[#2d682d] print:bg-white">
+          <header className="bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-500 px-8 py-8 text-white print:bg-white print:px-6 print:py-6 print:text-emerald-900 print:border-b print:border-black">
+            <div className="flex flex-wrap items-start justify-between gap-6">
+              <div className="flex items-start gap-4">
+                <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white/70 bg-white/90 shadow-inner print:border-emerald-800/70 print:bg-white">
                   {reportCardData.branding.logo ? (
                     <img
                       src={reportCardData.branding.logo}
@@ -568,91 +626,94 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                       className="h-full w-full object-contain p-2"
                     />
                   ) : (
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-emerald-700 print:text-[#2d682d] leading-tight">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-emerald-700 print:text-emerald-900 leading-tight text-center">
                       School
                       <br />
                       Logo
                     </div>
                   )}
                 </div>
+                <div className="space-y-3">
+                  <h1 className="text-3xl font-black uppercase tracking-[0.35em] drop-shadow-md print:drop-shadow-none print:text-emerald-900">
+                    {reportCardData.branding.schoolName}
+                  </h1>
+                  <p className="text-sm font-medium leading-relaxed text-white/90 print:text-emerald-900">
+                    {reportCardData.branding.address}
+                  </p>
+                  <div className="grid gap-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/80 print:text-emerald-800">
+                    <span>Education Zone: {reportCardData.branding.educationZone}</span>
+                    <span>Council Area: {reportCardData.branding.councilArea}</span>
+                    <span>
+                      Contact: {reportCardData.branding.contactPhone} • {reportCardData.branding.contactEmail}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="space-y-2 text-center">
-                <h1 className="text-3xl font-black uppercase tracking-[0.35em] drop-shadow-md print:drop-shadow-none print:text-black">
-                  {reportCardData.branding.schoolName}
-                </h1>
-                <p className="text-sm font-medium text-white/90 leading-relaxed print:text-black">
-                  {reportCardData.branding.address}
-                </p>
-                <p className="text-xs font-semibold uppercase tracking-[0.4em] text-white/70 print:text-black">
-                  Excellence • Discipline • Service
-                </p>
-              </div>
-              <div className="flex flex-col items-center gap-3 text-center">
-                <div className="flex h-28 w-28 items-center justify-center rounded-full border-4 border-white/70 bg-white/90 shadow-inner overflow-hidden print:border-[#2d682d] print:bg-white">
+              <div className="flex flex-col items-end gap-3">
+                <div className="flex h-28 w-28 items-center justify-center rounded-full border-4 border-white/70 bg-white/90 shadow-inner print:border-emerald-800/70 print:bg-white">
                   {studentPhoto ? (
                     <img src={studentPhoto} alt="Student" className="h-full w-full object-cover" />
                   ) : (
-                    <div className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700 print:text-[#2d682d]">
+                    <div className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700 print:text-emerald-900 text-center">
                       Student
                       <br />
                       Photo
                     </div>
                   )}
                 </div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/80 print:text-black">
-                  {reportCardData.student.name?.split(" ")?.[0] ?? "Student"}
-                </p>
+                <dl className="grid gap-1 text-right text-xs font-semibold text-white/85 print:text-emerald-900">
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="uppercase tracking-[0.35em] text-white/60 print:text-emerald-700">Term</dt>
+                    <dd className="font-bold text-white print:text-emerald-900">{reportCardData.student.term}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="uppercase tracking-[0.35em] text-white/60 print:text-emerald-700">Session</dt>
+                    <dd className="font-bold text-white print:text-emerald-900">{reportCardData.student.session}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="uppercase tracking-[0.35em] text-white/60 print:text-emerald-700">Class</dt>
+                    <dd className="font-bold text-white print:text-emerald-900">{reportCardData.student.class}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="uppercase tracking-[0.35em] text-white/60 print:text-emerald-700">Students</dt>
+                    <dd className="font-bold text-white print:text-emerald-900">
+                      {reportCardData.student.numberInClass ?? "—"}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="uppercase tracking-[0.35em] text-white/60 print:text-emerald-700">Position</dt>
+                    <dd className="font-bold text-white print:text-emerald-900">
+                      {reportCardData.summary.positionLabel || "—"}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="uppercase tracking-[0.35em] text-white/60 print:text-emerald-700">Status</dt>
+                    <dd className="font-bold text-white print:text-emerald-900">
+                      {reportCardData.student.statusLabel ?? "Active"}
+                    </dd>
+                  </div>
+                </dl>
               </div>
             </div>
-
-            <div className="mt-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div className="text-left text-xs md:text-sm leading-relaxed space-y-1 font-medium max-w-md">
-                <p>School Address: {reportCardData.branding.address}</p>
-                <p>Education Zone: ________________________________</p>
-                <p>Local Council Area: _____________________________</p>
-                <p>Contact: +234 (0) 700-832-2025 • info@victoryacademy.edu</p>
+            <div className="mt-6 grid grid-cols-1 gap-4 text-white/90 print:text-emerald-900 md:grid-cols-3 md:items-center">
+              <div className="text-sm font-semibold uppercase tracking-[0.3em]">
+                Admission No: {reportCardData.student.admissionNumber || "________________"}
               </div>
-              <div className="flex-1">
-                <div className="text-center space-y-1">
-                  <h2 className="text-xl font-semibold uppercase tracking-[0.3em] text-white print:text-black">
-                    {reportCardData.student.name}
-                  </h2>
-                  <p className="text-xs md:text-sm font-medium uppercase tracking-[0.35em] text-white/80 print:text-black">
-                    Admission No: {reportCardData.student.admissionNumber || "________________"}
-                  </p>
-                  <p className="text-xs md:text-sm uppercase tracking-[0.35em] text-white/80 print:text-black">
-                    Class: {reportCardData.student.class}
-                  </p>
-                </div>
-                <div className="mt-3 grid gap-1 text-xs md:text-sm text-right font-semibold text-white/90 print:text-black">
-                  <p>
-                    <span className="text-white/70 print:text-black">Term:</span>{" "}
-                    <span className="font-bold text-white print:text-black">{reportCardData.student.term}</span>
-                  </p>
-                  <p>
-                    <span className="text-white/70 print:text-black">Session:</span>{" "}
-                    <span className="font-bold text-white print:text-black">{reportCardData.student.session}</span>
-                  </p>
-                  <p>
-                    <span className="text-white/70 print:text-black">Students in Class:</span>{" "}
-                    <span className="font-bold text-white print:text-black">
-                      {reportCardData.student.numberInClass ?? "—"}
-                    </span>
-                  </p>
-                  <p>
-                    <span className="text-white/70 print:text-black">Status:</span>{" "}
-                    <span className="font-bold text-white print:text-black">
-                      {reportCardData.student.statusLabel ?? "Active"}
-                    </span>
-                  </p>
-                </div>
+              <div className="text-center">
+                <p className="text-[11px] uppercase tracking-[0.45em] text-white/60 print:text-emerald-700">Student Name</p>
+                <p className="text-2xl font-black uppercase tracking-[0.3em] text-white print:text-emerald-900">
+                  {reportCardData.student.name}
+                </p>
+              </div>
+              <div className="text-sm text-right font-semibold uppercase tracking-[0.3em]">
+                Overall Position: {reportCardData.summary.positionLabel || "—"}
               </div>
             </div>
           </header>
 
           <main className="px-8 py-8 space-y-10 print:px-6 print:py-6">
             <section className="space-y-6">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
                 {summaryItems.map((item) => (
                   <div
                     key={item.label}
@@ -666,29 +727,29 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
               </div>
             </section>
 
-            <section className="space-y-4">
-              <div className="rounded-3xl border border-emerald-200 shadow-lg overflow-hidden print:border-black print:shadow-none">
-                <div className="bg-gradient-to-r from-emerald-600 to-teal-500 px-6 py-3 text-sm font-semibold uppercase tracking-[0.35em] text-white print:bg-gray-200 print:text-black">
+            <section className="grid gap-6 xl:grid-cols-[3fr_1.2fr]">
+              <div className="rounded-3xl border border-emerald-200 shadow-lg print:border-black print:shadow-none">
+                <div className="bg-gradient-to-r from-emerald-600 to-teal-500 px-6 py-3 text-sm font-semibold uppercase tracking-[0.35em] text-white print:bg-gray-200 print:text-emerald-900">
                   Academic Performance Overview
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs md:text-sm">
                     <thead>
-                      <tr className="bg-emerald-600 text-white print:bg-gray-200 print:text-black">
+                      <tr className="bg-emerald-600 text-white print:bg-gray-200 print:text-emerald-900">
                         <th className="px-3 py-3 text-left uppercase tracking-wide">Subject</th>
                         <th className="px-3 py-3 text-center uppercase tracking-wide">1st C.A. (10)</th>
                         <th className="px-3 py-3 text-center uppercase tracking-wide">2nd C.A. (10)</th>
                         <th className="px-3 py-3 text-center uppercase tracking-wide">Notes &amp; Assignments (20)</th>
-                        <th className="px-3 py-3 text-center uppercase tracking-wide">Total C.A. (40)</th>
+                        <th className="px-3 py-3 text-center uppercase tracking-wide">Total (40)</th>
                         <th className="px-3 py-3 text-center uppercase tracking-wide">Exam (60)</th>
-                        <th className="px-3 py-3 text-center uppercase tracking-wide">Overall Total (100)</th>
+                        <th className="px-3 py-3 text-center uppercase tracking-wide">Grand Total (100)</th>
                         <th className="px-3 py-3 text-center uppercase tracking-wide">Grade</th>
-                        <th className="px-3 py-3 text-center uppercase tracking-wide">Position</th>
-                        <th className="px-3 py-3 text-left uppercase tracking-wide">Teacher's Remarks</th>
+                        <th className="px-3 py-3 text-center uppercase tracking-wide">Subject Position</th>
+                        <th className="px-3 py-3 text-left uppercase tracking-wide">Teacher's Remark</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {reportCardData.subjects.map((subject, index) => (
+                                            {reportCardData.subjects.map((subject, index) => (
                         <tr
                           key={`${subject.name}-${index}`}
                           className={index % 2 === 0 ? "bg-white" : "bg-emerald-50/60 print:bg-gray-100"}
@@ -715,7 +776,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                             {subject.total}
                           </td>
                           <td className="border border-emerald-200 px-3 py-3 text-center font-bold text-teal-600 print:text-black print:border-black">
-                            {subject.grade || "—"}
+                            {subject.grade || deriveGradeFromScore(subject.total)}
                           </td>
                           <td className="border border-emerald-200 px-3 py-3 text-center font-semibold text-emerald-800 print:border-black">
                             {subject.position ?? "—"}
@@ -725,6 +786,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                           </td>
                         </tr>
                       ))}
+
                     </tbody>
                     <tfoot>
                       <tr className="bg-emerald-600/10 text-emerald-900 font-semibold print:bg-gray-100">
@@ -756,226 +818,248 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                     </tfoot>
                   </table>
                 </div>
-              </div>
-              <p className="text-xs text-emerald-700/80 italic">
-                Continuous assessments make up 40% of the total score (1st C.A. 10%, 2nd C.A. 10%, Notes &amp; Assignments 20%) while examinations contribute 60%.
-              </p>
-            </section>
-
-            <section className="space-y-8">
-              <div className="rounded-3xl border border-emerald-200 bg-emerald-50/60 px-6 py-6 text-center shadow-sm print:bg-white print:border-black">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.35em] text-emerald-900">Class Teacher's Remarks</h3>
-                <p className="mt-4 text-base leading-relaxed text-emerald-900/90">
-                  {reportCardData.remarks.classTeacher || "She is improving in her studies."}
+                <p className="px-6 pb-6 pt-3 text-xs italic text-emerald-800/90 print:text-emerald-900">
+                  Continuous assessments contribute 40% of the final score (1st C.A. 10%, 2nd C.A. 10%, Notes &amp; Assignments 20%), while examinations account for the remaining 60%.
                 </p>
               </div>
-
-              <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr] items-start">
-                <div className="space-y-6">
-                  <div className="rounded-3xl border border-emerald-200 bg-white px-6 py-5 shadow-sm print:border-black">
-                    <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700 text-center">
-                      Head Teacher's Remark
-                    </h3>
-                    <p className="mt-3 text-sm italic text-emerald-900/90 text-center">
-                      {reportCardData.remarks.headTeacher}
-                    </p>
-                  </div>
-
-                  <div className="rounded-3xl border border-emerald-200 bg-white px-6 py-5 shadow-sm print:border-black">
-                    <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700 text-center">
-                      Attendance Summary
-                    </h3>
-                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm font-semibold text-emerald-900/90">
-                      <div className="rounded-2xl bg-emerald-50/70 px-4 py-3 text-center shadow-inner print:bg-white">
-                        <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Present</p>
-                        <p className="text-lg font-bold">{reportCardData.attendance.present}</p>
-                      </div>
-                      <div className="rounded-2xl bg-emerald-50/70 px-4 py-3 text-center shadow-inner print:bg-white">
-                        <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Absent</p>
-                        <p className="text-lg font-bold">{reportCardData.attendance.absent}</p>
-                      </div>
-                      <div className="rounded-2xl bg-emerald-50/70 px-4 py-3 text-center shadow-inner col-span-2 print:bg-white">
-                        <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Attendance %</p>
-                        <p className="text-lg font-bold">{reportCardData.attendance.percentage}%</p>
-                      </div>
+              <aside className="space-y-5">
+                <div className="rounded-3xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm print:bg-white print:border-emerald-200">
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-800 text-center">Class Metrics</h3>
+                  <div className="mt-4 space-y-3 text-sm text-emerald-900">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">Students</span>
+                      <span className="font-semibold">{reportCardData.student.numberInClass ?? "—"}</span>
                     </div>
-                  </div>
-
-                  <div className="rounded-3xl border border-emerald-200 bg-white px-6 py-5 shadow-sm print:border-black">
-                    <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700 text-center">
-                      Term Information
-                    </h3>
-                    <div className="mt-4 space-y-2 text-sm text-emerald-900/90">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-semibold uppercase tracking-[0.25em] text-emerald-700">Vacation Date</span>
-                        <span>{reportCardData.termInfo.vacationEnds || "________________"}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-semibold uppercase tracking-[0.25em] text-emerald-700">Resumption Date</span>
-                        <span>{reportCardData.termInfo.nextTermBegins || "________________"}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-semibold uppercase tracking-[0.25em] text-emerald-700">Next Term Fees</span>
-                        <span>{reportCardData.termInfo.nextTermFees || "________________"}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-semibold uppercase tracking-[0.25em] text-emerald-700">Outstanding Fees</span>
-                        <span>{reportCardData.termInfo.feesBalance || "________________"}</span>
-                      </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">Subjects</span>
+                      <span className="font-semibold">{reportCardData.subjects.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">Class Position</span>
+                      <span className="font-semibold">{reportCardData.summary.positionLabel || "—"}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">Average Score</span>
+                      <span className="font-semibold">{reportCardData.summary.averageScore.toFixed(1)}%</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">Overall Grade</span>
+                      <span className="font-semibold">{reportCardData.summary.grade ?? "—"}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">Status</span>
+                      <span className="font-semibold">{reportCardData.student.statusLabel ?? "Active"}</span>
                     </div>
                   </div>
                 </div>
-
-                <div className="space-y-6">
-                  <div className="rounded-3xl border border-emerald-200 bg-white shadow-sm overflow-hidden print:border-black">
-                    <div className="bg-gradient-to-r from-emerald-600 to-teal-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-white text-center print:bg-gray-200 print:text-black">
-                      Affective Domain
+                <div className="rounded-3xl border border-emerald-200 bg-white p-5 shadow-sm print:border-emerald-200">
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-800 text-center">Attendance Summary</h3>
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-emerald-900">
+                    <div className="rounded-2xl bg-emerald-50/70 px-4 py-3 text-center shadow-inner print:bg-white">
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Present</p>
+                      <p className="text-lg font-bold">{reportCardData.attendance.present}</p>
                     </div>
-                    <div className="p-4">
-                      <table className="w-full text-xs sm:text-sm text-center">
-                        <thead>
-                          <tr>
-                            {AFFECTIVE_FOOTER_COLUMNS.map((column) => (
-                              <th
-                                key={column.key}
-                                className="px-3 py-2 text-emerald-700 uppercase tracking-[0.2em] border-b border-emerald-200 print:border-black"
-                              >
-                                {column.label}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            {AFFECTIVE_FOOTER_COLUMNS.map((column) => (
-                              <td
-                                key={column.key}
-                                className="px-3 py-3 border-t border-emerald-100 print:border-black align-top"
-                              >
-                                <div className="flex items-center justify-center gap-1">
-                                  {BEHAVIORAL_RATING_COLUMNS.map((option) => {
-                                    const mark = getBehavioralMark(reportCardData.affectiveDomain, column.key, option.key)
-                                    const isActive = mark === "●"
-                                    return (
-                                      <span
-                                        key={`${column.key}-${option.key}`}
-                                        className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${
-                                          isActive
-                                            ? 'border-emerald-600 bg-emerald-500 text-white'
-                                            : 'border-emerald-300 text-emerald-500'
-                                        }`}
-                                      >
-                                        {mark}
-                                      </span>
-                                    )
-                                  })}
-                                </div>
-                                <p className="mt-2 text-xs font-semibold text-emerald-700">
-                                  {formatBehavioralLabel(reportCardData.affectiveDomain[column.key])}
-                                </p>
-                              </td>
-                            ))}
-                          </tr>
-                        </tbody>
-                      </table>
+                    <div className="rounded-2xl bg-emerald-50/70 px-4 py-3 text-center shadow-inner print:bg-white">
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Absent</p>
+                      <p className="text-lg font-bold">{reportCardData.attendance.absent}</p>
+                    </div>
+                    <div className="rounded-2xl bg-emerald-50/70 px-4 py-3 text-center shadow-inner print:bg-white">
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Total</p>
+                      <p className="text-lg font-bold">{reportCardData.attendance.total}</p>
+                    </div>
+                    <div className="rounded-2xl bg-emerald-50/70 px-4 py-3 text-center shadow-inner print:bg-white">
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Attendance %</p>
+                      <p className="text-lg font-bold">{reportCardData.attendance.percentage}%</p>
                     </div>
                   </div>
-
-                  <div className="rounded-3xl border border-emerald-200 bg-white shadow-sm overflow-hidden print:border-black">
-                    <div className="bg-gradient-to-r from-emerald-600 to-teal-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-white text-center print:bg-gray-200 print:text-black">
-                      Psychomotor Domain
+                </div>
+                <div className="rounded-3xl border border-emerald-200 bg-white p-5 shadow-sm print:border-emerald-200">
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-800 text-center">Term Information</h3>
+                  <div className="mt-4 space-y-3 text-sm text-emerald-900">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Vacation Date</span>
+                      <span>{reportCardData.termInfo.vacationEnds || "________________"}</span>
                     </div>
-                    <div className="p-4">
-                      <table className="w-full text-xs sm:text-sm text-center">
-                        <thead>
-                          <tr>
-                            {PSYCHOMOTOR_FOOTER_COLUMNS.map((column) => (
-                              <th
-                                key={column.key}
-                                className="px-3 py-2 text-emerald-700 uppercase tracking-[0.2em] border-b border-emerald-200 print:border-black"
-                              >
-                                {column.label}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            {PSYCHOMOTOR_FOOTER_COLUMNS.map((column) => (
-                              <td
-                                key={column.key}
-                                className="px-3 py-3 border-t border-emerald-100 print:border-black align-top"
-                              >
-                                <div className="flex items-center justify-center gap-1">
-                                  {BEHAVIORAL_RATING_COLUMNS.map((option) => {
-                                    const mark = getBehavioralMark(reportCardData.psychomotorDomain, column.key, option.key)
-                                    const isActive = mark === "●"
-                                    return (
-                                      <span
-                                        key={`${column.key}-${option.key}`}
-                                        className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${
-                                          isActive
-                                            ? 'border-teal-600 bg-teal-500 text-white'
-                                            : 'border-teal-300 text-teal-500'
-                                        }`}
-                                      >
-                                        {mark}
-                                      </span>
-                                    )
-                                  })}
-                                </div>
-                                <p className="mt-2 text-xs font-semibold text-teal-700">
-                                  {formatBehavioralLabel(reportCardData.psychomotorDomain[column.key])}
-                                </p>
-                              </td>
-                            ))}
-                          </tr>
-                        </tbody>
-                      </table>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Resumption Date</span>
+                      <span>{reportCardData.termInfo.nextTermBegins || "________________"}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Next Term Fees</span>
+                      <span>{reportCardData.termInfo.nextTermFees || "________________"}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Outstanding Fees</span>
+                      <span>{reportCardData.termInfo.feesBalance || "________________"}</span>
                     </div>
                   </div>
-
-                  <div className="rounded-3xl border border-emerald-200 bg-emerald-50/70 px-5 py-4 text-xs text-emerald-800 shadow-sm text-center print:bg-white print:border-black">
-                    <p className="font-semibold uppercase tracking-[0.3em]">Rating Legend</p>
-                    <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
-                      {BEHAVIORAL_RATING_COLUMNS.map((column) => (
-                        <div key={column.key} className="flex items-center gap-2">
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full border border-emerald-500 text-[10px] font-bold text-emerald-600">
-                            ●
-                          </span>
-                          <span className="text-xs font-medium">{column.label}</span>
+                </div>
+              </aside>
+            </section>
+            <section className="space-y-8">
+              <div className="grid gap-6 lg:grid-cols-2">
+                <div className="rounded-3xl border border-emerald-200 bg-white shadow-sm print:border-emerald-200">
+                  <div className="bg-gradient-to-r from-emerald-600 to-teal-500 px-5 py-3 text-xs font-semibold uppercase tracking-[0.4em] text-white text-center print:bg-gray-200 print:text-emerald-900">
+                    Affective Domain
+                  </div>
+                  <div className="space-y-5 p-5">
+                    <div className="grid gap-4 md:grid-cols-3">
+                      {PRIMARY_AFFECTIVE_TRAITS.map((trait) => {
+                        const ratingLabel = formatBehavioralLabel(reportCardData.affectiveDomain[trait.key])
+                        return (
+                          <div
+                            key={trait.key}
+                            className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-center shadow-inner print:bg-white print:border-emerald-200"
+                          >
+                            <p className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">{trait.label}</p>
+                            <div className="mt-3 flex items-center justify-center gap-2">
+                              {BEHAVIORAL_RATING_COLUMNS.map((option) => {
+                                const mark = getBehavioralMark(reportCardData.affectiveDomain, trait.key, option.key)
+                                const isActive = mark === "●"
+                                return (
+                                  <span
+                                    key={`${trait.key}-${option.key}`}
+                                    className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${
+                                      isActive
+                                        ? "border-emerald-600 bg-emerald-500 text-white"
+                                        : "border-emerald-300 text-emerald-500"
+                                    }`}
+                                  >
+                                    {mark}
+                                  </span>
+                                )
+                              })}
+                            </div>
+                            <p className="mt-3 text-xs font-semibold text-emerald-800">{ratingLabel}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {additionalAffectiveTraits.length > 0 ? (
+                      <div className="rounded-2xl border border-emerald-100 bg-white p-4 print:border-emerald-200">
+                        <p className="text-[11px] uppercase tracking-[0.35em] text-emerald-600">Additional Traits</p>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          {additionalAffectiveTraits.map((trait) => (
+                            <div key={trait.key} className="flex items-center justify-between text-sm text-emerald-800">
+                              <span className="font-medium">{trait.label}</span>
+                              <span className="text-xs uppercase tracking-[0.2em] text-emerald-600">
+                                {formatBehavioralLabel(reportCardData.affectiveDomain[trait.key])}
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="rounded-3xl border border-emerald-200 bg-white shadow-sm print:border-emerald-200">
+                  <div className="bg-gradient-to-r from-teal-600 via-teal-500 to-emerald-500 px-5 py-3 text-xs font-semibold uppercase tracking-[0.4em] text-white text-center print:bg-gray-200 print:text-emerald-900">
+                    Psychomotor Domain
+                  </div>
+                  <div className="space-y-5 p-5">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {PRIMARY_PSYCHOMOTOR_SKILLS.map((skill) => {
+                        const ratingLabel = formatBehavioralLabel(reportCardData.psychomotorDomain[skill.key])
+                        return (
+                          <div
+                            key={skill.key}
+                            className="rounded-2xl border border-teal-100 bg-teal-50/70 p-4 text-center shadow-inner print:bg-white print:border-emerald-200"
+                          >
+                            <p className="text-[11px] uppercase tracking-[0.35em] text-teal-700">{skill.label}</p>
+                            <div className="mt-3 flex items-center justify-center gap-2">
+                              {BEHAVIORAL_RATING_COLUMNS.map((option) => {
+                                const mark = getBehavioralMark(reportCardData.psychomotorDomain, skill.key, option.key)
+                                const isActive = mark === "●"
+                                return (
+                                  <span
+                                    key={`${skill.key}-${option.key}`}
+                                    className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${
+                                      isActive
+                                        ? "border-teal-600 bg-teal-500 text-white"
+                                        : "border-teal-300 text-teal-500"
+                                    }`}
+                                  >
+                                    {mark}
+                                  </span>
+                                )
+                              })}
+                            </div>
+                            <p className="mt-3 text-xs font-semibold text-teal-800">{ratingLabel}</p>
+                          </div>
+                        )
+                      })}
                     </div>
+                    {additionalPsychomotorSkills.length > 0 ? (
+                      <div className="rounded-2xl border border-teal-100 bg-white p-4 print:border-emerald-200">
+                        <p className="text-[11px] uppercase tracking-[0.35em] text-teal-600">Additional Skills</p>
+                        <div className="mt-3 grid gap-3">
+                          {additionalPsychomotorSkills.map((skill) => (
+                            <div key={skill.key} className="flex items-center justify-between text-sm text-teal-800">
+                              <span className="font-medium">{skill.label}</span>
+                              <span className="text-xs uppercase tracking-[0.2em] text-teal-600">
+                                {formatBehavioralLabel(reportCardData.psychomotorDomain[skill.key])}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
-
-              <div className="grid gap-6 md:grid-cols-2 items-end">
-                <div className="text-center">
-                  <div className="mx-auto h-12 w-48 border-b-2 border-dashed border-emerald-400 print:border-black"></div>
-                  <p className="mt-2 text-sm font-semibold uppercase tracking-[0.3em] text-emerald-800">
-                    Class Teacher's Signature
-                  </p>
+              <div className="rounded-3xl border border-emerald-200 bg-emerald-50/70 px-5 py-4 text-xs text-emerald-800 shadow-sm print:bg-white print:border-emerald-200">
+                <p className="font-semibold uppercase tracking-[0.3em] text-center">Rating Legend</p>
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+                  {BEHAVIORAL_RATING_COLUMNS.map((column) => (
+                    <div key={column.key} className="flex items-center gap-2">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-emerald-500 text-[10px] font-bold text-emerald-600">
+                        ●
+                      </span>
+                      <span className="text-xs font-medium">{column.label}</span>
+                    </div>
+                  ))}
                 </div>
-                <div className="text-center">
-                  {reportCardData.branding.signature ? (
-                    <img
-                      src={reportCardData.branding.signature}
-                      alt={`${reportCardData.branding.headmasterName} signature`}
-                      className="mx-auto h-16 w-48 object-contain"
-                    />
-                  ) : (
-                    <div className="mx-auto h-12 w-48 border-b-2 border-dashed border-emerald-400 print:border-black"></div>
-                  )}
-                  <p className="mt-2 text-sm font-semibold uppercase tracking-[0.3em] text-emerald-800">
-                    {reportCardData.branding.headmasterName}
-                  </p>
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-600">Head Teacher</p>
+              </div>
+              <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+                <div className="space-y-6">
+                  <div className="rounded-3xl border border-emerald-200 bg-emerald-50/60 px-6 py-6 text-center shadow-sm print:bg-white print:border-emerald-200">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.35em] text-emerald-900">Class Teacher's Remarks</h3>
+                    <p className="mt-4 text-base leading-relaxed text-emerald-900/90">
+                      {reportCardData.remarks.classTeacher || "She is improving in her studies."}
+                    </p>
+                  </div>
+                  <div className="rounded-3xl border border-emerald-200 bg-white px-6 py-6 text-center shadow-sm print:border-emerald-200">
+                    <h3 className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-800">Head Teacher's Remark</h3>
+                    <p className="mt-4 text-sm italic text-emerald-900/90">{reportCardData.remarks.headTeacher}</p>
+                  </div>
+                  <div className="rounded-3xl border-2 border-dashed border-emerald-300 px-6 py-6 text-center print:border-emerald-800">
+                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Class Teacher's Signature</p>
+                    <div className="mt-6 h-14 border-b-2 border-emerald-400 print:border-emerald-800"></div>
+                  </div>
+                </div>
+                <div className="space-y-6 text-center">
+                  <div className="rounded-3xl border border-emerald-200 bg-white px-6 py-6 shadow-sm print:border-emerald-200">
+                    {reportCardData.branding.signature ? (
+                      <img
+                        src={reportCardData.branding.signature}
+                        alt={`${reportCardData.branding.headmasterName} signature`}
+                        className="mx-auto h-16 w-48 object-contain"
+                      />
+                    ) : (
+                      <div className="mx-auto h-14 w-48 border-b-2 border-dashed border-emerald-400 print:border-emerald-800"></div>
+                    )}
+                    <p className="mt-2 text-sm font-semibold uppercase tracking-[0.3em] text-emerald-800">
+                      {reportCardData.branding.headmasterName}
+                    </p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-600">Head Teacher</p>
+                  </div>
+                  <div className="rounded-3xl border border-emerald-200 bg-emerald-50/70 px-6 py-6 shadow-sm print:bg-white print:border-emerald-200">
+                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Parent / Guardian Acknowledgement</p>
+                    <div className="mt-6 h-14 border-b border-dashed border-emerald-400 print:border-emerald-800"></div>
+                  </div>
                 </div>
               </div>
             </section>
-
             <section>
               <div className="rounded-3xl border border-emerald-200 overflow-hidden shadow-sm print:border-black">
                 <div className="bg-gradient-to-r from-emerald-600 to-teal-500 px-4 py-2 text-sm font-semibold uppercase tracking-[0.4em] text-white text-center print:bg-gray-200 print:text-black">

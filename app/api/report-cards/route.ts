@@ -48,6 +48,12 @@ function sanitizeReportPayload(payload: any): UpsertReportCardPayload {
           total: typeof subject.total === "number" ? subject.total : undefined,
           grade: typeof subject.grade === "string" ? sanitizeInput(subject.grade) : undefined,
           remark: typeof subject.remark === "string" ? sanitizeInput(subject.remark) : undefined,
+          position:
+            typeof subject.position === "number"
+              ? subject.position
+              : typeof subject.position === "string" && subject.position.trim().length > 0
+                ? sanitizeInput(subject.position)
+                : undefined,
         }))
       : [],
   }
