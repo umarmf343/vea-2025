@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
 import { rateLimit } from "express-rate-limit"
-import crypto from "crypto"
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto"
 
 const DEFAULT_JWT_SECRET = "vea-2025-development-secret"
 const resolveJwtSecret = () => {
@@ -85,10 +85,10 @@ export const encryptSensitiveData = (data: string): string => {
 
   const algorithm = "aes-256-gcm"
   const key = process.env.ENCRYPTION_KEY || "default-key-change-in-production"
-  const keyBuffer = crypto.scryptSync(key, "salt", 32)
-  const iv = crypto.randomBytes(16)
+  const keyBuffer = scryptSync(key, "salt", 32)
+  const iv = randomBytes(16)
 
-  const cipher = crypto.createCipheriv(algorithm, keyBuffer, iv)
+  const cipher = createCipheriv(algorithm, keyBuffer, iv)
   cipher.setAAD(Buffer.from("additional-data"))
 
   const encryptedBuffer = Buffer.concat([cipher.update(data, "utf8"), cipher.final()])
@@ -105,7 +105,7 @@ export const decryptSensitiveData = (encryptedData: string): string => {
 
   const algorithm = "aes-256-gcm"
   const key = process.env.ENCRYPTION_KEY || "default-key-change-in-production"
-  const keyBuffer = crypto.scryptSync(key, "salt", 32)
+  const keyBuffer = scryptSync(key, "salt", 32)
 
   const parts = encryptedData.split(":")
   if (parts.length !== 3) {
@@ -116,7 +116,7 @@ export const decryptSensitiveData = (encryptedData: string): string => {
   const iv = Buffer.from(ivHex, "hex")
   const authTag = Buffer.from(authTagHex, "hex")
 
-  const decipher = crypto.createDecipheriv(algorithm, keyBuffer, iv)
+  const decipher = createDecipheriv(algorithm, keyBuffer, iv)
   decipher.setAAD(Buffer.from("additional-data"))
   decipher.setAuthTag(authTag)
 
@@ -169,7 +169,7 @@ export const sanitizeSqlInput = (input: string): string => {
 }
 
 export const generateSessionId = (): string => {
-  return crypto.randomBytes(32).toString("hex")
+  return randomBytes(32).toString("hex")
 }
 
 export const isSessionValid = (sessionData: any): boolean => {

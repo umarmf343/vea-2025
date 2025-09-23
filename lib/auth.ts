@@ -1,4 +1,4 @@
-import crypto from "crypto"
+import { randomBytes } from "node:crypto"
 import {
   createUserRecord,
   getUserByEmail,
@@ -44,7 +44,7 @@ const TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 const activeTokens = new Map<string, { userId: string; expiresAt: number }>()
 
 function issueToken(userId: string): string {
-  const token = crypto.randomBytes(32).toString("hex")
+  const token = randomBytes(32).toString("hex")
   activeTokens.set(token, { userId, expiresAt: Date.now() + TOKEN_TTL_MS })
   return token
 }
