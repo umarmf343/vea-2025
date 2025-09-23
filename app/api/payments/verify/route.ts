@@ -7,10 +7,11 @@ import {
   updatePaymentRecord,
 } from "@/lib/database"
 import { sanitizeInput } from "@/lib/security"
+import { getPaystackSecretKey } from "@/lib/paystack"
 
 export const runtime = "nodejs"
 
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "sk_test_your_secret_key_here"
+const PAYSTACK_SECRET_KEY = getPaystackSecretKey()
 
 function sanitizeMetadataInput(metadata: unknown): Record<string, unknown> {
   if (!metadata || typeof metadata !== "object") {

@@ -45,8 +45,10 @@ DATABASE_URL="mysql://yourusername_vea_admin:YOUR_PASSWORD@localhost:3306/yourus
 JWT_SECRET="your-super-secret-jwt-key-32-chars"
 
 # Paystack Configuration (get from Paystack dashboard)
-NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY="pk_test_your_paystack_public_key"
-PAYSTACK_SECRET_KEY="sk_test_your_paystack_secret_key"
+NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY=""
+PAYSTACK_SECRET_KEY="sk_test_7dd51e291a986b6462d0f4198668ce07c296eb5d"
+PAYSTACK_PARTNER_SUBACCOUNT_CODE=""
+PAYSTACK_PARTNER_SPLIT_CODE=""
 
 # App Configuration
 NEXT_PUBLIC_APP_URL="https://portal2.victoryeducationalacademy.com.ng"
@@ -62,7 +64,8 @@ SMTP_PASS="your-email-password"
 **Important**: Replace the placeholders with your actual values:
 - `yourusername` with your cPanel username
 - `YOUR_PASSWORD` with the database password you created
-- Get Paystack keys from your Paystack dashboard
+- Get Paystack keys from your Paystack dashboard (leave the public key empty until you are ready to use it)
+- If you already created the 1% revenue share on Paystack, populate `PAYSTACK_PARTNER_SUBACCOUNT_CODE` and `PAYSTACK_PARTNER_SPLIT_CODE`
 
 ## Step 3: Upload Files to Server
 
