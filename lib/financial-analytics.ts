@@ -220,20 +220,87 @@ export const normalisePaymentForAnalytics = (raw: unknown): AnalyticsPayment | n
   }
 
   const record = raw as RawValueRecord
-  const id = getString(record.id) ?? getString(record.reference) ?? `payment-${Date.now()}`
-  const studentId = getString(record.studentId) ?? getString(record.student_id) ?? null
-  const studentName = getString(record.studentName) ?? getString(record.student) ?? "Unknown Student"
-  const parentName =
-    getString(record.parentName) ?? getString(record.guardianName) ?? getString(record.customerName) ?? null
-  const parentEmail = getString(record.email) ?? getString(record.parentEmail) ?? null
-  const className = getString(record.className) ?? getString(record.class) ?? getString(record.classroom) ?? null
-  const status = normaliseStatus(record.status)
-  const method = getString(record.method)
-  const paymentType = getString(record.paymentType) ?? getString(record.type) ?? null
-  const source = getString(record.source) ?? getString(record.channel) ?? null
-  const createdAt = ensureDate(record.createdAt ?? record.date ?? record.timestamp)
-  const updatedAt = ensureDate(record.updatedAt ?? record.processedAt ?? record.completedAt)
-  const amount = getNumber(record.amount)
+  const metadata =
+    typeof record.metadata === "object" && record.metadata !== null ? (record.metadata as RawValueRecord) : {}
+  const sources: RawValueRecord[] = [record, metadata]
+
+  const pickString = (...keys: string[]): string | null => {
+    for (const source of sources) {
+      for (const key of keys) {
+        const value = getString((source as Record<string, unknown>)[key])
+        if (value) {
+          return value
+        }
+      }
+    }
+    return null
+  }
+
+  const pickNumber = (...keys: string[]): number | null => {
+    for (const source of sources) {
+      for (const key of keys) {
+        const rawValue = (source as Record<string, unknown>)[key]
+        if (rawValue === undefined || rawValue === null) {
+          continue
+        }
+
+        if (typeof rawValue === "string" && rawValue.trim().length === 0) {
+          continue
+        }
+
+        const parsed = getNumber(rawValue)
+
+        if (parsed === 0) {
+          if (typeof rawValue === "number") {
+            return parsed
+          }
+          continue
+        }
+
+        if (Number.isFinite(parsed)) {
+          return parsed
+        }
+      }
+    }
+
+    return null
+  }
+
+  const id = pickString("id", "reference") ?? `payment-${Date.now()}`
+  const studentId = pickString("studentId", "student_id", "studentID") ?? null
+  const studentName =
+    pickString("studentName", "student_name", "student") ?? "Unknown Student"
+  const parentName = pickString(
+    "parentName",
+    "parent_name",
+    "guardianName",
+    "guardian_name",
+    "customerName",
+    "customer_name",
+  )
+  const parentEmail = pickString(
+    "parentEmail",
+    "parent_email",
+    "guardianEmail",
+    "guardian_email",
+    "customerEmail",
+    "customer_email",
+    "email",
+  )
+  const className = pickString("className", "class_name", "class", "classroom")
+  const status = normaliseStatus(pickString("status") ?? record.status)
+  const method = pickString("method", "paymentChannel", "payment_channel")
+  const paymentType = pickString("paymentType", "payment_type", "type")
+  const source = pickString("source", "channel", "payment_channel")
+  const createdAt = ensureDate(
+    pickString("createdAt", "created_at", "date", "timestamp") ?? metadata.createdAt ?? metadata.timestamp,
+  )
+  const updatedAt = ensureDate(
+    pickString("updatedAt", "updated_at", "processedAt", "processed_at", "completedAt", "completed_at") ??
+      metadata.verifiedAt ??
+      metadata.verified_at,
+  )
+  const amount = pickNumber("amount", "total", "value") ?? getNumber(record.amount)
 
   return {
     id,

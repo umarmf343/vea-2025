@@ -30,6 +30,29 @@ function sanitizeMetadataInput(metadata: unknown): Record<string, unknown> {
   return sanitized
 }
 
+const normaliseString = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const cleaned = sanitizeInput(value)
+  return cleaned.length > 0 ? cleaned : null
+}
+
+const ensureMetadataAlias = (
+  metadata: Record<string, unknown>,
+  key: string,
+  value: string | null,
+) => {
+  if (!value) {
+    return
+  }
+
+  const snakeKey = key.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`)
+  metadata[key] = value
+  metadata[snakeKey] = value
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -47,6 +70,12 @@ export async function POST(request: NextRequest) {
     const amountInNaira = amountInKobo / 100
     const sanitizedEmail = sanitizeInput(email)
     const sanitizedMetadata = sanitizeMetadataInput(body.metadata)
+    const studentName =
+      normaliseString(sanitizedMetadata.student_name) ?? normaliseString(sanitizedMetadata.studentName)
+    const parentName =
+      normaliseString(sanitizedMetadata.parent_name) ?? normaliseString(sanitizedMetadata.parentName)
+    const parentEmail =
+      normaliseString(sanitizedMetadata.parent_email) ?? normaliseString(sanitizedMetadata.parentEmail)
     const sanitizedStudentId =
       typeof body.studentId === "string" || typeof body.studentId === "number"
         ? sanitizeInput(String(body.studentId))
@@ -62,6 +91,14 @@ export async function POST(request: NextRequest) {
       sanitizedMetadata.student_id = sanitizedStudentId
       sanitizedMetadata.studentId = sanitizedStudentId
     }
+
+    ensureMetadataAlias(sanitizedMetadata, "studentName", studentName)
+    ensureMetadataAlias(sanitizedMetadata, "parentName", parentName)
+    ensureMetadataAlias(
+      sanitizedMetadata,
+      "parentEmail",
+      parentEmail ? parentEmail.toLowerCase() : parentEmail,
+    )
 
     sanitizedMetadata.payment_type = normalizedPaymentType
 

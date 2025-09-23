@@ -129,12 +129,30 @@ function formatCurrency(amount: number): string {
 
 function mapPayment(record: ApiPaymentRecord): PaymentRecord {
   const metadata = record.metadata ?? {}
-  const method = (metadata.method as string | undefined)?.toLowerCase() === "offline" ? "offline" : "online"
+  const rawMethod =
+    (metadata.payment_channel as string | undefined) ??
+    (metadata.method as string | undefined) ??
+    record.paymentType ??
+    "online"
+  const normalizedMethod = rawMethod.toLowerCase()
+  const method: PaymentRecord["method"] =
+    normalizedMethod === "offline" || normalizedMethod === "manual" ? "offline" : "online"
   const hasAccess = Boolean((metadata as Record<string, unknown>).accessGranted)
-  const studentName = (metadata.studentName as string | undefined) ?? "Unknown Student"
-  const parentName = (metadata.parentName as string | undefined) ?? "Parent"
+  const studentName =
+    (metadata.studentName as string | undefined) ??
+    (metadata.student_name as string | undefined) ??
+    "Unknown Student"
+  const parentName =
+    (metadata.parentName as string | undefined) ??
+    (metadata.parent_name as string | undefined) ??
+    "Parent"
+  const parentEmail =
+    (metadata.parentEmail as string | undefined) ??
+    (metadata.parent_email as string | undefined) ??
+    record.email
   const className =
     (metadata.className as string | undefined) ??
+    (metadata.class_name as string | undefined) ??
     (metadata.class as string | undefined) ??
     (metadata.classroom as string | undefined) ??
     "--"
@@ -153,7 +171,7 @@ function mapPayment(record: ApiPaymentRecord): PaymentRecord {
     date: record.createdAt ? new Date(record.createdAt).toLocaleDateString() : "--",
     reference: record.reference,
     hasAccess,
-    email: record.email,
+    email: parentEmail,
     paymentType: record.paymentType,
   }
 }
