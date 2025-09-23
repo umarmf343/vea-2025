@@ -75,3 +75,37 @@ export interface RawReportCardData {
     outstanding?: string
   }
 }
+
+export interface StoredSubjectRecord {
+  subject: string
+  className: string
+  ca1: number
+  ca2: number
+  assignment: number
+  caTotal: number
+  exam: number
+  total: number
+  grade: string
+  remark?: string
+  position?: number | string | null
+  totalObtainable?: number
+  totalObtained?: number
+  averageScore?: number
+  teacherId?: string
+  teacherName?: string
+  updatedAt?: string
+}
+
+export interface StoredStudentMarkRecord {
+  studentId: string
+  studentName: string
+  className: string
+  term: string
+  session: string
+  subjects: Record<string, StoredSubjectRecord>
+  lastUpdated?: string
+  status?: string
+  numberInClass?: number | string
+  overallAverage?: number
+  overallPosition?: number | string | null
+}
