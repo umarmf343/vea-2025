@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto"
 import { type NextRequest, NextResponse } from "next/server"
 
 import {
@@ -6,6 +7,7 @@ import {
   type CreateNoticePayload,
   type NoticeRecord,
 } from "@/lib/database"
+import { publishNotification } from "@/lib/realtime-hub"
 import { logger } from "@/lib/logger"
 
 export const runtime = "nodejs"
@@ -72,6 +74,19 @@ export async function POST(request: NextRequest) {
     }
 
     const notice = await createNoticeRecord(payload)
+
+    publishNotification({
+      id: randomUUID(),
+      title: payload.title,
+      body: payload.content.substring(0, 160),
+      category: "noticeboard",
+      createdAt: new Date().toISOString(),
+      targetUserIds: [],
+      targetRoles: payload.targetAudience.length > 0 ? payload.targetAudience : ["all"],
+      actionUrl: "/noticeboard",
+      meta: { noticeId: notice.id, status: notice.status },
+    })
+
     return NextResponse.json({ notice: mapNotice(notice) }, { status: 201 })
   } catch (error) {
     logger.error("Failed to create notice", { error })
