@@ -1,4 +1,4 @@
-import crypto from "crypto"
+import { randomBytes as nodeRandomBytes, randomUUID as nodeRandomUUID } from "node:crypto"
 import bcrypt from "bcryptjs"
 import mysql, {
   type Pool,
@@ -508,11 +508,20 @@ function ensureSingletonRecord<T extends CollectionRecord>(key: string, factory:
 }
 
 function generateId(prefix: string): string {
-  if (typeof crypto.randomUUID === "function") {
-    return `${prefix}_${crypto.randomUUID()}`
+  const globalCrypto =
+    typeof globalThis !== "undefined"
+      ? (globalThis.crypto as Crypto | undefined)
+      : undefined
+
+  if (globalCrypto?.randomUUID) {
+    return `${prefix}_${globalCrypto.randomUUID()}`
   }
 
-  return `${prefix}_${crypto.randomBytes(12).toString("hex")}`
+  if (typeof nodeRandomUUID === "function") {
+    return `${prefix}_${nodeRandomUUID()}`
+  }
+
+  return `${prefix}_${nodeRandomBytes(12).toString("hex")}`
 }
 
 interface DefaultUserSeed {
@@ -2313,7 +2322,7 @@ export async function recordFeeStructureDelivery(payload: {
 
 function generateReceiptNumber(timestamp: string): string {
   const datePart = timestamp.slice(0, 10).replace(/-/g, "")
-  const randomPart = crypto.randomBytes(3).toString("hex").toUpperCase()
+  const randomPart = nodeRandomBytes(3).toString("hex").toUpperCase()
   return `VEA/${datePart}/${randomPart}`
 }
 
