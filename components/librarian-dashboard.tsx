@@ -20,6 +20,7 @@ import { BookOpen, Search, Plus, Users, Calendar, AlertTriangle } from "lucide-r
 import { dbManager } from "@/lib/database-manager"
 import { useToast } from "@/hooks/use-toast"
 import { TutorialLink } from "@/components/tutorial-link"
+import { useBranding } from "@/hooks/use-branding"
 
 interface LibrarianDashboardProps {
   librarian: {
@@ -75,6 +76,8 @@ interface BookRequestRecord {
 }
 
 export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
+  const branding = useBranding()
+  const resolvedSchoolName = branding.schoolName
   const [selectedTab, setSelectedTab] = useState("overview")
   const [searchTerm, setSearchTerm] = useState("")
   const [books, setBooks] = useState<InventoryBook[]>([])
@@ -438,7 +441,7 @@ export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">Welcome, {librarian.name}</h1>
-            <p className="text-green-100">Library Management - VEA 2025</p>
+            <p className="text-green-100">Library Management - {resolvedSchoolName}</p>
           </div>
           <TutorialLink
             href="https://www.youtube.com/watch?v=3GwjfUFyY6M"

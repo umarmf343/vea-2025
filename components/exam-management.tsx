@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
+import { useBranding } from "@/hooks/use-branding"
 import { dbManager } from "@/lib/database-manager"
 import {
   CONTINUOUS_ASSESSMENT_MAXIMUMS,
@@ -150,6 +151,9 @@ const resultStatusBadgeVariant = (status: ExamResult["status"]) => {
 }
 
 export default function ExamManagement() {
+  const branding = useBranding()
+  const resolvedLogo = branding.logoUrl
+  const resolvedSchoolName = branding.schoolName
   const { toast } = useToast()
   const [activeTab, setActiveTab] = useState("upcoming")
   const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([])
@@ -759,6 +763,19 @@ export default function ExamManagement() {
       ? `${exam.subject} • ${exam.className} • ${exam.term} • ${exam.session}`
       : "Exam Result"
 
+    const sanitize = (value: string) =>
+      value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+
+    const schoolName = sanitize(resolvedSchoolName || "School")
+    const logoMarkup = resolvedLogo
+      ? `<div style="margin-bottom:12px;"><img src="${resolvedLogo}" alt="School logo" style="height:72px;object-fit:contain;" /></div>`
+      : ""
+
     printWindow.document.write(`<!DOCTYPE html>
       <html>
         <head>
@@ -787,7 +804,8 @@ export default function ExamManagement() {
         </head>
         <body>
           <div class="header">
-            <h2>VEA 2025 Result Slip</h2>
+            ${logoMarkup}
+            <h2>${schoolName} Result Slip</h2>
             <p>${examLabel}</p>
           </div>
           <div class="meta">

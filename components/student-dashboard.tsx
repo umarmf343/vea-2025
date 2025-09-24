@@ -40,6 +40,7 @@ import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
 import { normalizeTimetableCollection } from "@/lib/timetable"
 import { CONTINUOUS_ASSESSMENT_MAXIMUMS } from "@/lib/grade-utils"
+import { useBranding } from "@/hooks/use-branding"
 
 type TimetableSlotSummary = TimetableWeeklyViewSlot
 
@@ -190,6 +191,8 @@ interface StudentDashboardProps {
 }
 
 export function StudentDashboard({ student }: StudentDashboardProps) {
+  const branding = useBranding()
+  const resolvedSchoolName = branding.schoolName
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const [selectedAssignment, setSelectedAssignment] = useState<IdentifiedRecord | null>(null)
@@ -698,7 +701,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
           <div>
             <h1 className="text-2xl font-bold">Welcome, {studentProfile.name}</h1>
             <p className="text-green-100">
-              Student Portal - {(studentProfile.class || effectiveClassName) ?? "Unassigned"} - VEA 2025
+              Student Portal - {(studentProfile.class || effectiveClassName) ?? "Unassigned"} - {resolvedSchoolName}
             </p>
             <p className="text-sm text-green-200">
               Admission No: {studentProfile.admissionNumber || student.admissionNumber}
