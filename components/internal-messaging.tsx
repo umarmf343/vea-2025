@@ -870,8 +870,8 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
     const isOwnMessage = message.senderId === currentUser.id
     const alignment = isOwnMessage ? "items-end" : "items-start"
     const bubbleColor = isOwnMessage
-      ? "bg-primary text-primary-foreground"
-      : "bg-muted text-muted-foreground"
+      ? "bg-gradient-to-l from-emerald-500 via-emerald-600 to-emerald-700 text-white"
+      : "bg-white/90 text-slate-700 ring-1 ring-emerald-100/80 backdrop-blur"
     const isDeleting = deletingMessages[message.id]
     const isCurrentlyEditing = editingMessageId === message.id
     const canEdit = isOwnMessage && !message.isDeleted && message.messageType === "text"
@@ -880,18 +880,26 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
       <div key={message.id} className={cn("flex flex-col gap-1", alignment)}>
         <div
           className={cn(
-            "flex items-center gap-2 text-xs text-muted-foreground",
+            "flex items-center gap-2 text-[11px] font-medium text-emerald-950/70",
             isOwnMessage ? "justify-end" : "",
           )}
         >
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-foreground">{message.senderName}</span>
-            <Badge variant="secondary" className={roleBadgeClass(message.senderRole)}>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-foreground">{message.senderName}</span>
+            <Badge
+              variant="secondary"
+              className={cn(
+                "rounded-full border border-white/60 bg-white/70 text-[10px] font-semibold uppercase tracking-wide shadow-sm",
+                roleBadgeClass(message.senderRole),
+              )}
+            >
               {message.senderRole.replace("_", " ")}
             </Badge>
-            <span>{formatTime(message.createdAt)}</span>
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              {formatTime(message.createdAt)}
+            </span>
             {message.isEdited && !message.isDeleted ? (
-              <span className="italic text-[10px] text-foreground/80">Edited</span>
+              <span className="italic text-[10px] text-emerald-900/70">Edited</span>
             ) : null}
           </div>
           {isOwnMessage && !message.isDeleted && (
@@ -901,8 +909,8 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                   size="icon"
                   variant="ghost"
                   className={cn(
-                    "h-7 w-7 text-muted-foreground hover:text-[#2d682d]",
-                    isCurrentlyEditing ? "bg-[#2d682d]/10" : "",
+                    "h-7 w-7 rounded-full text-muted-foreground transition hover:bg-emerald-50 hover:text-emerald-700",
+                    isCurrentlyEditing ? "bg-emerald-100 text-emerald-700" : "",
                   )}
                   onClick={() => handleStartEditingMessage(message)}
                   aria-label={isCurrentlyEditing ? "Editing this message" : "Edit message"}
@@ -915,7 +923,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                 size="icon"
                 variant="ghost"
                 disabled={isDeleting}
-                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                className="h-7 w-7 rounded-full text-muted-foreground transition hover:bg-rose-50 hover:text-destructive"
                 onClick={() => void handleDeleteMessage(message.id)}
                 aria-label="Delete message"
               >
@@ -926,47 +934,46 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
         </div>
         <div
           className={cn(
-            "max-w-[85%] rounded-2xl px-4 py-2 text-sm shadow-sm",
+            "group flex w-full max-w-[85%] flex-col gap-3 rounded-3xl px-5 py-4 text-sm shadow-[0_18px_40px_-32px_rgba(15,118,110,0.65)] transition",
             bubbleColor,
-            isOwnMessage ? "rounded-br-sm" : "rounded-bl-sm",
-            isCurrentlyEditing ? "ring-2 ring-[#2d682d]/70" : "",
+            isOwnMessage ? "rounded-br-md" : "rounded-bl-md",
+            message.isDeleted ? "opacity-70" : "",
           )}
         >
           {message.isDeleted ? (
-            <p className="italic opacity-80">This message was deleted.</p>
+            <p className="text-xs italic text-emerald-950/60">This message was deleted</p>
           ) : (
-            <>
-              <div className="space-y-1">
-                <p className="whitespace-pre-line break-words">{message.content}</p>
-                {isCurrentlyEditing ? (
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-[#2d682d]">
-                    Editing…
-                  </span>
-                ) : null}
-              </div>
-
-              {message.attachments.length > 0 && (
-                <div className="mt-3 space-y-2">
+            <div className="space-y-3">
+              {message.messageType === "media" && message.attachments.length > 0 ? (
+                <div className="space-y-3">
                   {message.attachments.map((attachment) => {
                     const isAudio = attachment.type.startsWith("audio/")
+                    const isOwnAudio = isOwnMessage && isAudio
                     return (
                       <div
                         key={attachment.id}
-                        className="space-y-2 rounded-lg border border-white/20 bg-black/10 px-3 py-2 text-xs backdrop-blur"
+                        className={cn(
+                          "flex flex-col gap-2 rounded-2xl border border-white/40 bg-white/15 p-3 text-xs backdrop-blur",
+                          isOwnMessage ? "text-emerald-50" : "text-slate-600",
+                        )}
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="truncate font-medium">{attachment.name}</span>
-                          <span>{(attachment.size / 1024 / 1024).toFixed(1)} MB</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate font-semibold">
+                            {attachment.name}
+                          </span>
+                          <span className="shrink-0 text-[10px] uppercase tracking-[0.18em]">
+                            {(attachment.size / 1024 / 1024).toFixed(1)} MB
+                          </span>
                         </div>
                         {isAudio && attachment.dataUrl ? (
                           <div className="space-y-2">
                             <VoiceNotePlayer src={attachment.dataUrl} />
-                            {isOwnMessage && (
+                            {isOwnAudio && (
                               <div className="flex justify-end">
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-7 px-3 text-[11px] text-destructive hover:bg-destructive/10"
+                                  className="h-7 rounded-full px-3 text-[11px] text-rose-100 transition hover:bg-rose-50/20 hover:text-white"
                                   onClick={() => void handleDeleteMessage(message.id)}
                                   disabled={isDeleting}
                                 >
@@ -980,7 +987,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                             href={attachment.dataUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center text-xs font-medium underline"
+                            className="inline-flex items-center text-xs font-semibold text-current underline"
                           >
                             View attachment
                           </a>
@@ -989,56 +996,84 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                     )
                   })}
                 </div>
+              ) : (
+                <p className="leading-relaxed text-current">{message.content}</p>
               )}
-            </>
+            </div>
           )}
 
-          <div className="mt-1 flex items-center justify-end gap-1 text-[10px] opacity-80">
-            {message.readBy.includes(currentUser.id) && <span>Seen</span>}
-          </div>
+          {!message.isDeleted && message.readBy.length > 0 && (
+            <div
+              className={cn(
+                "flex items-center gap-2 text-[10px] uppercase tracking-wide",
+                isOwnMessage ? "text-emerald-50/80" : "text-muted-foreground",
+              )}
+            >
+              {isOwnMessage && <span>Delivered</span>}
+              <span>
+                {message.readBy.length} recipient{message.readBy.length === 1 ? "" : "s"}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-1 flex items-center justify-end gap-1 text-[10px] uppercase tracking-wide text-emerald-900/50">
+          {message.readBy.includes(currentUser.id) && <span>Seen</span>}
         </div>
       </div>
     )
   }
 
   return (
-    <Card className="mx-auto w-full max-w-5xl rounded-[24px] border border-slate-200/70 bg-white/95 shadow-xl">
-      <CardHeader className="flex flex-col gap-2 border-b border-slate-200/60 bg-white/60 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+    <Card className="relative mx-auto w-full max-w-6xl overflow-hidden rounded-[28px] border-none bg-gradient-to-br from-emerald-50 via-white to-slate-100 shadow-[0_35px_120px_-45px_rgba(15,118,110,0.85)]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.22),transparent_58%)]" />
+      <CardHeader className="relative z-10 flex flex-col gap-2 border-b border-white/60 bg-white/70 px-8 py-6 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-            <UserCircle className="h-5 w-5" /> Internal Messaging
+          <CardTitle className="flex items-center gap-2 text-xl font-semibold text-emerald-950">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600">
+              <UserCircle className="h-5 w-5" />
+            </span>
+            <span className="leading-tight">Internal Messaging</span>
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-emerald-950/70">
             Secure, real-time communication across administrators, teachers, parents and students.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-full border border-white/70 bg-white/60 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground shadow-inner">
           {isConnected ? (
-            <span className="flex items-center gap-1 text-emerald-600">
+            <span className="flex items-center gap-2 text-emerald-600">
+              <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(16,185,129,0.25)]" />
               <Wifi className="h-4 w-4" /> Live
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-destructive">
+            <span className="flex items-center gap-2 text-destructive">
+              <span className="flex h-2.5 w-2.5 rounded-full bg-destructive/70 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]" />
               <WifiOff className="h-4 w-4" /> Reconnecting…
             </span>
           )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-6 px-6 pb-6 pt-4">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,240px)_1fr]">
-          <div className="flex flex-col gap-4">
+      <CardContent className="relative z-10 space-y-8 px-8 pb-8 pt-6">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,260px)_1fr]">
+          <div className="flex flex-col gap-5">
             <div className="space-y-2">
-              <Label htmlFor="search">Conversations</Label>
+              <Label
+                htmlFor="search"
+                className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-900/70"
+              >
+                Conversations
+              </Label>
               <Input
                 id="search"
                 placeholder="Search people or roles"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
+                className="h-11 rounded-2xl border border-white/70 bg-white/80 px-4 text-sm text-emerald-950 shadow-inner transition focus:border-emerald-400/60 focus-visible:ring-emerald-500/30"
               />
             </div>
-            <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
-              <ScrollArea className="h-[360px] pr-1">
-                <div className="flex flex-col divide-y">
+            <div className="rounded-3xl border border-white/70 bg-white/70 p-4 shadow-[0_28px_80px_-48px_rgba(15,118,110,0.65)] backdrop-blur-sm">
+              <ScrollArea className="h-[360px] pr-2">
+                <div className="flex flex-col divide-y divide-emerald-100/70">
                   {filteredConversations.length === 0 && (
                     <div className="p-6 text-center text-sm text-muted-foreground">
                       No conversations yet. Start a chat below.
@@ -1057,18 +1092,21 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                           void markConversationAsRead(conversation.id)
                         }}
                         className={cn(
-                          "flex w-full flex-col gap-1 rounded-2xl border border-transparent bg-white px-4 py-3 text-left transition hover:border-[#2d682d]/20 hover:bg-[#2d682d]/5",
+                          "flex w-full flex-col gap-2 rounded-2xl border border-transparent bg-white/50 px-4 py-3 text-left transition-all duration-200 hover:-translate-y-[1px] hover:border-emerald-200 hover:bg-emerald-50/80 hover:shadow-sm",
                           activeConversation === conversation.id &&
-                            "border-[#2d682d]/30 bg-[#2d682d]/10 shadow-sm",
+                            "border-emerald-300/70 bg-emerald-50 shadow-[0_16px_50px_-35px_rgba(16,185,129,0.9)]",
                         )}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <p className="truncate text-sm font-semibold text-foreground">{title}</p>
-                            <p className="truncate text-xs uppercase tracking-wide text-muted-foreground">{subtitle}</p>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="space-y-1">
+                            <p className="truncate text-sm font-semibold text-emerald-950">{title}</p>
+                            <p className="truncate text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{subtitle}</p>
                           </div>
                           {conversation.unreadCount > 0 && (
-                            <Badge variant="secondary" className="rounded-full px-2 py-0 text-xs font-medium">
+                            <Badge
+                              variant="secondary"
+                              className="rounded-full border border-emerald-100 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-700"
+                            >
                               {conversation.unreadCount}
                             </Badge>
                           )}
@@ -1087,23 +1125,23 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
             </div>
           </div>
 
-          <div className="flex min-h-[360px] flex-col gap-4">
-            <div className="rounded-3xl border border-slate-200/70 bg-white/80 shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-200/60 px-6 py-3">
+          <div className="flex min-h-[360px] flex-col gap-5">
+            <div className="rounded-3xl border border-white/70 bg-white/70 shadow-[0_28px_80px_-48px_rgba(15,118,110,0.65)] backdrop-blur-sm">
+              <div className="flex items-center justify-between border-b border-white/60 px-6 py-4">
                 <div>
-                  <p className="text-sm font-semibold text-foreground">
+                  <p className="text-base font-semibold text-emerald-950">
                     {composerParticipants.length > 0
                       ? composerParticipants.map((participant) => participant.name).join(", ")
                       : "Select a recipient"}
                   </p>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
                     {composerParticipants.length > 0
                       ? composerParticipants.map((participant) => participant.role).join(", ")
                       : "Start a new conversation"}
                   </p>
                 </div>
                 {activeTypingIndicators.length > 0 && (
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50/70 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-emerald-700">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     {activeTypingIndicators[0].senderName} is typing…
                   </div>
@@ -1112,9 +1150,9 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
               <ScrollArea className="h-[280px] px-6 py-4">
                 <div className="flex flex-col gap-4">
                   {activeConversationMessages.length === 0 && (
-                    <div className="rounded-lg bg-muted/40 p-6 text-center text-sm text-muted-foreground">
-                      <p className="font-medium">No messages yet</p>
-                      <p>Use the composer below to start chatting.</p>
+                    <div className="rounded-2xl border border-dashed border-emerald-200/70 bg-emerald-50/50 p-8 text-center text-sm text-emerald-900/70">
+                      <p className="text-base font-semibold">No messages yet</p>
+                      <p className="text-sm">Use the composer below to start chatting.</p>
                     </div>
                   )}
                   {activeConversationMessages.map((message) => renderMessageBubble(message))}
@@ -1122,10 +1160,10 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
               </ScrollArea>
             </div>
 
-            <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-5 shadow-sm">
-              <div className="grid gap-4 md:grid-cols-[minmax(0,220px)_1fr] md:items-start">
+            <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-[0_28px_80px_-48px_rgba(15,118,110,0.65)] backdrop-blur-sm">
+              <div className="grid gap-5 md:grid-cols-[minmax(0,240px)_1fr] md:items-start">
                 <div className="space-y-2">
-                  <Label>Send to</Label>
+                  <Label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-900/70">Send to</Label>
                   <Select
                     value={recipientId || composerParticipants[0]?.id || ""}
                     onValueChange={(value) => {
@@ -1133,15 +1171,21 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                       setActiveConversation(null)
                     }}
                   >
-                    <SelectTrigger className="rounded-2xl border-slate-200/70 bg-white">
+                    <SelectTrigger className="h-11 rounded-2xl border border-white/70 bg-white/80 text-sm text-emerald-950 shadow-inner transition focus:ring-emerald-500/20">
                       <SelectValue placeholder="Choose recipient" />
                     </SelectTrigger>
-                    <SelectContent className="rounded-2xl">
+                    <SelectContent className="rounded-2xl border border-white/70 bg-white/80 shadow-xl">
                       {directory.map((participant) => (
                         <SelectItem key={participant.id} value={participant.id}>
                           <div className="flex items-center justify-between gap-3">
-                            <span>{participant.name}</span>
-                            <Badge variant="secondary" className={roleBadgeClass(participant.role)}>
+                            <span className="text-sm font-medium text-emerald-950">{participant.name}</span>
+                            <Badge
+                              variant="secondary"
+                              className={cn(
+                                "rounded-full border border-white/60 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-700",
+                                roleBadgeClass(participant.role),
+                              )}
+                            >
                               {participant.role.replace("_", " ")}
                             </Badge>
                           </div>
@@ -1151,10 +1195,15 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="message">Message</Label>
-                  <div className="relative rounded-2xl border border-slate-200/70 bg-white px-4 pb-12 pt-3 shadow-inner focus-within:border-[#2d682d]/60 focus-within:ring-1 focus-within:ring-[#2d682d]/20">
+                  <Label
+                    htmlFor="message"
+                    className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-900/70"
+                  >
+                    Message
+                  </Label>
+                  <div className="relative rounded-3xl border border-white/70 bg-white/80 px-5 pb-14 pt-4 shadow-inner transition focus-within:border-emerald-300 focus-within:ring-2 focus-within:ring-emerald-500/20">
                     {isEditing && editingMessage && (
-                      <div className="mb-2 flex items-center justify-between rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                      <div className="mb-3 flex items-center justify-between rounded-2xl border border-amber-100 bg-amber-50/80 px-3 py-2 text-xs text-amber-700">
                         <span>
                           Editing message sent at {formatTime(editingMessage.createdAt)}.
                         </span>
@@ -1162,7 +1211,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                           type="button"
                           size="sm"
                           variant="ghost"
-                          className="h-7 px-3 text-amber-700 hover:bg-amber-100"
+                          className="h-7 rounded-full px-3 text-amber-700 hover:bg-amber-100"
                           onClick={handleCancelEdit}
                         >
                           Cancel
@@ -1175,7 +1224,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                       value={messageText}
                       onChange={(event) => handleMessageChange(event.target.value)}
                       placeholder={isEditing ? "Update your message…" : "Type your message…"}
-                      className="min-h-[96px] w-full resize-none border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 pr-28"
+                      className="min-h-[96px] w-full resize-none border-0 bg-transparent p-0 pr-32 text-sm text-emerald-950 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                     />
                     <input
                       ref={fileInputRef}
@@ -1184,21 +1233,21 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                       onChange={(event) => void handleFilesSelected(event.target.files)}
                       className="hidden"
                     />
-                    <div className="pointer-events-none absolute bottom-3 left-4 text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <div className="pointer-events-none absolute bottom-4 left-5 text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
                       {isEditing
                         ? "Editing message"
                         : isRecording
                           ? "Recording voice note…"
                           : "Secure message"}
                     </div>
-                    <div className="pointer-events-auto absolute bottom-2 right-3 flex items-center gap-2">
+                    <div className="pointer-events-auto absolute bottom-3 right-4 flex items-center gap-2">
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
                         disabled={isEditing || isSending}
                         onClick={() => fileInputRef.current?.click()}
-                        className="h-9 w-9 rounded-full bg-slate-100 text-slate-500 shadow-sm transition hover:bg-[#2d682d]/10 hover:text-[#2d682d]"
+                        className="h-10 w-10 rounded-full bg-emerald-50 text-emerald-500 shadow-sm transition hover:bg-emerald-100 hover:text-emerald-700"
                         aria-label="Attach files"
                       >
                         <Paperclip className="h-4 w-4" />
@@ -1216,10 +1265,10 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                           }
                         }}
                         className={cn(
-                          "h-9 w-9 rounded-full shadow-sm transition",
+                          "h-10 w-10 rounded-full shadow-sm transition",
                           isRecording
-                            ? "bg-[#d62d20] text-white hover:bg-[#b0231a]"
-                            : "bg-slate-100 text-slate-500 hover:bg-[#2d682d]/10 hover:text-[#2d682d]",
+                            ? "bg-rose-500 text-white hover:bg-rose-600"
+                            : "bg-emerald-50 text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700",
                         )}
                         aria-label={isRecording ? "Stop recording" : "Record voice note"}
                       >
@@ -1228,24 +1277,26 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                     </div>
                   </div>
                   {isRecording && (
-                    <p className="text-xs font-medium text-[#d62d20]">Recording voice note… tap the mic to stop.</p>
+                    <p className="text-xs font-medium text-rose-500">Recording voice note… tap the mic to stop.</p>
                   )}
                 </div>
               </div>
 
                 {attachments.length > 0 && (
                   <div className="mt-4 space-y-2">
-                    <Label className="text-xs uppercase tracking-wide text-muted-foreground">Attachments</Label>
-                    <div className="flex flex-wrap gap-2">
+                    <Label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-900/70">
+                      Attachments
+                    </Label>
+                    <div className="flex flex-wrap gap-3">
                       {attachments.map((attachment) => {
                         const isAudio = attachment.type.startsWith("audio/")
                         return (
                           <div
                             key={attachment.id}
-                            className="group flex w-full max-w-xs flex-col gap-2 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 text-xs shadow-sm"
+                            className="group flex w-full max-w-xs flex-col gap-2 rounded-2xl border border-white/70 bg-white/80 px-3 py-2 text-xs text-emerald-950 shadow-sm backdrop-blur-sm"
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="truncate font-medium text-slate-600">{attachment.name}</span>
+                              <span className="truncate font-medium">{attachment.name}</span>
                               <span className="text-muted-foreground">
                                 {(attachment.size / 1024 / 1024).toFixed(1)} MB
                               </span>
@@ -1257,7 +1308,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                                 href={attachment.dataUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center text-xs font-medium text-[#2d682d] underline"
+                                className="inline-flex items-center text-xs font-semibold text-emerald-600 underline"
                               >
                                 Preview attachment
                               </a>
@@ -1267,7 +1318,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => removeAttachment(attachment.id)}
-                                className="h-6 w-6 rounded-full bg-slate-100 text-slate-500 opacity-0 transition group-hover:opacity-100 hover:bg-destructive hover:text-destructive-foreground"
+                                className="h-7 w-7 rounded-full bg-emerald-50 text-emerald-500 opacity-0 transition group-hover:opacity-100 hover:bg-rose-100 hover:text-rose-600"
                                 aria-label="Remove attachment"
                               >
                                 ×
@@ -1280,7 +1331,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                   </div>
                 )}
 
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-muted-foreground">
                   Press enter for a new line. Use the icons above to share files or voice notes instantly.
                 </p>
@@ -1289,7 +1340,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                   disabled={
                     isSending || (isEditing && messageText.trim().length === 0)
                   }
-                  className="flex items-center gap-2 rounded-full bg-[#2d682d] px-6 py-2 text-sm font-medium text-white transition hover:bg-[#225122]"
+                  className="flex items-center gap-2 rounded-full bg-emerald-500 px-6 py-2 text-sm font-semibold text-white shadow-[0_20px_40px_-24px_rgba(16,185,129,0.8)] transition hover:bg-emerald-600"
                 >
                   {isSending ? (
                     <>
