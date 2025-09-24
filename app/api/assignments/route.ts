@@ -88,3 +88,59 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to process assignment" }, { status: 500 })
   }
 }
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const assignmentId = typeof body.assignmentId === "string" ? body.assignmentId : body.id
+    if (!assignmentId || typeof assignmentId !== "string") {
+      return NextResponse.json({ error: "Assignment ID is required" }, { status: 400 })
+    }
+
+    const updates = body.updates
+    if (!updates || typeof updates !== "object") {
+      return NextResponse.json({ error: "Valid updates payload is required" }, { status: 400 })
+    }
+
+    const updatedAssignment = await dbManager.updateAssignment(assignmentId, updates)
+
+    return NextResponse.json({
+      assignment: updatedAssignment,
+      message: "Assignment updated successfully",
+    })
+  } catch (error) {
+    console.error("Failed to update assignment:", error)
+    return NextResponse.json({ error: "Failed to update assignment" }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    let assignmentId = searchParams.get("assignmentId")
+
+    if (!assignmentId) {
+      try {
+        const body = await request.json()
+        assignmentId = typeof body?.assignmentId === "string" ? body.assignmentId : typeof body?.id === "string" ? body.id : null
+      } catch (error) {
+        assignmentId = null
+      }
+    }
+
+    if (!assignmentId) {
+      return NextResponse.json({ error: "Assignment ID is required" }, { status: 400 })
+    }
+
+    const deleted = await dbManager.deleteAssignment(assignmentId)
+
+    if (!deleted) {
+      return NextResponse.json({ error: "Assignment not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true, message: "Assignment deleted successfully" })
+  } catch (error) {
+    console.error("Failed to delete assignment:", error)
+    return NextResponse.json({ error: "Failed to delete assignment" }, { status: 500 })
+  }
+}
