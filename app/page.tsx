@@ -46,6 +46,7 @@ import { logger } from "@/lib/logger"
 import { normalizeTimetableCollection } from "@/lib/timetable"
 import { toast } from "@/hooks/use-toast"
 import type { Viewport } from "next"
+import Image from "next/image"
 import { SchoolCalendarManager } from "@/components/admin/school-calendar-manager"
 import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
 import { TimetableWeeklyView, type TimetableWeeklyViewSlot } from "@/components/timetable-weekly-view"
@@ -58,6 +59,7 @@ import {
   type ReportCardAccessRecord,
   syncReportCardAccess,
 } from "@/lib/report-card-access"
+import { useBranding } from "@/hooks/use-branding"
 
 export const dynamic = "force-dynamic"
 export const viewport: Viewport = {
@@ -216,6 +218,12 @@ const FALLBACK_ACCOUNTS: FallbackAccount[] = [
 ]
 
 export default function HomePage() {
+  const branding = useBranding()
+  const resolvedLogo = branding.logoUrl
+  const resolvedSchoolName = branding.schoolName
+  const portalDescription = resolvedSchoolName
+    ? `${resolvedSchoolName} School Management Portal`
+    : "School Management Portal"
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [loginForm, setLoginForm] = useState({ email: "", password: "", role: "parent" as UserRole })
   const [registerForm, setRegisterForm] = useState({
@@ -571,10 +579,20 @@ export default function HomePage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
-            <GraduationCap className="h-12 w-12 text-[#2d682d]" />
+            {resolvedLogo ? (
+              <Image
+                src={resolvedLogo}
+                alt={`${resolvedSchoolName} logo`}
+                width={48}
+                height={48}
+                className="h-12 w-12 object-contain rounded-md shadow-sm"
+              />
+            ) : (
+              <GraduationCap className="h-12 w-12 text-[#2d682d]" />
+            )}
           </div>
-          <h1 className="text-3xl font-bold text-[#2d682d] mb-2">VEA 2025</h1>
-          <p className="text-[#b29032]">School Management Portal</p>
+          <h1 className="text-3xl font-bold text-[#2d682d] mb-2">{resolvedSchoolName}</h1>
+          <p className="text-[#b29032]">{portalDescription}</p>
         </div>
 
         <Card className="border-[#2d682d]/20 bg-white/95 backdrop-blur shadow-xl">
@@ -933,6 +951,9 @@ export default function HomePage() {
 }
 
 function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const branding = useBranding()
+  const resolvedLogo = branding.logoUrl
+  const resolvedSchoolName = branding.schoolName
   const [teacherAssignments, setTeacherAssignments] = useState({
     classes:
       user.role === "teacher"
@@ -1090,9 +1111,19 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         <div className="max-w-7xl mx-auto px-4 sm:px:6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center gap-3">
-              <GraduationCap className="h-8 w-8 text-[#b29032]" />
+              {resolvedLogo ? (
+                <Image
+                  src={resolvedLogo}
+                  alt={`${resolvedSchoolName} logo`}
+                  width={40}
+                  height={40}
+                  className="h-10 w-10 object-contain rounded-md bg-white/10 p-1"
+                />
+              ) : (
+                <GraduationCap className="h-8 w-8 text-[#b29032]" />
+              )}
               <div>
-                <h1 className="text-xl font-bold">VEA 2025</h1>
+                <h1 className="text-xl font-bold">{resolvedSchoolName}</h1>
                 <p className="text-sm text-green-200">{getRoleDisplayName(user.role)} Portal</p>
               </div>
             </div>

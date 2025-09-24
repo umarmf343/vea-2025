@@ -885,7 +885,7 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">Welcome, {accountant.name}</h1>
-            <p className="text-green-100">Financial Management - VEA 2025</p>
+            <p className="text-green-100">Financial Management - {resolvedSchoolName}</p>
           </div>
           <TutorialLink href="https://www.youtube.com/watch?v=6Dh-RL__uN4" variant="inverse" />
         </div>
