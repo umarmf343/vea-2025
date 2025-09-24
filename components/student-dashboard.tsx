@@ -172,6 +172,26 @@ const toNumber = (value: unknown): number => {
 
 const normalizeSubjectName = (value: unknown): string => normalizeKey(value)
 
+const resolveAssignmentMaximum = (assignment: IdentifiedRecord, fallback: number): number => {
+  const candidates = [
+    assignment.maximumScore,
+    assignment.maximum_score,
+    assignment.maxScore,
+    assignment.max_score,
+    assignment.totalMarks,
+    assignment.total_marks,
+  ]
+
+  for (const candidate of candidates) {
+    const numeric = Number(candidate)
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return Math.round(numeric)
+    }
+  }
+
+  return fallback
+}
+
 const getRecordValue = (record: Record<string, unknown> | null | undefined, key: string): unknown => {
   if (!record) {
     return undefined
@@ -213,7 +233,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const [studentProfile, setStudentProfile] = useState(student)
   const [loading, setLoading] = useState(true)
 
-  const assignmentMaximum = CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment ?? 20
+  const defaultAssignmentMaximum = CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment ?? 20
 
   useEffect(() => {
     let isMounted = true
@@ -947,6 +967,10 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                           <span className="inline-flex items-center gap-1">
                             <Calendar className="h-3.5 w-3.5 text-amber-500" /> Due {formatAssignmentDate(assignment.dueDate)}
                           </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Trophy className="h-3.5 w-3.5 text-purple-500" />
+                            {resolveAssignmentMaximum(assignment, defaultAssignmentMaximum)} marks
+                          </span>
                           <span className="text-slate-500">{describeDueDate(assignment.dueDate)}</span>
                         </div>
                         <p className="text-sm text-slate-700">
@@ -971,7 +995,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                           <div className="rounded-xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-800">
                             <p className="flex items-center gap-2 font-medium">
                               <Trophy className="h-4 w-4 text-purple-600" />
-                              Score: {score ?? "--"} / {assignmentMaximum}
+                              Score: {score ?? "--"} / {resolveAssignmentMaximum(assignment, defaultAssignmentMaximum)}
                               {grade ? ` • Grade ${grade}` : ""}
                             </p>
                           </div>

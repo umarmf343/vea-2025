@@ -35,6 +35,8 @@ export async function POST(request: NextRequest) {
       teacherId,
       teacherName,
       dueDate,
+      maximumScore,
+      status,
       type,
       attachmentName,
       attachmentSize,
@@ -66,7 +68,8 @@ export async function POST(request: NextRequest) {
         teacherId,
         teacherName,
         dueDate,
-        status: "sent",
+        status: typeof status === "string" ? status : "sent",
+        maximumScore,
         resourceName: attachmentName ?? null,
         resourceSize:
           typeof attachmentSize === "number"
