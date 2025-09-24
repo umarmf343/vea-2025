@@ -4,6 +4,12 @@ import { safeStorage } from "@/lib/safe-storage"
 
 export type ReportCardWorkflowStatus = "draft" | "pending" | "approved" | "revoked"
 
+export interface ParentRecipientInfo {
+  parentId: string
+  name: string
+  email?: string | null
+}
+
 export interface ReportCardWorkflowRecord {
   id: string
   studentId: string
@@ -21,6 +27,7 @@ export interface ReportCardWorkflowRecord {
   feedback?: string
   adminId?: string | null
   adminName?: string | null
+  publishedTo?: ParentRecipientInfo[]
 }
 
 export interface SubmitReportCardPayload {
@@ -43,6 +50,7 @@ export interface UpdateWorkflowStatusPayload {
   adminId?: string
   adminName?: string
   feedback?: string
+  parentRecipients?: ParentRecipientInfo[]
 }
 
 export interface WorkflowSummary {
@@ -242,6 +250,7 @@ export const submitReportCardsForApproval = (payload: SubmitReportCardPayload): 
       feedback: undefined,
       adminId: existing?.adminId,
       adminName: existing?.adminName,
+      publishedTo: existing?.publishedTo ?? [],
     }
   })
 
@@ -294,6 +303,16 @@ export const updateReportCardWorkflowStatus = (
     }
 
     const nextStatus = payload.status
+    const parentRecipients = Array.isArray(payload.parentRecipients)
+      ? payload.parentRecipients
+          .map((recipient) => ({
+            parentId: String(recipient.parentId),
+            name: recipient.name,
+            email: recipient.email ?? null,
+          }))
+          .filter((recipient) => recipient.parentId.trim().length > 0 && recipient.name.trim().length > 0)
+      : undefined
+
     const nextRecord: ReportCardWorkflowRecord = {
       ...record,
       status: nextStatus,
@@ -302,6 +321,12 @@ export const updateReportCardWorkflowStatus = (
       adminId: payload.adminId ?? record.adminId ?? null,
       adminName: payload.adminName ?? record.adminName ?? null,
       publishedAt: nextStatus === "approved" ? timestamp : record.publishedAt,
+      publishedTo:
+        nextStatus === "approved"
+          ? parentRecipients ?? record.publishedTo ?? []
+          : nextStatus === "pending"
+            ? record.publishedTo ?? []
+            : [],
     }
 
     if (nextStatus !== "revoked") {

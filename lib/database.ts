@@ -189,6 +189,7 @@ export interface ReportCardRecord extends CollectionRecord {
   subjects: ReportCardSubjectRecord[]
   classTeacherRemark?: string | null
   headTeacherRemark?: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 export interface ReportCardColumnRecord {
@@ -589,9 +590,10 @@ function createDefaultUsers(): StoredUser[] {
       role: "parent",
       password: "Parent2025!",
       metadata: {
-        linkedStudentId: "user_student",
+        linkedStudentId: "student_john_doe",
+        phone: "+2348012345670",
       },
-      studentIds: ["user_student"],
+      studentIds: ["student_john_doe"],
     },
     {
       id: "user_librarian",
@@ -1954,6 +1956,7 @@ export async function upsertReportCardRecord(payload: UpsertReportCardPayload): 
       subjects: normalizedSubjects,
       classTeacherRemark: payload.classTeacherRemark ?? existing.classTeacherRemark ?? null,
       headTeacherRemark: payload.headTeacherRemark ?? existing.headTeacherRemark ?? null,
+      metadata: payload.metadata ?? existing.metadata ?? null,
       updatedAt: timestamp,
     }
     reportCards[findIndex] = updated
@@ -1971,6 +1974,7 @@ export async function upsertReportCardRecord(payload: UpsertReportCardPayload): 
     subjects: normalizedSubjects,
     classTeacherRemark: payload.classTeacherRemark ?? null,
     headTeacherRemark: payload.headTeacherRemark ?? null,
+    metadata: payload.metadata ?? null,
     createdAt: timestamp,
     updatedAt: timestamp,
   }

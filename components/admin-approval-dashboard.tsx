@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Download, Check, X, Calendar, Clock, User, BookOpen, Loader2, Eye } from "lucide-react"
 import { safeStorage } from "@/lib/safe-storage"
 import { TutorialLink } from "@/components/tutorial-link"
@@ -23,13 +24,49 @@ import {
   REPORT_CARD_WORKFLOW_EVENT,
   getWorkflowRecords,
   updateReportCardWorkflowStatus,
+  type ParentRecipientInfo,
   type ReportCardWorkflowRecord,
 } from "@/lib/report-card-workflow"
+import { grantReportCardAccess, normalizeTermLabel } from "@/lib/report-card-access"
 import { useToast } from "@/hooks/use-toast"
 import { EnhancedReportCard } from "@/components/enhanced-report-card"
 import { mapReportCardRecordToRaw } from "@/lib/report-card-transformers"
 import type { RawReportCardData } from "@/lib/report-card-types"
 import type { ReportCardRecord } from "@/lib/database"
+
+interface ParentAccountRecord {
+  id: string
+  name: string
+  email?: string | null
+  phone?: string | null
+  studentIds: string[]
+}
+
+interface StudentDirectoryRecord {
+  id: string
+  name: string
+  parentName?: string | null
+  parentEmail?: string | null
+  guardianPhone?: string | null
+  className?: string | null
+}
+
+interface ParentRecipientOption {
+  id: string
+  parentId: string
+  name: string
+  email?: string | null
+  phone?: string | null
+  source: "account" | "record"
+}
+
+const fetchJson = async <T,>(input: RequestInfo, init?: RequestInit): Promise<T> => {
+  const response = await fetch(input, init)
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`)
+  }
+  return (await response.json()) as T
+}
 
 const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "all", label: "All Statuses" },
@@ -76,6 +113,15 @@ export function AdminApprovalDashboard() {
   const [previewMessage, setPreviewMessage] = useState<string | null>(null)
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null)
   const isPreviewLoading = previewLoadingId !== null
+  const [parentAccounts, setParentAccounts] = useState<ParentAccountRecord[]>([])
+  const [studentDirectory, setStudentDirectory] = useState<Map<string, StudentDirectoryRecord>>(new Map())
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false)
+  const [publishRecord, setPublishRecord] = useState<ReportCardWorkflowRecord | null>(null)
+  const [publishRecipients, setPublishRecipients] = useState<ParentRecipientOption[]>([])
+  const [selectedParentIds, setSelectedParentIds] = useState<string[]>([])
+  const [isPublishing, setIsPublishing] = useState(false)
+  const [isLoadingRecipients, setIsLoadingRecipients] = useState(false)
+  const [directoryError, setDirectoryError] = useState<string | null>(null)
 
   const closePreviewDialog = useCallback(() => {
     setPreviewDialogOpen(false)
@@ -158,6 +204,411 @@ export function AdminApprovalDashboard() {
     }
   }, [loadRecords])
 
+  useEffect(() => {
+    let cancelled = false
+
+    const parseParentUser = (user: Record<string, any>): ParentAccountRecord | null => {
+      const role = typeof user.role === "string" ? user.role.toLowerCase().trim() : ""
+      if (role !== "parent") {
+        return null
+      }
+
+      const id = user.id !== undefined ? String(user.id) : user.email ? String(user.email) : null
+      if (!id) {
+        return null
+      }
+
+      const rawName = typeof user.name === "string" ? user.name.trim() : ""
+      const email = typeof user.email === "string" ? user.email.trim() : null
+      const metadata = (user.metadata ?? {}) as Record<string, unknown>
+      const linkedStudentId =
+        typeof metadata?.linkedStudentId === "string" && metadata.linkedStudentId.trim().length > 0
+          ? metadata.linkedStudentId.trim()
+          : null
+      const linkedStudents = Array.isArray(user.studentIds)
+        ? user.studentIds.map((value: unknown) => String(value)).filter((value) => value.trim().length > 0)
+        : []
+      if (linkedStudentId && !linkedStudents.includes(linkedStudentId)) {
+        linkedStudents.push(linkedStudentId)
+      }
+      if (typeof user.studentId === "string" && user.studentId.trim().length > 0) {
+        linkedStudents.push(user.studentId.trim())
+      }
+
+      const phone =
+        typeof metadata?.phone === "string" && metadata.phone.trim().length > 0
+          ? metadata.phone.trim()
+          : typeof user.phone === "string" && user.phone.trim().length > 0
+            ? user.phone.trim()
+            : null
+
+      return {
+        id,
+        name: rawName || email || id,
+        email,
+        phone,
+        studentIds: Array.from(new Set(linkedStudents.map((value) => value.trim()))),
+      }
+    }
+
+    const parseStudentRecord = (record: Record<string, any>): StudentDirectoryRecord | null => {
+      const id = record.id !== undefined ? String(record.id) : null
+      if (!id) {
+        return null
+      }
+
+      const name = typeof record.name === "string" && record.name.trim().length > 0 ? record.name.trim() : id
+      const parentName =
+        typeof record.parentName === "string" && record.parentName.trim().length > 0
+          ? record.parentName.trim()
+          : null
+      const parentEmail =
+        typeof record.parentEmail === "string" && record.parentEmail.trim().length > 0
+          ? record.parentEmail.trim()
+          : null
+      const guardianPhone =
+        typeof record.guardianPhone === "string" && record.guardianPhone.trim().length > 0
+          ? record.guardianPhone.trim()
+          : null
+      const className =
+        typeof record.class === "string" && record.class.trim().length > 0 ? record.class.trim() : null
+
+      return { id, name, parentName, parentEmail, guardianPhone, className }
+    }
+
+    const loadFromStorage = () => {
+      const storedParents: ParentAccountRecord[] = []
+      const storedStudents = new Map<string, StudentDirectoryRecord>()
+
+      try {
+        const rawUsers = safeStorage.getItem("users")
+        if (rawUsers) {
+          const parsed = JSON.parse(rawUsers)
+          if (Array.isArray(parsed)) {
+            parsed.forEach((entry) => {
+              const parent = parseParentUser(entry as Record<string, any>)
+              if (parent) {
+                storedParents.push(parent)
+              }
+            })
+          }
+        }
+      } catch (error) {
+        console.warn("Unable to parse cached users for parent directory", error)
+      }
+
+      try {
+        const rawStudents = safeStorage.getItem("students")
+        if (rawStudents) {
+          const parsed = JSON.parse(rawStudents)
+          if (Array.isArray(parsed)) {
+            parsed.forEach((entry) => {
+              const student = parseStudentRecord(entry as Record<string, any>)
+              if (student) {
+                storedStudents.set(student.id, student)
+              }
+            })
+          }
+        }
+      } catch (error) {
+        console.warn("Unable to parse cached students for parent directory", error)
+      }
+
+      return { parents: storedParents, students: storedStudents }
+    }
+
+    const hydrateDirectories = async () => {
+      setDirectoryError(null)
+
+      try {
+        const [parentPayload, studentPayload] = await Promise.all([
+          fetchJson<{ users?: Array<Record<string, any>> }>("/api/users?role=parent"),
+          fetchJson<{ students?: Array<Record<string, any>> }>("/api/students"),
+        ])
+
+        if (cancelled) {
+          return
+        }
+
+        const mappedParents: ParentAccountRecord[] = Array.isArray(parentPayload.users)
+          ? parentPayload.users
+              .map((entry) => parseParentUser(entry as Record<string, any>))
+              .filter((entry): entry is ParentAccountRecord => Boolean(entry))
+          : []
+
+        const mappedStudents = new Map<string, StudentDirectoryRecord>()
+        if (Array.isArray(studentPayload.students)) {
+          studentPayload.students.forEach((entry) => {
+            const student = parseStudentRecord(entry as Record<string, any>)
+            if (student) {
+              mappedStudents.set(student.id, student)
+            }
+          })
+        }
+
+        if (mappedParents.length === 0 || mappedStudents.size === 0) {
+          const fallback = loadFromStorage()
+          if (mappedParents.length === 0) {
+            mappedParents.push(...fallback.parents)
+          }
+          if (mappedStudents.size === 0) {
+            fallback.students.forEach((value, key) => mappedStudents.set(key, value))
+          }
+        }
+
+        setParentAccounts(mappedParents)
+        setStudentDirectory(mappedStudents)
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+
+        console.error("Failed to load parent directory", error)
+        setDirectoryError(error instanceof Error ? error.message : "Unable to load parent directory")
+
+        const fallback = loadFromStorage()
+        setParentAccounts(fallback.parents)
+        setStudentDirectory(fallback.students)
+      }
+    }
+
+    hydrateDirectories().catch((error) => {
+      console.error("Unable to hydrate parent directory", error)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const resolveParentRecipients = useCallback(
+    (record: ReportCardWorkflowRecord): ParentRecipientOption[] => {
+      const recipients = new Map<string, ParentRecipientOption>()
+      const rawId = String(record.studentId ?? "").trim()
+      const variants = new Set<string>()
+
+      if (rawId.length > 0) {
+        variants.add(rawId)
+        variants.add(rawId.toLowerCase())
+      }
+
+      const numericId = Number.parseInt(rawId, 10)
+      if (!Number.isNaN(numericId)) {
+        variants.add(String(numericId))
+      }
+
+      if (rawId.startsWith("student_")) {
+        const trimmed = rawId.replace(/^student_/, "")
+        variants.add(trimmed)
+        variants.add(trimmed.toLowerCase())
+      }
+
+      const studentEntry =
+        studentDirectory.get(rawId) ??
+        Array.from(studentDirectory.values()).find(
+          (entry) => entry.name.toLowerCase() === record.studentName.toLowerCase(),
+        ) ??
+        null
+
+      if (studentEntry) {
+        variants.add(studentEntry.id)
+        variants.add(studentEntry.id.toLowerCase())
+      }
+
+      parentAccounts.forEach((parent) => {
+        const hasMatch = parent.studentIds.some((id) => {
+          const trimmed = id.trim()
+          if (!trimmed) {
+            return false
+          }
+          return variants.has(trimmed) || variants.has(trimmed.toLowerCase())
+        })
+
+        if (hasMatch) {
+          recipients.set(parent.id, {
+            id: parent.id,
+            parentId: parent.id,
+            name: parent.name,
+            email: parent.email ?? null,
+            phone: parent.phone ?? null,
+            source: "account",
+          })
+        }
+      })
+
+      if (studentEntry && studentEntry.parentEmail) {
+        const alreadyIncluded = Array.from(recipients.values()).some(
+          (recipient) => recipient.parentId === studentEntry.parentEmail,
+        )
+        if (!alreadyIncluded) {
+          const fallbackId = `contact::${studentEntry.parentEmail.toLowerCase()}`
+          recipients.set(fallbackId, {
+            id: fallbackId,
+            parentId: studentEntry.parentEmail,
+            name: studentEntry.parentName ?? studentEntry.parentEmail,
+            email: studentEntry.parentEmail,
+            phone: studentEntry.guardianPhone ?? null,
+            source: "record",
+          })
+        }
+      }
+
+      if (Array.isArray(record.publishedTo)) {
+        record.publishedTo.forEach((recipient) => {
+          if (!recipient?.parentId || recipients.has(recipient.parentId)) {
+            return
+          }
+
+          recipients.set(recipient.parentId, {
+            id: recipient.parentId,
+            parentId: recipient.parentId,
+            name: recipient.name,
+            email: recipient.email ?? null,
+            phone: null,
+            source: "account",
+          })
+        })
+      }
+
+      return Array.from(recipients.values())
+    },
+    [parentAccounts, studentDirectory],
+  )
+
+  useEffect(() => {
+    if (!publishRecord) {
+      return
+    }
+
+    setIsLoadingRecipients(true)
+    try {
+      const recipients = resolveParentRecipients(publishRecord)
+      setPublishRecipients(recipients)
+
+      const previouslySelected = new Set(
+        (publishRecord.publishedTo ?? []).map((recipient) => recipient.parentId),
+      )
+
+      const defaults =
+        recipients.length === 0
+          ? []
+          : previouslySelected.size > 0
+            ? recipients
+                .filter((recipient) => previouslySelected.has(recipient.parentId))
+                .map((recipient) => recipient.id)
+            : recipients.map((recipient) => recipient.id)
+
+      setSelectedParentIds(defaults)
+    } finally {
+      setIsLoadingRecipients(false)
+    }
+  }, [publishRecord, resolveParentRecipients])
+
+  const openPublishDialog = useCallback((record: ReportCardWorkflowRecord) => {
+    setPublishRecord(record)
+    setPublishDialogOpen(true)
+  }, [])
+
+  const closePublishDialog = useCallback(() => {
+    setPublishDialogOpen(false)
+    setPublishRecord(null)
+    setPublishRecipients([])
+    setSelectedParentIds([])
+  }, [])
+
+  const toggleSelectAllParents = useCallback(
+    (checked: boolean) => {
+      if (!checked) {
+        setSelectedParentIds([])
+        return
+      }
+      setSelectedParentIds(publishRecipients.map((recipient) => recipient.id))
+    },
+    [publishRecipients],
+  )
+
+  const toggleParentSelection = useCallback((id: string, checked: boolean) => {
+    setSelectedParentIds((prev) => {
+      if (checked) {
+        return prev.includes(id) ? prev : [...prev, id]
+      }
+      return prev.filter((value) => value !== id)
+    })
+  }, [])
+
+  const handleConfirmPublish = useCallback(() => {
+    if (!publishRecord) {
+      return
+    }
+
+    if (selectedParentIds.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Select at least one parent",
+        description: "Choose the parents who should receive this report card.",
+      })
+      return
+    }
+
+    try {
+      setIsPublishing(true)
+      setProcessingRecordId(publishRecord.id)
+
+      const normalizedTerm = normalizeTermLabel(publishRecord.term)
+      const selectedRecipients = publishRecipients.filter((recipient) =>
+        selectedParentIds.includes(recipient.id),
+      )
+
+      selectedRecipients.forEach((recipient) => {
+        grantReportCardAccess({
+          parentId: recipient.parentId,
+          studentId: publishRecord.studentId,
+          term: normalizedTerm,
+          session: publishRecord.session,
+          grantedBy: "manual",
+        })
+      })
+
+      const updated = updateReportCardWorkflowStatus({
+        studentId: publishRecord.studentId,
+        className: publishRecord.className,
+        subject: publishRecord.subject,
+        term: normalizedTerm,
+        session: publishRecord.session,
+        status: "approved",
+        adminId: ADMIN_METADATA.id,
+        adminName: ADMIN_METADATA.name,
+        parentRecipients: selectedRecipients.map((recipient) => ({
+          parentId: recipient.parentId,
+          name: recipient.name,
+          email: recipient.email ?? undefined,
+        })),
+      })
+
+      setRecords(updated)
+      toast({
+        title: "Report published",
+        description: `${publishRecord.studentName}'s results are now available to selected parents.`,
+      })
+      closePublishDialog()
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Unable to publish",
+        description: error instanceof Error ? error.message : "Please try again.",
+      })
+    } finally {
+      setIsPublishing(false)
+      setProcessingRecordId(null)
+    }
+  }, [
+    closePublishDialog,
+    publishRecord,
+    publishRecipients,
+    selectedParentIds,
+    toast,
+  ])
+
   const actionableRecords = useMemo(
     () => records.filter((record) => record.status !== "draft"),
     [records],
@@ -227,38 +678,6 @@ export function AdminApprovalDashboard() {
         title: "Preparing report",
         description: `Generating report card for ${record.studentName}.`,
       })
-    },
-    [toast],
-  )
-
-  const handleApprove = useCallback(
-    (record: ReportCardWorkflowRecord) => {
-      try {
-        setProcessingRecordId(record.id)
-        const updated = updateReportCardWorkflowStatus({
-          studentId: record.studentId,
-          className: record.className,
-          subject: record.subject,
-          term: record.term,
-          session: record.session,
-          status: "approved",
-          adminId: ADMIN_METADATA.id,
-          adminName: ADMIN_METADATA.name,
-        })
-        setRecords(updated)
-        toast({
-          title: "Report published",
-          description: `${record.studentName}'s results are now available to parents.`,
-        })
-      } catch (error) {
-        toast({
-          variant: "destructive",
-          title: "Unable to publish",
-          description: error instanceof Error ? error.message : "Please try again.",
-        })
-      } finally {
-        setProcessingRecordId(null)
-      }
     },
     [toast],
   )
@@ -481,10 +900,10 @@ export function AdminApprovalDashboard() {
                     {record.status === "pending" && (
                       <>
                         <Button
-                          onClick={() => handleApprove(record)}
+                          onClick={() => openPublishDialog(record)}
                           size="sm"
                           className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
-                          disabled={processingRecordId === record.id}
+                          disabled={processingRecordId === record.id || isPublishing}
                         >
                           {processingRecordId === record.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -527,6 +946,22 @@ export function AdminApprovalDashboard() {
                       </Badge>
                     )}
                   </div>
+                  {record.publishedTo && record.publishedTo.length > 0 ? (
+                    <div className="mt-4 rounded-md border border-green-100 bg-green-50 p-3 text-sm text-green-700">
+                      <p className="font-medium">Published to:</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {record.publishedTo.map((recipient) => (
+                          <Badge
+                            key={`${record.id}-${recipient.parentId}`}
+                            variant="outline"
+                            className="border-green-300 bg-white text-green-700"
+                          >
+                            {recipient.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
             )
@@ -557,9 +992,84 @@ export function AdminApprovalDashboard() {
               {previewMessage ?? "No report card data is available for this student yet."}
             </p>
           )}
+      <DialogFooter>
+        <Button variant="outline" onClick={closePreviewDialog}>
+          Close
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+
+      <Dialog open={publishDialogOpen} onOpenChange={(open) => (open ? setPublishDialogOpen(true) : closePublishDialog())}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Publish Report Card</DialogTitle>
+            <DialogDescription>
+              {publishRecord
+                ? `Select the parents who should receive ${publishRecord.studentName}’s report card.`
+                : "Choose the parents who should receive this report card before publishing."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {directoryError ? (
+              <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {directoryError}
+              </p>
+            ) : null}
+            {isLoadingRecipients ? (
+              <div className="flex items-center justify-center rounded-md border border-dashed border-emerald-200 p-6 text-sm text-emerald-700">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Preparing parent list…
+              </div>
+            ) : publishRecipients.length === 0 ? (
+              <div className="rounded-md border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-600">
+                No parent contacts are linked to this student yet. Update the student record with parent or guardian details
+                to enable publishing.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="publish-select-all"
+                    checked={publishRecipients.length > 0 && selectedParentIds.length === publishRecipients.length}
+                    onCheckedChange={(checked) => toggleSelectAllParents(Boolean(checked))}
+                  />
+                  <Label htmlFor="publish-select-all" className="text-sm text-emerald-900">
+                    Select all parents
+                  </Label>
+                </div>
+                <div className="space-y-2">
+                  {publishRecipients.map((recipient) => (
+                    <div
+                      key={recipient.id}
+                      className="flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-sm text-emerald-900"
+                    >
+                      <Checkbox
+                        id={`publish-${recipient.id}`}
+                        checked={selectedParentIds.includes(recipient.id)}
+                        onCheckedChange={(checked) => toggleParentSelection(recipient.id, Boolean(checked))}
+                      />
+                      <div className="space-y-1">
+                        <p className="font-semibold leading-tight">{recipient.name}</p>
+                        <p className="text-xs text-emerald-800/80">
+                          {recipient.email ?? recipient.phone ?? "Contact details unavailable"}
+                        </p>
+                        <p className="text-xs text-emerald-700/70">
+                          {recipient.source === "account" ? "Linked parent account" : "Contact from student record"}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closePreviewDialog}>
-              Close
+            <Button variant="outline" onClick={closePublishDialog}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmPublish} disabled={isPublishing || publishRecipients.length === 0}>
+              {isPublishing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Publish to Parents
             </Button>
           </DialogFooter>
         </DialogContent>
