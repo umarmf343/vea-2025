@@ -29,6 +29,8 @@ export interface ChatMessage {
   readBy: string[]
   isDeleted?: boolean
   deletedAt?: string | null
+  isEdited?: boolean
+  editedAt?: string | null
 }
 
 export interface TypingPayload {
@@ -109,6 +111,48 @@ export function deleteMessage(messageId: string, requesterId: string) {
     messageType: "text",
     isDeleted: true,
     deletedAt,
+  }
+
+  hubState.messages = [
+    ...hubState.messages.slice(0, index),
+    updated,
+    ...hubState.messages.slice(index + 1),
+  ]
+
+  hubState.emitter.emit("message", updated)
+  return updated
+}
+
+export function updateMessage(messageId: string, requesterId: string, content: string) {
+  const index = hubState.messages.findIndex((message) => message.id === messageId)
+  if (index === -1) {
+    return null
+  }
+
+  const existing = hubState.messages[index]
+  if (existing.senderId !== requesterId) {
+    throw new Error("Not authorized to edit this message")
+  }
+
+  if (existing.isDeleted) {
+    throw new Error("Cannot edit a deleted message")
+  }
+
+  if (existing.messageType !== "text") {
+    throw new Error("Only text messages can be edited")
+  }
+
+  const trimmed = content.trim()
+  if (!trimmed) {
+    throw new Error("Message content cannot be empty")
+  }
+
+  const editedAt = new Date().toISOString()
+  const updated: ChatMessage = {
+    ...existing,
+    content: trimmed,
+    isEdited: true,
+    editedAt,
   }
 
   hubState.messages = [

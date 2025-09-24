@@ -398,9 +398,11 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
 
       let localPayments: PaymentRecord[] = []
       try {
-        const stored = await dbManager.getPayments()
-        if (Array.isArray(stored)) {
-          localPayments = stored.map((entry) => mapLocalPayment(entry as Record<string, unknown>))
+        if (typeof dbManager.getPayments === "function") {
+          const stored = await dbManager.getPayments()
+          if (Array.isArray(stored)) {
+            localPayments = stored.map((entry) => mapLocalPayment(entry as Record<string, unknown>))
+          }
         }
       } catch (error) {
         console.warn("Unable to load local payment records:", error)
@@ -411,7 +413,9 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       setPayments(combinedPayments)
       setReceipts(receiptsData.receipts.map(mapReceipt))
       setFeeStructure(feeData.feeStructure)
-      await dbManager.syncFinancialAnalytics(combinedPayments)
+      if (typeof dbManager.syncFinancialAnalytics === "function") {
+        await dbManager.syncFinancialAnalytics(combinedPayments)
+      }
     } catch (error) {
       console.error("Accountant dashboard load failed:", error)
       const message = error instanceof Error ? error.message : "Unable to load accountant data"
@@ -446,6 +450,10 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
     setBanner(null)
 
     try {
+      if (typeof dbManager.createPayment !== "function") {
+        throw new Error("Local payment storage is unavailable")
+      }
+
       const created = await dbManager.createPayment({
         studentName: paymentForm.studentName.trim(),
         parentName: paymentForm.parentName.trim(),
@@ -461,7 +469,9 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       const mapped = mapLocalPayment(created as Record<string, unknown>)
       setPayments((previous) => {
         const updated = mergePaymentRecords(previous, [mapped])
-        void dbManager.syncFinancialAnalytics(updated)
+        if (typeof dbManager.syncFinancialAnalytics === "function") {
+          void dbManager.syncFinancialAnalytics(updated)
+        }
         return updated
       })
       setBanner({ type: "success", message: "Payment recorded successfully." })
@@ -481,12 +491,16 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       void loadFinancialData()
     }
 
-    dbManager.on("paymentsUpdated", handlePaymentsEvent)
-    dbManager.on("paymentCompleted", handlePaymentsEvent)
+    if (typeof dbManager.on === "function") {
+      dbManager.on("paymentsUpdated", handlePaymentsEvent)
+      dbManager.on("paymentCompleted", handlePaymentsEvent)
+    }
 
     return () => {
-      dbManager.off("paymentsUpdated", handlePaymentsEvent)
-      dbManager.off("paymentCompleted", handlePaymentsEvent)
+      if (typeof dbManager.off === "function") {
+        dbManager.off("paymentsUpdated", handlePaymentsEvent)
+        dbManager.off("paymentCompleted", handlePaymentsEvent)
+      }
     }
   }, [loadFinancialData])
 

@@ -18,7 +18,19 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Loader2, Mic, Paperclip, Send, Trash2, UserCircle, Wifi, WifiOff } from "lucide-react"
+import {
+  Loader2,
+  Mic,
+  Paperclip,
+  Pause,
+  PencilLine,
+  Play,
+  Send,
+  Trash2,
+  UserCircle,
+  Wifi,
+  WifiOff,
+} from "lucide-react"
 
 export interface MessagingParticipant {
   id: string
@@ -129,6 +141,75 @@ function roleBadgeClass(role: string) {
   }
 }
 
+function VoiceNotePlayer({ src, className }: { src: string; className?: string }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) {
+      return
+    }
+
+    const handlePlay = () => setIsPlaying(true)
+    const handlePause = () => setIsPlaying(false)
+
+    audio.addEventListener("play", handlePlay)
+    audio.addEventListener("pause", handlePause)
+    audio.addEventListener("ended", handlePause)
+
+    return () => {
+      audio.removeEventListener("play", handlePlay)
+      audio.removeEventListener("pause", handlePause)
+      audio.removeEventListener("ended", handlePause)
+    }
+  }, [])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (audio) {
+      audio.pause()
+      audio.currentTime = 0
+    }
+    setIsPlaying(false)
+  }, [src])
+
+  const togglePlayback = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio) {
+      return
+    }
+
+    if (isPlaying) {
+      audio.pause()
+      return
+    }
+
+    void audio.play().catch(() => {
+      setIsPlaying(false)
+    })
+  }, [isPlaying])
+
+  return (
+    <div className={cn("flex items-center gap-2", className)}>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        className="rounded-full"
+        onClick={togglePlayback}
+        aria-label={isPlaying ? "Pause voice note" : "Play voice note"}
+      >
+        {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+      </Button>
+      <audio ref={audioRef} src={src} preload="metadata" controls className="sr-only" />
+      <span className="text-xs text-muted-foreground">
+        {isPlaying ? "Playing voice note…" : "Tap play to listen"}
+      </span>
+    </div>
+  )
+}
+
 export function InternalMessaging({ currentUser, participants }: InternalMessagingProps) {
   const [messages, setMessages] = useState<ClientMessage[]>([])
   const [activeConversation, setActiveConversation] = useState<string | null>(null)
@@ -141,6 +222,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
   const [isRecording, setIsRecording] = useState(false)
   const [typingIndicators, setTypingIndicators] = useState<TypingIndicator[]>([])
   const [deletingMessages, setDeletingMessages] = useState<Record<string, boolean>>({})
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
 
   const eventSourceRef = useRef<EventSource | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -255,6 +337,16 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
 
     return [] as Participant[]
   }, [activeConversationParticipants, directory, recipientId])
+
+  const editingMessage = useMemo(() => {
+    if (!editingMessageId) {
+      return null
+    }
+
+    return messages.find((message) => message.id === editingMessageId) ?? null
+  }, [editingMessageId, messages])
+
+  const isEditing = Boolean(editingMessageId)
 
   const activeConversationMessages = useMemo(() => {
     if (!activeConversation) {
@@ -450,6 +542,12 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
     }
   }, [orderedConversations, activeConversation])
 
+  useEffect(() => {
+    if (editingMessageId && !editingMessage) {
+      setEditingMessageId(null)
+    }
+  }, [editingMessageId, editingMessage])
+
   const broadcastTyping = useCallback(
     (conversationId: string, recipients: string[]) => {
       const now = Date.now()
@@ -502,6 +600,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
   const resetComposer = () => {
     setMessageText("")
     setAttachments([])
+    setEditingMessageId(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
@@ -526,6 +625,11 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
   }
 
   const handleFilesSelected = async (files: FileList | null) => {
+    if (editingMessageId) {
+      toast.error("Finish editing your message before adding attachments.")
+      return
+    }
+
     if (!files?.length) {
       return
     }
@@ -544,6 +648,11 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
   }
 
   const handleStartRecording = async () => {
+    if (editingMessageId) {
+      toast.error("Finish editing your message before recording a voice note.")
+      return
+    }
+
     if (!navigator.mediaDevices?.getUserMedia) {
       toast.error("Voice recording is not supported in this browser")
       return
@@ -586,6 +695,48 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
 
   const handleSendMessage = async () => {
     const trimmed = messageText.trim()
+
+    if (editingMessageId) {
+      if (!trimmed) {
+        toast.error("Enter a message before saving your changes")
+        return
+      }
+
+      setIsSending(true)
+      try {
+        const response = await fetch("/api/messages", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messageId: editingMessageId,
+            userId: currentUser.id,
+            content: trimmed,
+          }),
+        })
+
+        const payload = (await response.json().catch(() => ({}))) as {
+          message?: ServerMessage
+          error?: string
+        }
+
+        if (!response.ok || !payload.message) {
+          throw new Error(payload.error ?? "Failed to update message")
+        }
+
+        const clientMessage = toClientMessage(payload.message)
+        setMessages((prev) => upsertMessage(prev, clientMessage))
+        resetComposer()
+      } catch (error) {
+        console.error(error)
+        const description = error instanceof Error ? error.message : "Please try again."
+        toast.error("Unable to update message", { description })
+      } finally {
+        setIsSending(false)
+      }
+
+      return
+    }
+
     const conversationRecipients = composerParticipants
 
     if (conversationRecipients.length === 0) {
@@ -603,46 +754,48 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
 
     setIsSending(true)
     try {
-      const payload = {
-        conversationId,
-        senderId: currentUser.id,
-        senderName: currentUser.name,
-        senderRole: currentUser.role,
-        recipientIds: conversationRecipients.map((item) => item.id),
-        recipientNames: conversationRecipients.map((item) => item.name),
-        recipientRoles: conversationRecipients.map((item) => item.role),
-        content: trimmed || (attachments[0]?.name ?? "Attachment"),
-        messageType: attachments.length > 0 ? "media" : "text",
-        attachments: attachments.map((attachment) => ({
-          id: attachment.id,
-          name: attachment.name,
-          type: attachment.type,
-          size: attachment.size,
-          dataUrl: attachment.dataUrl,
-        })),
-        priority: "normal" as const,
-      }
-
       const response = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          conversationId,
+          senderId: currentUser.id,
+          senderName: currentUser.name,
+          senderRole: currentUser.role,
+          recipientIds: conversationRecipients.map((item) => item.id),
+          recipientNames: conversationRecipients.map((item) => item.name),
+          recipientRoles: conversationRecipients.map((item) => item.role),
+          content: trimmed || (attachments[0]?.name ?? "Attachment"),
+          messageType: attachments.length > 0 ? "media" : "text",
+          attachments: attachments.map((attachment) => ({
+            id: attachment.id,
+            name: attachment.name,
+            type: attachment.type,
+            size: attachment.size,
+            dataUrl: attachment.dataUrl,
+          })),
+          priority: "normal" as const,
+        }),
       })
 
-      if (!response.ok) {
-        throw new Error("Failed to send message")
+      const payload = (await response.json().catch(() => ({}))) as {
+        message?: ServerMessage
+        error?: string
       }
 
-      const saved = (await response.json()) as { message: ServerMessage }
-      const clientMessage = toClientMessage(saved.message)
+      if (!response.ok || !payload.message) {
+        throw new Error(payload.error ?? "Failed to send message")
+      }
 
+      const clientMessage = toClientMessage(payload.message)
       setMessages((prev) => upsertMessage(prev, clientMessage))
       setActiveConversation(clientMessage.conversationId)
       resetComposer()
       void markConversationAsRead(clientMessage.conversationId)
     } catch (error) {
       console.error(error)
-      toast.error("Unable to send message", { description: "Please try again." })
+      const description = error instanceof Error ? error.message : "Please try again."
+      toast.error("Unable to send message", { description })
     } finally {
       setIsSending(false)
     }
@@ -650,6 +803,27 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
 
   const removeAttachment = (id: string) => {
     setAttachments((prev) => prev.filter((attachment) => attachment.id !== id))
+  }
+
+  const handleStartEditingMessage = (message: ClientMessage) => {
+    if (message.messageType !== "text" || message.isDeleted) {
+      return
+    }
+
+    setEditingMessageId(message.id)
+    setMessageText(message.content)
+    setAttachments([])
+    setActiveConversation(message.conversationId)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+    if (isRecording) {
+      handleStopRecording()
+    }
+  }
+
+  const handleCancelEdit = () => {
+    resetComposer()
   }
 
   const handleDeleteMessage = useCallback(
@@ -675,6 +849,9 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
         const payload = (await response.json()) as { message: ServerMessage }
         const clientMessage = toClientMessage(payload.message)
         setMessages((prev) => upsertMessage(prev, clientMessage))
+        if (editingMessageId === messageId) {
+          resetComposer()
+        }
       } catch (error) {
         console.error(error)
         toast.error("Unable to delete message", { description: "Please try again." })
@@ -686,7 +863,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
         })
       }
     },
-    [currentUser.id],
+    [currentUser.id, editingMessageId],
   )
 
   const renderMessageBubble = (message: ClientMessage) => {
@@ -696,6 +873,8 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
       ? "bg-primary text-primary-foreground"
       : "bg-muted text-muted-foreground"
     const isDeleting = deletingMessages[message.id]
+    const isCurrentlyEditing = editingMessageId === message.id
+    const canEdit = isOwnMessage && !message.isDeleted && message.messageType === "text"
 
     return (
       <div key={message.id} className={cn("flex flex-col gap-1", alignment)}>
@@ -711,18 +890,38 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
               {message.senderRole.replace("_", " ")}
             </Badge>
             <span>{formatTime(message.createdAt)}</span>
+            {message.isEdited && !message.isDeleted ? (
+              <span className="italic text-[10px] text-foreground/80">Edited</span>
+            ) : null}
           </div>
           {isOwnMessage && !message.isDeleted && (
-            <Button
-              size="icon"
-              variant="ghost"
-              disabled={isDeleting}
-              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-              onClick={() => void handleDeleteMessage(message.id)}
-              aria-label="Delete message"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            <div className="flex items-center gap-1">
+              {canEdit && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className={cn(
+                    "h-7 w-7 text-muted-foreground hover:text-[#2d682d]",
+                    isCurrentlyEditing ? "bg-[#2d682d]/10" : "",
+                  )}
+                  onClick={() => handleStartEditingMessage(message)}
+                  aria-label={isCurrentlyEditing ? "Editing this message" : "Edit message"}
+                  disabled={isDeleting}
+                >
+                  <PencilLine className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              <Button
+                size="icon"
+                variant="ghost"
+                disabled={isDeleting}
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                onClick={() => void handleDeleteMessage(message.id)}
+                aria-label="Delete message"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           )}
         </div>
         <div
@@ -730,13 +929,21 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
             "max-w-[85%] rounded-2xl px-4 py-2 text-sm shadow-sm",
             bubbleColor,
             isOwnMessage ? "rounded-br-sm" : "rounded-bl-sm",
+            isCurrentlyEditing ? "ring-2 ring-[#2d682d]/70" : "",
           )}
         >
           {message.isDeleted ? (
             <p className="italic opacity-80">This message was deleted.</p>
           ) : (
             <>
-              <p className="whitespace-pre-line break-words">{message.content}</p>
+              <div className="space-y-1">
+                <p className="whitespace-pre-line break-words">{message.content}</p>
+                {isCurrentlyEditing ? (
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-[#2d682d]">
+                    Editing…
+                  </span>
+                ) : null}
+              </div>
 
               {message.attachments.length > 0 && (
                 <div className="mt-3 space-y-2">
@@ -752,9 +959,22 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                           <span>{(attachment.size / 1024 / 1024).toFixed(1)} MB</span>
                         </div>
                         {isAudio && attachment.dataUrl ? (
-                          <audio controls src={attachment.dataUrl} className="w-full" preload="metadata">
-                            Your browser does not support the audio element.
-                          </audio>
+                          <div className="space-y-2">
+                            <VoiceNotePlayer src={attachment.dataUrl} />
+                            {isOwnMessage && (
+                              <div className="flex justify-end">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-3 text-[11px] text-destructive hover:bg-destructive/10"
+                                  onClick={() => void handleDeleteMessage(message.id)}
+                                  disabled={isDeleting}
+                                >
+                                  Delete audio
+                                </Button>
+                              </div>
+                            )}
+                          </div>
                         ) : (
                           <a
                             href={attachment.dataUrl}
@@ -933,12 +1153,28 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                 <div className="space-y-2">
                   <Label htmlFor="message">Message</Label>
                   <div className="relative rounded-2xl border border-slate-200/70 bg-white px-4 pb-12 pt-3 shadow-inner focus-within:border-[#2d682d]/60 focus-within:ring-1 focus-within:ring-[#2d682d]/20">
+                    {isEditing && editingMessage && (
+                      <div className="mb-2 flex items-center justify-between rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                        <span>
+                          Editing message sent at {formatTime(editingMessage.createdAt)}.
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-3 text-amber-700 hover:bg-amber-100"
+                          onClick={handleCancelEdit}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
                     <Textarea
                       id="message"
                       rows={3}
                       value={messageText}
                       onChange={(event) => handleMessageChange(event.target.value)}
-                      placeholder="Type your message…"
+                      placeholder={isEditing ? "Update your message…" : "Type your message…"}
                       className="min-h-[96px] w-full resize-none border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 pr-28"
                     />
                     <input
@@ -949,13 +1185,18 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                       className="hidden"
                     />
                     <div className="pointer-events-none absolute bottom-3 left-4 text-[11px] uppercase tracking-wide text-muted-foreground">
-                      {isRecording ? "Recording voice note…" : "Secure message"}
+                      {isEditing
+                        ? "Editing message"
+                        : isRecording
+                          ? "Recording voice note…"
+                          : "Secure message"}
                     </div>
                     <div className="pointer-events-auto absolute bottom-2 right-3 flex items-center gap-2">
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
+                        disabled={isEditing || isSending}
                         onClick={() => fileInputRef.current?.click()}
                         className="h-9 w-9 rounded-full bg-slate-100 text-slate-500 shadow-sm transition hover:bg-[#2d682d]/10 hover:text-[#2d682d]"
                         aria-label="Attach files"
@@ -966,6 +1207,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                         type="button"
                         variant={isRecording ? "destructive" : "ghost"}
                         size="icon"
+                        disabled={isEditing}
                         onClick={() => {
                           if (isRecording) {
                             handleStopRecording()
@@ -1009,9 +1251,16 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                               </span>
                             </div>
                             {isAudio && attachment.dataUrl ? (
-                              <audio controls src={attachment.dataUrl} className="w-full" preload="metadata">
-                                Your browser does not support the audio element.
-                              </audio>
+                              <VoiceNotePlayer src={attachment.dataUrl} />
+                            ) : attachment.dataUrl ? (
+                              <a
+                                href={attachment.dataUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center text-xs font-medium text-[#2d682d] underline"
+                              >
+                                Preview attachment
+                              </a>
                             ) : null}
                             <div className="flex justify-end">
                               <Button
@@ -1037,18 +1286,20 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                 </p>
                 <Button
                   onClick={() => void handleSendMessage()}
-                  disabled={isSending}
+                  disabled={
+                    isSending || (isEditing && messageText.trim().length === 0)
+                  }
                   className="flex items-center gap-2 rounded-full bg-[#2d682d] px-6 py-2 text-sm font-medium text-white transition hover:bg-[#225122]"
                 >
                   {isSending ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Sending…
+                      {isEditing ? "Saving…" : "Sending…"}
                     </>
                   ) : (
                     <>
-                      <Send className="h-4 w-4" />
-                      Send message
+                      {isEditing ? <PencilLine className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                      {isEditing ? "Save changes" : "Send message"}
                     </>
                   )}
                 </Button>

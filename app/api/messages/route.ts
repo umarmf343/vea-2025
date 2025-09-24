@@ -8,6 +8,7 @@ import {
   getMessagesForUser,
   markConversationRead,
   publishNotification,
+  updateMessage,
   type ChatMessage,
 } from "@/lib/realtime-hub"
 
@@ -44,6 +45,12 @@ const markReadSchema = z.object({
 const deleteSchema = z.object({
   messageId: z.string().min(1),
   userId: z.string().min(1),
+})
+
+const editSchema = z.object({
+  messageId: z.string().min(1),
+  userId: z.string().min(1),
+  content: z.string().min(1),
 })
 
 export async function GET(request: NextRequest) {
@@ -130,5 +137,38 @@ export async function DELETE(request: NextRequest) {
     }
 
     return NextResponse.json({ error: "Unable to delete message" }, { status: 500 })
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const payload = editSchema.parse(await request.json())
+    const updated = updateMessage(payload.messageId, payload.userId, payload.content)
+    if (!updated) {
+      return NextResponse.json({ error: "Message not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ message: updated })
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: error.flatten() }, { status: 422 })
+    }
+
+    if (
+      error instanceof Error &&
+      (error.message === "Not authorized to edit this message" || error.message === "Cannot edit a deleted message")
+    ) {
+      return NextResponse.json({ error: error.message }, { status: 403 })
+    }
+
+    if (error instanceof Error && error.message === "Only text messages can be edited") {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    if (error instanceof Error && error.message === "Message content cannot be empty") {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    return NextResponse.json({ error: "Unable to update message" }, { status: 500 })
   }
 }
