@@ -217,276 +217,255 @@ export function ReportCard({ data, isOpen, onClose }: ReportCardProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto print:max-w-none print:max-h-none print:overflow-visible">
-        <DialogHeader className="print:hidden">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="text-[#2d682d]">Academic Report Card</DialogTitle>
-            <div className="flex gap-2">
-              <Button onClick={handleDownload} size="sm" className="bg-[#b29032] hover:bg-[#8a6b25]">
-                <Download className="h-4 w-4 mr-2" />
-                Download PDF
+      <DialogContent className="max-w-[230mm] border-none bg-transparent p-0 shadow-none focus-visible:outline-none print:m-0 print:max-w-none print:rounded-none print:border-none">
+        <DialogHeader className="flex flex-col gap-3 px-6 pt-6 pb-4 print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <DialogTitle className="text-base font-semibold text-slate-800">Academic Report Card</DialogTitle>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={handleDownload} size="sm" className="bg-[#b29032] px-3 text-xs font-medium text-white hover:bg-[#8a6b25]">
+                <Download className="mr-2 h-4 w-4" />
+                Download
               </Button>
-              <Button onClick={handlePrint} size="sm" variant="outline">
-                <Printer className="h-4 w-4 mr-2" />
+              <Button onClick={handlePrint} size="sm" variant="outline" className="border-slate-300 px-3 text-xs font-medium text-slate-700">
+                <Printer className="mr-2 h-4 w-4" />
                 Print
               </Button>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="print:p-8 print:bg-white">
-          {/* Header */}
-          <div className="text-center mb-8 border-b-2 border-[#2d682d] pb-6">
-            <div className="flex items-center justify-center mb-4">
-              {resolvedLogo ? (
-                <img src={resolvedLogo} alt={`${resolvedSchoolName} logo`} className="h-20 w-20 object-contain" />
-              ) : (
-                <GraduationCap className="h-16 w-16 text-[#b29032]" />
-              )}
-            </div>
-            <h1 className="text-3xl font-bold text-[#2d682d] mb-2">{resolvedSchoolName.toUpperCase()}</h1>
-            <p className="text-lg text-gray-600 mb-1">{resolvedAddress}</p>
-            <p className="text-sm text-gray-500 italic">{branding.defaultRemark}</p>
-            <div className="mt-4">
-              <h2 className="text-xl font-semibold text-[#b29032]">ACADEMIC REPORT CARD</h2>
-              <p className="text-sm text-gray-600">
-                {data.student.session} Academic Session - {data.student.term}
-              </p>
-            </div>
-          </div>
+        <div className="px-6 pb-6 print:p-0">
+          <div className="mx-auto w-full max-w-[210mm] rounded-xl border border-slate-200 bg-white p-6 text-[13px] leading-tight text-slate-800 shadow-lg transition-shadow md:p-8 print:w-[210mm] print:max-w-none print:rounded-none print:border print:border-slate-300 print:p-[16mm] print:shadow-none">
+            <div className="space-y-6">
+              <header className="flex flex-col gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-1 items-center gap-4 text-center md:text-left">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-md border border-slate-200 bg-white">
+                    {resolvedLogo ? (
+                      <img src={resolvedLogo} alt={`${resolvedSchoolName} logo`} className="h-14 w-14 object-contain" />
+                    ) : (
+                      <GraduationCap className="h-10 w-10 text-[#b29032]" />
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <h1 className="text-xl font-semibold uppercase tracking-[0.18em] text-slate-900">
+                      {resolvedSchoolName}
+                    </h1>
+                    <p className="text-sm text-slate-600">{resolvedAddress}</p>
+                    {branding.defaultRemark ? (
+                      <p className="text-xs text-slate-500">{branding.defaultRemark}</p>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-1 text-sm font-medium text-slate-700 md:items-end">
+                  <span className="uppercase tracking-[0.2em] text-slate-700">Academic Report Card</span>
+                  <span className="text-xs text-slate-500">
+                    {data.student.session} • {data.student.term}
+                  </span>
+                </div>
+              </header>
 
-          {/* Student Information */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="md:col-span-2">
-              <Card className="border-[#2d682d]/20">
-                <CardHeader className="pb-3">
-                  <h3 className="text-lg font-semibold text-[#2d682d]">Student Information</h3>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="font-medium text-gray-600">Name:</span>
-                      <p className="font-semibold text-[#2d682d]">{data.student.name}</p>
+              <section className="grid gap-4 md:grid-cols-[1.6fr_1fr]">
+                <div className="rounded-lg border border-slate-200 p-4">
+                  <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-700">Student Information</h2>
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Name</p>
+                      <p className="font-semibold text-slate-800">{data.student.name}</p>
                     </div>
-                    <div>
-                      <span className="font-medium text-gray-600">Admission No:</span>
-                      <p className="font-semibold">{data.student.admissionNumber}</p>
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Admission No.</p>
+                      <p className="font-semibold text-slate-800">{data.student.admissionNumber}</p>
                     </div>
-                    <div>
-                      <span className="font-medium text-gray-600">Class:</span>
-                      <p className="font-semibold">
-                        {data.student.class} - {data.student.section}
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Class</p>
+                      <p className="font-semibold text-slate-800">
+                        {data.student.class} – {data.student.section}
                       </p>
                     </div>
-                    <div>
-                      <span className="font-medium text-gray-600">Date of Birth:</span>
-                      <p className="font-semibold">{data.student.dateOfBirth}</p>
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Date of Birth</p>
+                      <p className="font-semibold text-slate-800">{data.student.dateOfBirth}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Session</p>
+                      <p className="font-semibold text-slate-800">{data.student.session}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Term</p>
+                      <p className="font-semibold text-slate-800">{data.student.term}</p>
                     </div>
                   </div>
-                  <div className="pt-2 border-t">
-                    <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                  <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-200 pt-3 text-[11px] text-slate-500">
+                    <span className="flex items-center gap-1">
                       <MapPin className="h-3 w-3" />
-                      <span>{data.student.address}</span>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs text-gray-500">
-                      <div className="flex items-center gap-1">
-                        <Phone className="h-3 w-3" />
-                        <span>{data.student.phone}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Mail className="h-3 w-3" />
-                        <span>{data.student.email}</span>
-                      </div>
-                    </div>
+                      {data.student.address}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Phone className="h-3 w-3" />
+                      {data.student.phone}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Mail className="h-3 w-3" />
+                      {data.student.email}
+                    </span>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+                <div className="flex items-stretch justify-center">
+                  <div className="flex w-full max-w-[140px] flex-col items-center rounded-lg border border-slate-200 bg-slate-50/60 p-3 text-center">
+                    <Avatar className="h-20 w-20 border border-slate-200 bg-white">
+                      <AvatarImage src={data.student.avatar || "/placeholder.svg"} alt={data.student.name} />
+                      <AvatarFallback className="bg-[#2d682d] text-lg font-semibold text-white">
+                        {data.student.name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")}
+                      </AvatarFallback>
+                    </Avatar>
+                    <p className="mt-2 text-[11px] uppercase tracking-wide text-slate-500">Student Passport</p>
+                  </div>
+                </div>
+              </section>
 
-            <div className="flex justify-center">
-              <Card className="border-[#b29032]/20 w-fit">
-                <CardContent className="p-4 text-center">
-                  <Avatar className="h-24 w-24 mx-auto mb-3">
-                    <AvatarImage src={data.student.avatar || "/placeholder.svg"} alt={data.student.name} />
-                    <AvatarFallback className="bg-[#2d682d] text-white text-2xl">
-                      {data.student.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")}
-                    </AvatarFallback>
-                  </Avatar>
-                  <p className="text-xs text-gray-500">Student Photo</p>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Academic Performance */}
-          <Card className="border-[#2d682d]/20 mb-6">
-            <CardHeader>
-              <h3 className="text-lg font-semibold text-[#2d682d] flex items-center gap-2">
-                <Award className="h-5 w-5" />
-                Academic Performance
-              </h3>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b-2 border-[#2d682d]">
-                      <th className="text-left py-2 font-semibold text-[#2d682d]">Subject</th>
-                      <th className="text-center py-2 font-semibold text-[#2d682d]">1st Test (20)</th>
-                      <th className="text-center py-2 font-semibold text-[#2d682d]">2nd Test (20)</th>
-                      <th className="text-center py-2 font-semibold text-[#2d682d]">Exam (60)</th>
-                      <th className="text-center py-2 font-semibold text-[#2d682d]">Total (100)</th>
-                      <th className="text-center py-2 font-semibold text-[#2d682d]">Grade</th>
-                      <th className="text-center py-2 font-semibold text-[#2d682d]">Position</th>
-                      <th className="text-left py-2 font-semibold text-[#2d682d]">Teacher's Comment</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.subjects.map((subject, index) => (
-                      <tr key={index} className="border-b border-gray-200">
-                        <td className="py-3 font-medium">{subject.name}</td>
-                        <td className="text-center py-3">{subject.firstTest}</td>
-                        <td className="text-center py-3">{subject.secondTest}</td>
-                        <td className="text-center py-3">{subject.exam}</td>
-                        <td className="text-center py-3 font-semibold">{subject.total}</td>
-                        <td className="text-center py-3">
-                          <Badge className={`${getGradeColor(subject.grade)} border-0`}>{subject.grade}</Badge>
-                        </td>
-                        <td className="text-center py-3 font-medium">{subject.position}</td>
-                        <td className="py-3 text-xs text-gray-600 max-w-xs">{subject.teacherComment}</td>
+              <section className="rounded-lg border border-slate-200">
+                <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                  <Award className="h-4 w-4 text-[#2d682d]" />
+                  Academic Performance
+                </div>
+                <div className="overflow-x-auto px-3 pb-3">
+                  <table className="w-full border-collapse text-xs text-slate-700">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-600">
+                        <th className="py-2 pr-2 text-left">Subject</th>
+                        <th className="px-2 py-2 text-center">1st Test (20)</th>
+                        <th className="px-2 py-2 text-center">2nd Test (20)</th>
+                        <th className="px-2 py-2 text-center">Exam (60)</th>
+                        <th className="px-2 py-2 text-center">Total (100)</th>
+                        <th className="px-2 py-2 text-center">Grade</th>
+                        <th className="px-2 py-2 text-center">Position</th>
+                        <th className="py-2 pl-2 text-left">Teacher&apos;s Remark</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+                    </thead>
+                    <tbody>
+                      {data.subjects.map((subject, index) => (
+                        <tr key={index} className="border-b border-slate-100 last:border-0">
+                          <td className="py-2 pr-2 font-semibold text-slate-800">{subject.name}</td>
+                          <td className="px-2 py-2 text-center font-medium">{subject.firstTest}</td>
+                          <td className="px-2 py-2 text-center font-medium">{subject.secondTest}</td>
+                          <td className="px-2 py-2 text-center font-medium">{subject.exam}</td>
+                          <td className="px-2 py-2 text-center font-semibold text-slate-900">{subject.total}</td>
+                          <td className="px-2 py-2 text-center">
+                            <Badge className={`${getGradeColor(subject.grade)} border-0 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide`}>
+                              {subject.grade}
+                            </Badge>
+                          </td>
+                          <td className="px-2 py-2 text-center font-medium">{subject.position}</td>
+                          <td className="py-2 pl-2 text-left text-[11px] text-slate-600">{subject.teacherComment}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
 
-          {/* Summary and Attendance */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <Card className="border-[#b29032]/20">
-              <CardHeader>
-                <h3 className="text-lg font-semibold text-[#b29032]">Overall Performance</h3>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="bg-[#b29032]/5 p-4 rounded-lg">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+              <section className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-lg border border-[#b29032]/40 p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#b29032]">Overall Performance</h3>
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <p className="text-gray-600">Total Marks</p>
-                      <p className="text-xl font-bold text-[#2d682d]">{data.overallPerformance.totalMarks}</p>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Total Marks</p>
+                      <p className="text-lg font-semibold text-slate-900">{data.overallPerformance.totalMarks}</p>
                     </div>
                     <div>
-                      <p className="text-gray-600">Obtained Marks</p>
-                      <p className="text-xl font-bold text-[#b29032]">{data.overallPerformance.obtainedMarks}</p>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Obtained Marks</p>
+                      <p className="text-lg font-semibold text-[#b29032]">{data.overallPerformance.obtainedMarks}</p>
                     </div>
                     <div>
-                      <p className="text-gray-600">Percentage</p>
-                      <p className="text-xl font-bold text-[#2d682d]">{data.overallPerformance.percentage}%</p>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Percentage</p>
+                      <p className="text-lg font-semibold text-slate-900">{data.overallPerformance.percentage}%</p>
                     </div>
                     <div>
-                      <p className="text-gray-600">Class Position</p>
-                      <p className="text-xl font-bold text-[#b29032]">
-                        {data.overallPerformance.position}/{data.overallPerformance.totalStudents}
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Class Position</p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {data.overallPerformance.position} of {data.overallPerformance.totalStudents}
                       </p>
                     </div>
                   </div>
-                  <div className="mt-4 text-center">
-                    <Badge className={`${getGradeColor(data.overallPerformance.grade)} text-lg px-4 py-2 border-0`}>
-                      Grade: {data.overallPerformance.grade}
+                  <div className="mt-4 flex justify-center">
+                    <Badge className={`${getGradeColor(data.overallPerformance.grade)} border-0 px-4 py-1 text-sm font-semibold uppercase tracking-wide`}>
+                      Grade {data.overallPerformance.grade}
                     </Badge>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-[#2d682d]/20">
-              <CardHeader>
-                <h3 className="text-lg font-semibold text-[#2d682d] flex items-center gap-2">
-                  <Calendar className="h-5 w-5" />
-                  Attendance Record
-                </h3>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="bg-[#2d682d]/5 p-4 rounded-lg">
-                  <div className="text-center mb-4">
-                    <p className="text-3xl font-bold text-[#2d682d]">{data.attendance.percentage}%</p>
-                    <p className="text-sm text-gray-600">Attendance Rate</p>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 text-sm text-center">
-                    <div>
-                      <p className="font-semibold text-[#2d682d]">{data.attendance.totalDays}</p>
-                      <p className="text-gray-600">Total Days</p>
+                <div className="rounded-lg border border-[#2d682d]/40 p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.1em] text-[#2d682d]">
+                    <Calendar className="h-4 w-4" />
+                    Attendance Summary
+                  </h3>
+                  <div className="mt-3 grid grid-cols-3 gap-3 text-center text-sm">
+                    <div className="rounded-md bg-[#2d682d]/5 p-3">
+                      <p className="text-lg font-semibold text-[#2d682d]">{data.attendance.totalDays}</p>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Total Days</p>
                     </div>
-                    <div>
-                      <p className="font-semibold text-green-600">{data.attendance.presentDays}</p>
-                      <p className="text-gray-600">Present</p>
+                    <div className="rounded-md bg-emerald-50 p-3">
+                      <p className="text-lg font-semibold text-emerald-700">{data.attendance.presentDays}</p>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Present</p>
                     </div>
-                    <div>
-                      <p className="font-semibold text-red-600">{data.attendance.absentDays}</p>
-                      <p className="text-gray-600">Absent</p>
+                    <div className="rounded-md bg-rose-50 p-3">
+                      <p className="text-lg font-semibold text-rose-600">{data.attendance.absentDays}</p>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Absent</p>
                     </div>
                   </div>
+                  <div className="mt-3 rounded-md border border-slate-200 p-3 text-center">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Attendance Rate</p>
+                    <p className="text-lg font-semibold text-[#2d682d]">{data.attendance.percentage}%</p>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+              </section>
 
-          {/* Comments */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <Card className="border-[#2d682d]/20">
-              <CardHeader>
-                <h3 className="text-lg font-semibold text-[#2d682d]">Class Teacher's Comment</h3>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-700 italic">{data.classTeacherComment}</p>
-                <div className="mt-4 pt-4 border-t">
-                  <p className="text-xs text-gray-500">Signature: _________________</p>
-                  <p className="text-xs text-gray-500 mt-1">Date: _________________</p>
+              <section className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-lg border border-slate-200 p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#2d682d]">Class Teacher&apos;s Comment</h3>
+                  <p className="mt-2 text-sm italic text-slate-700">{data.classTeacherComment}</p>
+                  <div className="mt-4 grid gap-2 text-[11px] text-slate-500">
+                    <div className="h-8 border-b border-dashed border-slate-400"></div>
+                    <span>Signature</span>
+                    <div className="h-8 border-b border-dashed border-slate-400"></div>
+                    <span>Date</span>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
+                <div className="rounded-lg border border-[#b29032]/40 p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#b29032]">Principal&apos;s Comment</h3>
+                  <p className="mt-2 text-sm italic text-slate-700">{data.principalComment}</p>
+                </div>
+              </section>
 
-            <Card className="border-[#b29032]/20">
-              <CardHeader>
-                <h3 className="text-lg font-semibold text-[#b29032]">Principal's Comment</h3>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-700 italic">{data.principalComment}</p>
-              </CardContent>
-            </Card>
-          </div>
+              <section className="flex flex-col gap-6 border-t border-slate-200 pt-6 md:flex-row md:items-end md:justify-between">
+                <div className="text-center md:text-left">
+                  <div className="mb-2 h-12 w-48 border-b border-slate-400"></div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Class Teacher</p>
+                </div>
+                <div className="flex flex-col items-center text-center md:items-end md:text-right">
+                  {resolvedSignature ? (
+                    <img
+                      src={resolvedSignature}
+                      alt={`${resolvedHeadmasterName} signature`}
+                      className="mb-2 h-12 w-48 object-contain"
+                    />
+                  ) : (
+                    <div className="mb-2 h-12 w-48 border-b border-slate-400"></div>
+                  )}
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    {resolvedHeadmasterName.toUpperCase()}
+                  </p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Headmaster</p>
+                </div>
+              </section>
 
-          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between mb-6">
-            <div className="text-center md:text-left">
-              <div className="border-b-2 border-[#2d682d] print:border-black w-48 h-16 mb-2"></div>
-              <p className="text-sm font-bold text-[#2d682d]">CLASS TEACHER</p>
-            </div>
-            <div className="flex flex-col items-center md:items-end text-center md:text-right">
-              {resolvedSignature ? (
-                <img
-                  src={resolvedSignature}
-                  alt={`${resolvedHeadmasterName} signature`}
-                  className="h-16 w-48 object-contain mb-2 md:ml-auto"
-                />
-              ) : (
-                <div className="border-b-2 border-[#2d682d] print:border-black w-48 h-16 mb-2 md:ml-auto"></div>
-              )}
-              <p className="text-sm font-bold text-[#2d682d]">{resolvedHeadmasterName.toUpperCase()}</p>
-              <p className="text-sm font-bold text-[#2d682d]">HEADMASTER</p>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="text-center border-t-2 border-[#2d682d] pt-6">
-            <p className="text-sm font-semibold text-[#2d682d] mb-2">Next Term Begins: {data.nextTermBegins}</p>
-            <div className="mt-2 text-xs text-gray-500">
-              <p>For further enquiries, please contact the school administration.</p>
-            </div>
-            <div className="mt-4 text-xs text-gray-400">
-              <p>{resolvedSchoolName} • {resolvedAddress}</p>
+              <footer className="border-t border-slate-200 pt-4 text-center text-xs text-slate-600">
+                <p className="font-semibold text-slate-700">Next Term Begins: {data.nextTermBegins}</p>
+                <p className="mt-1">For enquiries, please contact the school administration.</p>
+                <p className="mt-1 text-[11px] text-slate-500">{resolvedSchoolName} • {resolvedAddress}</p>
+              </footer>
             </div>
           </div>
         </div>

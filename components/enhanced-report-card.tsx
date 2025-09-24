@@ -723,132 +723,129 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   }
 
   return (
-    <div className="max-w-6xl mx-auto py-6 print:py-0">
-      <div className="mb-4 flex justify-end gap-3 print:hidden">
+    <div className="mx-auto w-full max-w-[230mm] py-6 print:w-[210mm] print:max-w-none print:py-0">
+      <div className="mb-4 flex justify-end gap-2 px-2 print:hidden">
         <Button
           onClick={handlePrint}
-          className="bg-emerald-700 text-white shadow-md hover:bg-emerald-800"
+          className="bg-emerald-700 px-3 text-xs font-medium text-white shadow-md hover:bg-emerald-800"
         >
           <Print className="mr-2 h-4 w-4" />
-          Print Report Card
+          Print
         </Button>
         <Button
           onClick={handleDownload}
           variant="outline"
-          className="border-emerald-600 text-emerald-700 hover:bg-emerald-600 hover:text-white"
+          className="border-emerald-600 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-600 hover:text-white"
         >
           <Download className="mr-2 h-4 w-4" />
-          Download PDF
+          Download
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-3xl border border-slate-300 bg-white shadow-xl print:rounded-none print:border-black print:shadow-none">
-        <header className="border-b border-slate-300 bg-slate-50 px-8 py-6 print:bg-white">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex flex-1 flex-col gap-4 lg:flex-row lg:items-center">
-              <div className="flex h-24 w-24 items-center justify-center rounded-lg border border-slate-300 bg-white">
-                {reportCardData.branding.logo ? (
-                  <img
-                    src={reportCardData.branding.logo}
-                    alt={`${reportCardData.branding.schoolName} logo`}
-                    className="h-full w-full object-contain p-2"
-                  />
-                ) : (
-                  <div className="text-center text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">
-                    School
-                    <br />
-                    Logo
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white text-[13px] leading-tight text-slate-800 shadow-lg print:overflow-visible print:rounded-none print:border-slate-300 print:shadow-none">
+        <div className="space-y-6 p-6 md:p-8 print:p-[16mm]">
+          <header className="rounded-lg border border-slate-200 bg-slate-50 px-5 py-4 print:bg-white">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-1 items-center gap-4 text-center md:text-left">
+                <div className="flex h-16 w-16 items-center justify-center rounded-md border border-slate-200 bg-white">
+                  {reportCardData.branding.logo ? (
+                    <img
+                      src={reportCardData.branding.logo}
+                      alt={`${reportCardData.branding.schoolName} logo`}
+                      className="h-12 w-12 object-contain"
+                    />
+                  ) : (
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-500">
+                      School
+                      <br />
+                      Logo
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-600">
+                    Official Report Card
+                  </p>
+                  <h1 className="text-xl font-bold uppercase tracking-[0.18em] text-slate-900">
+                    {reportCardData.branding.schoolName}
+                  </h1>
+                  {reportCardData.branding.address ? (
+                    <p className="text-sm text-slate-700">{reportCardData.branding.address}</p>
+                  ) : null}
+                  {reportCardData.branding.defaultRemark ? (
+                    <p className="text-xs text-slate-500">{reportCardData.branding.defaultRemark}</p>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px] uppercase tracking-[0.2em] text-slate-600 md:justify-start">
+                    {reportCardData.branding.educationZone ? (
+                      <span>Education Zone: {reportCardData.branding.educationZone}</span>
+                    ) : null}
+                    {reportCardData.branding.councilArea ? (
+                      <span>L.G.A: {reportCardData.branding.councilArea}</span>
+                    ) : null}
                   </div>
-                )}
+                  <div className="mt-1 flex flex-wrap justify-center gap-3 text-[10px] text-slate-500 md:justify-start">
+                    {reportCardData.branding.contactPhone ? (
+                      <span>Tel: {reportCardData.branding.contactPhone}</span>
+                    ) : null}
+                    {reportCardData.branding.contactEmail ? (
+                      <span>Email: {reportCardData.branding.contactEmail}</span>
+                    ) : null}
+                  </div>
+                </div>
               </div>
-              <div className="flex-1 text-center lg:text-left">
-                <p className="text-xs font-semibold uppercase tracking-[0.45em] text-slate-600">
-                  Official Report Card
-                </p>
-                <h1 className="mt-1 text-2xl font-black uppercase tracking-[0.25em] text-slate-900">
-                  {reportCardData.branding.schoolName}
-                </h1>
-                {reportCardData.branding.address ? (
-                  <p className="text-sm text-slate-700">{reportCardData.branding.address}</p>
-                ) : null}
-                <div className="mt-2 flex flex-wrap justify-center gap-4 text-[11px] font-medium uppercase tracking-[0.25em] text-slate-600 lg:justify-start">
-                  {reportCardData.branding.educationZone ? (
-                    <span>Education Zone: {reportCardData.branding.educationZone}</span>
-                  ) : null}
-                  {reportCardData.branding.councilArea ? (
-                    <span>L.G.A: {reportCardData.branding.councilArea}</span>
-                  ) : null}
+              <div className="flex flex-col items-center gap-2 text-center md:items-end md:text-right">
+                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white">
+                  {studentPhoto ? (
+                    <img
+                      src={studentPhoto}
+                      alt={`${reportCardData.student.name} passport`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-500">Passport</div>
+                  )}
                 </div>
-                <div className="mt-1 flex flex-wrap justify-center gap-3 text-[11px] text-slate-600 lg:justify-start">
-                  {reportCardData.branding.contactPhone ? (
-                    <span>Tel: {reportCardData.branding.contactPhone}</span>
-                  ) : null}
-                  {reportCardData.branding.contactEmail ? (
-                    <span>Email: {reportCardData.branding.contactEmail}</span>
-                  ) : null}
+                <div className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-600">
+                  {reportCardData.student.term} • {reportCardData.student.session}
                 </div>
-                <p className="mt-4 text-sm font-semibold uppercase tracking-[0.35em] text-slate-800">
-                  {reportCardData.student.term} • {reportCardData.student.session} Academic Session
-                </p>
               </div>
             </div>
-            <div className="flex flex-col items-end gap-2">
-              <div className="h-24 w-24 overflow-hidden rounded-lg border border-slate-300 bg-white">
-                {studentPhoto ? (
-                  <img
-                    src={studentPhoto}
-                    alt={`${reportCardData.student.name} passport`}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">
-                    Passport
-                  </div>
-                )}
-              </div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-600">
-                Student Passport
-              </p>
-            </div>
-          </div>
-        </header>
+          </header>
 
-        <section className="border-b border-slate-200 px-8 py-5">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-700">Learner Information</h2>
-          <div className="mt-4 grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-3">
+        <section className="rounded-lg border border-slate-200 px-5 py-4">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">Learner Information</h2>
+          <div className="mt-3 grid gap-3 text-xs text-slate-700 md:grid-cols-2 xl:grid-cols-3">
             {learnerDetails.map((detail) => (
               <div key={detail.label} className="space-y-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{detail.label}</p>
-                <div className="rounded-lg border border-slate-300 px-3 py-2 font-medium text-slate-800">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{detail.label}</p>
+                <div className="rounded-md border border-slate-200 px-3 py-2 font-semibold text-slate-800">
                   {detail.value}
                 </div>
                 {detail.helper ? (
-                  <p className="text-[10px] font-medium uppercase tracking-[0.25em] text-slate-500">
-                    {detail.helper}
-                  </p>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500">{detail.helper}</p>
                 ) : null}
               </div>
             ))}
           </div>
         </section>
 
-        <section className="border-b border-slate-200 px-8 py-5">
-          <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-            <div className="overflow-hidden rounded-2xl border border-slate-300">
-              <div className="bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+        <section className="rounded-lg border border-slate-200 px-5 py-4">
+          <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              <div className="bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
                 Performance Summary
               </div>
-              <table className="w-full text-sm">
+              <table className="w-full text-xs text-slate-700">
                 <tbody>
                   {summaryItems.map((item) => (
                     <tr key={item.label} className="border-b border-slate-200 last:border-b-0">
-                      <th className="w-1/2 bg-slate-50 px-4 py-2 text-left text-[11px] uppercase tracking-[0.25em] text-slate-600">
+                      <th className="w-1/2 bg-slate-50 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-slate-600">
                         {item.label}
                       </th>
-                      <td className="px-4 py-2 font-semibold text-slate-800">
+                      <td className="px-3 py-2 font-semibold text-slate-800">
                         {item.value}
                         {item.helper ? (
-                          <span className="ml-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+                          <span className="ml-2 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
                             {item.helper}
                           </span>
                         ) : null}
@@ -858,52 +855,52 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                 </tbody>
               </table>
             </div>
-            <div className="space-y-4">
-              <div className="overflow-hidden rounded-2xl border border-slate-300">
-                <div className="bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+            <div className="space-y-3">
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <div className="bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
                   Attendance Record
                 </div>
-                <table className="w-full text-sm">
+                <table className="w-full text-xs text-slate-700">
                   <tbody>
                     <tr className="border-b border-slate-200">
-                      <th className="bg-slate-50 px-4 py-2 text-left text-[11px] uppercase tracking-[0.25em] text-slate-600">
+                      <th className="bg-slate-50 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-slate-600">
                         Days Present
                       </th>
-                      <td className="px-4 py-2 font-semibold text-slate-800">{reportCardData.attendance.present}</td>
+                      <td className="px-3 py-2 font-semibold text-slate-800">{reportCardData.attendance.present}</td>
                     </tr>
                     <tr className="border-b border-slate-200">
-                      <th className="bg-slate-50 px-4 py-2 text-left text-[11px] uppercase tracking-[0.25em] text-slate-600">
+                      <th className="bg-slate-50 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-slate-600">
                         Days Absent
                       </th>
-                      <td className="px-4 py-2 font-semibold text-slate-800">{reportCardData.attendance.absent}</td>
+                      <td className="px-3 py-2 font-semibold text-slate-800">{reportCardData.attendance.absent}</td>
                     </tr>
                     <tr className="border-b border-slate-200">
-                      <th className="bg-slate-50 px-4 py-2 text-left text-[11px] uppercase tracking-[0.25em] text-slate-600">
+                      <th className="bg-slate-50 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-slate-600">
                         Total Days
                       </th>
-                      <td className="px-4 py-2 font-semibold text-slate-800">{reportCardData.attendance.total}</td>
+                      <td className="px-3 py-2 font-semibold text-slate-800">{reportCardData.attendance.total}</td>
                     </tr>
                     <tr>
-                      <th className="bg-slate-50 px-4 py-2 text-left text-[11px] uppercase tracking-[0.25em] text-slate-600">
+                      <th className="bg-slate-50 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-slate-600">
                         Attendance %
                       </th>
-                      <td className="px-4 py-2 font-semibold text-slate-800">{reportCardData.attendance.percentage}%</td>
+                      <td className="px-3 py-2 font-semibold text-slate-800">{reportCardData.attendance.percentage}%</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-              <div className="overflow-hidden rounded-2xl border border-slate-300">
-                <div className="bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <div className="bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
                   Class Overview
                 </div>
-                <table className="w-full text-sm">
+                <table className="w-full text-xs text-slate-700">
                   <tbody>
                     {classSummaryItems.map((item) => (
                       <tr key={item.label} className="border-b border-slate-200 last:border-b-0">
-                        <th className="bg-slate-50 px-4 py-2 text-left text-[11px] uppercase tracking-[0.25em] text-slate-600">
+                        <th className="bg-slate-50 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-slate-600">
                           {item.label}
                         </th>
-                        <td className="px-4 py-2 font-semibold text-slate-800">{item.value}</td>
+                        <td className="px-3 py-2 font-semibold text-slate-800">{item.value}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -913,19 +910,17 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           </div>
         </section>
 
-        <section className="border-b border-slate-200 px-8 py-5">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-700">
-            Academic Performance
-          </h2>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full border border-slate-400 text-xs md:text-sm">
-              <thead className="bg-slate-100 text-[11px] uppercase tracking-[0.2em] text-slate-700">
+        <section className="rounded-lg border border-slate-200 px-5 py-4">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">Academic Performance</h2>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full border border-slate-300 text-[12px] text-slate-700">
+              <thead className="bg-slate-100 text-[11px] uppercase tracking-[0.18em] text-slate-700">
                 <tr>
-                  <th className="border border-slate-300 px-3 py-2 text-left">Subjects</th>
-                  <th className="border border-slate-300 px-3 py-2 text-center">1st C.A. (10)</th>
-                  <th className="border border-slate-300 px-3 py-2 text-center">2nd C.A. (10)</th>
+                  <th className="border border-slate-300 px-3 py-2 text-left">Subject</th>
+                  <th className="border border-slate-300 px-3 py-2 text-center">1st C.A (10)</th>
+                  <th className="border border-slate-300 px-3 py-2 text-center">2nd C.A (10)</th>
                   <th className="border border-slate-300 px-3 py-2 text-center">Assignments (20)</th>
-                  <th className="border border-slate-300 px-3 py-2 text-center">C.A. Total (40)</th>
+                  <th className="border border-slate-300 px-3 py-2 text-center">C.A Total (40)</th>
                   <th className="border border-slate-300 px-3 py-2 text-center">Exam (60)</th>
                   <th className="border border-slate-300 px-3 py-2 text-center">Grand Total (100)</th>
                   <th className="border border-slate-300 px-3 py-2 text-center">Grade</th>
@@ -938,19 +933,19 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                   reportCardData.subjects.map((subject, index) => (
                     <tr key={`${subject.name}-${index}`} className="odd:bg-white even:bg-slate-50">
                       <td className="border border-slate-300 px-3 py-2 font-semibold text-slate-900">{subject.name}</td>
-                      <td className="border border-slate-300 px-3 py-2 text-center font-medium text-slate-800">{subject.ca1}</td>
-                      <td className="border border-slate-300 px-3 py-2 text-center font-medium text-slate-800">{subject.ca2}</td>
-                      <td className="border border-slate-300 px-3 py-2 text-center font-medium text-slate-800">{subject.assignment}</td>
+                      <td className="border border-slate-300 px-3 py-2 text-center">{subject.ca1}</td>
+                      <td className="border border-slate-300 px-3 py-2 text-center">{subject.ca2}</td>
+                      <td className="border border-slate-300 px-3 py-2 text-center">{subject.assignment}</td>
                       <td className="border border-slate-300 px-3 py-2 text-center font-semibold text-slate-900">{subject.caTotal}</td>
-                      <td className="border border-slate-300 px-3 py-2 text-center font-medium text-slate-800">{subject.exam}</td>
-                      <td className="border border-slate-300 px-3 py-2 text-center font-bold text-slate-900">{subject.total}</td>
+                      <td className="border border-slate-300 px-3 py-2 text-center">{subject.exam}</td>
+                      <td className="border border-slate-300 px-3 py-2 text-center font-semibold text-slate-900">{subject.total}</td>
                       <td className="border border-slate-300 px-3 py-2 text-center font-bold text-emerald-700">
                         {subject.grade || deriveGradeFromScore(subject.total)}
                       </td>
                       <td className="border border-slate-300 px-3 py-2 text-center font-semibold text-slate-800">
                         {subject.position ?? "—"}
                       </td>
-                      <td className="border border-slate-300 px-3 py-2 text-left text-xs text-slate-700">
+                      <td className="border border-slate-300 px-3 py-2 text-left text-[11px] text-slate-600">
                         {subject.remarks || "—"}
                       </td>
                     </tr>
@@ -965,7 +960,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
               </tbody>
               <tfoot>
                 <tr className="bg-slate-100 font-semibold text-slate-900">
-                  <td className="border border-slate-300 px-3 py-2 text-center uppercase tracking-[0.2em]">Totals</td>
+                  <td className="border border-slate-300 px-3 py-2 text-center uppercase tracking-[0.18em]">Totals</td>
                   <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.ca1 ?? "—"}</td>
                   <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.ca2 ?? "—"}</td>
                   <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.assignment ?? "—"}</td>
@@ -979,23 +974,21 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
               </tfoot>
             </table>
           </div>
-          <p className="mt-3 text-xs text-slate-600">
-            Continuous assessments contribute 40% of the total score (First & Second C.A plus Assignments), while examinations account for 60%.
+          <p className="mt-3 text-[11px] text-slate-600">
+            Continuous assessments contribute 40% of the total score while examinations account for 60%.
           </p>
         </section>
 
-        <section className="border-b border-slate-200 px-8 py-5">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-700">
-            Whole Child Development
-          </h2>
-          <div className="mt-4 grid gap-6 lg:grid-cols-2">
-            <div className="overflow-hidden rounded-2xl border border-slate-300">
-              <div className="bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+        <section className="rounded-lg border border-slate-200 px-5 py-4">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">Whole Child Development</h2>
+          <div className="mt-3 grid gap-4 lg:grid-cols-2">
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              <div className="bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
                 Affective (Behavioural) Domain
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px] text-slate-700">
-                  <thead className="bg-slate-50 uppercase tracking-[0.25em] text-slate-600">
+                  <thead className="bg-slate-50 uppercase tracking-[0.18em] text-slate-600">
                     <tr>
                       <th className="border border-slate-300 px-3 py-2 text-left">Traits</th>
                       {BEHAVIORAL_RATING_COLUMNS.map((column) => (
@@ -1030,13 +1023,13 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                 </table>
               </div>
             </div>
-            <div className="overflow-hidden rounded-2xl border border-slate-300">
-              <div className="bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              <div className="bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
                 Psychomotor Skills
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px] text-slate-700">
-                  <thead className="bg-slate-50 uppercase tracking-[0.25em] text-slate-600">
+                  <thead className="bg-slate-50 uppercase tracking-[0.18em] text-slate-600">
                     <tr>
                       <th className="border border-slate-300 px-3 py-2 text-left">Skills</th>
                       {BEHAVIORAL_RATING_COLUMNS.map((column) => (
@@ -1072,8 +1065,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
               </div>
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap items-center gap-4 rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-[11px] text-slate-600">
-            <span className="font-semibold uppercase tracking-[0.3em] text-slate-700">Rating Legend:</span>
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-slate-300 px-4 py-3 text-[11px] text-slate-600">
+            <span className="font-semibold uppercase tracking-[0.2em] text-slate-700">Rating Legend:</span>
             {BEHAVIORAL_RATING_COLUMNS.map((column) => (
               <span key={column.key} className="flex items-center gap-2 font-medium">
                 <span className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-500 text-[9px] font-bold text-slate-700">
@@ -1085,76 +1078,70 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           </div>
         </section>
 
-        <section className="border-b border-slate-200 px-8 py-5">
-          <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-slate-300 bg-slate-50/40 px-5 py-4">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
-                  Class Teacher&apos;s Remark
-                </h3>
-                <p className="mt-3 text-sm leading-relaxed text-slate-800">
+        <section className="rounded-lg border border-slate-200 px-5 py-4">
+          <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+            <div className="space-y-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Class Teacher&apos;s Remark</h3>
+                <p className="mt-2 text-sm leading-snug text-slate-800">
                   {reportCardData.remarks.classTeacher || "Class teacher remark pending."}
                 </p>
               </div>
-              <div className="rounded-2xl border border-slate-300 bg-slate-50/40 px-5 py-4">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
-                  Head Teacher&apos;s Remark & Signature
-                </h3>
-                <p className="mt-3 text-sm italic text-slate-800">{reportCardData.remarks.headTeacher}</p>
-                <div className="mt-6 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+              <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Head Teacher&apos;s Remark &amp; Signature</h3>
+                <p className="mt-2 text-sm italic text-slate-800">{reportCardData.remarks.headTeacher}</p>
+                <div className="mt-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
                   {reportCardData.branding.signature ? (
                     <img
                       src={reportCardData.branding.signature}
                       alt={`${reportCardData.branding.headmasterName} signature`}
-                      className="h-16 w-48 object-contain"
+                      className="h-14 w-44 object-contain"
                     />
                   ) : (
-                    <div className="h-12 w-48 border-b-2 border-dashed border-slate-400"></div>
+                    <div className="h-10 w-44 border-b border-dashed border-slate-400"></div>
                   )}
                   <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-700">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">
                       {reportCardData.branding.headmasterName}
                     </p>
-                    <p className="text-[11px] font-medium uppercase tracking-[0.25em] text-slate-500">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
                       Head Teacher / Principal
                     </p>
                   </div>
                 </div>
               </div>
             </div>
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-slate-300 px-5 py-4">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">Term Information</h3>
-                <dl className="mt-3 space-y-3 text-sm text-slate-800">
-                  <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-600">Vacation Date</dt>
+            <div className="space-y-3">
+              <div className="rounded-lg border border-slate-200 px-4 py-3">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Term Information</h3>
+                <dl className="mt-2 space-y-2 text-sm text-slate-800">
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Vacation Date</dt>
                     <dd>{formatDateDisplay(reportCardData.termInfo.vacationEnds) ?? "________________"}</dd>
                   </div>
-                  <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-600">Resumption Date</dt>
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Resumption Date</dt>
                     <dd>{formatDateDisplay(reportCardData.termInfo.nextTermBegins) ?? "________________"}</dd>
                   </div>
-                  <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-600">Next Term Fees</dt>
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Next Term Fees</dt>
                     <dd>{reportCardData.termInfo.nextTermFees || "________________"}</dd>
                   </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <dt className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-600">Outstanding Fees</dt>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Outstanding Fees</dt>
                     <dd>{reportCardData.termInfo.feesBalance || "________________"}</dd>
                   </div>
                 </dl>
               </div>
-              <div className="rounded-2xl border border-slate-300 px-5 py-4">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
-                  Parent / Guardian Acknowledgement
-                </h3>
-                <div className="mt-6 space-y-6 text-xs uppercase tracking-[0.3em] text-slate-500">
+              <div className="rounded-lg border border-slate-200 px-4 py-3">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Parent / Guardian Acknowledgement</h3>
+                <div className="mt-4 space-y-5 text-xs uppercase tracking-[0.18em] text-slate-500">
                   <div>
-                    <div className="h-10 border-b border-slate-400"></div>
+                    <div className="h-8 border-b border-slate-400"></div>
                     <p className="mt-2">Signature</p>
                   </div>
                   <div>
-                    <div className="h-10 border-b border-slate-400"></div>
+                    <div className="h-8 border-b border-slate-400"></div>
                     <p className="mt-2">Date</p>
                   </div>
                 </div>
@@ -1163,19 +1150,19 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           </div>
         </section>
 
-        <section className="px-8 py-5">
-          <div className="overflow-hidden rounded-2xl border border-slate-300">
-            <div className="bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+        <section className="rounded-lg border border-slate-200 px-5 py-4">
+          <div className="overflow-hidden rounded-lg border border-slate-200">
+            <div className="bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
               Grading Scale
             </div>
-            <div className="grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="grid gap-3 p-4 sm:grid-cols-3 md:grid-cols-4">
               {GRADING_SCALE.map((item) => (
                 <div
                   key={item.grade}
-                  className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-center"
+                  className="flex flex-col items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-center"
                 >
-                  <span className="text-2xl font-black text-emerald-700">{item.grade}</span>
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-600">{item.range}</span>
+                  <span className="text-xl font-bold text-emerald-700">{item.grade}</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">{item.range}</span>
                   <span className="mt-1 text-xs text-slate-600">{item.meaning}</span>
                 </div>
               ))}
@@ -1183,7 +1170,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           </div>
         </section>
 
-        <footer className="border-t border-slate-300 bg-slate-50 px-8 py-4 text-center text-[11px] text-slate-600 print:bg-white">
+        <footer className="rounded-lg border border-slate-200 bg-slate-50 px-5 py-4 text-center text-[11px] text-slate-600 print:bg-white">
           <p>
             Report generated for {reportCardData.student.name}. For enquiries, contact {reportCardData.branding.contactPhone ||
               reportCardData.branding.contactEmail || "the school"}.
