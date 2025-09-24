@@ -17,7 +17,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { BookOpen, Calendar, FileText, User, Clock, Trophy, Upload, CheckCircle } from "lucide-react"
+import {
+  BookOpen,
+  Calendar,
+  FileText,
+  User,
+  Clock,
+  Trophy,
+  Upload,
+  CheckCircle,
+  AlertCircle,
+  Award,
+} from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
 import { TutorialLink } from "@/components/tutorial-link"
@@ -25,6 +36,7 @@ import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
 import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
 import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
+import { CONTINUOUS_ASSESSMENT_MAXIMUMS } from "@/lib/grade-utils"
 
 interface TimetableSlotSummary {
   id: string
@@ -105,6 +117,8 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const [upcomingEvents, setUpcomingEvents] = useState<IdentifiedRecord[]>([])
   const [studentProfile, setStudentProfile] = useState(student)
   const [loading, setLoading] = useState(true)
+
+  const assignmentMaximum = CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment ?? 20
 
   useEffect(() => {
     const loadStudentData = async () => {
@@ -250,6 +264,93 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     }
   }
 
+  const handleDownloadAssignmentResource = (assignment: IdentifiedRecord) => {
+    const resourceUrl = typeof assignment.resourceUrl === "string" ? assignment.resourceUrl : ""
+    if (!resourceUrl) {
+      return
+    }
+
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return
+    }
+
+    const link = document.createElement("a")
+    link.href = resourceUrl
+    link.download =
+      typeof assignment.resourceName === "string" && assignment.resourceName.length > 0
+        ? assignment.resourceName
+        : `${typeof assignment.title === "string" ? assignment.title : "assignment"}.resource`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const formatAssignmentDate = (value: unknown) => {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return "--"
+    }
+
+    try {
+      return new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short" }).format(new Date(value))
+    } catch (error) {
+      return value
+    }
+  }
+
+  const describeDueDate = (value: unknown) => {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return "No due date"
+    }
+
+    const dueDate = new Date(value)
+    if (Number.isNaN(dueDate.getTime())) {
+      return value
+    }
+
+    const oneDay = 1000 * 60 * 60 * 24
+    const diff = Math.ceil((dueDate.getTime() - Date.now()) / oneDay)
+
+    if (diff > 1) return `Due in ${diff} days`
+    if (diff === 1) return "Due tomorrow"
+    if (diff === 0) return "Due today"
+    return `Overdue by ${Math.abs(diff)} day${Math.abs(diff) === 1 ? "" : "s"}`
+  }
+
+  const getAssignmentStatusMeta = (status: unknown) => {
+    const normalized = typeof status === "string" ? status : "sent"
+
+    switch (normalized) {
+      case "graded":
+        return {
+          label: "Graded",
+          badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+          accent: "from-emerald-100/80",
+          icon: <Award className="h-4 w-4 text-emerald-500" />,
+        }
+      case "submitted":
+        return {
+          label: "Submitted",
+          badgeClass: "border-blue-200 bg-blue-50 text-blue-700",
+          accent: "from-blue-100/80",
+          icon: <Upload className="h-4 w-4 text-blue-500" />,
+        }
+      case "overdue":
+        return {
+          label: "Overdue",
+          badgeClass: "border-red-200 bg-red-50 text-red-700",
+          accent: "from-red-100/80",
+          icon: <AlertCircle className="h-4 w-4 text-red-500" />,
+        }
+      default:
+        return {
+          label: "Awaiting submission",
+          badgeClass: "border-amber-200 bg-amber-50 text-amber-700",
+          accent: "from-amber-100/80",
+          icon: <Clock className="h-4 w-4 text-amber-500" />,
+        }
+    }
+  }
+
   const handleSubmitAssignment = async () => {
     if (!selectedAssignment) return
 
@@ -278,28 +379,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       setSubmissionForm({ file: null, comment: "" })
     } catch (error) {
       logger.error("Failed to submit assignment", { error })
-    }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "submitted":
-        return "default"
-      case "sent":
-        return "secondary"
-      default:
-        return "outline"
-    }
-  }
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "submitted":
-        return <CheckCircle className="w-4 h-4 text-green-600" />
-      case "sent":
-        return <Clock className="w-4 h-4 text-orange-600" />
-      default:
-        return <FileText className="w-4 h-4 text-gray-600" />
     }
   }
 
@@ -527,60 +606,112 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
               <CardDescription>Track your assignments and submissions</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {assignments.map((assignment) => (
-                  <div key={assignment.id} className="p-4 border rounded-lg">
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-2">
-                          {getStatusIcon(assignment.status)}
-                          <h3 className="font-medium">{assignment.title}</h3>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          {assignment.subject} - {assignment.teacher}
-                        </p>
-                        <p className="text-sm text-gray-500">Due: {assignment.dueDate}</p>
-                        <p className="text-sm text-gray-700 mt-1">{assignment.description}</p>
-                        {assignment.submittedAt && (
-                          <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
-                            <p className="text-sm text-green-700 font-medium">✓ Submitted: {assignment.submittedAt}</p>
-                            {assignment.submittedFile && (
-                              <p className="text-xs text-green-600">File: {assignment.submittedFile}</p>
-                            )}
-                            {assignment.submittedComment && (
-                              <p className="text-xs text-green-600">Comment: {assignment.submittedComment}</p>
-                            )}
+              <div className="space-y-5">
+                {assignments.map((assignment) => {
+                  const statusMeta = getAssignmentStatusMeta(assignment.status)
+                  const submittedAt = typeof assignment.submittedAt === "string" ? assignment.submittedAt : ""
+                  const grade = typeof assignment.grade === "string" ? assignment.grade : ""
+                  const score =
+                    typeof assignment.score === "number"
+                      ? Math.round(assignment.score * 100) / 100
+                      : null
+                  const canSubmit = ["sent", "overdue"].includes(
+                    typeof assignment.status === "string" ? assignment.status : "sent",
+                  )
+
+                  return (
+                    <div
+                      key={assignment.id}
+                      className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
+                    >
+                      <div
+                        className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${statusMeta.accent} via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100`}
+                      />
+                      <div className="relative z-10 space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 text-slate-800">
+                            {statusMeta.icon}
+                            <h3 className="text-lg font-semibold md:text-xl">
+                              {typeof assignment.title === "string" ? assignment.title : "Assignment"}
+                            </h3>
                           </div>
-                        )}
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Badge variant={getStatusColor(assignment.status)}>
-                          {assignment.status === "sent"
-                            ? "Sent"
-                            : assignment.status === "submitted"
-                              ? "Submitted"
-                              : assignment.status}
-                        </Badge>
+                          <Badge className={`${statusMeta.badgeClass} uppercase`}>{statusMeta.label}</Badge>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                          <span className="inline-flex items-center gap-1">
+                            <BookOpen className="h-3.5 w-3.5 text-emerald-500" />
+                            {typeof assignment.subject === "string" ? assignment.subject : "Subject"}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <User className="h-3.5 w-3.5 text-slate-500" />
+                            {typeof assignment.teacher === "string" ? assignment.teacher : "Teacher"}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Calendar className="h-3.5 w-3.5 text-amber-500" /> Due {formatAssignmentDate(assignment.dueDate)}
+                          </span>
+                          <span className="text-slate-500">{describeDueDate(assignment.dueDate)}</span>
+                        </div>
+                        <p className="text-sm text-slate-700">
+                          {typeof assignment.description === "string" && assignment.description.length > 0
+                            ? assignment.description
+                            : "No description provided for this assignment."}
+                        </p>
+                        {submittedAt ? (
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-emerald-800">
+                            <p className="flex items-center gap-2 font-medium">
+                              <CheckCircle className="h-4 w-4 text-emerald-600" /> Submitted on {formatAssignmentDate(submittedAt)}
+                            </p>
+                            {typeof assignment.submittedFile === "string" && assignment.submittedFile.length > 0 ? (
+                              <p className="mt-1 text-emerald-700/80">File: {assignment.submittedFile}</p>
+                            ) : null}
+                            {typeof assignment.submittedComment === "string" && assignment.submittedComment.length > 0 ? (
+                              <p className="mt-1 italic text-emerald-700/80">“{assignment.submittedComment}”</p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {grade || score !== null ? (
+                          <div className="rounded-xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-800">
+                            <p className="flex items-center gap-2 font-medium">
+                              <Trophy className="h-4 w-4 text-purple-600" />
+                              Score: {score ?? "--"} / {assignmentMaximum}
+                              {grade ? ` • Grade ${grade}` : ""}
+                            </p>
+                          </div>
+                        ) : null}
+                        {typeof assignment.resourceName === "string" && assignment.resourceName.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadAssignmentResource(assignment)}
+                            className="inline-flex items-center gap-2 text-xs font-medium text-emerald-700 transition hover:text-emerald-900"
+                          >
+                            <Download className="h-3.5 w-3.5" /> {assignment.resourceName}
+                          </button>
+                        ) : null}
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          {canSubmit ? (
+                            <Button
+                              size="sm"
+                              className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+                              onClick={() => {
+                                setSelectedAssignment(assignment)
+                                setShowSubmitConfirm(true)
+                              }}
+                            >
+                              <Upload className="w-4 h-4 mr-1" /> Submit Assignment
+                            </Button>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              {grade ? "Keep up the great work!" : "You've already submitted this assignment."}
+                            </p>
+                          )}
+                          {typeof assignment.status === "string" && assignment.status === "overdue" ? (
+                            <p className="text-xs font-medium text-red-600">This assignment is overdue — submit as soon as possible.</p>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
-
-                    {assignment.status === "sent" && (
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          className="bg-[#2d682d] hover:bg-[#2d682d]/90"
-                          onClick={() => {
-                            setSelectedAssignment(assignment)
-                            setShowSubmitConfirm(true)
-                          }}
-                        >
-                          <Upload className="w-4 h-4 mr-1" />
-                          Submit Assignment
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </CardContent>
           </Card>

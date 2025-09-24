@@ -42,6 +42,7 @@ interface AssignmentSubmissionRecord {
   files: { id: string; name: string }[]
   comment?: string | null
   grade?: string | null
+  score?: number | null
 }
 
 interface AssignmentRecord {
@@ -136,6 +137,8 @@ interface CreateAssignmentSubmissionInput {
   status?: "pending" | "submitted" | "graded"
   comment?: string | null
   submittedAt?: string
+  grade?: string | null
+  score?: number | null
 }
 
 interface TimetableSlot {
@@ -1550,7 +1553,14 @@ class DatabaseManager {
             : []
           const isAssigned = assignedStudents.length === 0 || assignedStudents.includes(filters.studentId)
 
-          return isAssigned
+          if (!isAssigned) {
+            return false
+          }
+
+          // Hide drafts from students until the teacher sends them out
+          if (assignment.status === "draft") {
+            return false
+          }
         }
 
         return true
@@ -1560,14 +1570,26 @@ class DatabaseManager {
           ? assignment.submissions.find((record) => record.studentId === filters.studentId)
           : undefined
 
+        const baseStatus = submission ? submission.status : assignment.status
+        let status: AssignmentStatus = baseStatus
+
+        if (!submission && assignment.status === "sent") {
+          const dueDate = assignment.dueDate ? new Date(assignment.dueDate) : null
+          if (dueDate && !Number.isNaN(dueDate.getTime()) && dueDate.getTime() < Date.now()) {
+            status = "overdue"
+          }
+        }
+
         return {
           ...assignment,
           teacher: assignment.teacherName ?? assignment.teacherId ?? "Subject Teacher",
           class: assignment.className ?? assignment.classId,
-          status: submission ? (submission.status === "submitted" ? "submitted" : submission.status) : assignment.status,
+          status: submission ? (submission.status === "submitted" ? "submitted" : submission.status) : status,
           submittedAt: submission?.submittedAt ?? null,
           submittedFile: submission?.files?.[0]?.name ?? null,
           submittedComment: submission?.comment ?? "",
+          grade: submission?.grade ?? null,
+          score: submission?.score ?? null,
         }
       })
   }
@@ -1586,7 +1608,7 @@ class DatabaseManager {
       teacherId: payload.teacherId ?? null,
       teacherName: payload.teacherName ?? null,
       dueDate: payload.dueDate,
-      status: payload.status ?? "sent",
+      status: payload.status ?? "draft",
       assignedStudentIds: payload.assignedStudentIds ?? [],
       submissions: [],
       resourceName: payload.resourceName ?? null,
@@ -1601,6 +1623,125 @@ class DatabaseManager {
     this.persistAssignments(assignments)
     this.triggerEvent("assignmentsUpdate", record)
     return record
+  }
+
+  async updateAssignment(
+    assignmentId: string,
+    updates: Partial<Omit<CreateAssignmentInput, "assignedStudentIds">> & {
+      assignedStudentIds?: string[]
+    },
+  ): Promise<AssignmentRecord> {
+    const assignments = this.ensureAssignmentsStorage()
+    const index = assignments.findIndex((item) => item.id === assignmentId)
+
+    if (index === -1) {
+      throw new Error("Assignment not found")
+    }
+
+    const existing = assignments[index]
+    const timestamp = new Date().toISOString()
+
+    const normalised: AssignmentRecord = {
+      ...existing,
+      title: updates.title ?? existing.title,
+      description: updates.description ?? existing.description,
+      subject: updates.subject ?? existing.subject,
+      classId: updates.classId ?? existing.classId ?? null,
+      className: updates.className ?? existing.className ?? null,
+      teacherId: updates.teacherId ?? existing.teacherId ?? null,
+      teacherName: updates.teacherName ?? existing.teacherName ?? null,
+      dueDate: updates.dueDate ?? existing.dueDate,
+      status: updates.status ?? existing.status,
+      assignedStudentIds: Array.isArray(updates.assignedStudentIds)
+        ? updates.assignedStudentIds
+        : existing.assignedStudentIds,
+      resourceName: updates.resourceName ?? existing.resourceName ?? null,
+      resourceSize:
+        typeof updates.resourceSize === "number"
+          ? updates.resourceSize
+          : typeof existing.resourceSize === "number"
+            ? existing.resourceSize
+            : null,
+      resourceType: updates.resourceType ?? existing.resourceType ?? null,
+      resourceUrl: updates.resourceUrl ?? existing.resourceUrl ?? null,
+      updatedAt: timestamp,
+    }
+
+    assignments[index] = normalised
+    this.persistAssignments(assignments)
+    this.triggerEvent("assignmentsUpdate", normalised)
+    return normalised
+  }
+
+  async updateAssignmentStatus(assignmentId: string, status: AssignmentStatus): Promise<AssignmentRecord> {
+    return this.updateAssignment(assignmentId, { status })
+  }
+
+  async deleteAssignment(assignmentId: string): Promise<boolean> {
+    const assignments = this.ensureAssignmentsStorage()
+    const index = assignments.findIndex((item) => item.id === assignmentId)
+
+    if (index === -1) {
+      return false
+    }
+
+    const [removed] = assignments.splice(index, 1)
+    this.persistAssignments(assignments)
+    this.triggerEvent("assignmentsUpdate", { id: removed.id, deleted: true })
+    return true
+  }
+
+  async gradeAssignmentSubmission(
+    assignmentId: string,
+    studentId: string,
+    updates: { grade?: string | null; score?: number | null; comment?: string | null },
+  ): Promise<AssignmentSubmissionRecord> {
+    const assignments = this.ensureAssignmentsStorage()
+    const assignment = assignments.find((item) => item.id === assignmentId)
+
+    if (!assignment) {
+      throw new Error("Assignment not found")
+    }
+
+    const submissions = assignment.submissions ?? []
+    const submissionIndex = submissions.findIndex((record) => record.studentId === studentId)
+
+    if (submissionIndex === -1) {
+      throw new Error("Submission not found")
+    }
+
+    const currentSubmission = submissions[submissionIndex]
+    const gradedSubmission: AssignmentSubmissionRecord = {
+      ...currentSubmission,
+      comment:
+        updates.comment !== undefined ? updates.comment : currentSubmission.comment ?? null,
+      grade: updates.grade !== undefined ? updates.grade : currentSubmission.grade ?? null,
+      score:
+        updates.score !== undefined
+          ? updates.score
+          : typeof currentSubmission.score === "number"
+            ? currentSubmission.score
+            : null,
+      status: "graded",
+    }
+
+    submissions[submissionIndex] = gradedSubmission
+    assignment.submissions = submissions
+    assignment.updatedAt = new Date().toISOString()
+    this.persistAssignments(assignments)
+
+    this.triggerEvent("assignmentsUpdate", {
+      id: assignment.id,
+      studentId,
+      status: gradedSubmission.status,
+      submittedAt: gradedSubmission.submittedAt,
+      grade: gradedSubmission.grade ?? null,
+      score: gradedSubmission.score ?? null,
+      submittedFile: gradedSubmission.files[0]?.name ?? null,
+      submittedComment: gradedSubmission.comment ?? "",
+    })
+
+    return gradedSubmission
   }
 
   async getStudyMaterials(filters: StudyMaterialFilters = {}) {
@@ -1712,7 +1853,13 @@ class DatabaseManager {
       submittedAt: timestamp,
       files: normalisedFiles,
       comment: payload.comment ?? existingSubmission?.comment ?? null,
-      grade: existingSubmission?.grade ?? null,
+      grade: payload.grade ?? existingSubmission?.grade ?? null,
+      score:
+        typeof payload.score === "number"
+          ? payload.score
+          : typeof existingSubmission?.score === "number"
+            ? existingSubmission.score
+            : null,
     }
 
     if (existingIndex >= 0) {
@@ -1732,6 +1879,8 @@ class DatabaseManager {
       submittedAt: submissionRecord.submittedAt,
       submittedFile: submissionRecord.files[0]?.name ?? null,
       submittedComment: submissionRecord.comment ?? "",
+      grade: submissionRecord.grade ?? null,
+      score: submissionRecord.score ?? null,
     }
 
     this.triggerEvent("assignmentsUpdate", eventPayload)
@@ -4593,6 +4742,8 @@ class DatabaseManager {
         submittedAt: submissionRecord.submittedAt,
         submittedFile: submissionRecord.files[0]?.name ?? submissionData.submittedFile ?? null,
         status: submissionRecord.status === "submitted" ? "submitted" : submissionRecord.status,
+        grade: submissionRecord.grade ?? submissionData.grade ?? null,
+        score: submissionRecord.score ?? submissionData.score ?? null,
       }
 
       if (legacyIndex >= 0) {
