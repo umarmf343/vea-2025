@@ -7,87 +7,13 @@ import {
   updateTimetableSlot,
 } from "@/lib/database"
 import { logger } from "@/lib/logger"
+import {
+  mapTimetableRecordToResponse,
+  normaliseTimeRangeLabel,
+  parseTimeRangeLabel,
+} from "@/lib/timetable"
 
 export const runtime = "nodejs"
-
-interface TimetableSlotResponse {
-  id: string
-  day: string
-  time: string
-  subject: string
-  teacher: string
-  location?: string | null
-  className: string
-}
-
-function to24Hour(time: string): string {
-  const trimmed = time.trim()
-  const match = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i)
-
-  if (!match) {
-    return trimmed
-  }
-
-  let hour = Number(match[1])
-  const minute = match[2]
-  const meridiem = match[3]?.toUpperCase()
-
-  if (meridiem === "PM" && hour !== 12) {
-    hour += 12
-  }
-
-  if (meridiem === "AM" && hour === 12) {
-    hour = 0
-  }
-
-  return `${hour.toString().padStart(2, "0")}:${minute}`
-}
-
-function to12Hour(time: string): string {
-  const [hourPart, minutePart = "00"] = time.split(":")
-  let hour = Number(hourPart)
-  const minute = minutePart.padStart(2, "0")
-  const meridiem = hour >= 12 ? "PM" : "AM"
-  hour = hour % 12 || 12
-  return `${hour}:${minute} ${meridiem}`
-}
-
-function parseTimeRange(range: string): { start: string; end: string } {
-  if (typeof range !== "string" || range.trim().length === 0) {
-    return { start: "08:00", end: "09:00" }
-  }
-
-  const [rawStart, rawEnd] = range.split("-").map((value) => value.trim())
-  return {
-    start: to24Hour(rawStart ?? "08:00"),
-    end: to24Hour(rawEnd ?? "09:00"),
-  }
-}
-
-function formatTimeRange(start: string, end: string): string {
-  return `${to12Hour(start)} - ${to12Hour(end)}`
-}
-
-function mapSlotToResponse(slot: {
-  id: string
-  className: string
-  day: string
-  startTime: string
-  endTime: string
-  subject: string
-  teacher: string
-  location?: string | null
-}): TimetableSlotResponse {
-  return {
-    id: slot.id,
-    className: slot.className,
-    day: slot.day,
-    subject: slot.subject,
-    teacher: slot.teacher,
-    location: slot.location ?? null,
-    time: formatTimeRange(slot.startTime, slot.endTime),
-  }
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -95,7 +21,7 @@ export async function GET(request: NextRequest) {
     const className = searchParams.get("className") ?? undefined
 
     const slots = await getTimetableSlots({ className: className ?? undefined })
-    const timetable = slots.map(mapSlotToResponse)
+    const timetable = slots.map(mapTimetableRecordToResponse)
 
     return NextResponse.json({ timetable })
   } catch (error) {
@@ -114,7 +40,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Class name and slot are required" }, { status: 400 })
     }
 
-    const { start, end } = parseTimeRange(String(slot.time ?? ""))
+    const timeInput = typeof slot.time === "string" ? slot.time : ""
+    const { start, end } = parseTimeRangeLabel(normaliseTimeRangeLabel(timeInput))
 
     const created = await createTimetableSlot({
       id: slot.id,
@@ -127,7 +54,7 @@ export async function POST(request: NextRequest) {
       location: typeof slot.location === "string" ? slot.location : null,
     })
 
-    return NextResponse.json({ slot: mapSlotToResponse(created) }, { status: 201 })
+    return NextResponse.json({ slot: mapTimetableRecordToResponse(created) }, { status: 201 })
   } catch (error) {
     logger.error("Failed to create timetable slot", { error })
     return NextResponse.json({ error: "Failed to create timetable slot" }, { status: 500 })
@@ -163,7 +90,7 @@ export async function PUT(request: NextRequest) {
     }
 
     if (typeof updates.time === "string") {
-      const { start, end } = parseTimeRange(updates.time)
+      const { start, end } = parseTimeRangeLabel(normaliseTimeRangeLabel(updates.time))
       updatePayload.startTime = start
       updatePayload.endTime = end
     } else {
@@ -180,7 +107,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Timetable slot not found" }, { status: 404 })
     }
 
-    return NextResponse.json({ slot: mapSlotToResponse(slot) })
+    return NextResponse.json({ slot: mapTimetableRecordToResponse(slot) })
   } catch (error) {
     logger.error("Failed to update timetable slot", { error })
     return NextResponse.json({ error: "Failed to update timetable slot" }, { status: 500 })

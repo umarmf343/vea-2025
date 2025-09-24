@@ -1,47 +1,39 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
-import { Clock, Edit, Loader2, Plus, Trash2 } from "lucide-react"
-import { logger } from "@/lib/logger"
+import { Clock, Coffee, Edit, Loader2, Plus, Send, Trash2 } from "lucide-react"
 
-interface TimetableSlot {
-  id: string
-  day: string
-  time: string
-  subject: string
-  teacher: string
-  location?: string | null
-}
+import { logger } from "@/lib/logger"
+import {
+  CLASS_TIMETABLE_PERIODS,
+  DEFAULT_TIMETABLE_PERIODS,
+  DAY_ORDER,
+  formatTimetablePeriodRange,
+  normalizeTimetableCollection,
+  normaliseTimeRangeLabel,
+  type TimetableSlotViewModel,
+} from "@/lib/timetable"
 
 interface ClassOption {
   value: string
   label: string
+  subjects: string[]
 }
 
-const DAY_OPTIONS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+type TimetableSlot = TimetableSlotViewModel
 
-const PERIOD_OPTIONS = [
-  "8:00 AM - 8:45 AM",
-  "8:45 AM - 9:30 AM",
-  "9:30 AM - 10:15 AM",
-  "10:15 AM - 11:00 AM",
-  "11:15 AM - 12:00 PM",
-  "12:00 PM - 12:45 PM",
-  "1:30 PM - 2:15 PM",
-  "2:15 PM - 3:00 PM",
-]
-
-const SUBJECT_OPTIONS = [
+const FALLBACK_SUBJECTS = [
   "Mathematics",
   "English Language",
   "Physics",
@@ -54,49 +46,33 @@ const SUBJECT_OPTIONS = [
   "Geography",
 ]
 
+const PERIOD_SELECT_OPTIONS = CLASS_TIMETABLE_PERIODS.map((period) => {
+  const range = formatTimetablePeriodRange(period)
+  return { id: period.id, value: range, label: `${period.label} • ${range}` }
+})
+
 export default function TimetableManagement() {
   const { toast } = useToast()
+
   const [classOptions, setClassOptions] = useState<ClassOption[]>([])
+  const [classSubjects, setClassSubjects] = useState<Map<string, string[]>>(new Map())
   const [selectedClass, setSelectedClass] = useState<string>("")
-  const [selectedDay, setSelectedDay] = useState<string>(DAY_OPTIONS[0])
+  const [selectedDay, setSelectedDay] = useState<string>(DAY_ORDER[0])
   const [timetableSlots, setTimetableSlots] = useState<TimetableSlot[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isSending, setIsSending] = useState(false)
 
-  const [dialogState, setDialogState] = useState<{ mode: "create" | "edit"; slot?: TimetableSlot } | null>(null)
+  const [dialogState, setDialogState] = useState<
+    { mode: "create" | "edit"; slot?: TimetableSlot; defaultTime?: string } | null
+  >(null)
   const [slotForm, setSlotForm] = useState({
-    day: DAY_OPTIONS[0],
-    time: PERIOD_OPTIONS[0],
-    subject: SUBJECT_OPTIONS[0],
+    day: DAY_ORDER[0],
+    time: PERIOD_SELECT_OPTIONS[0]?.value ?? normaliseTimeRangeLabel(""),
+    subject: FALLBACK_SUBJECTS[0],
     teacher: "",
     location: "",
   })
-  const [isSaving, setIsSaving] = useState(false)
-
-  const getStartMinutes = useCallback((time: string) => {
-    if (!time) {
-      return 0
-    }
-
-    const [start] = time.split("-").map((value) => value.trim())
-    const match = start.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-    if (!match) {
-      return 0
-    }
-
-    let hour = Number(match[1])
-    const minute = Number(match[2])
-    const meridiem = match[3].toUpperCase()
-
-    if (meridiem === "PM" && hour !== 12) {
-      hour += 12
-    }
-
-    if (meridiem === "AM" && hour === 12) {
-      hour = 0
-    }
-
-    return hour * 60 + minute
-  }, [])
 
   const loadClasses = useCallback(async () => {
     try {
@@ -109,31 +85,66 @@ export default function TimetableManagement() {
       const rawClasses = Array.isArray((payload as Record<string, unknown>)?.classes)
         ? ((payload as Record<string, unknown>).classes as unknown[])
         : []
+
       const normalized = rawClasses
         .map((item) => {
           if (typeof item === "string") {
-            return { value: item, label: item }
+            return { value: item, label: item, subjects: [] }
           }
+
           if (item && typeof item === "object") {
             const record = item as Record<string, unknown>
-            const valueCandidate = record.id ?? record.name
-            if (typeof valueCandidate === "string" && valueCandidate.trim().length > 0) {
-              const labelCandidate =
-                typeof record.name === "string" && record.name.trim().length > 0 ? record.name : valueCandidate
-              return { value: valueCandidate, label: labelCandidate }
+            const rawValue = record.id ?? record.name
+            const value =
+              typeof rawValue === "string" && rawValue.trim().length > 0 ? rawValue.trim() : null
+            if (!value) {
+              return null
             }
+
+            const label =
+              typeof record.name === "string" && record.name.trim().length > 0
+                ? record.name.trim()
+                : value
+
+            const rawSubjects = Array.isArray(record.subjects) ? record.subjects : []
+            const subjects = rawSubjects
+              .map((subject) => {
+                if (typeof subject === "string") {
+                  return subject.trim()
+                }
+                if (subject && typeof subject === "object") {
+                  const subjectRecord = subject as Record<string, unknown>
+                  const candidate = [
+                    subjectRecord.name,
+                    subjectRecord.title,
+                    subjectRecord.subject,
+                    subjectRecord.label,
+                  ].find((value) => typeof value === "string" && value.trim().length > 0)
+                  return typeof candidate === "string" ? candidate.trim() : null
+                }
+                return null
+              })
+              .filter((subject): subject is string => Boolean(subject && subject.trim().length > 0))
+
+            const deduped = Array.from(new Set(subjects))
+
+            return { value, label, subjects: deduped }
           }
+
           return null
         })
-        .filter((option): option is ClassOption => Boolean(option?.value))
+        .filter((option): option is ClassOption => option !== null)
 
       setClassOptions(normalized)
+      setClassSubjects(new Map(normalized.map((option) => [option.value, option.subjects])))
+
       if (normalized.length > 0) {
-        setSelectedClass((prev) => prev || normalized[0].value)
+        setSelectedClass((previous) => previous || normalized[0].value)
       }
     } catch (error) {
       logger.error("Unable to load classes", { error })
       setClassOptions([])
+      setClassSubjects(new Map())
     }
   }, [])
 
@@ -155,37 +166,8 @@ export default function TimetableManagement() {
         }
 
         const data: unknown = await response.json()
-        const slots = Array.isArray((data as Record<string, unknown>)?.timetable)
-          ? ((data as Record<string, unknown>).timetable as unknown[])
-          : []
-        const normalized: TimetableSlot[] = slots.map((slot) => {
-          if (!slot || typeof slot !== "object") {
-            return {
-              id: `slot_${Math.random().toString(36).slice(2)}`,
-              day: "Monday",
-              time: "8:00 AM - 8:45 AM",
-              subject: "",
-              teacher: "",
-              location: null,
-            }
-          }
-
-          const record = slot as Record<string, unknown>
-          const start = typeof record.startTime === "string" ? record.startTime : "08:00"
-          const end = typeof record.endTime === "string" ? record.endTime : "08:45"
-          const timeValue = typeof record.time === "string" ? record.time : `${start} - ${end}`
-
-          return {
-            id: typeof record.id === "string" ? record.id : String(record.id ?? `slot_${Date.now()}`),
-            day: typeof record.day === "string" ? record.day : "Monday",
-            time: timeValue,
-            subject: typeof record.subject === "string" ? record.subject : "",
-            teacher: typeof record.teacher === "string" ? record.teacher : "",
-            location: typeof record.location === "string" ? record.location : null,
-          }
-        })
-
-        setTimetableSlots(normalized)
+        const slots = normalizeTimetableCollection((data as Record<string, unknown>)?.timetable)
+        setTimetableSlots(slots)
       } catch (error) {
         logger.error("Failed to load timetable", { error })
         toast({
@@ -208,37 +190,115 @@ export default function TimetableManagement() {
     if (!selectedClass) {
       return
     }
-    loadTimetable(selectedClass)
+    void loadTimetable(selectedClass)
   }, [selectedClass, loadTimetable])
 
+  const slotsByDay = useMemo(() => {
+    const map = new Map<string, Map<string, TimetableSlot>>()
+
+    DAY_ORDER.forEach((day) => {
+      map.set(day, new Map())
+    })
+
+    timetableSlots.forEach((slot) => {
+      const normalizedDay =
+        DAY_ORDER.find((day) => day.toLowerCase() === slot.day.toLowerCase()) ?? slot.day
+      const dayMap = map.get(normalizedDay) ?? new Map<string, TimetableSlot>()
+      dayMap.set(normaliseTimeRangeLabel(slot.time), slot)
+      map.set(normalizedDay, dayMap)
+    })
+
+    return map
+  }, [timetableSlots])
+
+  const selectedDayMap = slotsByDay.get(selectedDay) ?? new Map<string, TimetableSlot>()
+
+  const scheduledCount = useMemo(() => {
+    const dayMap = slotsByDay.get(selectedDay)
+    if (!dayMap) {
+      return 0
+    }
+
+    return CLASS_TIMETABLE_PERIODS.reduce((count, period) => {
+      const range = formatTimetablePeriodRange(period)
+      return dayMap.has(range) ? count + 1 : count
+    }, 0)
+  }, [selectedDay, slotsByDay])
+
+  const nextAvailablePeriod = useMemo(() => {
+    const dayMap = slotsByDay.get(selectedDay)
+    return CLASS_TIMETABLE_PERIODS.find((period) => {
+      const range = formatTimetablePeriodRange(period)
+      return !(dayMap?.has(range) ?? false)
+    })
+  }, [selectedDay, slotsByDay])
+
+  const nextAvailableTime = nextAvailablePeriod
+    ? formatTimetablePeriodRange(nextAvailablePeriod)
+    : PERIOD_SELECT_OPTIONS[0]?.value ?? normaliseTimeRangeLabel("")
+
+  const subjectOptions = useMemo(() => {
+    const base = classSubjects.get(selectedClass) ?? []
+    const usable = base.length > 0 ? base : FALLBACK_SUBJECTS
+    const unique = new Set(usable)
+
+    if (dialogState?.slot?.subject) {
+      unique.add(dialogState.slot.subject)
+    }
+
+    return Array.from(unique)
+  }, [classSubjects, dialogState?.slot?.subject, selectedClass])
+
+  const periodOptions = useMemo(() => {
+    const base = [...PERIOD_SELECT_OPTIONS]
+    const existing = new Set(base.map((option) => option.value))
+
+    if (dialogState?.slot?.time) {
+      const normalized = normaliseTimeRangeLabel(dialogState.slot.time)
+      if (!existing.has(normalized)) {
+        base.push({ id: `custom-${normalized}`, value: normalized, label: normalized })
+        existing.add(normalized)
+      }
+    }
+
+    if (dialogState?.defaultTime) {
+      const normalized = normaliseTimeRangeLabel(dialogState.defaultTime)
+      if (!existing.has(normalized)) {
+        base.push({ id: `default-${normalized}`, value: normalized, label: normalized })
+      }
+    }
+
+    return base
+  }, [dialogState])
+
   useEffect(() => {
+    const defaultSubject = subjectOptions[0] ?? FALLBACK_SUBJECTS[0]
+
     if (dialogState?.mode === "edit" && dialogState.slot) {
-      const slot = dialogState.slot
       setSlotForm({
-        day: slot.day,
-        time: slot.time,
-        subject: slot.subject,
-        teacher: slot.teacher,
-        location: slot.location ?? "",
+        day: dialogState.slot.day,
+        time: normaliseTimeRangeLabel(dialogState.slot.time),
+        subject: dialogState.slot.subject || defaultSubject,
+        teacher: dialogState.slot.teacher,
+        location: dialogState.slot.location ?? "",
       })
     } else {
+      const defaultTimeLabel = dialogState?.defaultTime
+        ? normaliseTimeRangeLabel(dialogState.defaultTime)
+        : normaliseTimeRangeLabel(nextAvailableTime)
+
       setSlotForm({
         day: selectedDay,
-        time: PERIOD_OPTIONS[0],
-        subject: SUBJECT_OPTIONS[0],
+        time: defaultTimeLabel,
+        subject: defaultSubject,
         teacher: "",
         location: "",
       })
     }
-  }, [dialogState, selectedDay])
+  }, [dialogState, nextAvailableTime, selectedDay, subjectOptions])
 
-  const filteredSlots = useMemo(
-    () =>
-      timetableSlots
-        .filter((slot) => slot.day === selectedDay)
-        .sort((a, b) => getStartMinutes(a.time) - getStartMinutes(b.time)),
-    [timetableSlots, selectedDay, getStartMinutes],
-  )
+  const classSubjectChips = classSubjects.get(selectedClass) ?? []
+  const totalPeriods = CLASS_TIMETABLE_PERIODS.length
 
   const handleSlotSubmit = async () => {
     if (!selectedClass) {
@@ -250,16 +310,39 @@ export default function TimetableManagement() {
       return
     }
 
-    if (!slotForm.teacher || !slotForm.time || !slotForm.subject) {
+    const normalizedTime = normaliseTimeRangeLabel(slotForm.time)
+    const subject = slotForm.subject.trim()
+    const teacher = slotForm.teacher.trim()
+    const location = slotForm.location.trim()
+
+    if (!subject || !teacher) {
       toast({
         title: "Missing details",
-        description: "Subject, period and teacher are required.",
+        description: "Subject and teacher are required for each period.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const duplicate = timetableSlots.some((slot) => {
+      if (dialogState?.slot && slot.id === dialogState.slot.id) {
+        return false
+      }
+
+      return slot.day === slotForm.day && normaliseTimeRangeLabel(slot.time) === normalizedTime
+    })
+
+    if (duplicate) {
+      toast({
+        title: "Period already scheduled",
+        description: "Choose a different time slot for this day.",
         variant: "destructive",
       })
       return
     }
 
     setIsSaving(true)
+
     try {
       if (dialogState?.mode === "edit" && dialogState.slot) {
         const response = await fetch("/api/timetable", {
@@ -269,19 +352,21 @@ export default function TimetableManagement() {
             slotId: dialogState.slot.id,
             updates: {
               day: slotForm.day,
-              time: slotForm.time,
-              subject: slotForm.subject,
-              teacher: slotForm.teacher,
-              location: slotForm.location ? slotForm.location : null,
+              time: normalizedTime,
+              subject,
+              teacher,
+              location: location ? location : null,
             },
           }),
         })
 
         if (!response.ok) {
           const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
-          const message = typeof payload.error === "string" ? payload.error : `Failed to update timetable (${response.status})`
+          const message =
+            typeof payload.error === "string" ? payload.error : `Failed to update timetable (${response.status})`
           throw new Error(message)
         }
+
         await response.json().catch(() => undefined)
         toast({ title: "Timetable entry updated" })
       } else {
@@ -292,10 +377,10 @@ export default function TimetableManagement() {
             className: selectedClass,
             slot: {
               day: slotForm.day,
-              time: slotForm.time,
-              subject: slotForm.subject,
-              teacher: slotForm.teacher,
-              location: slotForm.location ? slotForm.location : null,
+              time: normalizedTime,
+              subject,
+              teacher,
+              location: location ? location : null,
             },
           }),
         })
@@ -306,11 +391,13 @@ export default function TimetableManagement() {
             typeof payload.error === "string" ? payload.error : `Failed to create timetable slot (${response.status})`
           throw new Error(message)
         }
+
         await response.json().catch(() => undefined)
         toast({ title: "Period added to timetable" })
       }
 
       await loadTimetable(selectedClass)
+      setSelectedDay(slotForm.day)
       setDialogState(null)
     } catch (error) {
       logger.error("Failed to save timetable slot", { error })
@@ -329,7 +416,10 @@ export default function TimetableManagement() {
       return
     }
 
-    const confirmation = window.confirm(`Remove ${slot.subject} (${slot.time}) from ${selectedClass}?`)
+    const confirmation = window.confirm(
+      `Remove ${slot.subject || "this period"} (${normaliseTimeRangeLabel(slot.time)}) from ${selectedClass}?`,
+    )
+
     if (!confirmation) {
       return
     }
@@ -358,31 +448,106 @@ export default function TimetableManagement() {
     }
   }
 
+  const handleSendTimetable = async () => {
+    if (!selectedClass) {
+      toast({
+        title: "Select a class",
+        description: "Choose a class timetable before sending updates.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const hasScheduledPeriods = timetableSlots.some((slot) => slot.subject.trim().length > 0)
+    if (!hasScheduledPeriods) {
+      toast({
+        title: "No scheduled periods",
+        description: "Add at least one class period before sending the timetable.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsSending(true)
+
+    try {
+      const response = await fetch("/api/timetable/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ className: selectedClass }),
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
+        const message =
+          typeof payload.error === "string" ? payload.error : `Failed to send timetable (${response.status})`
+        throw new Error(message)
+      }
+
+      toast({
+        title: "Timetable shared",
+        description: `Students, teachers and parents for ${selectedClass} will now see the updated schedule.`,
+      })
+    } catch (error) {
+      logger.error("Failed to send timetable update", { error })
+      toast({
+        title: "Unable to send timetable",
+        description: "Please try again in a moment.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSending(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-[#2d682d]">Timetable Management</h2>
-          <p className="text-sm text-gray-600">
-            Coordinate class schedules across the school and keep teachers in sync with lesson delivery.
+          <h2 className="text-3xl font-bold tracking-tight text-emerald-900">Timetable Management</h2>
+          <p className="text-sm text-emerald-700/80">
+            Orchestrate 40-minute lessons, coordinated breaks and after-break sessions for every class.
           </p>
         </div>
-        <Button className="bg-[#b29032] hover:bg-[#9a7c2a] text-white" onClick={() => setDialogState({ mode: "create" })}>
-          <Plus className="w-4 h-4 mr-2" /> Add Period
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button
+            variant="outline"
+            className="border-emerald-200 bg-emerald-50/60 text-emerald-700 hover:bg-emerald-100"
+            onClick={handleSendTimetable}
+            disabled={isSending || !selectedClass}
+          >
+            {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+            Send to dashboards
+          </Button>
+          <Button
+            className="bg-emerald-600 text-white hover:bg-emerald-700"
+            onClick={() => setDialogState({ mode: "create", defaultTime: nextAvailableTime })}
+            disabled={!selectedClass}
+          >
+            <Plus className="mr-2 h-4 w-4" /> Quick add period
+          </Button>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-[#2d682d]">Manage Class Timetable</CardTitle>
-          <CardDescription>Update daily schedules and lesson allocations.</CardDescription>
+      <Card className="overflow-hidden border-emerald-200/70 bg-white/90 shadow-lg backdrop-blur">
+        <CardHeader className="border-b border-emerald-100 bg-gradient-to-r from-emerald-500/10 via-white to-emerald-500/10">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-emerald-900">Class Timetable Planner</CardTitle>
+              <CardDescription>Allocate subjects into 40-minute learning blocks with a structured break.</CardDescription>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-emerald-700/80">
+              <Clock className="h-4 w-4" />
+              {totalPeriods} periods • 10-minute break
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-1">
-              <Label className="text-sm font-medium text-gray-700">Class</Label>
+        <CardContent className="space-y-6 py-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-emerald-900">Class</Label>
               <Select value={selectedClass} onValueChange={setSelectedClass}>
-                <SelectTrigger>
+                <SelectTrigger className="rounded-2xl border-emerald-200 bg-white/80">
                   <SelectValue placeholder="Select class" />
                 </SelectTrigger>
                 <SelectContent>
@@ -394,92 +559,192 @@ export default function TimetableManagement() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-sm font-medium text-gray-700">Day</Label>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-emerald-900">Day</Label>
               <Tabs value={selectedDay} onValueChange={setSelectedDay}>
-                <TabsList className="grid grid-cols-5">
-                  {DAY_OPTIONS.map((day) => (
-                    <TabsTrigger key={day} value={day}>
+                <TabsList className="grid grid-cols-5 rounded-full bg-emerald-500/10 p-1">
+                  {DAY_ORDER.map((day) => (
+                    <TabsTrigger
+                      key={day}
+                      value={day}
+                      className="rounded-full px-3 py-1 text-sm font-medium text-emerald-700 transition data-[state=active]:bg-white data-[state=active]:shadow data-[state=active]:text-emerald-900"
+                    >
                       {day.slice(0, 3)}
                     </TabsTrigger>
                   ))}
                 </TabsList>
               </Tabs>
             </div>
-            <div className="space-y-1">
-              <Label className="text-sm font-medium text-gray-700">Summary</Label>
-              <div className="p-3 border rounded-lg">
-                <p className="text-sm text-gray-600">{selectedClass || "Select a class"}</p>
-                <p className="text-xs text-gray-500">{filteredSlots.length} periods scheduled</p>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-emerald-900">Summary</Label>
+              <div className="rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-emerald-50 p-4 shadow-sm">
+                <p className="text-sm font-semibold text-emerald-900">{selectedClass || "Select a class"}</p>
+                <p className="text-xs text-emerald-700/70">{selectedDay}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Badge className="bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20">
+                    {scheduledCount} of {totalPeriods} periods scheduled
+                  </Badge>
+                  <Badge variant="outline" className="border-amber-200 text-amber-700">
+                    10-minute break
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            <div className="md:col-span-3">
+              <div className="rounded-3xl border border-emerald-100 bg-white/80 p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700/80">
+                  Subjects for this class
+                </p>
+                {classSubjectChips.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {classSubjectChips.map((subject) => (
+                      <span
+                        key={subject}
+                        className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700"
+                      >
+                        {subject}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs text-emerald-700/70">
+                    Assign subjects to this class to streamline scheduling.
+                  </p>
+                )}
               </div>
             </div>
           </div>
 
-          <ScrollArea className="max-h-[50vh]">
+          <ScrollArea className="max-h-[60vh] pr-3">
             {isLoading ? (
-              <div className="flex items-center justify-center py-12 text-gray-500">
-                <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading timetable...
-              </div>
-            ) : filteredSlots.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-12 text-gray-500">
-                <Clock className="w-6 h-6 text-[#b29032]" />
-                No periods scheduled for {selectedDay}. Use “Add Period” to schedule a class.
+              <div className="flex items-center justify-center gap-2 py-16 text-emerald-700/70">
+                <Loader2 className="h-5 w-5 animate-spin" /> Loading timetable…
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Teacher</TableHead>
-                    <TableHead>Location</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredSlots.map((slot) => (
-                    <TableRow key={slot.id}>
-                      <TableCell className="font-medium">{slot.time}</TableCell>
-                      <TableCell>{slot.subject}</TableCell>
-                      <TableCell>{slot.teacher}</TableCell>
-                      <TableCell>{slot.location || "-"}</TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => setDialogState({ mode: "edit", slot })}>
-                          <Edit className="w-4 h-4 mr-1" /> Edit
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleDeleteSlot(slot)}>
-                          <Trash2 className="w-4 h-4 mr-1" /> Delete
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <div className="grid gap-4">
+                {DEFAULT_TIMETABLE_PERIODS.map((period) => {
+                  const range = formatTimetablePeriodRange(period)
+
+                  if (period.kind === "break") {
+                    return (
+                      <div
+                        key={period.id}
+                        className="relative overflow-hidden rounded-3xl border border-amber-200/70 bg-gradient-to-r from-amber-50 via-white to-amber-100 p-5 shadow-sm"
+                      >
+                        <div className="absolute inset-x-0 top-0 h-1 bg-amber-300/70" />
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="space-y-2">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-700">
+                              {period.label}
+                            </span>
+                            <h3 className="text-lg font-semibold text-amber-900">10-minute Break</h3>
+                            <p className="text-sm text-amber-700/80">
+                              Encourage students to hydrate, stretch and reset for the next sessions.
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-3 text-right">
+                            <Coffee className="h-5 w-5 text-amber-600" />
+                            <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-amber-700 shadow-inner">
+                              {range}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  const slot = selectedDayMap.get(range)
+                  const hasSlot = Boolean(slot && slot.subject.trim().length > 0)
+
+                  return (
+                    <div
+                      key={period.id}
+                      className="relative overflow-hidden rounded-3xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50 via-white to-emerald-100 p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+                    >
+                      <div className="absolute inset-x-0 top-0 h-1 bg-emerald-400/70" />
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="space-y-2">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                            {period.label}
+                          </span>
+                          <h3 className="text-xl font-semibold text-emerald-900">
+                            {hasSlot ? slot?.subject || "Subject not set" : "Free period"}
+                          </h3>
+                          <p className="text-sm text-emerald-700/80">
+                            {hasSlot
+                              ? [
+                                  slot?.teacher ? `Teacher: ${slot.teacher}` : "Teacher pending",
+                                  slot?.location ? `Location: ${slot.location}` : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" • ")
+                              : "Assign a subject and teacher to keep the learning momentum."}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-3 text-right">
+                          <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-inner">
+                            {range}
+                          </span>
+                          {hasSlot && slot ? (
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-emerald-300 text-emerald-700 hover:bg-emerald-600 hover:text-white"
+                                onClick={() => setDialogState({ mode: "edit", slot })}
+                              >
+                                <Edit className="mr-1 h-4 w-4" /> Edit
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-red-200 text-red-600 hover:bg-red-50"
+                                onClick={() => handleDeleteSlot(slot)}
+                              >
+                                <Trash2 className="mr-1 h-4 w-4" /> Delete
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              size="sm"
+                              className="bg-emerald-600 text-white hover:bg-emerald-700"
+                              onClick={() => setDialogState({ mode: "create", defaultTime: range })}
+                              disabled={!selectedClass}
+                            >
+                              <Plus className="mr-1 h-4 w-4" /> Schedule class
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </ScrollArea>
         </CardContent>
       </Card>
 
-      <Dialog open={!!dialogState} onOpenChange={(open) => (!open ? setDialogState(null) : null)}>
-        <DialogContent className="max-w-2xl">
+      <Dialog open={!!dialogState} onOpenChange={(open) => (!open ? setDialogState(null) : undefined)}>
+        <DialogContent className="max-w-2xl border-emerald-200/70 bg-white/95 backdrop-blur">
           <DialogHeader>
-            <DialogTitle className="text-[#2d682d]">
-              {dialogState?.mode === "edit" ? "Update Period" : "Add Timetable Period"}
+            <DialogTitle className="text-emerald-900">
+              {dialogState?.mode === "edit" ? "Update period" : "Schedule new period"}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <Label className="text-sm font-medium text-gray-700">Day</Label>
-              <Select
-                value={slotForm.day}
-                onValueChange={(value) => setSlotForm((prev) => ({ ...prev, day: value }))}
-              >
-                <SelectTrigger>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-emerald-900">Day</Label>
+              <Select value={slotForm.day} onValueChange={(value) => setSlotForm((prev) => ({ ...prev, day: value }))}>
+                <SelectTrigger className="rounded-2xl border-emerald-200 bg-white/80">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {DAY_OPTIONS.map((day) => (
+                  {DAY_ORDER.map((day) => (
                     <SelectItem key={day} value={day}>
                       {day}
                     </SelectItem>
@@ -487,35 +752,29 @@ export default function TimetableManagement() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-sm font-medium text-gray-700">Period</Label>
-              <Select
-                value={slotForm.time}
-                onValueChange={(value) => setSlotForm((prev) => ({ ...prev, time: value }))}
-              >
-                <SelectTrigger>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-emerald-900">Period</Label>
+              <Select value={slotForm.time} onValueChange={(value) => setSlotForm((prev) => ({ ...prev, time: value }))}>
+                <SelectTrigger className="rounded-2xl border-emerald-200 bg-white/80">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {PERIOD_OPTIONS.map((period) => (
-                    <SelectItem key={period} value={period}>
-                      {period}
+                  {periodOptions.map((period) => (
+                    <SelectItem key={period.id} value={period.value}>
+                      {period.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-sm font-medium text-gray-700">Subject</Label>
-              <Select
-                value={slotForm.subject}
-                onValueChange={(value) => setSlotForm((prev) => ({ ...prev, subject: value }))}
-              >
-                <SelectTrigger>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-emerald-900">Subject</Label>
+              <Select value={slotForm.subject} onValueChange={(value) => setSlotForm((prev) => ({ ...prev, subject: value }))}>
+                <SelectTrigger className="rounded-2xl border-emerald-200 bg-white/80">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {SUBJECT_OPTIONS.map((subject) => (
+                  {subjectOptions.map((subject) => (
                     <SelectItem key={subject} value={subject}>
                       {subject}
                     </SelectItem>
@@ -523,31 +782,37 @@ export default function TimetableManagement() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-sm font-medium text-gray-700">Teacher</Label>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-emerald-900">Teacher</Label>
               <Input
                 value={slotForm.teacher}
                 onChange={(event) => setSlotForm((prev) => ({ ...prev, teacher: event.target.value }))}
                 placeholder="Enter teacher's name"
+                className="rounded-2xl border-emerald-200 bg-white/80"
               />
             </div>
-            <div className="space-y-1 md:col-span-2">
-              <Label className="text-sm font-medium text-gray-700">Location</Label>
+            <div className="space-y-2 md:col-span-2">
+              <Label className="text-sm font-medium text-emerald-900">Location</Label>
               <Input
                 value={slotForm.location}
                 onChange={(event) => setSlotForm((prev) => ({ ...prev, location: event.target.value }))}
-                placeholder="Laboratory, Room number or hall"
+                placeholder="Laboratory, room number or hall"
+                className="rounded-2xl border-emerald-200 bg-white/80"
               />
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogState(null)}>
+            <Button variant="outline" onClick={() => setDialogState(null)} className="border-emerald-200 text-emerald-700">
               Cancel
             </Button>
-            <Button className="bg-[#2d682d] hover:bg-[#245224] text-white" onClick={handleSlotSubmit} disabled={isSaving}>
-              {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              Save Period
+            <Button
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              onClick={handleSlotSubmit}
+              disabled={isSaving}
+            >
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save period
             </Button>
           </DialogFooter>
         </DialogContent>

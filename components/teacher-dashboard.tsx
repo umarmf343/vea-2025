@@ -56,8 +56,10 @@ import {
 import { safeStorage } from "@/lib/safe-storage"
 import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
+import { normalizeTimetableCollection } from "@/lib/timetable"
 import { useToast } from "@/hooks/use-toast"
 import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
+import { TimetableWeeklyView, type TimetableWeeklyViewSlot } from "@/components/timetable-weekly-view"
 import {
   STUDENT_MARKS_STORAGE_KEY,
   buildRawReportCardFromStoredRecord,
@@ -116,14 +118,7 @@ interface TeacherExamSummary {
   status: "scheduled" | "completed" | "cancelled"
 }
 
-interface TeacherTimetableSlot {
-  id: string
-  day: string
-  time: string
-  subject: string
-  teacher: string
-  location?: string | null
-}
+type TeacherTimetableSlot = TimetableWeeklyViewSlot
 
 type BehavioralDomainState = Record<number, Record<string, string>>
 type AttendanceState = Record<number, { present: number; absent: number; total: number }>
@@ -404,11 +399,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
   }, [teacher.id, toast])
 
-  const sortedTeacherTimetable = useMemo(
-    () => teacherTimetable.slice().sort((a, b) => a.time.localeCompare(b.time)),
-    [teacherTimetable],
-  )
-
   useEffect(() => {
     void loadAssignments()
 
@@ -480,33 +470,17 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
         if (response.ok) {
           const data: unknown = await response.json()
-          const slots = Array.isArray((data as Record<string, unknown>)?.timetable)
-            ? ((data as Record<string, unknown>).timetable as unknown[])
-            : []
-          setTeacherTimetable(
-            slots.map((slot) => {
-              if (!slot || typeof slot !== "object") {
-                return {
-                  id: `slot_${Math.random().toString(36).slice(2)}`,
-                  day: "Monday",
-                  time: "8:00 AM - 8:45 AM",
-                  subject: "",
-                  teacher: "",
-                  location: null,
-                }
-              }
-
-              const record = slot as Record<string, unknown>
-              return {
-                id: typeof record.id === "string" ? record.id : String(record.id ?? `slot_${Date.now()}`),
-                day: typeof record.day === "string" ? record.day : "Monday",
-                time: typeof record.time === "string" ? record.time : String(record.startTime ?? "8:00 AM - 8:45 AM"),
-                subject: typeof record.subject === "string" ? record.subject : "",
-                teacher: typeof record.teacher === "string" ? record.teacher : "",
-                location: typeof record.location === "string" ? record.location : null,
-              }
-            }),
-          )
+          const normalized = normalizeTimetableCollection(
+            (data as Record<string, unknown>)?.timetable,
+          ).map(({ id, day, time, subject, teacher, location }) => ({
+            id,
+            day,
+            time,
+            subject,
+            teacher,
+            location,
+          }))
+          setTeacherTimetable(normalized)
         } else {
           setTeacherTimetable([])
         }
@@ -2919,29 +2893,27 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             <CardContent>
               {isTeacherTimetableLoading ? (
                 <div className="flex items-center justify-center py-6 text-gray-500">
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading timetable...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading timetable...
                 </div>
-              ) : sortedTeacherTimetable.length === 0 ? (
-                <p className="text-sm text-gray-500">No timetable entries available for {selectedClass}.</p>
               ) : (
-                <div className="space-y-2">
-                  {sortedTeacherTimetable.map((slot) => (
-                    <div key={slot.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center space-x-4">
-                        <Clock className="w-4 h-4 text-[#b29032]" />
-                        <div>
-                          <p className="font-medium">
-                            {slot.day} - {slot.time}
-                          </p>
-                          <p className="text-sm text-gray-600">
-                            {slot.subject}
-                            {slot.location ? ` • ${slot.location}` : ""}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <TimetableWeeklyView
+                  slots={teacherTimetable}
+                  emptyMessage={`No timetable entries available for ${selectedClass}.`}
+                  renderDetails={(slot) => {
+                    const details: string[] = []
+                    const facilitator = slot.teacher?.trim()
+                    if (facilitator && facilitator.length > 0 && facilitator !== teacher.name) {
+                      details.push(`Facilitator: ${facilitator}`)
+                    }
+                    if (slot.location && slot.location.trim().length > 0) {
+                      details.push(`Location: ${slot.location}`)
+                    }
+                    if (details.length === 0) {
+                      details.push("Get ready for this session.")
+                    }
+                    return <p className="text-sm text-emerald-700/80">{details.join(" • ")}</p>
+                  }}
+                />
               )}
             </CardContent>
           </Card>
