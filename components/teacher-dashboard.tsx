@@ -74,6 +74,7 @@ import {
   submitReportCardsForApproval,
   type ReportCardWorkflowRecord,
 } from "@/lib/report-card-workflow"
+import type { ReportCardRecord, ReportCardSubjectRecord } from "@/lib/database"
 import {
   AFFECTIVE_TRAITS,
   BEHAVIORAL_RATING_OPTIONS,
@@ -120,9 +121,9 @@ interface TeacherExamSummary {
 
 type TeacherTimetableSlot = TimetableWeeklyViewSlot
 
-type BehavioralDomainState = Record<number, Record<string, string>>
-type AttendanceState = Record<number, { present: number; absent: number; total: number }>
-type StudentStatusState = Record<number, string>
+type BehavioralDomainState = Record<string, Record<string, string>>
+type AttendanceState = Record<string, { present: number; absent: number; total: number }>
+type StudentStatusState = Record<string, string>
 
 type TermInfoState = {
   numberInClass: string
@@ -147,8 +148,60 @@ const createEmptyTermInfo = (): TermInfoState => ({
   feesBalance: "",
 })
 
+type SampleSubjectTemplate = Omit<StoredSubjectRecord, "className" | "teacherId" | "teacherName" | "updatedAt">
+
+const SAMPLE_SUPPLEMENTARY_SUBJECTS: Record<string, SampleSubjectTemplate[]> = {
+  student_john_doe: [
+    {
+      subject: "English Language",
+      ca1: 18,
+      ca2: 19,
+      assignment: 19,
+      caTotal: 56,
+      exam: 38,
+      total: 94,
+      grade: "A",
+      remark: "Exceptional communication skills and articulate presentations.",
+      position: 1,
+      totalObtainable: 100,
+      totalObtained: 94,
+      averageScore: 94,
+    },
+    {
+      subject: "Basic Science",
+      ca1: 17,
+      ca2: 18,
+      assignment: 18,
+      caTotal: 53,
+      exam: 34,
+      total: 87,
+      grade: "A",
+      remark: "Applies scientific concepts confidently in practical sessions.",
+      position: 2,
+      totalObtainable: 100,
+      totalObtained: 87,
+      averageScore: 87,
+    },
+    {
+      subject: "Civic Education",
+      ca1: 16,
+      ca2: 17,
+      assignment: 18,
+      caTotal: 51,
+      exam: 35,
+      total: 86,
+      grade: "A",
+      remark: "Demonstrates leadership and collaborates with empathy.",
+      position: 1,
+      totalObtainable: 100,
+      totalObtained: 86,
+      averageScore: 86,
+    },
+  ],
+}
+
 interface MarksRecord {
-  studentId: number
+  studentId: string
   studentName: string
   firstCA: number
   secondCA: number
@@ -248,16 +301,53 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [isSubmittingForApproval, setIsSubmittingForApproval] = useState(false)
   const [isCancellingSubmission, setIsCancellingSubmission] = useState(false)
   const [additionalData, setAdditionalData] = useState(() => ({
-    classPositions: {} as Record<number, number>,
-    affectiveDomain: {} as BehavioralDomainState,
-    psychomotorDomain: {} as BehavioralDomainState,
-    classTeacherRemarks: {} as Record<number, string>,
-    attendance: {} as AttendanceState,
-    studentStatus: {} as StudentStatusState,
-    termInfo: createEmptyTermInfo(),
+    classPositions: {
+      student_john_doe: 1,
+      student_alice_smith: 2,
+      student_mike_johnson: 3,
+    } as Record<string, number>,
+    affectiveDomain: {
+      student_john_doe: {
+        neatness: "Excellent",
+        honesty: "Excellent",
+        punctuality: "Excellent",
+        leadership: "Very Good",
+        relationship: "Excellent",
+      },
+    } as BehavioralDomainState,
+    psychomotorDomain: {
+      student_john_doe: {
+        handwriting: "Excellent",
+        sport: "Very Good",
+        drawing: "Good",
+        craft: "Very Good",
+      },
+    } as BehavioralDomainState,
+    classTeacherRemarks: {
+      student_john_doe: "John maintains an outstanding academic record and inspires his peers.",
+      student_alice_smith: "Alice participates actively and continues to grow with confidence.",
+      student_mike_johnson: "Mike is improving steadily; encourage more practice at home.",
+    } as Record<string, string>,
+    attendance: {
+      student_john_doe: { present: 58, absent: 2, total: 60 },
+      student_alice_smith: { present: 55, absent: 5, total: 60 },
+      student_mike_johnson: { present: 53, absent: 7, total: 60 },
+    } as AttendanceState,
+    studentStatus: {
+      student_john_doe: "promoted",
+      student_alice_smith: "promoted",
+      student_mike_johnson: "promoted-on-trial",
+    } as StudentStatusState,
+    termInfo: {
+      numberInClass: "25",
+      nextTermBegins: "2025-05-06",
+      vacationEnds: "2025-04-30",
+      nextTermFees: "₦52,500",
+      feesBalance: "₦0",
+    },
   }))
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
-  const [previewStudentId, setPreviewStudentId] = useState<number | null>(null)
+  const [previewStudentId, setPreviewStudentId] = useState<string | null>(null)
   const [previewData, setPreviewData] = useState<RawReportCardData | null>(null)
 
   const [assignmentForm, setAssignmentForm] = useState(() => ({
@@ -317,9 +407,9 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   }, [teacher.classes, teacher.subjects])
 
   const mockStudents = [
-    { id: 1, name: "John Doe", class: "JSS 1A", subjects: ["Mathematics", "English"] },
-    { id: 2, name: "Jane Smith", class: "JSS 1A", subjects: ["Mathematics"] },
-    { id: 3, name: "Mike Johnson", class: "JSS 2B", subjects: ["English"] },
+    { id: "student_john_doe", name: "John Doe", class: "JSS 1A", subjects: ["Mathematics", "English"] },
+    { id: "student_alice_smith", name: "Alice Smith", class: "JSS 1A", subjects: ["Mathematics"] },
+    { id: "student_mike_johnson", name: "Mike Johnson", class: "JSS 2B", subjects: ["English"] },
   ]
 
   const formatExamDate = (value: string) => {
@@ -505,7 +595,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   const [marksData, setMarksData] = useState<MarksRecord[]>([
     {
-      studentId: 1,
+      studentId: "student_john_doe",
       studentName: "John Doe",
       firstCA: 19,
       secondCA: 18,
@@ -521,8 +611,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       teacherRemark: "Excellent performance",
     },
     {
-      studentId: 2,
-      studentName: "Jane Smith",
+      studentId: "student_alice_smith",
+      studentName: "Alice Smith",
       firstCA: 17,
       secondCA: 16,
       noteAssignment: 17,
@@ -537,7 +627,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       teacherRemark: "Strong understanding of concepts",
     },
     {
-      studentId: 3,
+      studentId: "student_mike_johnson",
       studentName: "Mike Johnson",
       firstCA: 14,
       secondCA: 13,
@@ -576,7 +666,133 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   const calculateGrade = (total: number) => deriveGradeFromScore(total)
 
-  const handleMarksUpdate = (studentId: number, field: string, value: unknown) => {
+  const buildStudentPreview = useCallback(
+    (student: MarksRecord, aggregatedRaw?: RawReportCardData | null): RawReportCardData => {
+      const attendanceStats = additionalData.attendance[student.studentId] ?? {
+        present: 0,
+        absent: 0,
+        total: 0,
+      }
+      const totalAttendance =
+        attendanceStats.total && attendanceStats.total > 0
+          ? attendanceStats.total
+          : attendanceStats.present + attendanceStats.absent
+
+      const summaryGrade = deriveGradeFromScore(student.averageScore)
+      const baseSummary = {
+        totalMarksObtainable: student.totalMarksObtainable,
+        totalMarksObtained: student.totalMarksObtained,
+        averageScore: student.averageScore,
+        position: student.position,
+        numberOfStudents: marksData.length,
+        grade: summaryGrade,
+      }
+
+      const basePreview: RawReportCardData = {
+        student: {
+          id: String(student.studentId),
+          name: student.studentName,
+          admissionNumber: `VEA/${student.studentId}`,
+          class: selectedClass,
+          term: normalizedTermLabel,
+          session: selectedSession,
+          numberInClass: additionalData.termInfo.numberInClass,
+          status: additionalData.studentStatus[student.studentId],
+        },
+        subjects: [
+          {
+            name: selectedSubject || "Subject",
+            ca1: student.firstCA,
+            ca2: student.secondCA,
+            assignment: student.noteAssignment,
+            caTotal: student.caTotal,
+            exam: student.exam,
+            total: student.grandTotal,
+            grade: student.grade,
+            remarks: student.teacherRemark,
+            position: student.position,
+          },
+        ],
+        summary: baseSummary,
+        totalObtainable: student.totalMarksObtainable,
+        totalObtained: student.totalMarksObtained,
+        average: student.averageScore,
+        position: student.position,
+        affectiveDomain: additionalData.affectiveDomain[student.studentId] ?? {},
+        psychomotorDomain: additionalData.psychomotorDomain[student.studentId] ?? {},
+        classTeacherRemarks: additionalData.classTeacherRemarks[student.studentId] ?? "",
+        remarks: {
+          classTeacher: additionalData.classTeacherRemarks[student.studentId] ?? student.teacherRemark,
+        },
+        attendance: {
+          present: attendanceStats.present ?? 0,
+          absent: attendanceStats.absent ?? 0,
+          total: totalAttendance,
+        },
+        termInfo: {
+          numberInClass: additionalData.termInfo.numberInClass,
+          vacationEnds: additionalData.termInfo.vacationEnds,
+          nextTermBegins: additionalData.termInfo.nextTermBegins,
+          nextTermFees: additionalData.termInfo.nextTermFees,
+          feesBalance: additionalData.termInfo.feesBalance,
+        },
+      }
+
+      if (!aggregatedRaw) {
+        return basePreview
+      }
+
+      const enrichedSummary = aggregatedRaw.summary
+        ? {
+            ...aggregatedRaw.summary,
+            numberOfStudents:
+              additionalData.termInfo.numberInClass ?? aggregatedRaw.summary.numberOfStudents,
+          }
+        : baseSummary
+
+      return {
+        ...aggregatedRaw,
+        ...basePreview,
+        student: {
+          ...basePreview.student,
+          ...aggregatedRaw.student,
+          numberInClass: additionalData.termInfo.numberInClass,
+          status: additionalData.studentStatus[student.studentId] ?? aggregatedRaw.student?.status,
+        },
+        subjects:
+          Array.isArray(aggregatedRaw.subjects) && aggregatedRaw.subjects.length > 0
+            ? aggregatedRaw.subjects
+            : basePreview.subjects,
+        summary: enrichedSummary,
+        totalObtainable:
+          aggregatedRaw.totalObtainable ?? enrichedSummary.totalMarksObtainable ?? basePreview.totalObtainable,
+        totalObtained:
+          aggregatedRaw.totalObtained ?? enrichedSummary.totalMarksObtained ?? basePreview.totalObtained,
+        average: aggregatedRaw.average ?? enrichedSummary.averageScore ?? basePreview.average,
+        position: aggregatedRaw.position ?? enrichedSummary.position ?? basePreview.position,
+        affectiveDomain: basePreview.affectiveDomain,
+        psychomotorDomain: basePreview.psychomotorDomain,
+        classTeacherRemarks: basePreview.classTeacherRemarks,
+        remarks: {
+          classTeacher:
+            basePreview.remarks?.classTeacher ?? aggregatedRaw.remarks?.classTeacher ?? student.teacherRemark,
+          headTeacher: aggregatedRaw.remarks?.headTeacher ?? basePreview.remarks?.headTeacher,
+        },
+        attendance: basePreview.attendance,
+        termInfo: basePreview.termInfo,
+      }
+    },
+    [
+      additionalData,
+      marksData.length,
+      normalizedTermLabel,
+      selectedClass,
+      selectedSession,
+      selectedSubject,
+    ],
+  )
+
+  const handleMarksUpdate = (studentId: string, field: string, value: unknown) => {
     setMarksData((prev) => {
       const updated = prev.map((student) => {
         if (student.studentId !== studentId) {
@@ -646,6 +862,19 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       const store = readStudentMarksStore()
       const updatedStore: Record<string, StoredStudentMarkRecord> = { ...store }
 
+      let reportCards: ReportCardRecord[] = []
+      try {
+        const rawReportCards = safeStorage.getItem("reportCards")
+        if (rawReportCards) {
+          const parsed = JSON.parse(rawReportCards)
+          if (Array.isArray(parsed)) {
+            reportCards = parsed as ReportCardRecord[]
+          }
+        }
+      } catch (parseError) {
+        logger.warn("Unable to parse stored report cards", parseError)
+      }
+
       marksData.forEach((student) => {
         const studentKey = `${student.studentId}-${normalizedTermLabel}-${selectedSession}`
         const previousRecord = updatedStore[studentKey]
@@ -671,6 +900,19 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           updatedAt: timestamp,
         }
 
+        const sampleSubjects = SAMPLE_SUPPLEMENTARY_SUBJECTS[student.studentId] ?? []
+        sampleSubjects.forEach((sample) => {
+          if (!subjects[sample.subject]) {
+            subjects[sample.subject] = {
+              ...sample,
+              className: selectedClass,
+              teacherId: teacher.id,
+              teacherName: teacher.name,
+              updatedAt: timestamp,
+            }
+          }
+        })
+
         const aggregatedSubjects = Object.values(subjects)
         const totalMarksObtainable = aggregatedSubjects.reduce(
           (sum, subject) => sum + (subject.totalObtainable ?? 100),
@@ -682,7 +924,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             ? Number(((totalMarksObtained / totalMarksObtainable) * 100).toFixed(2))
             : undefined
 
-        updatedStore[studentKey] = {
+        const mergedRecord: StoredStudentMarkRecord = {
           studentId: String(student.studentId),
           studentName: student.studentName,
           className: selectedClass,
@@ -696,17 +938,83 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           overallPosition:
             additionalData.classPositions[student.studentId] ?? previousRecord?.overallPosition ?? null,
         }
+
+        updatedStore[studentKey] = mergedRecord
+
+        const subjectRecords: ReportCardSubjectRecord[] = Object.values(subjects).map((subject) => ({
+          name: subject.subject,
+          ca1: subject.ca1,
+          ca2: subject.ca2,
+          assignment: subject.assignment,
+          exam: subject.exam,
+          total: subject.total,
+          grade: subject.grade,
+          remark: subject.remark,
+          position: subject.position ?? null,
+        }))
+
+        const existingIndex = reportCards.findIndex(
+          (record) =>
+            record.studentId === String(student.studentId) &&
+            record.term === normalizedTermLabel &&
+            record.session === selectedSession,
+        )
+
+        const existingRecord = existingIndex >= 0 ? reportCards[existingIndex] : null
+        const reportCardId = existingRecord?.id ?? `report_${student.studentId}_${normalizedTermLabel}_${selectedSession}`
+        const headTeacherRemark = existingRecord?.headTeacherRemark ?? null
+        const classTeacherRemark =
+          additionalData.classTeacherRemarks[student.studentId] ?? student.teacherRemark
+
+        const aggregatedRaw = buildRawReportCardFromStoredRecord(mergedRecord)
+        const previewPayload = buildStudentPreview(student, aggregatedRaw)
+
+        const existingMetadata =
+          existingRecord && typeof existingRecord.metadata === "object" && existingRecord.metadata !== null
+            ? (existingRecord.metadata as Record<string, unknown>)
+            : {}
+
+        const updatedReportCard: ReportCardRecord = {
+          id: reportCardId,
+          studentId: String(student.studentId),
+          studentName: student.studentName,
+          className: selectedClass,
+          term: normalizedTermLabel,
+          session: selectedSession,
+          subjects: subjectRecords,
+          classTeacherRemark,
+          headTeacherRemark,
+          metadata: {
+            ...existingMetadata,
+            enhancedReportCard: previewPayload,
+            enhancedUpdatedAt: timestamp,
+            enhancedUpdatedBy: teacher.id,
+          },
+          createdAt: existingRecord?.createdAt ?? timestamp,
+          updatedAt: timestamp,
+        }
+
+        if (existingIndex >= 0) {
+          reportCards[existingIndex] = updatedReportCard
+        } else {
+          reportCards.push(updatedReportCard)
+        }
+
+        dbManager.triggerEvent("reportCardUpdated", updatedReportCard)
       })
 
       safeStorage.setItem(STUDENT_MARKS_STORAGE_KEY, JSON.stringify(updatedStore))
       dbManager.triggerEvent(STUDENT_MARKS_STORAGE_KEY, updatedStore)
+      safeStorage.setItem("reportCards", JSON.stringify(reportCards))
     } catch (error) {
       logger.error("Failed to persist academic marks", { error })
     }
   }, [
     additionalData.classPositions,
+    additionalData.classTeacherRemarks,
     additionalData.studentStatus,
     additionalData.termInfo.numberInClass,
+    buildStudentPreview,
     marksData,
     normalizedTermLabel,
     selectedClass,
@@ -729,153 +1037,27 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
       persistAcademicMarksToStorage()
 
-      const attendanceStats = additionalData.attendance[student.studentId] ?? {
-        present: 0,
-        absent: 0,
-        total: 0,
-      }
-      const totalAttendance =
-        attendanceStats.total && attendanceStats.total > 0
-          ? attendanceStats.total
-          : attendanceStats.present + attendanceStats.absent
-
-      const summaryGrade = deriveGradeFromScore(student.averageScore)
-      const basePreview: RawReportCardData = {
-        student: {
-          id: String(student.studentId),
-          name: student.studentName,
-          admissionNumber: `VEA/${student.studentId}`,
-          class: selectedClass,
-          term: normalizedTermLabel,
-          session: selectedSession,
-          numberInClass: additionalData.termInfo.numberInClass,
-          status: additionalData.studentStatus[student.studentId],
-        },
-        subjects: [
-          {
-            name: selectedSubject || "Subject",
-            ca1: student.firstCA,
-            ca2: student.secondCA,
-            assignment: student.noteAssignment,
-            caTotal: student.caTotal,
-            exam: student.exam,
-            total: student.grandTotal,
-            grade: student.grade,
-            remarks: student.teacherRemark,
-            position: student.position,
-          },
-        ],
-        summary: {
-          totalMarksObtainable: student.totalMarksObtainable,
-          totalMarksObtained: student.totalMarksObtained,
-          averageScore: student.averageScore,
-          position: student.position,
-          numberOfStudents: marksData.length,
-          grade: summaryGrade,
-        },
-        totalObtainable: student.totalMarksObtainable,
-        totalObtained: student.totalMarksObtained,
-        average: student.averageScore,
-        position: student.position,
-        affectiveDomain: additionalData.affectiveDomain[student.studentId] ?? {},
-        psychomotorDomain: additionalData.psychomotorDomain[student.studentId] ?? {},
-        classTeacherRemarks: additionalData.classTeacherRemarks[student.studentId] ?? "",
-        remarks: {
-          classTeacher: additionalData.classTeacherRemarks[student.studentId] ?? student.teacherRemark,
-        },
-        attendance: {
-          present: attendanceStats.present ?? 0,
-          absent: attendanceStats.absent ?? 0,
-          total: totalAttendance,
-        },
-        termInfo: {
-          numberInClass: additionalData.termInfo.numberInClass,
-          vacationEnds: additionalData.termInfo.vacationEnds,
-          nextTermBegins: additionalData.termInfo.nextTermBegins,
-          nextTermFees: additionalData.termInfo.nextTermFees,
-          feesBalance: additionalData.termInfo.feesBalance,
-        },
-      }
-
-      const timestamp = new Date().toISOString()
       const storedRecord = getStoredStudentMarksRecord(
         String(student.studentId),
         normalizedTermLabel,
         selectedSession,
       )
-      const mergedSubjects: Record<string, StoredSubjectRecord> = {
-        ...(storedRecord?.subjects ?? {}),
-      }
-      mergedSubjects[selectedSubject] = {
-        subject: selectedSubject,
-        className: selectedClass,
-        ca1: student.firstCA,
-        ca2: student.secondCA,
-        assignment: student.noteAssignment,
-        caTotal: student.caTotal,
-        exam: student.exam,
-        total: student.grandTotal,
-        grade: student.grade,
-        remark: student.teacherRemark,
-        position: additionalData.classPositions[student.studentId] ?? student.position ?? null,
-        totalObtainable: student.totalMarksObtainable,
-        totalObtained: student.totalMarksObtained,
-        averageScore: student.averageScore,
-        teacherId: teacher.id,
-        teacherName: teacher.name,
-        updatedAt: timestamp,
-      }
-
-      const mergedRecord: StoredStudentMarkRecord = {
-        studentId: String(student.studentId),
-        studentName: student.studentName,
-        className: selectedClass,
-        term: normalizedTermLabel,
-        session: selectedSession,
-        subjects: mergedSubjects,
-        lastUpdated: timestamp,
-        status: additionalData.studentStatus[student.studentId] ?? storedRecord?.status,
-        numberInClass: additionalData.termInfo.numberInClass || storedRecord?.numberInClass,
-        overallAverage: storedRecord?.overallAverage,
-        overallPosition:
-          additionalData.classPositions[student.studentId] ?? storedRecord?.overallPosition ?? null,
-      }
-
-      const aggregatedRaw = buildRawReportCardFromStoredRecord(mergedRecord)
-
-      const previewPayload = aggregatedRaw
-        ? {
-            ...aggregatedRaw,
-            attendance: basePreview.attendance,
-            affectiveDomain: basePreview.affectiveDomain,
-            psychomotorDomain: basePreview.psychomotorDomain,
-            classTeacherRemarks: basePreview.classTeacherRemarks,
-            remarks: basePreview.remarks,
-            termInfo: basePreview.termInfo,
-            summary: aggregatedRaw.summary
-              ? {
-                  ...aggregatedRaw.summary,
-                  numberOfStudents:
-                    additionalData.termInfo.numberInClass ?? aggregatedRaw.summary.numberOfStudents,
-                }
-              : aggregatedRaw.summary,
-          }
-        : basePreview
+      const aggregatedRaw = storedRecord
+        ? buildRawReportCardFromStoredRecord(storedRecord)
+        : null
+      const previewPayload = buildStudentPreview(student, aggregatedRaw)
 
       setPreviewStudentId(student.studentId)
       setPreviewData(previewPayload)
       setPreviewDialogOpen(true)
     },
     [
-      additionalData,
+      buildStudentPreview,
       normalizedTermLabel,
       persistAcademicMarksToStorage,
       selectedClass,
       selectedSession,
       selectedSubject,
-      teacher.id,
-      teacher.name,
-      marksData.length,
       toast,
     ],
   )
@@ -991,10 +1173,10 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     const remarksStore = parseStorageRecord("classTeacherRemarks")
 
     const nextState = {
-      classPositions: {} as Record<number, number>,
+      classPositions: {} as Record<string, number>,
       affectiveDomain: {} as BehavioralDomainState,
       psychomotorDomain: {} as BehavioralDomainState,
-      classTeacherRemarks: {} as Record<number, string>,
+      classTeacherRemarks: {} as Record<string, string>,
       attendance: {} as AttendanceState,
       studentStatus: {} as StudentStatusState,
       termInfo: createEmptyTermInfo(),
