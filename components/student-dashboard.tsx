@@ -28,6 +28,7 @@ import {
   CheckCircle,
   AlertCircle,
   Award,
+  Download,
 } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
@@ -85,6 +86,99 @@ function normalizeIdentifiedCollection(values: unknown, prefix: string): Identif
     .filter((record): record is IdentifiedRecord => record !== null)
 }
 
+const normalizeString = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value.trim()
+  }
+
+  if (typeof value === "number") {
+    return String(value)
+  }
+
+  return ""
+}
+
+const normalizeKey = (value: unknown): string => normalizeString(value).toLowerCase()
+
+const extractRecordId = (record: Record<string, unknown>): string | null => {
+  const candidates = [
+    record.id,
+    record.studentId,
+    record.student_id,
+    record.userId,
+    record.user_id,
+    record.reference,
+    record.admissionNumber,
+    record.admission_number,
+  ]
+
+  for (const candidate of candidates) {
+    const normalized = normalizeString(candidate)
+    if (normalized.length > 0) {
+      return normalized
+    }
+  }
+
+  return null
+}
+
+const findMatchingStudentRecord = (
+  records: unknown,
+  student: StudentDashboardProps["student"],
+): Record<string, unknown> | null => {
+  if (!Array.isArray(records)) {
+    return null
+  }
+
+  const targetId = normalizeKey(student.id)
+  const targetAdmission = normalizeKey(student.admissionNumber)
+  const targetEmail = normalizeKey(student.email)
+  const targetName = normalizeKey(student.name)
+
+  for (const candidate of records) {
+    if (!isRecord(candidate)) {
+      continue
+    }
+
+    const candidateId = extractRecordId(candidate)
+    if (candidateId && normalizeKey(candidateId) === targetId) {
+      return candidate
+    }
+
+    const candidateAdmission = normalizeKey(candidate.admissionNumber ?? candidate.admission_number)
+    if (targetAdmission && candidateAdmission === targetAdmission) {
+      return candidate
+    }
+
+    const candidateEmail = normalizeKey(candidate.email)
+    if (targetEmail && candidateEmail === targetEmail) {
+      return candidate
+    }
+
+    const candidateName = normalizeKey(candidate.name)
+    if (targetName && candidateName === targetName) {
+      return candidate
+    }
+  }
+
+  return null
+}
+
+const toNumber = (value: unknown): number => {
+  const numeric = Number(value ?? 0)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
+const normalizeSubjectName = (value: unknown): string => normalizeKey(value)
+
+const getRecordValue = (record: Record<string, unknown> | null | undefined, key: string): unknown => {
+  if (!record) {
+    return undefined
+  }
+
+  return record[key]
+}
+
 interface StudentDashboardProps {
   student: {
     id: string
@@ -104,6 +198,9 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     comment: "",
   })
 
+  const [effectiveStudentId, setEffectiveStudentId] = useState(student.id)
+  const [effectiveClassName, setEffectiveClassName] = useState(student.class)
+  const [studentTeachers, setStudentTeachers] = useState<string[]>([])
   const [subjects, setSubjects] = useState<IdentifiedRecord[]>([])
   const [timetable, setTimetable] = useState<TimetableSlotSummary[]>([])
   const [assignments, setAssignments] = useState<IdentifiedRecord[]>([])
@@ -116,26 +213,186 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const assignmentMaximum = CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment ?? 20
 
   useEffect(() => {
+    let isMounted = true
+
     const loadStudentData = async () => {
       try {
         setLoading(true)
 
-        // Load subjects and grades
-        const gradesResponse = await fetch(`/api/grades?studentId=${student.id}`)
-        if (gradesResponse.ok) {
-          const gradesData: unknown = await gradesResponse.json()
-          const grades = isRecord(gradesData) ? gradesData.grades : undefined
-          setSubjects(normalizeIdentifiedCollection(grades, "grade"))
-        } else {
-          setSubjects([])
+        let resolvedStudentId = student.id
+        let resolvedClassName = student.class
+        let matchedStudent: Record<string, unknown> | null = null
+
+        try {
+          const studentsResponse = await fetch("/api/students")
+          if (studentsResponse.ok) {
+            const payload: unknown = await studentsResponse.json()
+            const records = isRecord(payload) ? payload.students : undefined
+            matchedStudent = findMatchingStudentRecord(records, student)
+
+            if (matchedStudent) {
+              const extractedId = extractRecordId(matchedStudent)
+              if (extractedId) {
+                resolvedStudentId = extractedId
+              }
+
+              const matchedClass = normalizeString(
+                getRecordValue(matchedStudent, "class") ??
+                  getRecordValue(matchedStudent, "className") ??
+                  getRecordValue(matchedStudent, "class_name"),
+              )
+              if (matchedClass.length > 0) {
+                resolvedClassName = matchedClass
+              }
+            }
+          }
+        } catch (error) {
+          logger.error("Failed to resolve student record", { error })
         }
 
-        // Load assignments
-        const assignmentsData = await dbManager.getAssignments({ studentId: student.id })
-        setAssignments(normalizeIdentifiedCollection(assignmentsData, "assignment"))
+        let subjectRecords: IdentifiedRecord[] = []
+        try {
+          const subjectsResponse = await fetch("/api/subjects")
+          if (subjectsResponse.ok) {
+            const payload: unknown = await subjectsResponse.json()
+            const records = isRecord(payload) ? payload.subjects : undefined
+            const normalizedSubjects = normalizeIdentifiedCollection(records, "subject")
+            if (normalizedSubjects.length > 0) {
+              subjectRecords = normalizedSubjects.filter((record) => {
+                if (typeof record.name !== "string" && typeof record.subject !== "string") {
+                  return false
+                }
 
-        // Load timetable
-        const timetableResponse = await fetch(`/api/timetable?className=${encodeURIComponent(student.class)}`)
+                const classes = Array.isArray(record.classes) ? record.classes : []
+                return classes.some((className) => normalizeKey(className) === normalizeKey(resolvedClassName))
+              })
+            }
+          }
+        } catch (error) {
+          logger.error("Failed to load subject records", { error })
+        }
+
+        const subjectTeacherMap = new Map<string, string>()
+        const teacherSet = new Set<string>()
+
+        subjectRecords.forEach((record) => {
+          const subjectName =
+            typeof record.name === "string" ? record.name : typeof record.subject === "string" ? record.subject : ""
+          const teachers = Array.isArray(record.teachers)
+            ? record.teachers
+            : typeof record.teacher === "string"
+              ? [record.teacher]
+              : []
+
+          const primaryTeacher = teachers.find((teacher) => typeof teacher === "string" && teacher.trim().length > 0)
+
+          if (subjectName && primaryTeacher) {
+            subjectTeacherMap.set(normalizeSubjectName(subjectName), primaryTeacher)
+            teacherSet.add(primaryTeacher)
+          }
+        })
+
+        const normalizedTeacherSet = new Set(
+          Array.from(teacherSet)
+            .map((teacher) => teacher.trim().toLowerCase())
+            .filter((teacher) => teacher.length > 0),
+        )
+
+        let resolvedSubjects = [] as IdentifiedRecord[]
+
+        try {
+          const gradesResponse = await fetch(`/api/grades?studentId=${encodeURIComponent(resolvedStudentId)}`)
+          if (gradesResponse.ok) {
+            const gradesData: unknown = await gradesResponse.json()
+            const grades = isRecord(gradesData) ? gradesData.grades : undefined
+            resolvedSubjects = normalizeIdentifiedCollection(grades, "grade")
+          }
+        } catch (error) {
+          logger.error("Failed to load student grades", { error })
+        }
+
+        const matchedGrades = getRecordValue(matchedStudent, "grades")
+
+        if (resolvedSubjects.length === 0 && Array.isArray(matchedGrades)) {
+          const fallbackGrades = (matchedGrades as Array<Record<string, unknown>>).map((entry, index) => ({
+            id: normalizeString(entry.id) || `grade_${index}_${normalizeSubjectName(entry.subject)}`,
+            studentId: resolvedStudentId,
+            subject: entry.subject,
+            total: toNumber(entry.total),
+            grade: entry.grade,
+            firstCA: toNumber(entry.ca1 ?? entry.firstCA),
+            secondCA: toNumber(entry.ca2 ?? entry.secondCA),
+            assignment: toNumber(entry.assignment ?? entry.assessment),
+            exam: toNumber(entry.exam),
+          }))
+
+          resolvedSubjects = normalizeIdentifiedCollection(fallbackGrades, "grade")
+        }
+
+        const processedSubjects = resolvedSubjects.map((subjectRecord) => {
+          const subjectName = normalizeSubjectName(subjectRecord.subject)
+          const teacherName =
+            typeof subjectRecord.teacherName === "string" && subjectRecord.teacherName.trim().length > 0
+              ? subjectRecord.teacherName
+              : subjectTeacherMap.get(subjectName) ?? null
+
+          return {
+            ...subjectRecord,
+            teacherName,
+            total: toNumber(subjectRecord.total),
+          }
+        })
+
+        const knownSubjectKeys = new Set(processedSubjects.map((subjectRecord) => normalizeSubjectName(subjectRecord.subject)))
+
+        const additionalSubjects = subjectRecords
+          .filter((record) => !knownSubjectKeys.has(normalizeSubjectName(record.name ?? record.subject)))
+          .map((record) => {
+            const subjectName =
+              typeof record.name === "string" ? record.name : typeof record.subject === "string" ? record.subject : "Subject"
+            const teacherName = subjectTeacherMap.get(normalizeSubjectName(subjectName)) ?? null
+
+            return {
+              id: normalizeString(record.id) || `subject_${normalizeSubjectName(subjectName)}`,
+              subject: subjectName,
+              teacherName,
+              total: 0,
+              grade: null,
+            }
+          })
+
+        if (!isMounted) {
+          return
+        }
+
+        setSubjects([...processedSubjects, ...additionalSubjects])
+
+        const assignmentsData = await dbManager.getAssignments({ studentId: resolvedStudentId })
+        if (!isMounted) {
+          return
+        }
+
+        const normalizedAssignments = normalizeIdentifiedCollection(assignmentsData, "assignment")
+        const filteredAssignments =
+          normalizedTeacherSet.size > 0
+            ? normalizedAssignments.filter((assignment) => {
+                const teacherName = typeof assignment.teacher === "string" ? assignment.teacher.trim().toLowerCase() : ""
+                if (!teacherName) {
+                  return true
+                }
+
+                return normalizedTeacherSet.has(teacherName)
+              })
+            : normalizedAssignments
+        setAssignments(filteredAssignments)
+
+        const timetableResponse = await fetch(
+          `/api/timetable?className=${encodeURIComponent(resolvedClassName)}`,
+        )
+        if (!isMounted) {
+          return
+        }
+
         if (timetableResponse.ok) {
           const timetableJson: unknown = await timetableResponse.json()
           const normalized = normalizeTimetableCollection(
@@ -153,41 +410,94 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
           setTimetable([])
         }
 
-        // Load library books
-        const libraryData = await dbManager.getLibraryBooks(student.id)
+        const libraryData = await dbManager.getLibraryBooks(resolvedStudentId)
+        if (!isMounted) {
+          return
+        }
+
         setLibraryBooks(normalizeIdentifiedCollection(libraryData, "book"))
 
-        const attendanceData = await dbManager.getStudentAttendance(student.id)
+        const attendanceData = await dbManager.getStudentAttendance(resolvedStudentId)
+        if (!isMounted) {
+          return
+        }
+
         setAttendance(attendanceData)
 
-        const eventsData = await dbManager.getUpcomingEvents(student.class)
+        const eventsData = await dbManager.getUpcomingEvents(resolvedClassName)
+        if (!isMounted) {
+          return
+        }
+
         setUpcomingEvents(normalizeIdentifiedCollection(eventsData, "event"))
 
-        const profileData = await dbManager.getStudentProfile(student.id)
-        if (profileData) {
-          setStudentProfile(profileData)
+        const profileData = await dbManager.getStudentProfile(resolvedStudentId)
+        if (!isMounted) {
+          return
         }
+
+        const mergedProfile = {
+          id: resolvedStudentId,
+          name:
+            (isRecord(profileData) && typeof profileData.name === "string"
+              ? profileData.name
+              : typeof getRecordValue(matchedStudent, "name") === "string"
+                ? (getRecordValue(matchedStudent, "name") as string)
+                : student.name) ?? student.name,
+          email:
+            (isRecord(profileData) && typeof profileData.email === "string"
+              ? profileData.email
+              : typeof getRecordValue(matchedStudent, "email") === "string"
+                ? (getRecordValue(matchedStudent, "email") as string)
+                : student.email) ?? student.email,
+          class: resolvedClassName,
+          admissionNumber:
+            (isRecord(profileData) && typeof profileData.admissionNumber === "string"
+              ? profileData.admissionNumber
+              : typeof getRecordValue(matchedStudent, "admissionNumber") === "string"
+                ? (getRecordValue(matchedStudent, "admissionNumber") as string)
+                : student.admissionNumber) ?? student.admissionNumber,
+        }
+
+        setStudentProfile(mergedProfile)
+        setEffectiveStudentId(resolvedStudentId)
+        setEffectiveClassName(resolvedClassName)
+        setStudentTeachers(Array.from(teacherSet))
       } catch (error) {
         logger.error("Failed to load student data", { error })
       } finally {
-        setLoading(false)
+        if (isMounted) {
+          setLoading(false)
+        }
       }
     }
 
-    loadStudentData()
+    void loadStudentData()
+
+    return () => {
+      isMounted = false
+    }
+  }, [student.admissionNumber, student.class, student.email, student.id, student.name])
+
+  useEffect(() => {
+    if (!effectiveStudentId) {
+      return undefined
+    }
 
     const handleGradesUpdate = (payload: unknown) => {
       const record = toIdentifiedRecord(payload, "grade")
-      if (!record || record.studentId !== student.id) {
+      if (!record || normalizeKey(record.studentId) !== normalizeKey(effectiveStudentId)) {
         return
       }
 
-      setSubjects((prev) => prev.map((subject) => (subject.id === record.id ? { ...subject, ...record } : subject)))
+      setSubjects((prev) =>
+        prev.map((subject) => (subject.id === record.id ? { ...subject, ...record, total: toNumber(record.total) } : subject)),
+      )
     }
 
     const handleAssignmentsUpdate = (payload: unknown) => {
       const record = toIdentifiedRecord(payload, "assignment")
-      if (!record || record.studentId !== student.id) {
+      if (!record || normalizeKey(record.studentId) !== normalizeKey(effectiveStudentId)) {
         return
       }
 
@@ -195,7 +505,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     }
 
     const handleAttendanceUpdate = (payload: unknown) => {
-      if (isRecord(payload) && payload.studentId === student.id) {
+      if (isRecord(payload) && normalizeKey(payload.studentId) === normalizeKey(effectiveStudentId)) {
         setAttendance((prev) => ({
           present: Number(payload.present ?? prev.present),
           total: Number(payload.total ?? prev.total),
@@ -205,14 +515,14 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     }
 
     const handleEventsUpdate = (payload: unknown) => {
-      if (isRecord(payload) && payload.class === student.class) {
+      if (isRecord(payload) && normalizeKey(payload.class) === normalizeKey(effectiveClassName)) {
         setUpcomingEvents(normalizeIdentifiedCollection(payload.events, "event"))
       }
     }
 
     const handleProfileUpdate = (payload: unknown) => {
       const record = toIdentifiedRecord(payload, "profile")
-      if (record && record.id === student.id) {
+      if (record && normalizeKey(record.id) === normalizeKey(effectiveStudentId)) {
         setStudentProfile((prev) => ({
           ...prev,
           ...record,
@@ -234,13 +544,13 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       dbManager.removeEventListener("eventsUpdate", handleEventsUpdate)
       dbManager.removeEventListener("profileUpdate", handleProfileUpdate)
     }
-  }, [student.id])
+  }, [effectiveClassName, effectiveStudentId])
 
   const handleRenewBook = async (bookId: string) => {
     try {
-      await dbManager.renewLibraryBook(bookId, student.id)
-      const updatedBooks = await dbManager.getLibraryBooks(student.id)
-      setLibraryBooks(updatedBooks)
+      await dbManager.renewLibraryBook(bookId, effectiveStudentId)
+      const updatedBooks = await dbManager.getLibraryBooks(effectiveStudentId)
+      setLibraryBooks(normalizeIdentifiedCollection(updatedBooks, "book"))
     } catch (error) {
       logger.error("Failed to renew book", { error })
     }
@@ -339,7 +649,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     try {
       const submissionData = {
         assignmentId: selectedAssignment.id,
-        studentId: student.id,
+        studentId: effectiveStudentId,
         status: "submitted",
         submittedAt: new Date().toISOString(),
         submittedFile: submissionForm.file?.name || null,
@@ -387,8 +697,12 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">Welcome, {studentProfile.name}</h1>
-            <p className="text-green-100">Student Portal - {student.class} - VEA 2025</p>
-            <p className="text-sm text-green-200">Admission No: {student.admissionNumber}</p>
+            <p className="text-green-100">
+              Student Portal - {(studentProfile.class || effectiveClassName) ?? "Unassigned"} - VEA 2025
+            </p>
+            <p className="text-sm text-green-200">
+              Admission No: {studentProfile.admissionNumber || student.admissionNumber}
+            </p>
           </div>
           <TutorialLink href="https://www.youtube.com/watch?v=1FJD7jZqZEk" variant="inverse" />
         </div>
@@ -502,7 +816,11 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
             role="student"
             title="Upcoming Exams"
             description="Plan ahead with the latest exam schedule for your class."
-            classNames={[studentProfile.class]}
+            classNames={
+              [studentProfile.class || effectiveClassName].filter(
+                (value): value is string => typeof value === "string" && value.length > 0,
+              )
+            }
             className="h-full"
             emptyState="No upcoming exams scheduled for your class yet."
             limit={4}
@@ -698,10 +1016,16 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
           <Card>
             <CardHeader>
               <CardTitle className="text-[#2d682d]">Study Materials</CardTitle>
-              <CardDescription>Access study materials for your class ({student.class})</CardDescription>
+              <CardDescription>
+                Access study materials for your class ({(studentProfile.class || effectiveClassName) ?? "Unassigned"})
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <StudyMaterials userRole="student" studentClass={student.class} />
+              <StudyMaterials
+                userRole="student"
+                studentClass={effectiveClassName}
+                allowedTeacherNames={studentTeachers}
+              />
             </CardContent>
           </Card>
         </TabsContent>

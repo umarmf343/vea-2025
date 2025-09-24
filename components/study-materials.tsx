@@ -49,6 +49,7 @@ interface StudyMaterialsProps {
   availableSubjects?: string[]
   availableClasses?: string[]
   studentClass?: string
+  allowedTeacherNames?: string[]
 }
 
 const DEFAULT_SUBJECTS = [
@@ -94,6 +95,7 @@ export function StudyMaterials({
   availableSubjects,
   availableClasses,
   studentClass,
+  allowedTeacherNames,
 }: StudyMaterialsProps) {
   const { toast } = useToast()
   const [materials, setMaterials] = useState<StudyMaterialRecord[]>([])
@@ -123,6 +125,16 @@ export function StudyMaterials({
   }, [availableClasses, userRole])
 
   const canUpload = userRole === "teacher"
+
+  const normalizedTeacherFilter = useMemo(
+    () =>
+      Array.isArray(allowedTeacherNames)
+        ? allowedTeacherNames
+            .map((name) => (typeof name === "string" ? name.trim().toLowerCase() : ""))
+            .filter((name) => name.length > 0)
+        : [],
+    [allowedTeacherNames],
+  )
 
   const canManageMaterial = (material: StudyMaterialRecord) => {
     if (!canUpload) {
@@ -155,10 +167,24 @@ export function StudyMaterials({
 
       const records = await dbManager.getStudyMaterials(filters)
 
-      const filtered =
-        userRole === "student" && studentClass
-          ? records.filter((material) => material.className.toLowerCase() === studentClass.toLowerCase())
-          : records
+      const filtered = records.filter((material) => {
+        if (userRole === "student" && studentClass) {
+          if (material.className.toLowerCase() !== studentClass.toLowerCase()) {
+            return false
+          }
+        }
+
+        if (userRole === "student" && normalizedTeacherFilter.length > 0) {
+          const teacher =
+            typeof material.teacherName === "string" ? material.teacherName.trim().toLowerCase() : ""
+
+          if (!teacher || !normalizedTeacherFilter.includes(teacher)) {
+            return false
+          }
+        }
+
+        return true
+      })
 
       setMaterials(filtered)
     } catch (error) {
@@ -186,7 +212,7 @@ export function StudyMaterials({
       dbManager.off("studyMaterialsUpdated", handleMaterialsUpdate)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userRole, teacherId, studentClass])
+  }, [userRole, teacherId, studentClass, normalizedTeacherFilter])
 
   const handleUpload: React.FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault()
