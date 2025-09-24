@@ -60,6 +60,16 @@ import {
   syncReportCardAccess,
 } from "@/lib/report-card-access"
 import { useBranding } from "@/hooks/use-branding"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 export const dynamic = "force-dynamic"
 export const viewport: Viewport = {
@@ -1381,6 +1391,11 @@ function ParentDashboard({ user }: { user: User }) {
   const [adminGrantedAccess, setAdminGrantedAccess] = useState(false)
   const [reportCardData, setReportCardData] = useState<RawReportCardData | null>(null)
   const [academicPeriod, setAcademicPeriod] = useState({ term: "First Term", session: "2024/2025" })
+  const [accessNotice, setAccessNotice] = useState<{
+    title: string
+    description: string
+    showPayment?: boolean
+  } | null>(null)
   const fallbackMessagingDirectory = useMemo<MessagingParticipant[]>(
     () => [
       { id: "user_teacher", name: "Class Teacher", role: "teacher" },
@@ -1783,28 +1798,54 @@ function ParentDashboard({ user }: { user: User }) {
     ],
   }
 
-  const handleViewReportCard = async () => {
-    if (!hasAccess) {
-      setShowPaymentModal(true)
-      return
-    }
-
+  const resolveApprovalStatus = useCallback(() => {
     try {
-      const brandingInfo = getBrandingFromStorage()
-
       const approvedReports = JSON.parse(safeStorage.getItem("approvedReports") || "[]") as string[]
       const approvalKeys = [studentData.id, linkedStudentId, "1"].filter(
         (value, index, array) => value && array.indexOf(value) === index,
       )
 
-      if (!approvalKeys.some((key) => approvedReports.includes(key))) {
-        toast({
-          variant: "destructive",
+      return {
+        isApproved: approvalKeys.some((key) => approvedReports.includes(key)),
+      }
+    } catch (error) {
+      logger.error("Unable to resolve report approval state", { error })
+      return { isApproved: false }
+    }
+  }, [linkedStudentId, studentData.id])
+
+  const handleViewReportCard = async () => {
+    try {
+      const { isApproved } = resolveApprovalStatus()
+
+      if (!hasAccess) {
+        setAccessNotice(
+          isApproved
+            ? {
+                title: "Report card awaiting release",
+                description:
+                  "The school has prepared this report card but it hasn't been shared to your dashboard yet. Please contact the administrator for assistance.",
+              }
+            : {
+                title: "Report card not available yet",
+                description:
+                  "This report card hasn't been sent to your dashboard. You'll be notified once it's ready. If you still need to complete payment, you can proceed now.",
+                showPayment: true,
+              },
+        )
+        return
+      }
+
+      if (!isApproved) {
+        setAccessNotice({
           title: "Report card pending approval",
-          description: "Please wait for the administrator to approve this report card before viewing.",
+          description:
+            "Please wait for the school administrator to approve and publish this report card. You'll be able to view it once approval is complete.",
         })
         return
       }
+
+      const brandingInfo = getBrandingFromStorage()
 
       const augmentReportData = (data: RawReportCardData): RawReportCardData => {
         const summary = data.summary
@@ -2010,9 +2051,12 @@ function ParentDashboard({ user }: { user: User }) {
               </CardHeader>
               <CardContent className="space-y-3">
                 <Button
-                  className="w-full bg-[#2d682d] hover:bg-[#2d682d]/90 text-white"
+                  className={cn(
+                    "w-full bg-[#2d682d] hover:bg-[#2d682d]/90 text-white",
+                    !hasAccess && "opacity-80",
+                  )}
                   onClick={handleViewReportCard}
-                  disabled={!hasAccess}
+                  aria-disabled={!hasAccess}
                 >
                   View Report Card
                 </Button>
@@ -2021,7 +2065,37 @@ function ParentDashboard({ user }: { user: User }) {
                   studentId={studentData.id}
                   className={studentData.class}
                 >
-                  <Button className="w-full bg-[#b29032] hover:bg-[#b29032]/90 text-white" disabled={!hasAccess}>
+                  <Button
+                    className={cn(
+                      "w-full bg-[#b29032] hover:bg-[#b29032]/90 text-white",
+                      !hasAccess && "opacity-80",
+                    )}
+                    onClick={(event) => {
+                      if (hasAccess) {
+                        return
+                      }
+
+                      event.preventDefault()
+                      event.stopPropagation()
+
+                      const { isApproved } = resolveApprovalStatus()
+                      setAccessNotice(
+                        isApproved
+                          ? {
+                              title: "Cumulative report unavailable",
+                              description:
+                                "The cumulative performance summary hasn't been shared to your dashboard yet. Please reach out to the school for an update.",
+                            }
+                          : {
+                              title: "Cumulative report locked",
+                              description:
+                                "Complete the report card release process to unlock the cumulative performance summary for this student.",
+                              showPayment: true,
+                            },
+                      )
+                    }}
+                    aria-disabled={!hasAccess}
+                  >
                     View Cumulative Report
                   </Button>
                 </CumulativeReportTrigger>
@@ -2066,6 +2140,32 @@ function ParentDashboard({ user }: { user: User }) {
           </div>
         </>
       )}
+
+      <AlertDialog open={Boolean(accessNotice)} onOpenChange={(open) => !open && setAccessNotice(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{accessNotice?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{accessNotice?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            {accessNotice?.showPayment ? (
+              <>
+                <AlertDialogCancel onClick={() => setAccessNotice(null)}>Close</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    setAccessNotice(null)
+                    setShowPaymentModal(true)
+                  }}
+                >
+                  Complete Payment
+                </AlertDialogAction>
+              </>
+            ) : (
+              <AlertDialogAction onClick={() => setAccessNotice(null)}>Okay</AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <PaymentModal
         isOpen={showPaymentModal}
