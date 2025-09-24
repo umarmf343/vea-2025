@@ -47,6 +47,9 @@ interface NormalizedReportCard {
     numberInClass?: number
     statusLabel?: string
     positionLabel?: string
+    dateOfBirth?: string
+    gender?: string
+    age?: number
   }
   subjects: SubjectScore[]
   summary: {
@@ -93,6 +96,7 @@ const STORAGE_KEYS_TO_WATCH = [
   "behavioralAssessments",
   "attendancePositions",
   "classTeacherRemarks",
+  "studentPhotos",
 ]
 
 const parseJsonRecord = (value: string | null) => {
@@ -166,6 +170,50 @@ const formatOrdinal = (position?: number) => {
   return `${position}${suffix}`
 }
 
+const calculateAge = (value?: string) => {
+  if (!value) {
+    return undefined
+  }
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined
+  }
+
+  const today = new Date()
+  let age = today.getFullYear() - parsed.getFullYear()
+  const hasNotHadBirthdayThisYear =
+    today.getMonth() < parsed.getMonth() ||
+    (today.getMonth() === parsed.getMonth() && today.getDate() < parsed.getDate())
+
+  if (hasNotHadBirthdayThisYear) {
+    age -= 1
+  }
+
+  if (age < 0 || age > 150) {
+    return undefined
+  }
+
+  return age
+}
+
+const formatDateDisplay = (value?: string) => {
+  if (!value) {
+    return undefined
+  }
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return value
+  }
+
+  return parsed.toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  })
+}
+
 const BEHAVIORAL_LABELS: Record<string, string> = {
   excel: "Excellent",
   vgood: "Very Good",
@@ -182,17 +230,6 @@ const formatBehavioralLabel = (value?: string) => {
 
   return BEHAVIORAL_LABELS[normalized] ?? normalized
 }
-
-const AFFECTIVE_FOOTER_COLUMNS = [
-  { key: "neatness", label: "Neatness" },
-  { key: "honesty", label: "Honesty" },
-  { key: "punctuality", label: "Punctuality" },
-] as const
-
-const PSYCHOMOTOR_FOOTER_COLUMNS = [
-  { key: "gamesSports", label: "Sport" },
-  { key: "handwriting", label: "Handwriting" },
-] as const
 
 const GRADING_SCALE = [
   { grade: "A", range: "80 - 100%", meaning: "Distinction" },
@@ -388,6 +425,9 @@ const normalizeReportCard = (
       numberInClass,
       statusLabel: formatStatusLabel(attendanceRecord?.status ?? source.student.status),
       positionLabel,
+      dateOfBirth: source.student.dateOfBirth ?? undefined,
+      gender: source.student.gender ?? undefined,
+      age: calculateAge(source.student.dateOfBirth),
     },
     subjects: normalizedSubjects,
     summary: {
@@ -519,27 +559,6 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
       },
     ] as Array<{ label: string; value: string; helper?: string }>
 
-    if (typeof reportCardData.summary.classAverage === "number") {
-      items.push({
-        label: "Class Average",
-        value: `${reportCardData.summary.classAverage.toFixed(1)}%`,
-      })
-    }
-
-    if (typeof reportCardData.summary.highestScore === "number") {
-      items.push({
-        label: "Highest Score",
-        value: reportCardData.summary.highestScore.toLocaleString(),
-      })
-    }
-
-    if (typeof reportCardData.summary.lowestScore === "number") {
-      items.push({
-        label: "Lowest Score",
-        value: reportCardData.summary.lowestScore.toLocaleString(),
-      })
-    }
-
     return items
   }, [reportCardData])
 
@@ -562,21 +581,131 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     )
   }, [reportCardData])
 
-  const additionalAffectiveTraits = useMemo(
-    () =>
-      AFFECTIVE_TRAITS.filter((trait) =>
-        PRIMARY_AFFECTIVE_TRAITS.every((primary) => primary.key !== trait.key),
-      ),
-    [],
-  )
+  const classSummaryItems = useMemo(() => {
+    if (!reportCardData) {
+      return []
+    }
 
-  const additionalPsychomotorSkills = useMemo(
-    () =>
-      PSYCHOMOTOR_SKILLS.filter((skill) =>
-        PRIMARY_PSYCHOMOTOR_SKILLS.every((primary) => primary.key !== skill.key),
-      ),
-    [],
-  )
+    const items: Array<{ label: string; value: string }> = [
+      {
+        label: "Number in Class",
+        value: reportCardData.student.numberInClass
+          ? reportCardData.student.numberInClass.toString()
+          : "—",
+      },
+      {
+        label: "Class Average",
+        value:
+          typeof reportCardData.summary.classAverage === "number"
+            ? `${reportCardData.summary.classAverage.toFixed(1)}%`
+            : "—",
+      },
+      {
+        label: "Highest Score",
+        value:
+          typeof reportCardData.summary.highestScore === "number"
+            ? reportCardData.summary.highestScore.toLocaleString()
+            : "—",
+      },
+      {
+        label: "Lowest Score",
+        value:
+          typeof reportCardData.summary.lowestScore === "number"
+            ? reportCardData.summary.lowestScore.toLocaleString()
+            : "—",
+      },
+      {
+        label: "Student Status",
+        value: reportCardData.student.statusLabel ?? "Active",
+      },
+    ]
+
+    return items
+  }, [reportCardData])
+
+  const affectiveTraits = useMemo(() => {
+    const seen = new Set<string>()
+    return [...PRIMARY_AFFECTIVE_TRAITS, ...AFFECTIVE_TRAITS].filter((trait) => {
+      if (seen.has(trait.key)) {
+        return false
+      }
+      seen.add(trait.key)
+      return true
+    })
+  }, [])
+
+  const psychomotorSkills = useMemo(() => {
+    const seen = new Set<string>()
+    return [...PRIMARY_PSYCHOMOTOR_SKILLS, ...PSYCHOMOTOR_SKILLS].filter((skill) => {
+      if (seen.has(skill.key)) {
+        return false
+      }
+      seen.add(skill.key)
+      return true
+    })
+  }, [])
+
+  const learnerDetails = useMemo(() => {
+    if (!reportCardData) {
+      return []
+    }
+
+    const details: Array<{ label: string; value: string; helper?: string }> = [
+      {
+        label: "Student Name",
+        value: reportCardData.student.name,
+      },
+      {
+        label: "Admission Number",
+        value: reportCardData.student.admissionNumber || "—",
+      },
+      {
+        label: "Class",
+        value: reportCardData.student.class || "—",
+      },
+      {
+        label: "Term",
+        value: reportCardData.student.term || "—",
+      },
+      {
+        label: "Session",
+        value: reportCardData.student.session || "—",
+      },
+      {
+        label: "Gender",
+        value: reportCardData.student.gender ?? "—",
+      },
+      {
+        label: "Date of Birth",
+        value: formatDateDisplay(reportCardData.student.dateOfBirth) ?? "—",
+      },
+      {
+        label: "Age",
+        value:
+          reportCardData.student.age !== undefined ? `${reportCardData.student.age} years` : "—",
+      },
+      {
+        label: "Overall Position",
+        value: reportCardData.summary.positionLabel || "—",
+        helper:
+          reportCardData.student.numberInClass && reportCardData.student.numberInClass > 0
+            ? `of ${reportCardData.student.numberInClass}`
+            : undefined,
+      },
+      {
+        label: "Number in Class",
+        value: reportCardData.student.numberInClass
+          ? reportCardData.student.numberInClass.toString()
+          : "—",
+      },
+      {
+        label: "Student Status",
+        value: reportCardData.student.statusLabel ?? "Active",
+      },
+    ]
+
+    return details
+  }, [reportCardData])
 
   if (!reportCardData) {
     return (
@@ -595,496 +724,472 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
   return (
     <div className="max-w-6xl mx-auto py-6 print:py-0">
-      <div className="flex justify-end gap-3 mb-4 print:hidden">
+      <div className="mb-4 flex justify-end gap-3 print:hidden">
         <Button
           onClick={handlePrint}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30"
+          className="bg-emerald-700 text-white shadow-md hover:bg-emerald-800"
         >
-          <Print className="h-4 w-4 mr-2" />
+          <Print className="mr-2 h-4 w-4" />
           Print Report Card
         </Button>
         <Button
           onClick={handleDownload}
           variant="outline"
-          className="border-emerald-500 text-emerald-700 hover:bg-emerald-500 hover:text-white bg-white shadow-lg shadow-emerald-500/20"
+          className="border-emerald-600 text-emerald-700 hover:bg-emerald-600 hover:text-white"
         >
-          <Download className="h-4 w-4 mr-2" />
+          <Download className="mr-2 h-4 w-4" />
           Download PDF
         </Button>
       </div>
 
-      <div className="bg-gradient-to-br from-emerald-50 via-white to-sky-50 p-1 rounded-[32px] shadow-2xl print:bg-white print:p-0 print:rounded-none print:shadow-none">
-        <div className="bg-white rounded-[28px] border border-emerald-200 overflow-hidden print:border-black print:rounded-none">
-          <header className="bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-500 px-8 py-8 text-white print:bg-white print:px-6 print:py-6 print:text-emerald-900 print:border-b print:border-black">
-            <div className="flex flex-wrap items-start justify-between gap-6">
-              <div className="flex items-start gap-4">
-                <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white/70 bg-white/90 shadow-inner print:border-emerald-800/70 print:bg-white">
-                  {reportCardData.branding.logo ? (
+      <div className="overflow-hidden rounded-3xl border border-slate-300 bg-white shadow-xl print:rounded-none print:border-black print:shadow-none">
+        <header className="border-b border-slate-300 bg-slate-50 px-8 py-6 print:bg-white">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex flex-1 flex-col gap-4 lg:flex-row lg:items-center">
+              <div className="flex h-24 w-24 items-center justify-center rounded-lg border border-slate-300 bg-white">
+                {reportCardData.branding.logo ? (
+                  <img
+                    src={reportCardData.branding.logo}
+                    alt={`${reportCardData.branding.schoolName} logo`}
+                    className="h-full w-full object-contain p-2"
+                  />
+                ) : (
+                  <div className="text-center text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">
+                    School
+                    <br />
+                    Logo
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 text-center lg:text-left">
+                <p className="text-xs font-semibold uppercase tracking-[0.45em] text-slate-600">
+                  Official Report Card
+                </p>
+                <h1 className="mt-1 text-2xl font-black uppercase tracking-[0.25em] text-slate-900">
+                  {reportCardData.branding.schoolName}
+                </h1>
+                {reportCardData.branding.address ? (
+                  <p className="text-sm text-slate-700">{reportCardData.branding.address}</p>
+                ) : null}
+                <div className="mt-2 flex flex-wrap justify-center gap-4 text-[11px] font-medium uppercase tracking-[0.25em] text-slate-600 lg:justify-start">
+                  {reportCardData.branding.educationZone ? (
+                    <span>Education Zone: {reportCardData.branding.educationZone}</span>
+                  ) : null}
+                  {reportCardData.branding.councilArea ? (
+                    <span>L.G.A: {reportCardData.branding.councilArea}</span>
+                  ) : null}
+                </div>
+                <div className="mt-1 flex flex-wrap justify-center gap-3 text-[11px] text-slate-600 lg:justify-start">
+                  {reportCardData.branding.contactPhone ? (
+                    <span>Tel: {reportCardData.branding.contactPhone}</span>
+                  ) : null}
+                  {reportCardData.branding.contactEmail ? (
+                    <span>Email: {reportCardData.branding.contactEmail}</span>
+                  ) : null}
+                </div>
+                <p className="mt-4 text-sm font-semibold uppercase tracking-[0.35em] text-slate-800">
+                  {reportCardData.student.term} • {reportCardData.student.session} Academic Session
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <div className="h-24 w-24 overflow-hidden rounded-lg border border-slate-300 bg-white">
+                {studentPhoto ? (
+                  <img
+                    src={studentPhoto}
+                    alt={`${reportCardData.student.name} passport`}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">
+                    Passport
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-600">
+                Student Passport
+              </p>
+            </div>
+          </div>
+        </header>
+
+        <section className="border-b border-slate-200 px-8 py-5">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-700">Learner Information</h2>
+          <div className="mt-4 grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-3">
+            {learnerDetails.map((detail) => (
+              <div key={detail.label} className="space-y-1">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{detail.label}</p>
+                <div className="rounded-lg border border-slate-300 px-3 py-2 font-medium text-slate-800">
+                  {detail.value}
+                </div>
+                {detail.helper ? (
+                  <p className="text-[10px] font-medium uppercase tracking-[0.25em] text-slate-500">
+                    {detail.helper}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="border-b border-slate-200 px-8 py-5">
+          <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+            <div className="overflow-hidden rounded-2xl border border-slate-300">
+              <div className="bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+                Performance Summary
+              </div>
+              <table className="w-full text-sm">
+                <tbody>
+                  {summaryItems.map((item) => (
+                    <tr key={item.label} className="border-b border-slate-200 last:border-b-0">
+                      <th className="w-1/2 bg-slate-50 px-4 py-2 text-left text-[11px] uppercase tracking-[0.25em] text-slate-600">
+                        {item.label}
+                      </th>
+                      <td className="px-4 py-2 font-semibold text-slate-800">
+                        {item.value}
+                        {item.helper ? (
+                          <span className="ml-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+                            {item.helper}
+                          </span>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="space-y-4">
+              <div className="overflow-hidden rounded-2xl border border-slate-300">
+                <div className="bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+                  Attendance Record
+                </div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    <tr className="border-b border-slate-200">
+                      <th className="bg-slate-50 px-4 py-2 text-left text-[11px] uppercase tracking-[0.25em] text-slate-600">
+                        Days Present
+                      </th>
+                      <td className="px-4 py-2 font-semibold text-slate-800">{reportCardData.attendance.present}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <th className="bg-slate-50 px-4 py-2 text-left text-[11px] uppercase tracking-[0.25em] text-slate-600">
+                        Days Absent
+                      </th>
+                      <td className="px-4 py-2 font-semibold text-slate-800">{reportCardData.attendance.absent}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <th className="bg-slate-50 px-4 py-2 text-left text-[11px] uppercase tracking-[0.25em] text-slate-600">
+                        Total Days
+                      </th>
+                      <td className="px-4 py-2 font-semibold text-slate-800">{reportCardData.attendance.total}</td>
+                    </tr>
+                    <tr>
+                      <th className="bg-slate-50 px-4 py-2 text-left text-[11px] uppercase tracking-[0.25em] text-slate-600">
+                        Attendance %
+                      </th>
+                      <td className="px-4 py-2 font-semibold text-slate-800">{reportCardData.attendance.percentage}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-slate-300">
+                <div className="bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+                  Class Overview
+                </div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {classSummaryItems.map((item) => (
+                      <tr key={item.label} className="border-b border-slate-200 last:border-b-0">
+                        <th className="bg-slate-50 px-4 py-2 text-left text-[11px] uppercase tracking-[0.25em] text-slate-600">
+                          {item.label}
+                        </th>
+                        <td className="px-4 py-2 font-semibold text-slate-800">{item.value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-b border-slate-200 px-8 py-5">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-700">
+            Academic Performance
+          </h2>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full border border-slate-400 text-xs md:text-sm">
+              <thead className="bg-slate-100 text-[11px] uppercase tracking-[0.2em] text-slate-700">
+                <tr>
+                  <th className="border border-slate-300 px-3 py-2 text-left">Subjects</th>
+                  <th className="border border-slate-300 px-3 py-2 text-center">1st C.A. (10)</th>
+                  <th className="border border-slate-300 px-3 py-2 text-center">2nd C.A. (10)</th>
+                  <th className="border border-slate-300 px-3 py-2 text-center">Assignments (20)</th>
+                  <th className="border border-slate-300 px-3 py-2 text-center">C.A. Total (40)</th>
+                  <th className="border border-slate-300 px-3 py-2 text-center">Exam (60)</th>
+                  <th className="border border-slate-300 px-3 py-2 text-center">Grand Total (100)</th>
+                  <th className="border border-slate-300 px-3 py-2 text-center">Grade</th>
+                  <th className="border border-slate-300 px-3 py-2 text-center">Subject Position</th>
+                  <th className="border border-slate-300 px-3 py-2 text-left">Teacher&apos;s Remark</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reportCardData.subjects.length > 0 ? (
+                  reportCardData.subjects.map((subject, index) => (
+                    <tr key={`${subject.name}-${index}`} className="odd:bg-white even:bg-slate-50">
+                      <td className="border border-slate-300 px-3 py-2 font-semibold text-slate-900">{subject.name}</td>
+                      <td className="border border-slate-300 px-3 py-2 text-center font-medium text-slate-800">{subject.ca1}</td>
+                      <td className="border border-slate-300 px-3 py-2 text-center font-medium text-slate-800">{subject.ca2}</td>
+                      <td className="border border-slate-300 px-3 py-2 text-center font-medium text-slate-800">{subject.assignment}</td>
+                      <td className="border border-slate-300 px-3 py-2 text-center font-semibold text-slate-900">{subject.caTotal}</td>
+                      <td className="border border-slate-300 px-3 py-2 text-center font-medium text-slate-800">{subject.exam}</td>
+                      <td className="border border-slate-300 px-3 py-2 text-center font-bold text-slate-900">{subject.total}</td>
+                      <td className="border border-slate-300 px-3 py-2 text-center font-bold text-emerald-700">
+                        {subject.grade || deriveGradeFromScore(subject.total)}
+                      </td>
+                      <td className="border border-slate-300 px-3 py-2 text-center font-semibold text-slate-800">
+                        {subject.position ?? "—"}
+                      </td>
+                      <td className="border border-slate-300 px-3 py-2 text-left text-xs text-slate-700">
+                        {subject.remarks || "—"}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={10} className="border border-slate-300 px-3 py-4 text-center text-sm text-slate-600">
+                      No subject scores have been recorded for this student.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-100 font-semibold text-slate-900">
+                  <td className="border border-slate-300 px-3 py-2 text-center uppercase tracking-[0.2em]">Totals</td>
+                  <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.ca1 ?? "—"}</td>
+                  <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.ca2 ?? "—"}</td>
+                  <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.assignment ?? "—"}</td>
+                  <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.caTotal ?? "—"}</td>
+                  <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.exam ?? "—"}</td>
+                  <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.total ?? "—"}</td>
+                  <td className="border border-slate-300 px-3 py-2 text-center">—</td>
+                  <td className="border border-slate-300 px-3 py-2 text-center">—</td>
+                  <td className="border border-slate-300 px-3 py-2">&nbsp;</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <p className="mt-3 text-xs text-slate-600">
+            Continuous assessments contribute 40% of the total score (First & Second C.A plus Assignments), while examinations account for 60%.
+          </p>
+        </section>
+
+        <section className="border-b border-slate-200 px-8 py-5">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-700">
+            Whole Child Development
+          </h2>
+          <div className="mt-4 grid gap-6 lg:grid-cols-2">
+            <div className="overflow-hidden rounded-2xl border border-slate-300">
+              <div className="bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+                Affective (Behavioural) Domain
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px] text-slate-700">
+                  <thead className="bg-slate-50 uppercase tracking-[0.25em] text-slate-600">
+                    <tr>
+                      <th className="border border-slate-300 px-3 py-2 text-left">Traits</th>
+                      {BEHAVIORAL_RATING_COLUMNS.map((column) => (
+                        <th key={column.key} className="border border-slate-300 px-2 py-2 text-center">
+                          {column.label}
+                        </th>
+                      ))}
+                      <th className="border border-slate-300 px-3 py-2 text-center">Recorded Rating</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {affectiveTraits.map((trait) => (
+                      <tr key={trait.key} className="odd:bg-white even:bg-slate-50">
+                        <td className="border border-slate-300 px-3 py-2 font-semibold text-slate-800">{trait.label}</td>
+                        {BEHAVIORAL_RATING_COLUMNS.map((option) => {
+                          const mark = getBehavioralMark(reportCardData.affectiveDomain, trait.key, option.key)
+                          return (
+                            <td
+                              key={`${trait.key}-${option.key}`}
+                              className="border border-slate-300 px-2 py-2 text-center font-bold text-slate-700"
+                            >
+                              {mark}
+                            </td>
+                          )
+                        })}
+                        <td className="border border-slate-300 px-3 py-2 text-center font-medium text-emerald-700">
+                          {formatBehavioralLabel(reportCardData.affectiveDomain[trait.key])}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-slate-300">
+              <div className="bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+                Psychomotor Skills
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px] text-slate-700">
+                  <thead className="bg-slate-50 uppercase tracking-[0.25em] text-slate-600">
+                    <tr>
+                      <th className="border border-slate-300 px-3 py-2 text-left">Skills</th>
+                      {BEHAVIORAL_RATING_COLUMNS.map((column) => (
+                        <th key={column.key} className="border border-slate-300 px-2 py-2 text-center">
+                          {column.label}
+                        </th>
+                      ))}
+                      <th className="border border-slate-300 px-3 py-2 text-center">Recorded Rating</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {psychomotorSkills.map((skill) => (
+                      <tr key={skill.key} className="odd:bg-white even:bg-slate-50">
+                        <td className="border border-slate-300 px-3 py-2 font-semibold text-slate-800">{skill.label}</td>
+                        {BEHAVIORAL_RATING_COLUMNS.map((option) => {
+                          const mark = getBehavioralMark(reportCardData.psychomotorDomain, skill.key, option.key)
+                          return (
+                            <td
+                              key={`${skill.key}-${option.key}`}
+                              className="border border-slate-300 px-2 py-2 text-center font-bold text-slate-700"
+                            >
+                              {mark}
+                            </td>
+                          )
+                        })}
+                        <td className="border border-slate-300 px-3 py-2 text-center font-medium text-emerald-700">
+                          {formatBehavioralLabel(reportCardData.psychomotorDomain[skill.key])}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-4 rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-[11px] text-slate-600">
+            <span className="font-semibold uppercase tracking-[0.3em] text-slate-700">Rating Legend:</span>
+            {BEHAVIORAL_RATING_COLUMNS.map((column) => (
+              <span key={column.key} className="flex items-center gap-2 font-medium">
+                <span className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-500 text-[9px] font-bold text-slate-700">
+                  ●
+                </span>
+                {column.label}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        <section className="border-b border-slate-200 px-8 py-5">
+          <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-300 bg-slate-50/40 px-5 py-4">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+                  Class Teacher&apos;s Remark
+                </h3>
+                <p className="mt-3 text-sm leading-relaxed text-slate-800">
+                  {reportCardData.remarks.classTeacher || "Class teacher remark pending."}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-300 bg-slate-50/40 px-5 py-4">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+                  Head Teacher&apos;s Remark & Signature
+                </h3>
+                <p className="mt-3 text-sm italic text-slate-800">{reportCardData.remarks.headTeacher}</p>
+                <div className="mt-6 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+                  {reportCardData.branding.signature ? (
                     <img
-                      src={reportCardData.branding.logo}
-                      alt={`${reportCardData.branding.schoolName} logo`}
-                      className="h-full w-full object-contain p-2"
+                      src={reportCardData.branding.signature}
+                      alt={`${reportCardData.branding.headmasterName} signature`}
+                      className="h-16 w-48 object-contain"
                     />
                   ) : (
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-emerald-700 print:text-emerald-900 leading-tight text-center">
-                      School
-                      <br />
-                      Logo
-                    </div>
+                    <div className="h-12 w-48 border-b-2 border-dashed border-slate-400"></div>
                   )}
-                </div>
-                <div className="space-y-3">
-                  <h1 className="text-3xl font-black uppercase tracking-[0.35em] drop-shadow-md print:drop-shadow-none print:text-emerald-900">
-                    {reportCardData.branding.schoolName}
-                  </h1>
-                  <p className="text-sm font-medium leading-relaxed text-white/90 print:text-emerald-900">
-                    {reportCardData.branding.address}
-                  </p>
-                  <div className="grid gap-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/80 print:text-emerald-800">
-                    <span>Education Zone: {reportCardData.branding.educationZone}</span>
-                    <span>Council Area: {reportCardData.branding.councilArea}</span>
-                    <span>
-                      Contact: {reportCardData.branding.contactPhone} • {reportCardData.branding.contactEmail}
-                    </span>
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-700">
+                      {reportCardData.branding.headmasterName}
+                    </p>
+                    <p className="text-[11px] font-medium uppercase tracking-[0.25em] text-slate-500">
+                      Head Teacher / Principal
+                    </p>
                   </div>
                 </div>
               </div>
-              <div className="flex flex-col items-end gap-3">
-                <div className="flex h-28 w-28 items-center justify-center rounded-full border-4 border-white/70 bg-white/90 shadow-inner print:border-emerald-800/70 print:bg-white">
-                  {studentPhoto ? (
-                    <img src={studentPhoto} alt="Student" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700 print:text-emerald-900 text-center">
-                      Student
-                      <br />
-                      Photo
-                    </div>
-                  )}
-                </div>
-                <dl className="grid gap-1 text-right text-xs font-semibold text-white/85 print:text-emerald-900">
-                  <div className="flex items-center justify-between gap-4">
-                    <dt className="uppercase tracking-[0.35em] text-white/60 print:text-emerald-700">Term</dt>
-                    <dd className="font-bold text-white print:text-emerald-900">{reportCardData.student.term}</dd>
+            </div>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-300 px-5 py-4">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">Term Information</h3>
+                <dl className="mt-3 space-y-3 text-sm text-slate-800">
+                  <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-600">Vacation Date</dt>
+                    <dd>{formatDateDisplay(reportCardData.termInfo.vacationEnds) ?? "________________"}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-600">Resumption Date</dt>
+                    <dd>{formatDateDisplay(reportCardData.termInfo.nextTermBegins) ?? "________________"}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-600">Next Term Fees</dt>
+                    <dd>{reportCardData.termInfo.nextTermFees || "________________"}</dd>
                   </div>
                   <div className="flex items-center justify-between gap-4">
-                    <dt className="uppercase tracking-[0.35em] text-white/60 print:text-emerald-700">Session</dt>
-                    <dd className="font-bold text-white print:text-emerald-900">{reportCardData.student.session}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <dt className="uppercase tracking-[0.35em] text-white/60 print:text-emerald-700">Class</dt>
-                    <dd className="font-bold text-white print:text-emerald-900">{reportCardData.student.class}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <dt className="uppercase tracking-[0.35em] text-white/60 print:text-emerald-700">Students</dt>
-                    <dd className="font-bold text-white print:text-emerald-900">
-                      {reportCardData.student.numberInClass ?? "—"}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <dt className="uppercase tracking-[0.35em] text-white/60 print:text-emerald-700">Position</dt>
-                    <dd className="font-bold text-white print:text-emerald-900">
-                      {reportCardData.summary.positionLabel || "—"}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <dt className="uppercase tracking-[0.35em] text-white/60 print:text-emerald-700">Status</dt>
-                    <dd className="font-bold text-white print:text-emerald-900">
-                      {reportCardData.student.statusLabel ?? "Active"}
-                    </dd>
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-600">Outstanding Fees</dt>
+                    <dd>{reportCardData.termInfo.feesBalance || "________________"}</dd>
                   </div>
                 </dl>
               </div>
+              <div className="rounded-2xl border border-slate-300 px-5 py-4">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+                  Parent / Guardian Acknowledgement
+                </h3>
+                <div className="mt-6 space-y-6 text-xs uppercase tracking-[0.3em] text-slate-500">
+                  <div>
+                    <div className="h-10 border-b border-slate-400"></div>
+                    <p className="mt-2">Signature</p>
+                  </div>
+                  <div>
+                    <div className="h-10 border-b border-slate-400"></div>
+                    <p className="mt-2">Date</p>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="mt-6 grid grid-cols-1 gap-4 text-white/90 print:text-emerald-900 md:grid-cols-3 md:items-center">
-              <div className="text-sm font-semibold uppercase tracking-[0.3em]">
-                Admission No: {reportCardData.student.admissionNumber || "________________"}
-              </div>
-              <div className="text-center">
-                <p className="text-[11px] uppercase tracking-[0.45em] text-white/60 print:text-emerald-700">Student Name</p>
-                <p className="text-2xl font-black uppercase tracking-[0.3em] text-white print:text-emerald-900">
-                  {reportCardData.student.name}
-                </p>
-              </div>
-              <div className="text-sm text-right font-semibold uppercase tracking-[0.3em]">
-                Overall Position: {reportCardData.summary.positionLabel || "—"}
-              </div>
+          </div>
+        </section>
+
+        <section className="px-8 py-5">
+          <div className="overflow-hidden rounded-2xl border border-slate-300">
+            <div className="bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
+              Grading Scale
             </div>
-          </header>
+            <div className="grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
+              {GRADING_SCALE.map((item) => (
+                <div
+                  key={item.grade}
+                  className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-center"
+                >
+                  <span className="text-2xl font-black text-emerald-700">{item.grade}</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-600">{item.range}</span>
+                  <span className="mt-1 text-xs text-slate-600">{item.meaning}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
 
-          <main className="px-8 py-8 space-y-10 print:px-6 print:py-6">
-            <section className="space-y-6">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-                {summaryItems.map((item) => (
-                  <div
-                    key={item.label}
-                    className="rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 text-center shadow-sm print:bg-white print:border-black"
-                  >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-emerald-700">{item.label}</p>
-                    <p className="mt-2 text-lg font-bold text-emerald-900">{item.value}</p>
-                    {item.helper ? <p className="text-xs font-medium text-emerald-600">{item.helper}</p> : null}
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="grid gap-6 xl:grid-cols-[3fr_1.2fr]">
-              <div className="rounded-3xl border border-emerald-200 shadow-lg print:border-black print:shadow-none">
-                <div className="bg-gradient-to-r from-emerald-600 to-teal-500 px-6 py-3 text-sm font-semibold uppercase tracking-[0.35em] text-white print:bg-gray-200 print:text-emerald-900">
-                  Academic Performance Overview
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs md:text-sm">
-                    <thead>
-                      <tr className="bg-emerald-600 text-white print:bg-gray-200 print:text-emerald-900">
-                        <th className="px-3 py-3 text-left uppercase tracking-wide">Subject</th>
-                        <th className="px-3 py-3 text-center uppercase tracking-wide">1st C.A. (10)</th>
-                        <th className="px-3 py-3 text-center uppercase tracking-wide">2nd C.A. (10)</th>
-                        <th className="px-3 py-3 text-center uppercase tracking-wide">Notes &amp; Assignments (20)</th>
-                        <th className="px-3 py-3 text-center uppercase tracking-wide">Total (40)</th>
-                        <th className="px-3 py-3 text-center uppercase tracking-wide">Exam (60)</th>
-                        <th className="px-3 py-3 text-center uppercase tracking-wide">Grand Total (100)</th>
-                        <th className="px-3 py-3 text-center uppercase tracking-wide">Grade</th>
-                        <th className="px-3 py-3 text-center uppercase tracking-wide">Subject Position</th>
-                        <th className="px-3 py-3 text-left uppercase tracking-wide">Teacher's Remark</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                                            {reportCardData.subjects.map((subject, index) => (
-                        <tr
-                          key={`${subject.name}-${index}`}
-                          className={index % 2 === 0 ? "bg-white" : "bg-emerald-50/60 print:bg-gray-100"}
-                        >
-                          <td className="border border-emerald-200 px-3 py-3 text-left font-semibold text-emerald-900 print:border-black">
-                            {subject.name}
-                          </td>
-                          <td className="border border-emerald-200 px-3 py-3 text-center font-medium text-emerald-800 print:border-black">
-                            {subject.ca1}
-                          </td>
-                          <td className="border border-emerald-200 px-3 py-3 text-center font-medium text-emerald-800 print:border-black">
-                            {subject.ca2}
-                          </td>
-                          <td className="border border-emerald-200 px-3 py-3 text-center font-medium text-emerald-800 print:border-black">
-                            {subject.assignment}
-                          </td>
-                          <td className="border border-emerald-200 px-3 py-3 text-center font-semibold text-emerald-900 print:border-black">
-                            {subject.caTotal}
-                          </td>
-                          <td className="border border-emerald-200 px-3 py-3 text-center font-medium text-emerald-800 print:border-black">
-                            {subject.exam}
-                          </td>
-                          <td className="border border-emerald-200 px-3 py-3 text-center font-bold text-emerald-900 print:border-black">
-                            {subject.total}
-                          </td>
-                          <td className="border border-emerald-200 px-3 py-3 text-center font-bold text-teal-600 print:text-black print:border-black">
-                            {subject.grade || deriveGradeFromScore(subject.total)}
-                          </td>
-                          <td className="border border-emerald-200 px-3 py-3 text-center font-semibold text-emerald-800 print:border-black">
-                            {subject.position ?? "—"}
-                          </td>
-                          <td className="border border-emerald-200 px-3 py-3 text-left text-xs text-emerald-700 print:border-black">
-                            {subject.remarks || "—"}
-                          </td>
-                        </tr>
-                      ))}
-
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-emerald-600/10 text-emerald-900 font-semibold print:bg-gray-100">
-                        <td className="border border-emerald-200 px-3 py-3 text-center uppercase tracking-wide print:border-black">
-                          Totals
-                        </td>
-                        <td className="border border-emerald-200 px-3 py-3 text-center print:border-black">
-                          {totalsRow?.ca1 ?? "—"}
-                        </td>
-                        <td className="border border-emerald-200 px-3 py-3 text-center print:border-black">
-                          {totalsRow?.ca2 ?? "—"}
-                        </td>
-                        <td className="border border-emerald-200 px-3 py-3 text-center print:border-black">
-                          {totalsRow?.assignment ?? "—"}
-                        </td>
-                        <td className="border border-emerald-200 px-3 py-3 text-center print:border-black">
-                          {totalsRow?.caTotal ?? "—"}
-                        </td>
-                        <td className="border border-emerald-200 px-3 py-3 text-center print:border-black">
-                          {totalsRow?.exam ?? "—"}
-                        </td>
-                        <td className="border border-emerald-200 px-3 py-3 text-center print:border-black">
-                          {totalsRow?.total ?? "—"}
-                        </td>
-                        <td className="border border-emerald-200 px-3 py-3 text-center print:border-black">—</td>
-                        <td className="border border-emerald-200 px-3 py-3 text-center print:border-black">—</td>
-                        <td className="border border-emerald-200 px-3 py-3 text-center print:border-black">&nbsp;</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-                <p className="px-6 pb-6 pt-3 text-xs italic text-emerald-800/90 print:text-emerald-900">
-                  Continuous assessments contribute 40% of the final score (1st C.A. 10%, 2nd C.A. 10%, Notes &amp; Assignments 20%), while examinations account for the remaining 60%.
-                </p>
-              </div>
-              <aside className="space-y-5">
-                <div className="rounded-3xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm print:bg-white print:border-emerald-200">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-800 text-center">Class Metrics</h3>
-                  <div className="mt-4 space-y-3 text-sm text-emerald-900">
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">Students</span>
-                      <span className="font-semibold">{reportCardData.student.numberInClass ?? "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">Subjects</span>
-                      <span className="font-semibold">{reportCardData.subjects.length}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">Class Position</span>
-                      <span className="font-semibold">{reportCardData.summary.positionLabel || "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">Average Score</span>
-                      <span className="font-semibold">{reportCardData.summary.averageScore.toFixed(1)}%</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">Overall Grade</span>
-                      <span className="font-semibold">{reportCardData.summary.grade ?? "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">Status</span>
-                      <span className="font-semibold">{reportCardData.student.statusLabel ?? "Active"}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-3xl border border-emerald-200 bg-white p-5 shadow-sm print:border-emerald-200">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-800 text-center">Attendance Summary</h3>
-                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-emerald-900">
-                    <div className="rounded-2xl bg-emerald-50/70 px-4 py-3 text-center shadow-inner print:bg-white">
-                      <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Present</p>
-                      <p className="text-lg font-bold">{reportCardData.attendance.present}</p>
-                    </div>
-                    <div className="rounded-2xl bg-emerald-50/70 px-4 py-3 text-center shadow-inner print:bg-white">
-                      <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Absent</p>
-                      <p className="text-lg font-bold">{reportCardData.attendance.absent}</p>
-                    </div>
-                    <div className="rounded-2xl bg-emerald-50/70 px-4 py-3 text-center shadow-inner print:bg-white">
-                      <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Total</p>
-                      <p className="text-lg font-bold">{reportCardData.attendance.total}</p>
-                    </div>
-                    <div className="rounded-2xl bg-emerald-50/70 px-4 py-3 text-center shadow-inner print:bg-white">
-                      <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Attendance %</p>
-                      <p className="text-lg font-bold">{reportCardData.attendance.percentage}%</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-3xl border border-emerald-200 bg-white p-5 shadow-sm print:border-emerald-200">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-800 text-center">Term Information</h3>
-                  <div className="mt-4 space-y-3 text-sm text-emerald-900">
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Vacation Date</span>
-                      <span>{reportCardData.termInfo.vacationEnds || "________________"}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Resumption Date</span>
-                      <span>{reportCardData.termInfo.nextTermBegins || "________________"}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Next Term Fees</span>
-                      <span>{reportCardData.termInfo.nextTermFees || "________________"}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-[11px] uppercase tracking-[0.3em] text-emerald-700">Outstanding Fees</span>
-                      <span>{reportCardData.termInfo.feesBalance || "________________"}</span>
-                    </div>
-                  </div>
-                </div>
-              </aside>
-            </section>
-            <section className="space-y-8">
-              <div className="grid gap-6 lg:grid-cols-2">
-                <div className="rounded-3xl border border-emerald-200 bg-white shadow-sm print:border-emerald-200">
-                  <div className="bg-gradient-to-r from-emerald-600 to-teal-500 px-5 py-3 text-xs font-semibold uppercase tracking-[0.4em] text-white text-center print:bg-gray-200 print:text-emerald-900">
-                    Affective Domain
-                  </div>
-                  <div className="space-y-5 p-5">
-                    <div className="grid gap-4 md:grid-cols-3">
-                      {PRIMARY_AFFECTIVE_TRAITS.map((trait) => {
-                        const ratingLabel = formatBehavioralLabel(reportCardData.affectiveDomain[trait.key])
-                        return (
-                          <div
-                            key={trait.key}
-                            className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-center shadow-inner print:bg-white print:border-emerald-200"
-                          >
-                            <p className="text-[11px] uppercase tracking-[0.35em] text-emerald-700">{trait.label}</p>
-                            <div className="mt-3 flex items-center justify-center gap-2">
-                              {BEHAVIORAL_RATING_COLUMNS.map((option) => {
-                                const mark = getBehavioralMark(reportCardData.affectiveDomain, trait.key, option.key)
-                                const isActive = mark === "●"
-                                return (
-                                  <span
-                                    key={`${trait.key}-${option.key}`}
-                                    className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${
-                                      isActive
-                                        ? "border-emerald-600 bg-emerald-500 text-white"
-                                        : "border-emerald-300 text-emerald-500"
-                                    }`}
-                                  >
-                                    {mark}
-                                  </span>
-                                )
-                              })}
-                            </div>
-                            <p className="mt-3 text-xs font-semibold text-emerald-800">{ratingLabel}</p>
-                          </div>
-                        )
-                      })}
-                    </div>
-                    {additionalAffectiveTraits.length > 0 ? (
-                      <div className="rounded-2xl border border-emerald-100 bg-white p-4 print:border-emerald-200">
-                        <p className="text-[11px] uppercase tracking-[0.35em] text-emerald-600">Additional Traits</p>
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                          {additionalAffectiveTraits.map((trait) => (
-                            <div key={trait.key} className="flex items-center justify-between text-sm text-emerald-800">
-                              <span className="font-medium">{trait.label}</span>
-                              <span className="text-xs uppercase tracking-[0.2em] text-emerald-600">
-                                {formatBehavioralLabel(reportCardData.affectiveDomain[trait.key])}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="rounded-3xl border border-emerald-200 bg-white shadow-sm print:border-emerald-200">
-                  <div className="bg-gradient-to-r from-teal-600 via-teal-500 to-emerald-500 px-5 py-3 text-xs font-semibold uppercase tracking-[0.4em] text-white text-center print:bg-gray-200 print:text-emerald-900">
-                    Psychomotor Domain
-                  </div>
-                  <div className="space-y-5 p-5">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {PRIMARY_PSYCHOMOTOR_SKILLS.map((skill) => {
-                        const ratingLabel = formatBehavioralLabel(reportCardData.psychomotorDomain[skill.key])
-                        return (
-                          <div
-                            key={skill.key}
-                            className="rounded-2xl border border-teal-100 bg-teal-50/70 p-4 text-center shadow-inner print:bg-white print:border-emerald-200"
-                          >
-                            <p className="text-[11px] uppercase tracking-[0.35em] text-teal-700">{skill.label}</p>
-                            <div className="mt-3 flex items-center justify-center gap-2">
-                              {BEHAVIORAL_RATING_COLUMNS.map((option) => {
-                                const mark = getBehavioralMark(reportCardData.psychomotorDomain, skill.key, option.key)
-                                const isActive = mark === "●"
-                                return (
-                                  <span
-                                    key={`${skill.key}-${option.key}`}
-                                    className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${
-                                      isActive
-                                        ? "border-teal-600 bg-teal-500 text-white"
-                                        : "border-teal-300 text-teal-500"
-                                    }`}
-                                  >
-                                    {mark}
-                                  </span>
-                                )
-                              })}
-                            </div>
-                            <p className="mt-3 text-xs font-semibold text-teal-800">{ratingLabel}</p>
-                          </div>
-                        )
-                      })}
-                    </div>
-                    {additionalPsychomotorSkills.length > 0 ? (
-                      <div className="rounded-2xl border border-teal-100 bg-white p-4 print:border-emerald-200">
-                        <p className="text-[11px] uppercase tracking-[0.35em] text-teal-600">Additional Skills</p>
-                        <div className="mt-3 grid gap-3">
-                          {additionalPsychomotorSkills.map((skill) => (
-                            <div key={skill.key} className="flex items-center justify-between text-sm text-teal-800">
-                              <span className="font-medium">{skill.label}</span>
-                              <span className="text-xs uppercase tracking-[0.2em] text-teal-600">
-                                {formatBehavioralLabel(reportCardData.psychomotorDomain[skill.key])}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-3xl border border-emerald-200 bg-emerald-50/70 px-5 py-4 text-xs text-emerald-800 shadow-sm print:bg-white print:border-emerald-200">
-                <p className="font-semibold uppercase tracking-[0.3em] text-center">Rating Legend</p>
-                <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
-                  {BEHAVIORAL_RATING_COLUMNS.map((column) => (
-                    <div key={column.key} className="flex items-center gap-2">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-emerald-500 text-[10px] font-bold text-emerald-600">
-                        ●
-                      </span>
-                      <span className="text-xs font-medium">{column.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-                <div className="space-y-6">
-                  <div className="rounded-3xl border border-emerald-200 bg-emerald-50/60 px-6 py-6 text-center shadow-sm print:bg-white print:border-emerald-200">
-                    <h3 className="text-sm font-semibold uppercase tracking-[0.35em] text-emerald-900">Class Teacher's Remarks</h3>
-                    <p className="mt-4 text-base leading-relaxed text-emerald-900/90">
-                      {reportCardData.remarks.classTeacher || "She is improving in her studies."}
-                    </p>
-                  </div>
-                  <div className="rounded-3xl border border-emerald-200 bg-white px-6 py-6 text-center shadow-sm print:border-emerald-200">
-                    <h3 className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-800">Head Teacher's Remark</h3>
-                    <p className="mt-4 text-sm italic text-emerald-900/90">{reportCardData.remarks.headTeacher}</p>
-                  </div>
-                  <div className="rounded-3xl border-2 border-dashed border-emerald-300 px-6 py-6 text-center print:border-emerald-800">
-                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Class Teacher's Signature</p>
-                    <div className="mt-6 h-14 border-b-2 border-emerald-400 print:border-emerald-800"></div>
-                  </div>
-                </div>
-                <div className="space-y-6 text-center">
-                  <div className="rounded-3xl border border-emerald-200 bg-white px-6 py-6 shadow-sm print:border-emerald-200">
-                    {reportCardData.branding.signature ? (
-                      <img
-                        src={reportCardData.branding.signature}
-                        alt={`${reportCardData.branding.headmasterName} signature`}
-                        className="mx-auto h-16 w-48 object-contain"
-                      />
-                    ) : (
-                      <div className="mx-auto h-14 w-48 border-b-2 border-dashed border-emerald-400 print:border-emerald-800"></div>
-                    )}
-                    <p className="mt-2 text-sm font-semibold uppercase tracking-[0.3em] text-emerald-800">
-                      {reportCardData.branding.headmasterName}
-                    </p>
-                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-600">Head Teacher</p>
-                  </div>
-                  <div className="rounded-3xl border border-emerald-200 bg-emerald-50/70 px-6 py-6 shadow-sm print:bg-white print:border-emerald-200">
-                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Parent / Guardian Acknowledgement</p>
-                    <div className="mt-6 h-14 border-b border-dashed border-emerald-400 print:border-emerald-800"></div>
-                  </div>
-                </div>
-              </div>
-            </section>
-            <section>
-              <div className="rounded-3xl border border-emerald-200 overflow-hidden shadow-sm print:border-black">
-                <div className="bg-gradient-to-r from-emerald-600 to-teal-500 px-4 py-2 text-sm font-semibold uppercase tracking-[0.4em] text-white text-center print:bg-gray-200 print:text-black">
-                  Grading Scale
-                </div>
-                <div className="grid gap-3 p-5 sm:grid-cols-3 lg:grid-cols-6">
-                  {GRADING_SCALE.map((item) => (
-                    <div
-                      key={item.grade}
-                      className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-center shadow-inner print:border-black"
-                    >
-                      <p className="text-2xl font-black text-emerald-700">{item.grade}</p>
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-600">{item.range}</p>
-                      <p className="text-[11px] text-emerald-800 mt-1">{item.meaning}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            <p className="text-center text-xs text-emerald-700/80 print:text-gray-600">
-              © {reportCardData.branding.schoolName}. All rights reserved.
-            </p>
-          </main>
-        </div>
+        <footer className="border-t border-slate-300 bg-slate-50 px-8 py-4 text-center text-[11px] text-slate-600 print:bg-white">
+          <p>
+            Report generated for {reportCardData.student.name}. For enquiries, contact {reportCardData.branding.contactPhone ||
+              reportCardData.branding.contactEmail || "the school"}.
+          </p>
+          <p className="mt-1">© {reportCardData.branding.schoolName}. All rights reserved.</p>
+        </footer>
       </div>
     </div>
   )
