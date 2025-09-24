@@ -1179,5 +1179,6 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         </footer>
       </div>
     </div>
+    </div>
   )
 }
