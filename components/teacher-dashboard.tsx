@@ -17,7 +17,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { BookOpen, Users, FileText, GraduationCap, Clock, User, Plus, Save, Loader2 } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Separator } from "@/components/ui/separator"
+import {
+  BookOpen,
+  Users,
+  FileText,
+  GraduationCap,
+  Clock,
+  User,
+  Plus,
+  Save,
+  Loader2,
+  Eye,
+  Send,
+  Trash2,
+  Pencil,
+  Sparkles,
+  CalendarClock,
+  Download,
+  Trophy,
+  CheckCircle,
+} from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
 import { InternalMessaging } from "@/components/internal-messaging"
@@ -148,6 +169,8 @@ interface MarksRecord {
   teacherRemark: string
 }
 
+type TeacherAssignmentStatus = "draft" | "sent" | "submitted" | "graded" | "overdue"
+
 interface AssignmentSubmissionRecord {
   id: string
   studentId: string
@@ -156,6 +179,7 @@ interface AssignmentSubmissionRecord {
   files?: { id: string; name: string }[]
   comment?: string | null
   grade?: string | null
+  score?: number | null
 }
 
 interface TeacherAssignmentSummary {
@@ -165,22 +189,62 @@ interface TeacherAssignmentSummary {
   subject: string
   className: string
   dueDate: string
-  status: string
+  status: TeacherAssignmentStatus
   submissions: AssignmentSubmissionRecord[]
   assignedStudentIds: string[]
   resourceName?: string | null
   resourceType?: string | null
   resourceUrl?: string | null
   resourceSize?: number | null
+  createdAt?: string | null
   updatedAt?: string
+}
+
+const ASSIGNMENT_STATUS_META: Record<
+  TeacherAssignmentStatus,
+  { label: string; badgeClass: string; accent: string; glow: string }
+> = {
+  draft: {
+    label: "Draft",
+    badgeClass: "border border-slate-200 bg-slate-100 text-slate-700",
+    accent: "from-slate-100/70",
+    glow: "shadow-[0_0_30px_-15px_rgba(71,85,105,0.8)]",
+  },
+  sent: {
+    label: "Sent",
+    badgeClass: "border border-blue-200 bg-blue-100 text-blue-700",
+    accent: "from-blue-100/70",
+    glow: "shadow-[0_0_30px_-15px_rgba(59,130,246,0.8)]",
+  },
+  submitted: {
+    label: "Submitted",
+    badgeClass: "border border-amber-200 bg-amber-100 text-amber-700",
+    accent: "from-amber-100/70",
+    glow: "shadow-[0_0_30px_-15px_rgba(217,119,6,0.8)]",
+  },
+  graded: {
+    label: "Graded",
+    badgeClass: "border border-emerald-200 bg-emerald-100 text-emerald-700",
+    accent: "from-emerald-100/70",
+    glow: "shadow-[0_0_30px_-12px_rgba(16,185,129,0.8)]",
+  },
+  overdue: {
+    label: "Overdue",
+    badgeClass: "border border-red-200 bg-red-100 text-red-700",
+    accent: "from-red-100/70",
+    glow: "shadow-[0_0_30px_-12px_rgba(248,113,113,0.8)]",
+  },
 }
 
 export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const { toast } = useToast()
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showCreateAssignment, setShowCreateAssignment] = useState(false)
+  const [assignmentDialogMode, setAssignmentDialogMode] = useState<"create" | "edit">("create")
+  const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null)
   const [showSubmissions, setShowSubmissions] = useState(false)
   const [selectedAssignment, setSelectedAssignment] = useState<TeacherAssignmentSummary | null>(null)
+  const [previewAssignment, setPreviewAssignment] = useState<TeacherAssignmentSummary | null>(null)
   const [selectedClass, setSelectedClass] = useState(teacher.classes[0] ?? "")
   const [selectedSubject, setSelectedSubject] = useState(teacher.subjects[0] ?? "")
   const [selectedTerm, setSelectedTerm] = useState("first")
@@ -208,10 +272,25 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     subject: teacher.subjects[0] ?? "",
     className: teacher.classes[0] ?? "",
     file: null as File | null,
+    resourceName: "",
+    resourceType: "",
+    resourceUrl: "",
+    resourceSize: null as number | null,
   }))
   const [assignments, setAssignments] = useState<TeacherAssignmentSummary[]>([])
   const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(true)
-  const [isCreatingAssignment, setIsCreatingAssignment] = useState(false)
+  const [isSavingAssignment, setIsSavingAssignment] = useState(false)
+  const [assignmentActionId, setAssignmentActionId] = useState<string | null>(null)
+  const [deletingAssignmentId, setDeletingAssignmentId] = useState<string | null>(null)
+  const [gradingDrafts, setGradingDrafts] = useState<Record<string, { score: string; comment: string }>>({})
+  const [gradingSubmissionId, setGradingSubmissionId] = useState<string | null>(null)
+
+  const assignmentMaximum = CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment ?? 20
+  const isEditingAssignment = assignmentDialogMode === "edit"
+  const assignmentDialogTitle = isEditingAssignment ? "Update Assignment" : "Create New Assignment"
+  const assignmentDialogDescription = isEditingAssignment
+    ? "Refresh the assignment details before you share or resend it to your class."
+    : "Design a rich assignment experience for your students with attachments and clear guidance."
 
   const [teacherExams, setTeacherExams] = useState<TeacherExamSummary[]>([])
   const [isExamLoading, setIsExamLoading] = useState(true)
@@ -277,6 +356,17 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           ? record.assignedStudentIds
           : []
 
+        const normalisedSubmissions: AssignmentSubmissionRecord[] = submissions.map((submission) => ({
+          id: submission.id,
+          studentId: submission.studentId,
+          status: submission.status,
+          submittedAt: submission.submittedAt ?? null,
+          files: Array.isArray(submission.files) ? submission.files : [],
+          comment: submission.comment ?? null,
+          grade: submission.grade ?? null,
+          score: typeof submission.score === "number" ? submission.score : null,
+        }))
+
         return {
           id: String(record.id),
           title: record.title,
@@ -284,8 +374,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           subject: record.subject,
           className: record.className ?? (record as { class?: string }).class ?? "General",
           dueDate: record.dueDate,
-          status: record.status ?? "sent",
-          submissions,
+          status: (record.status ?? "draft") as TeacherAssignmentStatus,
+          submissions: normalisedSubmissions,
           assignedStudentIds,
           resourceName: record.resourceName ?? null,
           resourceType: record.resourceType ?? null,
@@ -296,6 +386,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               : record.resourceSize
                 ? Number(record.resourceSize)
                 : null,
+          createdAt: "createdAt" in record ? (record as { createdAt?: string | null }).createdAt ?? null : null,
           updatedAt: record.updatedAt,
         } satisfies TeacherAssignmentSummary
       })
@@ -1203,7 +1294,67 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     runtime.document.body?.removeChild(link)
   }
 
-  const handleCreateAssignment = async () => {
+  const resetAssignmentForm = useCallback(() => {
+    setAssignmentForm({
+      title: "",
+      description: "",
+      dueDate: "",
+      subject: teacher.subjects[0] ?? "",
+      className: teacher.classes[0] ?? "",
+      file: null,
+      resourceName: "",
+      resourceType: "",
+      resourceUrl: "",
+      resourceSize: null,
+    })
+    setEditingAssignmentId(null)
+    setAssignmentDialogMode("create")
+  }, [teacher.classes, teacher.subjects])
+
+  const openCreateAssignmentDialog = () => {
+    resetAssignmentForm()
+    setShowCreateAssignment(true)
+  }
+
+  const handleEditAssignment = (assignment: TeacherAssignmentSummary) => {
+    setAssignmentDialogMode("edit")
+    setEditingAssignmentId(assignment.id)
+    setAssignmentForm({
+      title: assignment.title,
+      description: assignment.description ?? "",
+      dueDate: assignment.dueDate,
+      subject: assignment.subject,
+      className: assignment.className,
+      file: null,
+      resourceName: assignment.resourceName ?? "",
+      resourceType: assignment.resourceType ?? "",
+      resourceUrl: assignment.resourceUrl ?? "",
+      resourceSize: typeof assignment.resourceSize === "number" ? assignment.resourceSize : null,
+    })
+    setShowCreateAssignment(true)
+  }
+
+  const handlePreviewAssignment = (assignment: TeacherAssignmentSummary) => {
+    setPreviewAssignment(assignment)
+  }
+
+  const describeDueDate = (value: string) => {
+    if (!value) return "No due date"
+    const dueDate = new Date(value)
+    if (Number.isNaN(dueDate.getTime())) {
+      return value
+    }
+
+    const oneDay = 1000 * 60 * 60 * 24
+    const diff = Math.ceil((dueDate.getTime() - Date.now()) / oneDay)
+
+    if (diff > 1) return `Due in ${diff} days`
+    if (diff === 1) return "Due tomorrow"
+    if (diff === 0) return "Due today"
+    return `Overdue by ${Math.abs(diff)} day${Math.abs(diff) === 1 ? "" : "s"}`
+  }
+
+  const handleSaveAssignment = async (intent: "draft" | "sent") => {
     if (!assignmentForm.title || !assignmentForm.subject || !assignmentForm.className || !assignmentForm.dueDate) {
       toast({
         variant: "destructive",
@@ -1214,74 +1365,217 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
 
     try {
-      setIsCreatingAssignment(true)
-      let attachmentData: string | null = null
-      let attachmentType: string | null = null
-      let attachmentSize: number | null = null
-      let attachmentName: string | null = null
+      setIsSavingAssignment(true)
+
+      let resourceUrl = assignmentForm.resourceUrl || ""
+      let resourceType = assignmentForm.resourceType || ""
+      let resourceSize = assignmentForm.resourceSize ?? null
+      let resourceName = assignmentForm.resourceName || ""
 
       if (assignmentForm.file) {
-        attachmentData = await readFileAsDataUrl(assignmentForm.file)
-        attachmentType = assignmentForm.file.type || "application/octet-stream"
-        attachmentSize = assignmentForm.file.size
-        attachmentName = assignmentForm.file.name
+        resourceUrl = await readFileAsDataUrl(assignmentForm.file)
+        resourceType = assignmentForm.file.type || "application/octet-stream"
+        resourceSize = assignmentForm.file.size
+        resourceName = assignmentForm.file.name
       }
 
-      const response = await fetch("/api/assignments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: assignmentForm.title.trim(),
-          description: assignmentForm.description.trim(),
-          subject: assignmentForm.subject,
+      const payload = {
+        title: assignmentForm.title.trim(),
+        description: assignmentForm.description.trim(),
+        subject: assignmentForm.subject,
+        className: assignmentForm.className,
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        dueDate: assignmentForm.dueDate,
+        status: intent,
+        resourceName: resourceName || null,
+        resourceType: resourceType || null,
+        resourceUrl: resourceUrl || null,
+        resourceSize,
+      }
+
+      if (assignmentDialogMode === "edit" && editingAssignmentId) {
+        await dbManager.updateAssignment(editingAssignmentId, payload)
+        toast({
+          title: intent === "sent" ? "Assignment sent" : "Draft updated",
+          description:
+            intent === "sent"
+              ? "Students can now access the refreshed assignment."
+              : "Your changes have been saved successfully.",
+        })
+      } else {
+        await dbManager.createAssignment({
+          ...payload,
           classId: null,
-          className: assignmentForm.className,
-          teacherId: teacher.id,
-          teacherName: teacher.name,
-          dueDate: assignmentForm.dueDate,
-          attachmentName,
-          attachmentSize,
-          attachmentType,
-          attachmentData,
-        }),
-      })
+        })
 
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
-        throw new Error(typeof payload.error === "string" ? payload.error : "Failed to create assignment")
+        toast({
+          title: intent === "sent" ? "Assignment sent" : "Draft saved",
+          description:
+            intent === "sent"
+              ? "Students have been notified about the new assignment."
+              : "You can return later to finish and send this assignment.",
+        })
       }
-
-      toast({
-        title: "Assignment created",
-        description: "Students can now view the assignment details.",
-      })
 
       setShowCreateAssignment(false)
-      setAssignmentForm({
-        title: "",
-        description: "",
-        dueDate: "",
-        subject: teacher.subjects[0] ?? "",
-        className: teacher.classes[0] ?? "",
-        file: null,
-      })
-
+      resetAssignmentForm()
       void loadAssignments()
     } catch (error) {
-      logger.error("Failed to create assignment", { error })
+      logger.error("Failed to save assignment", { error })
       toast({
         variant: "destructive",
-        title: "Unable to create assignment",
+        title: "Unable to save assignment",
         description: error instanceof Error ? error.message : "Please try again or contact the administrator.",
       })
     } finally {
-      setIsCreatingAssignment(false)
+      setIsSavingAssignment(false)
+    }
+  }
+
+  const handleSendAssignment = async (assignment: TeacherAssignmentSummary) => {
+    try {
+      setAssignmentActionId(assignment.id)
+      await dbManager.updateAssignmentStatus(assignment.id, "sent")
+      toast({
+        title: "Assignment sent",
+        description: "Students can now view and submit this assignment.",
+      })
+      void loadAssignments()
+    } catch (error) {
+      logger.error("Failed to send assignment", { error })
+      toast({
+        variant: "destructive",
+        title: "Unable to send assignment",
+        description: error instanceof Error ? error.message : "Please try again.",
+      })
+    } finally {
+      setAssignmentActionId(null)
+    }
+  }
+
+  const handleDeleteAssignment = async (assignment: TeacherAssignmentSummary) => {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(`Delete ${assignment.title}? This cannot be undone.`)
+      if (!confirmed) {
+        return
+      }
+    }
+
+    try {
+      setDeletingAssignmentId(assignment.id)
+      await dbManager.deleteAssignment(assignment.id)
+      toast({
+        title: "Assignment deleted",
+        description: "The assignment has been removed from your dashboard.",
+      })
+      void loadAssignments()
+    } catch (error) {
+      logger.error("Failed to delete assignment", { error })
+      toast({
+        variant: "destructive",
+        title: "Unable to delete assignment",
+        description: error instanceof Error ? error.message : "Please try again.",
+      })
+    } finally {
+      setDeletingAssignmentId(null)
     }
   }
 
   const handleViewSubmissions = (assignment: TeacherAssignmentSummary) => {
     setSelectedAssignment(assignment)
+    const initialDrafts = assignment.submissions.reduce(
+      (acc, submission) => {
+        acc[submission.id] = {
+          score: typeof submission.score === "number" ? String(submission.score) : "",
+          comment: submission.comment ?? "",
+        }
+        return acc
+      },
+      {} as Record<string, { score: string; comment: string }>,
+    )
+    setGradingDrafts(initialDrafts)
     setShowSubmissions(true)
+  }
+
+  const handleGradeSubmission = async (submission: AssignmentSubmissionRecord) => {
+    if (!selectedAssignment) return
+
+    const draft = gradingDrafts[submission.id] ?? { score: "", comment: "" }
+    const trimmedComment = draft.comment.trim()
+    const trimmedScore = draft.score.trim()
+    const hasScore = trimmedScore.length > 0
+    const parsedScore = hasScore ? Number(trimmedScore) : null
+
+    if (hasScore && (Number.isNaN(parsedScore) || parsedScore === null || parsedScore < 0)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid score",
+        description: "Please enter a valid score or leave it blank.",
+      })
+      return
+    }
+
+    if (parsedScore !== null && parsedScore > assignmentMaximum) {
+      toast({
+        variant: "destructive",
+        title: "Score too high",
+        description: `The maximum obtainable score is ${assignmentMaximum}.`,
+      })
+      return
+    }
+
+    try {
+      setGradingSubmissionId(submission.id)
+      const normalizedScore = parsedScore === null ? null : Math.round(parsedScore * 100) / 100
+      const grade =
+        normalizedScore === null
+          ? null
+          : deriveGradeFromScore((normalizedScore / Math.max(assignmentMaximum, 1)) * 100)
+
+      const updatedSubmission = await dbManager.gradeAssignmentSubmission(selectedAssignment.id, submission.studentId, {
+        score: normalizedScore,
+        grade,
+        comment: trimmedComment || null,
+      })
+
+      setSelectedAssignment((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          submissions: prev.submissions.map((entry) =>
+            entry.id === submission.id ? { ...entry, ...updatedSubmission } : entry,
+          ),
+        }
+      })
+
+      setGradingDrafts((prev) => ({
+        ...prev,
+        [submission.id]: {
+          score: normalizedScore === null ? "" : String(normalizedScore),
+          comment: trimmedComment,
+        },
+      }))
+
+      toast({
+        title: "Score saved",
+        description:
+          normalizedScore === null
+            ? "Feedback saved without a score."
+            : `Marked ${normalizedScore}/${assignmentMaximum}${grade ? ` (${grade})` : ""}.`,
+      })
+
+      void loadAssignments()
+    } catch (error) {
+      logger.error("Failed to grade assignment submission", { error })
+      toast({
+        variant: "destructive",
+        title: "Unable to save score",
+        description: error instanceof Error ? error.message : "Please try again.",
+      })
+    } finally {
+      setGradingSubmissionId(null)
+    }
   }
 
   const handleSaveBehavioralAssessment = async () => {
@@ -2407,7 +2701,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                   <CardTitle className="text-[#2d682d]">Assignments</CardTitle>
                   <CardDescription>Manage assignments and view submissions</CardDescription>
                 </div>
-                <Button onClick={() => setShowCreateAssignment(true)} className="bg-[#2d682d] hover:bg-[#2d682d]/90">
+                <Button onClick={openCreateAssignmentDialog} className="bg-[#2d682d] hover:bg-[#2d682d]/90">
                   <Plus className="w-4 h-4 mr-2" />
                   Create Assignment
                 </Button>
@@ -2423,47 +2717,161 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                   No assignments created yet. Click "Create Assignment" to share work with your students.
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-5">
                   {assignments.map((assignment) => {
                     const submittedCount = assignment.submissions.filter((submission) =>
                       ["submitted", "graded"].includes(submission.status),
                     ).length
+                    const gradedCount = assignment.submissions.filter((submission) => submission.status === "graded").length
                     const totalAssigned = assignment.assignedStudentIds.length || assignment.submissions.length
+                    const progress = totalAssigned > 0 ? Math.round((submittedCount / totalAssigned) * 100) : 0
+                    const statusMeta = ASSIGNMENT_STATUS_META[assignment.status] ?? ASSIGNMENT_STATUS_META.draft
 
                     return (
                       <div
                         key={assignment.id}
-                        className="flex flex-col gap-3 rounded-lg border p-4 md:flex-row md:items-center md:justify-between"
+                        className={`group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${statusMeta.glow}`}
                       >
-                        <div>
-                          <h3 className="font-medium text-[#2d682d]">{assignment.title}</h3>
-                          <p className="text-sm text-gray-600">
-                            {assignment.subject} • {assignment.className}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            Due: {formatExamDate(assignment.dueDate)}
-                            {assignment.updatedAt ? ` • Updated ${formatExamDate(assignment.updatedAt)}` : ""}
-                          </p>
-                          {assignment.description && (
-                            <p className="mt-1 text-xs text-gray-500 line-clamp-2">{assignment.description}</p>
-                          )}
-                          {assignment.resourceName && (
-                            <button
-                              type="button"
-                              className="mt-2 text-xs text-[#2d682d] underline"
-                              onClick={() => handleDownloadAssignmentAttachment(assignment)}
+                        <div
+                          className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${statusMeta.accent} via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100`}
+                        />
+                        <div className="relative z-10 flex flex-col gap-6">
+                          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                            <div className="space-y-3">
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                <Badge className={`${statusMeta.badgeClass} px-2 py-1 font-medium uppercase tracking-wide`}>
+                                  {statusMeta.label}
+                                </Badge>
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">
+                                  <BookOpen className="h-3.5 w-3.5" /> {assignment.subject}
+                                </span>
+                                <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-sky-700">
+                                  <Users className="h-3.5 w-3.5" /> {assignment.className}
+                                </span>
+                              </div>
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2 text-lg font-semibold text-slate-900 md:text-xl">
+                                  <Sparkles className="h-5 w-5 text-emerald-500" />
+                                  <span>{assignment.title}</span>
+                                </div>
+                                <p className="text-sm text-muted-foreground line-clamp-2 md:max-w-2xl">
+                                  {assignment.description || "No description provided."}
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                                <span className="inline-flex items-center gap-1 font-medium text-slate-600">
+                                  <CalendarClock className="h-4 w-4 text-amber-500" />
+                                  Due {formatExamDate(assignment.dueDate)}
+                                </span>
+                                <span className="text-slate-500">{describeDueDate(assignment.dueDate)}</span>
+                                {assignment.updatedAt ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Clock className="h-3.5 w-3.5 text-slate-400" />
+                                    Updated {formatExamDate(assignment.updatedAt)}
+                                  </span>
+                                ) : null}
+                              </div>
+                              {assignment.resourceName ? (
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 transition hover:text-emerald-900"
+                                  onClick={() => handleDownloadAssignmentAttachment(assignment)}
+                                >
+                                  <Download className="h-3.5 w-3.5" /> {assignment.resourceName}
+                                </button>
+                              ) : null}
+                            </div>
+                            <div className="flex flex-col items-start gap-3 rounded-xl bg-slate-50/70 p-4 text-sm md:items-end">
+                              <div className="flex flex-wrap items-center gap-2 text-slate-600">
+                                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                                  {submittedCount}/{totalAssigned || "--"} submitted
+                                </Badge>
+                                {gradedCount > 0 ? (
+                                  <Badge variant="outline" className="border-purple-200 bg-purple-50 text-purple-700">
+                                    {gradedCount} graded
+                                  </Badge>
+                                ) : null}
+                              </div>
+                              <div className="h-2 w-40 overflow-hidden rounded-full bg-slate-200">
+                                <div
+                                  className="h-full rounded-full bg-emerald-500 transition-all"
+                                  style={{ width: `${Math.min(100, progress)}%` }}
+                                />
+                              </div>
+                              <p className="text-xs text-slate-500">Progress: {progress}%</p>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-emerald-200 text-emerald-700 transition hover:bg-emerald-50"
+                              onClick={() => handleViewSubmissions(assignment)}
                             >
-                              Download attachment ({assignment.resourceName})
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-start gap-2 md:items-end">
-                          <Badge variant="outline">
-                            {submittedCount}/{totalAssigned || "--"} submitted
-                          </Badge>
-                          <Button size="sm" variant="outline" onClick={() => handleViewSubmissions(assignment)}>
-                            View Submissions
-                          </Button>
+                              <Users className="mr-1 h-4 w-4" /> View submissions
+                            </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-slate-200 text-slate-700 transition hover:bg-slate-100"
+                                  onClick={() => handlePreviewAssignment(assignment)}
+                                >
+                                  <Eye className="mr-1 h-4 w-4" /> Preview
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Preview what students will see</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-slate-200 text-slate-700 transition hover:bg-slate-100"
+                                  onClick={() => handleEditAssignment(assignment)}
+                                >
+                                  <Pencil className="mr-1 h-4 w-4" /> Edit
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Edit details or attachment</TooltipContent>
+                            </Tooltip>
+                            {assignment.status === "draft" ? (
+                              <Button
+                                size="sm"
+                                className="bg-emerald-600 text-white transition hover:bg-emerald-700"
+                                onClick={() => handleSendAssignment(assignment)}
+                                disabled={assignmentActionId === assignment.id}
+                              >
+                                {assignmentActionId === assignment.id ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Send className="mr-1 h-4 w-4" />
+                                )}
+                                {assignmentActionId === assignment.id ? "Sending..." : "Send to students"}
+                              </Button>
+                            ) : null}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-red-600 transition hover:bg-red-50"
+                                  onClick={() => handleDeleteAssignment(assignment)}
+                                  disabled={deletingAssignmentId === assignment.id}
+                                >
+                                  {deletingAssignmentId === assignment.id ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="mr-1 h-4 w-4" />
+                                  )}
+                                  {deletingAssignmentId === assignment.id ? "Removing" : "Delete"}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Remove this assignment</TooltipContent>
+                            </Tooltip>
+                          </div>
                         </div>
                       </div>
                     )
@@ -2610,149 +3018,367 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       </Dialog>
 
       {/* Create Assignment Dialog */}
-      <Dialog open={showCreateAssignment} onOpenChange={setShowCreateAssignment}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create New Assignment</DialogTitle>
-            <DialogDescription>Create an assignment for your students</DialogDescription>
+      <Dialog
+        open={showCreateAssignment}
+        onOpenChange={(open) => {
+          setShowCreateAssignment(open)
+          if (!open) {
+            resetAssignmentForm()
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader className="space-y-1">
+            <DialogTitle>{assignmentDialogTitle}</DialogTitle>
+            <DialogDescription>{assignmentDialogDescription}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="title">Assignment Title</Label>
-              <Input
-                id="title"
-                value={assignmentForm.title}
-                onChange={(e) => setAssignmentForm((prev) => ({ ...prev, title: e.target.value }))}
-                placeholder="Enter assignment title"
-              />
+          <div className="space-y-5">
+            <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60 p-4 text-sm text-emerald-800">
+              <p className="flex items-center gap-2 font-medium">
+                <Sparkles className="h-4 w-4 text-emerald-500" /> Tailor engaging assignments
+              </p>
+              <p className="mt-1 text-emerald-700/80">
+                Add clear instructions, set a due date, and attach helpful resources to guide your learners.
+              </p>
             </div>
-            <div>
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={assignmentForm.description}
-                onChange={(e) => setAssignmentForm((prev) => ({ ...prev, description: e.target.value }))}
-                placeholder="Enter assignment description"
-                rows={3}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-3">
               <div>
-                <Label htmlFor="subject">Subject</Label>
-                <Select
-                  value={assignmentForm.subject}
-                  onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, subject: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select subject" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teacher.subjects.map((subject) => (
-                      <SelectItem key={subject} value={subject}>
-                        {subject}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="title">Assignment Title</Label>
+                <Input
+                  id="title"
+                  value={assignmentForm.title}
+                  onChange={(e) => setAssignmentForm((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="Enter assignment title"
+                />
               </div>
               <div>
-                <Label htmlFor="class">Class</Label>
-                <Select
-                  value={assignmentForm.className}
-                  onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, className: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select class" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teacher.classes.map((className) => (
-                      <SelectItem key={className} value={className}>
-                        {className}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={assignmentForm.description}
+                  onChange={(e) => setAssignmentForm((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="Share instructions, expectations, and submission tips"
+                  rows={4}
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="subject">Subject</Label>
+                  <Select
+                    value={assignmentForm.subject}
+                    onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, subject: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select subject" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teacher.subjects.map((subject) => (
+                        <SelectItem key={subject} value={subject}>
+                          {subject}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="class">Class</Label>
+                  <Select
+                    value={assignmentForm.className}
+                    onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, className: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select class" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teacher.classes.map((className) => (
+                        <SelectItem key={className} value={className}>
+                          {className}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="dueDate">Due Date</Label>
+                  <Input
+                    id="dueDate"
+                    type="date"
+                    value={assignmentForm.dueDate}
+                    onChange={(e) => setAssignmentForm((prev) => ({ ...prev, dueDate: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label>Maximum Score</Label>
+                  <div className="flex items-center gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                    <Trophy className="h-4 w-4 text-emerald-600" /> {assignmentMaximum} marks
+                  </div>
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="file">Attachment (Optional)</Label>
+                <Input
+                  id="file"
+                  type="file"
+                  onChange={(e) => setAssignmentForm((prev) => ({ ...prev, file: e.target.files?.[0] || null }))}
+                />
+                {isEditingAssignment && assignmentForm.resourceName && !assignmentForm.file ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Current attachment: <span className="font-medium text-slate-700">{assignmentForm.resourceName}</span>
+                  </p>
+                ) : null}
               </div>
             </div>
-            <div>
-              <Label htmlFor="dueDate">Due Date</Label>
-              <Input
-                id="dueDate"
-                type="date"
-                value={assignmentForm.dueDate}
-                onChange={(e) => setAssignmentForm((prev) => ({ ...prev, dueDate: e.target.value }))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="file">Attachment (Optional)</Label>
-              <Input
-                id="file"
-                type="file"
-                onChange={(e) => setAssignmentForm((prev) => ({ ...prev, file: e.target.files?.[0] || null }))}
-              />
-            </div>
+            <Separator />
+            <p className="text-xs text-muted-foreground">
+              Tip: Assignment scores contribute up to {assignmentMaximum} marks to continuous assessment this term.
+            </p>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateAssignment(false)}>
+          <DialogFooter className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowCreateAssignment(false)
+                resetAssignmentForm()
+              }}
+            >
               Cancel
             </Button>
-            <Button
-              onClick={handleCreateAssignment}
-              disabled={isCreatingAssignment}
-              className="bg-[#2d682d] hover:bg-[#2d682d]/90"
-            >
-              {isCreatingAssignment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {isCreatingAssignment ? "Creating..." : "Create Assignment"}
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              <Button
+                variant="outline"
+                onClick={() => handleSaveAssignment("draft")}
+                disabled={isSavingAssignment}
+                className="border-slate-300"
+              >
+                {isSavingAssignment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                {isSavingAssignment ? "Saving..." : isEditingAssignment ? "Save Draft" : "Save as Draft"}
+              </Button>
+              <Button
+                onClick={() => handleSaveAssignment("sent")}
+                disabled={isSavingAssignment}
+                className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+              >
+                {isSavingAssignment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                {isSavingAssignment ? "Sending..." : isEditingAssignment ? "Update & Send" : "Send to Students"}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assignment Preview Dialog */}
+      <Dialog
+        open={Boolean(previewAssignment)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewAssignment(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{previewAssignment?.title ?? "Assignment Preview"}</DialogTitle>
+            <DialogDescription>
+              {previewAssignment
+                ? `${previewAssignment.subject} • ${previewAssignment.className} • Due ${formatExamDate(previewAssignment.dueDate)}`
+                : "Select an assignment to preview the student experience."}
+            </DialogDescription>
+          </DialogHeader>
+          {previewAssignment ? (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className={`${ASSIGNMENT_STATUS_META[previewAssignment.status].badgeClass} uppercase`}>
+                  {ASSIGNMENT_STATUS_META[previewAssignment.status].label}
+                </Badge>
+                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                  {
+                    previewAssignment.submissions.filter((submission) =>
+                      ["submitted", "graded"].includes(submission.status),
+                    ).length
+                  }
+                  {" "}submissions
+                </Badge>
+              </div>
+              <div className="rounded-xl border bg-slate-50 p-4 text-sm text-slate-700">
+                <h4 className="font-semibold text-slate-800">Instructions</h4>
+                <p className="mt-2 whitespace-pre-line">
+                  {previewAssignment.description || "No description provided yet."}
+                </p>
+              </div>
+              {previewAssignment.resourceName ? (
+                <div className="rounded-xl border border-dashed border-emerald-200 bg-white p-4 text-sm text-emerald-700">
+                  <p className="font-medium">Attached Resource</p>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadAssignmentAttachment(previewAssignment)}
+                    className="mt-2 inline-flex items-center gap-2 text-emerald-700 transition hover:text-emerald-900"
+                  >
+                    <Download className="h-4 w-4" />
+                    {previewAssignment.resourceName}
+                  </button>
+                </div>
+              ) : null}
+              <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                <div>Created: {previewAssignment.createdAt ? formatExamDate(previewAssignment.createdAt) : "—"}</div>
+                <div>Last updated: {previewAssignment.updatedAt ? formatExamDate(previewAssignment.updatedAt) : "—"}</div>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter className="flex flex-wrap items-center justify-between gap-2">
+            <Button variant="ghost" onClick={() => setPreviewAssignment(null)}>
+              Close
             </Button>
+            {previewAssignment ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    handleEditAssignment(previewAssignment)
+                    setPreviewAssignment(null)
+                  }}
+                >
+                  <Pencil className="mr-2 h-4 w-4" /> Edit
+                </Button>
+                <Button variant="outline" onClick={() => handleViewSubmissions(previewAssignment)}>
+                  <Users className="mr-2 h-4 w-4" /> View submissions
+                </Button>
+                {previewAssignment.status === "draft" ? (
+                  <Button
+                    className="bg-[#2d682d] text-white hover:bg-[#1f4a1f]"
+                    onClick={() => {
+                      handleSendAssignment(previewAssignment)
+                      setPreviewAssignment(null)
+                    }}
+                  >
+                    <Send className="mr-2 h-4 w-4" /> Send to students
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* View Submissions Dialog */}
-      <Dialog open={showSubmissions} onOpenChange={setShowSubmissions}>
+      <Dialog
+        open={showSubmissions}
+        onOpenChange={(open) => {
+          setShowSubmissions(open)
+          if (!open) {
+            setSelectedAssignment(null)
+            setGradingDrafts({})
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>Assignment Submissions - {selectedAssignment?.title}</DialogTitle>
             <DialogDescription>
-              {selectedAssignment?.subject} - {selectedAssignment?.className}
+              {selectedAssignment
+                ? `${selectedAssignment.subject} • ${selectedAssignment.className} • Due ${formatExamDate(selectedAssignment.dueDate)}`
+                : "Review the submissions you have received."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {selectedAssignment?.submissions && selectedAssignment.submissions.length > 0 ? (
-              selectedAssignment.submissions.map((submission) => (
-                <div
-                  key={submission.id}
-                  className="flex flex-col gap-3 rounded-lg border p-4 md:flex-row md:items-center md:justify-between"
-                >
-                  <div>
-                    <h3 className="font-medium">Student ID: {submission.studentId}</h3>
-                    <p className="text-sm text-gray-600">
-                      Status:{" "}
-                      <Badge variant={submission.status === "submitted" ? "default" : "secondary"}>
-                        {submission.status}
-                      </Badge>
-                    </p>
-                    {submission.submittedAt && (
-                      <p className="text-xs text-gray-500">
-                        Submitted: {formatExamDate(submission.submittedAt)}
+              selectedAssignment.submissions.map((submission) => {
+                const draft = gradingDrafts[submission.id] ?? { score: "", comment: "" }
+                const submissionStatusMeta = submission.status === "graded" ? ASSIGNMENT_STATUS_META.graded : ASSIGNMENT_STATUS_META.sent
+
+                return (
+                  <div
+                    key={submission.id}
+                    className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:bg-slate-50/70"
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="space-y-1">
+                        <h3 className="font-medium text-slate-800">Student ID: {submission.studentId}</h3>
+                        <p className="text-xs text-slate-500">
+                          Submitted {submission.submittedAt ? formatExamDate(submission.submittedAt) : "—"}
+                        </p>
+                        {submission.files && submission.files.length > 0 ? (
+                          <p className="text-xs text-emerald-700">
+                            Attachment: {submission.files.map((file) => file.name).join(", ")}
+                          </p>
+                        ) : null}
+                      </div>
+                      <Badge className={`${submissionStatusMeta.badgeClass} uppercase`}>{submission.status}</Badge>
+                    </div>
+                    <div className="grid gap-4 rounded-lg bg-slate-50 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                      <div className="space-y-2">
+                        <Label className="text-xs uppercase tracking-wide text-slate-500">Score</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min={0}
+                            max={assignmentMaximum}
+                            value={draft.score}
+                            onChange={(e) =>
+                              setGradingDrafts((prev) => ({
+                                ...prev,
+                                [submission.id]: {
+                                  score: e.target.value,
+                                  comment: prev[submission.id]?.comment ?? "",
+                                },
+                              }))
+                            }
+                          />
+                          <span className="text-xs text-muted-foreground">/ {assignmentMaximum}</span>
+                        </div>
+                        {submission.grade || submission.score !== null ? (
+                          <p className="text-xs text-slate-500">
+                            Last score: {submission.score ?? "--"}/{assignmentMaximum}
+                            {submission.grade ? ` (${submission.grade})` : ""}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs uppercase tracking-wide text-slate-500">Feedback</Label>
+                        <Textarea
+                          value={draft.comment}
+                          onChange={(e) =>
+                            setGradingDrafts((prev) => ({
+                              ...prev,
+                              [submission.id]: {
+                                score: prev[submission.id]?.score ?? "",
+                                comment: e.target.value,
+                              },
+                            }))
+                          }
+                          rows={3}
+                          placeholder="Share personalised feedback"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs text-muted-foreground">
+                        {submission.comment
+                          ? `Student note: ${submission.comment}`
+                          : "No student comment provided."}
                       </p>
-                    )}
-                    {submission.comment && (
-                      <p className="text-xs text-gray-500">Comment: {submission.comment}</p>
-                    )}
-                    {submission.files && submission.files.length > 0 && (
-                      <p className="text-xs text-blue-600">
-                        File: {submission.files.map((file) => file.name).join(", ")}
-                      </p>
-                    )}
+                      <Button
+                        size="sm"
+                        className="bg-[#2d682d] text-white hover:bg-[#1f4a1f]"
+                        onClick={() => handleGradeSubmission(submission)}
+                        disabled={gradingSubmissionId === submission.id}
+                      >
+                        {gradingSubmissionId === submission.id ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle className="mr-2 h-4 w-4" />
+                        )}
+                        {gradingSubmissionId === submission.id
+                          ? "Saving..."
+                          : submission.status === "graded"
+                            ? "Update Score"
+                            : "Save Score"}
+                      </Button>
+                    </div>
                   </div>
-                  {submission.grade && (
-                    <Badge variant="outline" className="self-start md:self-center">
-                      Grade: {submission.grade}
-                    </Badge>
-                  )}
-                </div>
-              ))
+                )
+              })
             ) : (
               <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
                 No submissions have been received for this assignment yet.
@@ -2760,7 +3386,15 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             )}
           </div>
           <DialogFooter>
-            <Button onClick={() => setShowSubmissions(false)}>Close</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSubmissions(false)
+                setSelectedAssignment(null)
+              }}
+            >
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
