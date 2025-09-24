@@ -66,6 +66,7 @@ import {
   getStoredStudentMarksRecord,
   readStudentMarksStore,
 } from "@/lib/report-card-data"
+import { mapReportCardRecordToRaw } from "@/lib/report-card-transformers"
 import {
   REPORT_CARD_WORKFLOW_EVENT,
   getWorkflowRecords,
@@ -1026,6 +1027,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   }, [
     additionalData.classPositions,
     additionalData.classTeacherRemarks,
+    additionalData.attendance,
     additionalData.studentStatus,
     additionalData.termInfo.numberInClass,
     buildStudentPreview,
@@ -1037,6 +1039,43 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     teacher.id,
     teacher.name,
   ])
+
+  const loadStoredReportCardPreview = useCallback(
+    (studentId: string): RawReportCardData | null => {
+      try {
+        const stored = safeStorage.getItem("reportCards")
+        if (!stored) {
+          return null
+        }
+
+        const parsed = JSON.parse(stored) as unknown
+        if (!Array.isArray(parsed)) {
+          return null
+        }
+
+        const normalizedId = String(studentId)
+        for (const entry of parsed) {
+          if (!entry || typeof entry !== "object") {
+            continue
+          }
+
+          const candidate = entry as ReportCardRecord
+          if (
+            candidate.studentId === normalizedId &&
+            mapTermKeyToLabel(candidate.term) === normalizedTermLabel &&
+            candidate.session === selectedSession
+          ) {
+            return mapReportCardRecordToRaw(candidate)
+          }
+        }
+      } catch (error) {
+        logger.warn("Unable to load stored report card preview", error)
+      }
+
+      return null
+    },
+    [normalizedTermLabel, selectedSession],
+  )
 
   const openPreviewForStudent = useCallback(
     (student: MarksRecord) => {
@@ -1051,6 +1090,15 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
       persistAcademicMarksToStorage()
 
+      setPreviewStudentId(student.studentId)
+
+      const storedPreview = loadStoredReportCardPreview(String(student.studentId))
+      if (storedPreview) {
+        setPreviewData(storedPreview)
+        setPreviewDialogOpen(true)
+        return
+      }
+
       const storedRecord = getStoredStudentMarksRecord(
         String(student.studentId),
         normalizedTermLabel,
@@ -1061,12 +1109,12 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         : null
       const previewPayload = buildStudentPreview(student, aggregatedRaw)
 
-      setPreviewStudentId(student.studentId)
       setPreviewData(previewPayload)
       setPreviewDialogOpen(true)
     },
     [
       buildStudentPreview,
+      loadStoredReportCardPreview,
       normalizedTermLabel,
       persistAcademicMarksToStorage,
       selectedClass,
@@ -1369,6 +1417,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
 
     try {
+      persistAcademicMarksToStorage()
       setIsSubmittingForApproval(true)
       const updated = submitReportCardsForApproval({
         teacherId: teacher.id,
@@ -1816,6 +1865,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
       safeStorage.setItem("behavioralAssessments", JSON.stringify(existingData))
 
+      persistAcademicMarksToStorage()
+
       toast({
         title: "Behavioral assessment saved",
         description: "Affective and psychomotor records have been updated for the selected students.",
@@ -1886,6 +1937,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
       safeStorage.setItem("attendancePositions", JSON.stringify(existingData))
 
+      persistAcademicMarksToStorage()
+
       toast({
         title: "Attendance saved",
         description: "Attendance, status, and class summaries have been updated for the selected students.",
@@ -1934,6 +1987,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       })
 
       safeStorage.setItem("classTeacherRemarks", JSON.stringify(existingData))
+
+      persistAcademicMarksToStorage()
 
       toast({
         title: "Remarks saved",
