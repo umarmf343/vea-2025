@@ -1,13 +1,14 @@
 "use client"
 
 import type React from "react"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 import { GraduationCap, Users, BookOpen, DollarSign, UserCheck, Key, Loader2 } from "lucide-react"
 import { PaymentModal } from "@/components/payment-modal"
 import { StudentProfileCard } from "@/components/student-profile-card"
@@ -35,7 +36,7 @@ import { ReportCardViewer } from "@/components/report-card-viewer"
 import type { RawReportCardData } from "@/lib/report-card-types"
 import { AutomaticPromotionSystem } from "@/components/automatic-promotion-system"
 import { getStudentReportCardData } from "@/lib/report-card-data"
-import { InternalMessaging } from "@/components/internal-messaging"
+import { InternalMessaging, type MessagingParticipant } from "@/components/internal-messaging"
 import { AdminApprovalDashboard } from "@/components/admin-approval-dashboard"
 import { getCompleteReportCard } from "@/lib/sample-report-data"
 import { safeStorage } from "@/lib/safe-storage"
@@ -130,6 +131,9 @@ export default function HomePage() {
     role: "parent" as UserRole,
     studentId: "",
     classId: "",
+    phoneNumber1: "",
+    phoneNumber2: "",
+    address: "",
   })
   const [registrationEnabled, setRegistrationEnabled] = useState(true)
   const [loginError, setLoginError] = useState<string | null>(null)
@@ -339,6 +343,22 @@ export default function HomePage() {
         return
       }
 
+      const primaryPhone = registerForm.phoneNumber1.trim()
+      const secondaryPhone = registerForm.phoneNumber2.trim()
+      const address = registerForm.address.trim()
+
+      if (registerForm.role !== "student" && !primaryPhone) {
+        setRegisterError("Please provide a primary phone number.")
+        setIsRegistering(false)
+        return
+      }
+
+      if (!address) {
+        setRegisterError("Please provide an address for this account.")
+        setIsRegistering(false)
+        return
+      }
+
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -349,6 +369,9 @@ export default function HomePage() {
           role: mapUiRoleToApi(registerForm.role),
           classId: requiresClassSelection(registerForm.role) ? normalizedClassId : undefined,
           studentId: registerForm.role === "parent" ? normalizedStudentId : undefined,
+          phoneNumber1: primaryPhone || undefined,
+          phoneNumber2: secondaryPhone || undefined,
+          address,
         }),
       })
 
@@ -602,6 +625,53 @@ export default function HomePage() {
                         value={registerForm.email}
                         onChange={(e) => setRegisterForm((prev) => ({ ...prev, email: e.target.value }))}
                         className="border-[#2d682d]/20 focus:border-[#2d682d]"
+                        required
+                        disabled={isRegistering}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="register-phone1" className="text-[#2d682d]">
+                        Primary Phone Number
+                      </Label>
+                      <Input
+                        id="register-phone1"
+                        type="tel"
+                        placeholder="Enter primary phone number"
+                        value={registerForm.phoneNumber1}
+                        onChange={(e) => setRegisterForm((prev) => ({ ...prev, phoneNumber1: e.target.value }))}
+                        className="border-[#2d682d]/20 focus:border-[#2d682d]"
+                        required={registerForm.role !== "student"}
+                        disabled={isRegistering}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Primary phone number is optional for students.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="register-phone2" className="text-[#2d682d]">
+                        Secondary Phone Number (Optional)
+                      </Label>
+                      <Input
+                        id="register-phone2"
+                        type="tel"
+                        placeholder="Enter secondary phone number"
+                        value={registerForm.phoneNumber2}
+                        onChange={(e) => setRegisterForm((prev) => ({ ...prev, phoneNumber2: e.target.value }))}
+                        className="border-[#2d682d]/20 focus:border-[#2d682d]"
+                        disabled={isRegistering}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="register-address" className="text-[#2d682d]">
+                        Address
+                      </Label>
+                      <Textarea
+                        id="register-address"
+                        placeholder="Enter your home address"
+                        value={registerForm.address}
+                        onChange={(e) => setRegisterForm((prev) => ({ ...prev, address: e.target.value }))}
+                        className="border-[#2d682d]/20 focus:border-[#2d682d]"
+                        rows={2}
                         required
                         disabled={isRegistering}
                       />
@@ -1149,6 +1219,17 @@ function ParentDashboard({ user }: { user: User }) {
   const [adminGrantedAccess, setAdminGrantedAccess] = useState(false)
   const [reportCardData, setReportCardData] = useState<RawReportCardData | null>(null)
   const [academicPeriod, setAcademicPeriod] = useState({ term: "First Term", session: "2024/2025" })
+  const fallbackMessagingDirectory = useMemo<MessagingParticipant[]>(
+    () => [
+      { id: "user_teacher", name: "Class Teacher", role: "teacher" },
+      { id: "user_admin", name: "School Administrator", role: "admin" },
+      { id: "user_super_admin", name: "System Super Admin", role: "super_admin" },
+    ],
+    [],
+  )
+  const [messagingParticipants, setMessagingParticipants] = useState<MessagingParticipant[]>(
+    fallbackMessagingDirectory,
+  )
 
   const linkedStudentId =
     typeof user.metadata?.linkedStudentId === "string"
@@ -1188,6 +1269,169 @@ function ParentDashboard({ user }: { user: User }) {
   useEffect(() => {
     safeStorage.removeItem("grantedAccess")
   }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadMessagingDirectory = async () => {
+      const collected: MessagingParticipant[] = []
+      const seen = new Set<string>()
+
+      const addParticipant = (candidate: { id?: unknown; name?: unknown; email?: unknown; role?: unknown }) => {
+        const rawId = candidate.id
+        const id =
+          typeof rawId === "string" && rawId.trim().length > 0
+            ? rawId.trim()
+            : rawId !== undefined
+              ? String(rawId)
+              : null
+        if (!id || id === user.id || seen.has(id)) {
+          return
+        }
+
+        const rawName = candidate.name
+        const name =
+          typeof rawName === "string" && rawName.trim().length > 0
+            ? rawName.trim()
+            : typeof candidate.email === "string" && candidate.email.trim().length > 0
+              ? (candidate.email as string).trim()
+              : id
+        const role =
+          typeof candidate.role === "string" && candidate.role.trim().length > 0
+            ? candidate.role
+            : "member"
+        const email =
+          typeof candidate.email === "string" && candidate.email.trim().length > 0
+            ? (candidate.email as string).trim()
+            : undefined
+
+        collected.push({ id, name, role, email })
+        seen.add(id)
+      }
+
+      const addFallbackEntries = (entries: MessagingParticipant[]) => {
+        entries.forEach((entry) => addParticipant(entry))
+      }
+
+      const safeFetch = async (url: string) => {
+        const response = await fetch(url, { cache: "no-store" })
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`)
+        }
+        return (await response.json()) as { users?: Array<Record<string, any>> }
+      }
+
+      let studentClassId: string | null = null
+      let studentClassName: string | null = studentData.class ?? null
+
+      if (linkedStudentId) {
+        try {
+          const payload = await safeFetch(`/api/users?userId=${linkedStudentId}`)
+          const studentRecord = Array.isArray(payload.users) ? payload.users[0] : undefined
+          if (studentRecord) {
+            const rawClassId =
+              typeof studentRecord.classId === "string"
+                ? studentRecord.classId
+                : typeof studentRecord.class_id === "string"
+                  ? studentRecord.class_id
+                  : typeof studentRecord.metadata?.classId === "string"
+                    ? studentRecord.metadata.classId
+                    : null
+            if (rawClassId && rawClassId.trim().length > 0) {
+              studentClassId = rawClassId.trim()
+            }
+
+            const rawClassName =
+              typeof studentRecord.metadata?.assignedClassName === "string"
+                ? studentRecord.metadata.assignedClassName
+                : typeof studentRecord.className === "string"
+                  ? studentRecord.className
+                  : typeof studentRecord.class_name === "string"
+                    ? studentRecord.class_name
+                    : null
+            if (rawClassName && rawClassName.trim().length > 0) {
+              studentClassName = rawClassName.trim()
+            }
+          }
+        } catch (error) {
+          logger.error("Unable to load linked student for messaging directory", { error })
+        }
+      }
+
+      const fallbackTeacher = fallbackMessagingDirectory.filter((entry) => entry.role === "teacher")
+      const fallbackAdmins = fallbackMessagingDirectory.filter((entry) => entry.role === "admin")
+      const fallbackSuperAdmins = fallbackMessagingDirectory.filter((entry) => entry.role === "super_admin")
+
+      try {
+        const payload = await safeFetch("/api/users?role=teacher")
+        const teachers = Array.isArray(payload.users) ? payload.users : []
+        let matches = teachers.filter((teacher) => {
+          const teacherClassId =
+            typeof teacher.classId === "string"
+              ? teacher.classId
+              : typeof teacher.class_id === "string"
+                ? teacher.class_id
+                : typeof teacher.metadata?.classId === "string"
+                  ? teacher.metadata.classId
+                  : null
+          const teacherClassName =
+            typeof teacher.metadata?.assignedClassName === "string"
+              ? teacher.metadata.assignedClassName
+              : null
+
+          return (
+            (studentClassId && teacherClassId === studentClassId) ||
+            (studentClassName && teacherClassName === studentClassName)
+          )
+        })
+
+        if (matches.length === 0 && teachers.length > 0) {
+          matches = teachers.slice(0, 1)
+        }
+
+        if (matches.length === 0) {
+          addFallbackEntries(fallbackTeacher)
+        } else {
+          matches.forEach((teacher) => addParticipant(teacher))
+        }
+      } catch (error) {
+        logger.error("Unable to load teacher directory for messaging", { error })
+        addFallbackEntries(fallbackTeacher)
+      }
+
+      const loadRoleDirectory = async (roleParam: string, fallbacks: MessagingParticipant[]) => {
+        try {
+          const payload = await safeFetch(`/api/users?role=${roleParam}`)
+          const records = Array.isArray(payload.users) ? payload.users : []
+          if (records.length === 0) {
+            addFallbackEntries(fallbacks)
+          } else {
+            records.forEach((record) => addParticipant(record))
+          }
+        } catch (error) {
+          logger.error(`Unable to load ${roleParam} directory for messaging`, { error })
+          addFallbackEntries(fallbacks)
+        }
+      }
+
+      await loadRoleDirectory("admin", fallbackAdmins)
+      await loadRoleDirectory("super_admin", fallbackSuperAdmins)
+
+      if (collected.length === 0) {
+        addFallbackEntries(fallbackMessagingDirectory)
+      }
+
+      if (isMounted) {
+        setMessagingParticipants(collected.length > 0 ? collected : fallbackMessagingDirectory)
+      }
+    }
+
+    void loadMessagingDirectory()
+
+    return () => {
+      isMounted = false
+    }
+  }, [fallbackMessagingDirectory, linkedStudentId, studentData.class, user.id])
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -1561,7 +1805,10 @@ function ParentDashboard({ user }: { user: User }) {
                 <CardDescription>Communicate with teachers and school administration</CardDescription>
               </CardHeader>
               <CardContent>
-                <InternalMessaging currentUser={{ id: user.id, name: user.name, role: "parent" }} />
+                <InternalMessaging
+                  currentUser={{ id: user.id, name: user.name, role: "parent" }}
+                  participants={messagingParticipants}
+                />
               </CardContent>
             </Card>
           </div>

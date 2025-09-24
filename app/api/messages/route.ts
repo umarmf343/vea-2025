@@ -2,7 +2,14 @@ import { randomUUID } from "node:crypto"
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 
-import { addMessage, getMessagesForUser, markConversationRead, publishNotification, type ChatMessage } from "@/lib/realtime-hub"
+import {
+  addMessage,
+  deleteMessage,
+  getMessagesForUser,
+  markConversationRead,
+  publishNotification,
+  type ChatMessage,
+} from "@/lib/realtime-hub"
 
 export const runtime = "nodejs"
 
@@ -31,6 +38,11 @@ const messageSchema = z.object({
 
 const markReadSchema = z.object({
   conversationId: z.string().min(1),
+  userId: z.string().min(1),
+})
+
+const deleteSchema = z.object({
+  messageId: z.string().min(1),
   userId: z.string().min(1),
 })
 
@@ -96,5 +108,27 @@ export async function PATCH(request: NextRequest) {
     }
 
     return NextResponse.json({ error: "Unable to update message status" }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const payload = deleteSchema.parse(await request.json())
+    const deleted = deleteMessage(payload.messageId, payload.userId)
+    if (!deleted) {
+      return NextResponse.json({ error: "Message not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ message: deleted })
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: error.flatten() }, { status: 422 })
+    }
+
+    if (error instanceof Error && error.message === "Not authorized to delete this message") {
+      return NextResponse.json({ error: error.message }, { status: 403 })
+    }
+
+    return NextResponse.json({ error: "Unable to delete message" }, { status: 500 })
   }
 }
