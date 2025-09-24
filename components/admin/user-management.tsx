@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -53,6 +54,9 @@ interface User {
   classId: string | null
   className?: string | null
   metadata: Record<string, any>
+  contactPhonePrimary?: string
+  contactPhoneSecondary?: string
+  contactAddress?: string
 }
 
 interface ClassOption {
@@ -138,6 +142,18 @@ function mapUser(apiUser: ApiUser): User {
     classId: apiUser.classId ?? (apiUser.metadata?.classId ?? null),
     className: typeof apiUser.metadata?.assignedClassName === "string" ? apiUser.metadata.assignedClassName : undefined,
     metadata: apiUser.metadata ?? {},
+    contactPhonePrimary:
+      typeof apiUser.metadata?.contactPhonePrimary === "string"
+        ? apiUser.metadata.contactPhonePrimary
+        : undefined,
+    contactPhoneSecondary:
+      typeof apiUser.metadata?.contactPhoneSecondary === "string"
+        ? apiUser.metadata.contactPhoneSecondary
+        : undefined,
+    contactAddress:
+      typeof apiUser.metadata?.contactAddress === "string"
+        ? apiUser.metadata.contactAddress
+        : undefined,
   }
 }
 
@@ -149,6 +165,9 @@ interface NewUserState {
   studentIds: string[]
   classId: string
   subjects: string[]
+  phoneNumber1: string
+  phoneNumber2: string
+  address: string
 }
 
 const INITIAL_USER_STATE: NewUserState = {
@@ -159,6 +178,9 @@ const INITIAL_USER_STATE: NewUserState = {
   studentIds: [],
   classId: "",
   subjects: [],
+  phoneNumber1: "",
+  phoneNumber2: "",
+  address: "",
 }
 
 interface UserManagementProps {
@@ -278,6 +300,20 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
         return
       }
 
+      const primaryPhone = newUser.phoneNumber1.trim()
+      const secondaryPhone = newUser.phoneNumber2.trim()
+      const address = newUser.address.trim()
+
+      if (newUser.role !== "student" && !primaryPhone) {
+        setError("Enter a primary phone number for this user")
+        return
+      }
+
+      if (!address) {
+        setError("Enter an address for this user")
+        return
+      }
+
       const classMetadata = shouldAssignClass(newUser.role)
         ? {
             assignedClassName: selectedClass?.name ?? null,
@@ -292,7 +328,17 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
             }
           : undefined
 
-      const metadata = classMetadata || parentMetadata ? { ...parentMetadata, ...classMetadata } : undefined
+      const contactMetadata: Record<string, string> = {}
+      if (primaryPhone) {
+        contactMetadata.contactPhonePrimary = primaryPhone
+      }
+      if (secondaryPhone) {
+        contactMetadata.contactPhoneSecondary = secondaryPhone
+      }
+      contactMetadata.contactAddress = address
+
+      const metadataPayload = { ...parentMetadata, ...classMetadata, ...contactMetadata }
+      const metadata = Object.keys(metadataPayload).length > 0 ? metadataPayload : undefined
       const response = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -343,6 +389,20 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
           : undefined
       const metadataPayload: Record<string, any> = editingUser.metadata ? { ...editingUser.metadata } : {}
 
+      const primaryPhone = editingUser.contactPhonePrimary?.trim() ?? ""
+      const secondaryPhone = editingUser.contactPhoneSecondary?.trim() ?? ""
+      const address = editingUser.contactAddress?.trim() ?? ""
+
+      if (editingUser.role !== "student" && !primaryPhone) {
+        setError("Enter a primary phone number for this user")
+        return
+      }
+
+      if (!address) {
+        setError("Enter an address for this user")
+        return
+      }
+
       if (shouldAssignClass(editingUser.role)) {
         metadataPayload.assignedClassName = selectedClass?.name ?? null
       } else if ("assignedClassName" in metadataPayload) {
@@ -360,6 +420,20 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
           delete metadataPayload.linkedStudentIds
         }
       }
+
+      if (primaryPhone) {
+        metadataPayload.contactPhonePrimary = primaryPhone
+      } else {
+        delete metadataPayload.contactPhonePrimary
+      }
+
+      if (secondaryPhone) {
+        metadataPayload.contactPhoneSecondary = secondaryPhone
+      } else {
+        delete metadataPayload.contactPhoneSecondary
+      }
+
+      metadataPayload.contactAddress = address
 
       const metadata = Object.keys(metadataPayload).length > 0 ? metadataPayload : undefined
       const response = await fetch("/api/users", {
@@ -526,6 +600,36 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                   type="email"
                   value={newUser.email}
                   onChange={(event) => setNewUser((prev) => ({ ...prev, email: event.target.value }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="new-phone1">Primary Phone Number</Label>
+                <Input
+                  id="new-phone1"
+                  type="tel"
+                  value={newUser.phoneNumber1}
+                  onChange={(event) => setNewUser((prev) => ({ ...prev, phoneNumber1: event.target.value }))}
+                  required={newUser.role !== "student"}
+                />
+                <p className="mt-1 text-xs text-gray-500">Optional for student accounts.</p>
+              </div>
+              <div>
+                <Label htmlFor="new-phone2">Secondary Phone Number (Optional)</Label>
+                <Input
+                  id="new-phone2"
+                  type="tel"
+                  value={newUser.phoneNumber2}
+                  onChange={(event) => setNewUser((prev) => ({ ...prev, phoneNumber2: event.target.value }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="new-address">Address</Label>
+                <Textarea
+                  id="new-address"
+                  value={newUser.address}
+                  onChange={(event) => setNewUser((prev) => ({ ...prev, address: event.target.value }))}
+                  rows={2}
+                  required
                 />
               </div>
               <div>
@@ -808,6 +912,48 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                   />
                 </div>
               </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="edit-phone1">Primary Phone Number</Label>
+                  <Input
+                    id="edit-phone1"
+                    type="tel"
+                    value={editingUser.contactPhonePrimary ?? ""}
+                    onChange={(event) =>
+                      setEditingUser((prev) =>
+                        prev ? { ...prev, contactPhonePrimary: event.target.value } : prev,
+                      )
+                    }
+                    required={editingUser.role !== "student"}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Optional for student accounts.</p>
+                </div>
+                <div>
+                  <Label htmlFor="edit-phone2">Secondary Phone Number (Optional)</Label>
+                  <Input
+                    id="edit-phone2"
+                    type="tel"
+                    value={editingUser.contactPhoneSecondary ?? ""}
+                    onChange={(event) =>
+                      setEditingUser((prev) =>
+                        prev ? { ...prev, contactPhoneSecondary: event.target.value } : prev,
+                      )
+                    }
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="edit-address">Address</Label>
+                <Textarea
+                  id="edit-address"
+                  value={editingUser.contactAddress ?? ""}
+                  onChange={(event) =>
+                    setEditingUser((prev) => (prev ? { ...prev, contactAddress: event.target.value } : prev))
+                  }
+                  rows={2}
+                  required
+                />
+              </div>
               <div>
                 <Label>Role</Label>
                 <Select
@@ -1045,6 +1191,18 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                 <div>
                   <Label>Last Login</Label>
                   <p>{selectedUser.lastLogin ?? "Never"}</p>
+                </div>
+                <div>
+                  <Label>Primary Phone</Label>
+                  <p>{selectedUser.contactPhonePrimary ?? "—"}</p>
+                </div>
+                <div>
+                  <Label>Secondary Phone</Label>
+                  <p>{selectedUser.contactPhoneSecondary ?? "—"}</p>
+                </div>
+                <div className="col-span-2">
+                  <Label>Address</Label>
+                  <p>{selectedUser.contactAddress ?? "—"}</p>
                 </div>
               </div>
               {selectedUser.role === "parent" && (

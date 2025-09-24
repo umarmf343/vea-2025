@@ -18,15 +18,17 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Loader2, Mic, Paperclip, Send, UserCircle, Wifi, WifiOff } from "lucide-react"
+import { Loader2, Mic, Paperclip, Send, Trash2, UserCircle, Wifi, WifiOff } from "lucide-react"
 
-interface Participant {
+export interface MessagingParticipant {
   id: string
   name: string
   role: string
   email?: string
   avatar?: string
 }
+
+type Participant = MessagingParticipant
 
 interface AttachmentPreview {
   id: string
@@ -44,6 +46,7 @@ interface InternalMessagingProps {
     role: string
     avatar?: string
   }
+  participants?: MessagingParticipant[]
 }
 
 type ServerMessage = import("@/lib/realtime-hub").ChatMessage
@@ -126,7 +129,7 @@ function roleBadgeClass(role: string) {
   }
 }
 
-export function InternalMessaging({ currentUser }: InternalMessagingProps) {
+export function InternalMessaging({ currentUser, participants }: InternalMessagingProps) {
   const [messages, setMessages] = useState<ClientMessage[]>([])
   const [activeConversation, setActiveConversation] = useState<string | null>(null)
   const [recipientId, setRecipientId] = useState<string>("")
@@ -137,6 +140,7 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
   const [isConnected, setIsConnected] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [typingIndicators, setTypingIndicators] = useState<TypingIndicator[]>([])
+  const [deletingMessages, setDeletingMessages] = useState<Record<string, boolean>>({})
 
   const eventSourceRef = useRef<EventSource | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -147,10 +151,20 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
   const notificationAudioRef = useRef<HTMLAudioElement | null>(null)
 
-  const directory = useMemo(
-    () => DIRECTORY.filter((participant) => participant.id !== currentUser.id),
-    [currentUser.id],
-  )
+  const directory = useMemo(() => {
+    const source = Array.isArray(participants) && participants.length > 0 ? participants : DIRECTORY
+    const seen = new Set<string>()
+    return source.filter((participant) => {
+      if (!participant.id || participant.id === currentUser.id) {
+        return false
+      }
+      if (seen.has(participant.id)) {
+        return false
+      }
+      seen.add(participant.id)
+      return true
+    })
+  }, [currentUser.id, participants])
 
   const conversations = useMemo<Conversation[]>(() => {
     const grouped = new Map<string, ClientMessage[]>()
@@ -638,21 +652,78 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
     setAttachments((prev) => prev.filter((attachment) => attachment.id !== id))
   }
 
+  const handleDeleteMessage = useCallback(
+    async (messageId: string) => {
+      const confirmed = window.confirm("Delete this message for everyone?")
+      if (!confirmed) {
+        return
+      }
+
+      setDeletingMessages((prev) => ({ ...prev, [messageId]: true }))
+
+      try {
+        const response = await fetch("/api/messages", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageId, userId: currentUser.id }),
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to delete message")
+        }
+
+        const payload = (await response.json()) as { message: ServerMessage }
+        const clientMessage = toClientMessage(payload.message)
+        setMessages((prev) => upsertMessage(prev, clientMessage))
+      } catch (error) {
+        console.error(error)
+        toast.error("Unable to delete message", { description: "Please try again." })
+      } finally {
+        setDeletingMessages((prev) => {
+          const next = { ...prev }
+          delete next[messageId]
+          return next
+        })
+      }
+    },
+    [currentUser.id],
+  )
+
   const renderMessageBubble = (message: ClientMessage) => {
     const isOwnMessage = message.senderId === currentUser.id
     const alignment = isOwnMessage ? "items-end" : "items-start"
     const bubbleColor = isOwnMessage
       ? "bg-primary text-primary-foreground"
       : "bg-muted text-muted-foreground"
+    const isDeleting = deletingMessages[message.id]
 
     return (
       <div key={message.id} className={cn("flex flex-col gap-1", alignment)}>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">{message.senderName}</span>
-          <Badge variant="secondary" className={roleBadgeClass(message.senderRole)}>
-            {message.senderRole.replace("_", " ")}
-          </Badge>
-          <span>{formatTime(message.createdAt)}</span>
+        <div
+          className={cn(
+            "flex items-center gap-2 text-xs text-muted-foreground",
+            isOwnMessage ? "justify-end" : "",
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-foreground">{message.senderName}</span>
+            <Badge variant="secondary" className={roleBadgeClass(message.senderRole)}>
+              {message.senderRole.replace("_", " ")}
+            </Badge>
+            <span>{formatTime(message.createdAt)}</span>
+          </div>
+          {isOwnMessage && !message.isDeleted && (
+            <Button
+              size="icon"
+              variant="ghost"
+              disabled={isDeleting}
+              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              onClick={() => void handleDeleteMessage(message.id)}
+              aria-label="Delete message"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
         <div
           className={cn(
@@ -661,23 +732,45 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
             isOwnMessage ? "rounded-br-sm" : "rounded-bl-sm",
           )}
         >
-          <p className="whitespace-pre-line break-words">{message.content}</p>
+          {message.isDeleted ? (
+            <p className="italic opacity-80">This message was deleted.</p>
+          ) : (
+            <>
+              <p className="whitespace-pre-line break-words">{message.content}</p>
 
-          {message.attachments.length > 0 && (
-            <div className="mt-3 space-y-2">
-              {message.attachments.map((attachment) => (
-                <a
-                  key={attachment.id}
-                  href={attachment.dataUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-between rounded-lg border border-white/20 bg-black/10 px-3 py-2 text-xs backdrop-blur"
-                >
-                  <span className="truncate font-medium">{attachment.name}</span>
-                  <span>{(attachment.size / 1024 / 1024).toFixed(1)} MB</span>
-                </a>
-              ))}
-            </div>
+              {message.attachments.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {message.attachments.map((attachment) => {
+                    const isAudio = attachment.type.startsWith("audio/")
+                    return (
+                      <div
+                        key={attachment.id}
+                        className="space-y-2 rounded-lg border border-white/20 bg-black/10 px-3 py-2 text-xs backdrop-blur"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="truncate font-medium">{attachment.name}</span>
+                          <span>{(attachment.size / 1024 / 1024).toFixed(1)} MB</span>
+                        </div>
+                        {isAudio && attachment.dataUrl ? (
+                          <audio controls src={attachment.dataUrl} className="w-full" preload="metadata">
+                            Your browser does not support the audio element.
+                          </audio>
+                        ) : (
+                          <a
+                            href={attachment.dataUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center text-xs font-medium underline"
+                          >
+                            View attachment
+                          </a>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
           )}
 
           <div className="mt-1 flex items-center justify-end gap-1 text-[10px] opacity-80">
@@ -898,33 +991,45 @@ export function InternalMessaging({ currentUser }: InternalMessagingProps) {
                 </div>
               </div>
 
-              {attachments.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">Attachments</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {attachments.map((attachment) => (
-                      <div
-                        key={attachment.id}
-                        className="group flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs shadow-sm"
-                      >
-                        <span className="font-medium text-slate-600">{attachment.name}</span>
-                        <span className="text-muted-foreground">
-                          {(attachment.size / 1024 / 1024).toFixed(1)} MB
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeAttachment(attachment.id)}
-                          className="h-6 w-6 rounded-full bg-slate-100 text-slate-500 opacity-0 transition group-hover:opacity-100 hover:bg-destructive hover:text-destructive-foreground"
-                          aria-label="Remove attachment"
-                        >
-                          ×
-                        </Button>
-                      </div>
-                    ))}
+                {attachments.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <Label className="text-xs uppercase tracking-wide text-muted-foreground">Attachments</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {attachments.map((attachment) => {
+                        const isAudio = attachment.type.startsWith("audio/")
+                        return (
+                          <div
+                            key={attachment.id}
+                            className="group flex w-full max-w-xs flex-col gap-2 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 text-xs shadow-sm"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="truncate font-medium text-slate-600">{attachment.name}</span>
+                              <span className="text-muted-foreground">
+                                {(attachment.size / 1024 / 1024).toFixed(1)} MB
+                              </span>
+                            </div>
+                            {isAudio && attachment.dataUrl ? (
+                              <audio controls src={attachment.dataUrl} className="w-full" preload="metadata">
+                                Your browser does not support the audio element.
+                              </audio>
+                            ) : null}
+                            <div className="flex justify-end">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeAttachment(attachment.id)}
+                                className="h-6 w-6 rounded-full bg-slate-100 text-slate-500 opacity-0 transition group-hover:opacity-100 hover:bg-destructive hover:text-destructive-foreground"
+                                aria-label="Remove attachment"
+                              >
+                                ×
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-muted-foreground">

@@ -27,6 +27,8 @@ export interface ChatMessage {
   priority: MessagePriority
   subject?: string
   readBy: string[]
+  isDeleted?: boolean
+  deletedAt?: string | null
 }
 
 export interface TypingPayload {
@@ -82,6 +84,41 @@ const hubState = initialiseState()
 export function addMessage(message: ChatMessage) {
   hubState.messages = [...hubState.messages, message].slice(-5000)
   hubState.emitter.emit("message", message)
+}
+
+export function deleteMessage(messageId: string, requesterId: string) {
+  const index = hubState.messages.findIndex((message) => message.id === messageId)
+  if (index === -1) {
+    return null
+  }
+
+  const existing = hubState.messages[index]
+  if (existing.senderId !== requesterId) {
+    throw new Error("Not authorized to delete this message")
+  }
+
+  if (existing.isDeleted) {
+    return existing
+  }
+
+  const deletedAt = new Date().toISOString()
+  const updated: ChatMessage = {
+    ...existing,
+    content: "Message deleted",
+    attachments: [],
+    messageType: "text",
+    isDeleted: true,
+    deletedAt,
+  }
+
+  hubState.messages = [
+    ...hubState.messages.slice(0, index),
+    updated,
+    ...hubState.messages.slice(index + 1),
+  ]
+
+  hubState.emitter.emit("message", updated)
+  return updated
 }
 
 export function getMessagesForUser(userId: string, conversationId?: string) {

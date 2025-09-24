@@ -31,6 +31,12 @@ export async function POST(request: NextRequest) {
     const password = String(body?.password ?? "")
     const roleInput = String(body?.role ?? "student")
     const resolvedRole = normalizeRole(roleInput)
+    const rawPhone1 = typeof body?.phoneNumber1 === "string" ? sanitizeInput(body.phoneNumber1) : ""
+    const phoneNumber1 = rawPhone1.trim()
+    const rawPhone2 = typeof body?.phoneNumber2 === "string" ? sanitizeInput(body.phoneNumber2) : ""
+    const phoneNumber2 = rawPhone2.trim()
+    const rawAddress = typeof body?.address === "string" ? sanitizeInput(body.address) : ""
+    const address = rawAddress.trim()
 
     if (!name || !email || !password) {
       return NextResponse.json({ error: "Name, email and password are required" }, { status: 400 })
@@ -49,6 +55,14 @@ export async function POST(request: NextRequest) {
     const classId = rawClassId.trim()
     const rawStudentId = typeof body?.studentId === "string" ? sanitizeInput(body.studentId) : ""
     const studentId = rawStudentId.trim()
+
+    if (resolvedRole !== "student" && !phoneNumber1) {
+      return NextResponse.json({ error: "Primary phone number is required" }, { status: 400 })
+    }
+
+    if (!address) {
+      return NextResponse.json({ error: "Address is required" }, { status: 400 })
+    }
 
     let assignedClassName: string | null = null
     if (classId) {
@@ -80,6 +94,13 @@ export async function POST(request: NextRequest) {
       metadata.linkedStudentId = linkedStudentId
       metadata.linkedStudentIds = [linkedStudentId]
     }
+    if (phoneNumber1) {
+      metadata.contactPhonePrimary = phoneNumber1
+    }
+    if (phoneNumber2) {
+      metadata.contactPhoneSecondary = phoneNumber2
+    }
+    metadata.contactAddress = address
 
     const user = await auth.register({
       name,
