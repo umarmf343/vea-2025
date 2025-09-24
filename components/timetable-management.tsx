@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { addDays, format, startOfWeek } from "date-fns"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,8 +12,10 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
 import { useToast } from "@/hooks/use-toast"
-import { Clock, Coffee, Edit, Loader2, Plus, Send, Trash2 } from "lucide-react"
+import { CalendarIcon, ChevronLeft, ChevronRight, Clock, Coffee, Edit, Loader2, Plus, Send, Trash2 } from "lucide-react"
 
 import { logger } from "@/lib/logger"
 import {
@@ -51,13 +54,53 @@ const PERIOD_SELECT_OPTIONS = CLASS_TIMETABLE_PERIODS.map((period) => {
   return { id: period.id, value: range, label: `${period.label} • ${range}` }
 })
 
+function stripTime(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function isWeekend(date: Date): boolean {
+  const day = date.getDay()
+  return day === 0 || day === 6
+}
+
+function ensureWeekday(date: Date): Date {
+  let candidate = stripTime(date)
+  while (isWeekend(candidate)) {
+    candidate = addDays(candidate, 1)
+  }
+  return candidate
+}
+
+function nextWeekday(date: Date): Date {
+  let candidate = addDays(stripTime(date), 1)
+  while (isWeekend(candidate)) {
+    candidate = addDays(candidate, 1)
+  }
+  return candidate
+}
+
+function previousWeekday(date: Date): Date {
+  let candidate = addDays(stripTime(date), -1)
+  while (isWeekend(candidate)) {
+    candidate = addDays(candidate, -1)
+  }
+  return candidate
+}
+
+function resolveDayFromDate(date: Date): string {
+  const label = format(date, "EEEE")
+  return DAY_ORDER.find((day) => day.toLowerCase() === label.toLowerCase()) ?? DAY_ORDER[0]
+}
+
 export default function TimetableManagement() {
   const { toast } = useToast()
+
+  const defaultWeekday = resolveDayFromDate(ensureWeekday(new Date()))
 
   const [classOptions, setClassOptions] = useState<ClassOption[]>([])
   const [classSubjects, setClassSubjects] = useState<Map<string, string[]>>(new Map())
   const [selectedClass, setSelectedClass] = useState<string>("")
-  const [selectedDay, setSelectedDay] = useState<string>(DAY_ORDER[0])
+  const [selectedDate, setSelectedDate] = useState<Date>(() => ensureWeekday(new Date()))
   const [timetableSlots, setTimetableSlots] = useState<TimetableSlot[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -67,12 +110,14 @@ export default function TimetableManagement() {
     { mode: "create" | "edit"; slot?: TimetableSlot; defaultTime?: string } | null
   >(null)
   const [slotForm, setSlotForm] = useState({
-    day: DAY_ORDER[0],
+    day: defaultWeekday,
     time: PERIOD_SELECT_OPTIONS[0]?.value ?? normaliseTimeRangeLabel(""),
     subject: FALLBACK_SUBJECTS[0],
     teacher: "",
     location: "",
   })
+
+  const selectedDay = useMemo(() => resolveDayFromDate(selectedDate), [selectedDate])
 
   const loadClasses = useCallback(async () => {
     try {
@@ -397,7 +442,14 @@ export default function TimetableManagement() {
       }
 
       await loadTimetable(selectedClass)
-      setSelectedDay(slotForm.day)
+      setSelectedDate((currentDate) => {
+        const base = startOfWeek(currentDate, { weekStartsOn: 1 })
+        const dayIndex = DAY_ORDER.findIndex((day) => day === slotForm.day)
+        if (dayIndex >= 0) {
+          return addDays(base, dayIndex)
+        }
+        return currentDate
+      })
       setDialogState(null)
     } catch (error) {
       logger.error("Failed to save timetable slot", { error })
@@ -486,7 +538,7 @@ export default function TimetableManagement() {
 
       toast({
         title: "Timetable shared",
-        description: `Students, teachers and parents for ${selectedClass} will now see the updated schedule.`,
+        description: `Students, teachers and parents for ${selectedClass} will instantly see the updated schedule.`,
       })
     } catch (error) {
       logger.error("Failed to send timetable update", { error })
@@ -504,15 +556,15 @@ export default function TimetableManagement() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-emerald-900">Timetable Management</h2>
-          <p className="text-sm text-emerald-700/80">
-            Orchestrate 40-minute lessons, coordinated breaks and after-break sessions for every class.
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900">Timetable Management</h2>
+          <p className="text-sm text-slate-600">
+            Build structured lesson blocks, keep breaks consistent and publish updates the moment they change.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
           <Button
             variant="outline"
-            className="border-emerald-200 bg-emerald-50/60 text-emerald-700 hover:bg-emerald-100"
+            className="border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
             onClick={handleSendTimetable}
             disabled={isSending || !selectedClass}
           >
@@ -520,23 +572,28 @@ export default function TimetableManagement() {
             Send to dashboards
           </Button>
           <Button
-            className="bg-emerald-600 text-white hover:bg-emerald-700"
+            className="bg-indigo-600 text-white hover:bg-indigo-700"
             onClick={() => setDialogState({ mode: "create", defaultTime: nextAvailableTime })}
             disabled={!selectedClass}
           >
-            <Plus className="mr-2 h-4 w-4" /> Quick add period
+            <Plus className="mr-2 h-4 w-4" /> Add next period
           </Button>
+          <p className="basis-full text-xs text-slate-500">
+            Pushes updates to student, teacher and parent dashboards in real time.
+          </p>
         </div>
       </div>
 
-      <Card className="overflow-hidden border-emerald-200/70 bg-white/90 shadow-lg backdrop-blur">
-        <CardHeader className="border-b border-emerald-100 bg-gradient-to-r from-emerald-500/10 via-white to-emerald-500/10">
+      <Card className="overflow-hidden border border-slate-200 bg-white shadow-lg backdrop-blur">
+        <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-sky-50 via-white to-indigo-50">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <CardTitle className="text-emerald-900">Class Timetable Planner</CardTitle>
-              <CardDescription>Allocate subjects into 40-minute learning blocks with a structured break.</CardDescription>
+              <CardTitle className="text-slate-900">Class Timetable Planner</CardTitle>
+              <CardDescription className="text-slate-600">
+                Allocate subjects into 40-minute learning blocks with a structured break.
+              </CardDescription>
             </div>
-            <div className="flex items-center gap-2 text-xs text-emerald-700/80">
+            <div className="flex items-center gap-2 text-xs text-slate-500">
               <Clock className="h-4 w-4" />
               {totalPeriods} periods • 10-minute break
             </div>
@@ -545,9 +602,9 @@ export default function TimetableManagement() {
         <CardContent className="space-y-6 py-6">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-emerald-900">Class</Label>
+              <Label className="text-sm font-medium text-slate-800">Class</Label>
               <Select value={selectedClass} onValueChange={setSelectedClass}>
-                <SelectTrigger className="rounded-2xl border-emerald-200 bg-white/80">
+                <SelectTrigger className="rounded-2xl border border-slate-200 bg-white">
                   <SelectValue placeholder="Select class" />
                 </SelectTrigger>
                 <SelectContent>
@@ -560,30 +617,82 @@ export default function TimetableManagement() {
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-emerald-900">Day</Label>
-              <Tabs value={selectedDay} onValueChange={setSelectedDay}>
-                <TabsList className="grid grid-cols-5 rounded-full bg-emerald-500/10 p-1">
+            <div className="space-y-3">
+              <Label className="text-sm font-medium text-slate-800">Schedule date</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start gap-2 rounded-2xl border border-slate-200 bg-white text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <CalendarIcon className="h-4 w-4" />
+                      {format(selectedDate, "EEE, MMM d, yyyy")}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={(date) => date && setSelectedDate(ensureWeekday(date))}
+                      disabled={{ dayOfWeek: [0, 6] }}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
+                    onClick={() => setSelectedDate((current) => previousWeekday(current))}
+                    aria-label="Previous teaching day"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
+                    onClick={() => setSelectedDate((current) => nextWeekday(current))}
+                    aria-label="Next teaching day"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <Tabs
+                value={selectedDay}
+                onValueChange={(value) => {
+                  const index = DAY_ORDER.findIndex((day) => day === value)
+                  if (index >= 0) {
+                    const start = startOfWeek(selectedDate, { weekStartsOn: 1 })
+                    setSelectedDate(addDays(start, index))
+                  }
+                }}
+              >
+                <TabsList className="grid grid-cols-5 rounded-full bg-slate-100 p-1">
                   {DAY_ORDER.map((day) => (
                     <TabsTrigger
                       key={day}
                       value={day}
-                      className="rounded-full px-3 py-1 text-sm font-medium text-emerald-700 transition data-[state=active]:bg-white data-[state=active]:shadow data-[state=active]:text-emerald-900"
+                      className="rounded-full px-3 py-1 text-sm font-medium text-slate-600 transition data-[state=active]:bg-white data-[state=active]:shadow data-[state=active]:text-slate-900"
                     >
                       {day.slice(0, 3)}
                     </TabsTrigger>
                   ))}
                 </TabsList>
               </Tabs>
+              <p className="text-xs text-slate-500">Changes you make are saved for {selectedDay}s in this class.</p>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-emerald-900">Summary</Label>
-              <div className="rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-emerald-50 p-4 shadow-sm">
-                <p className="text-sm font-semibold text-emerald-900">{selectedClass || "Select a class"}</p>
-                <p className="text-xs text-emerald-700/70">{selectedDay}</p>
+              <Label className="text-sm font-medium text-slate-800">Summary</Label>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">{selectedClass || "Select a class"}</p>
+                <p className="text-xs text-slate-600">{format(selectedDate, "EEEE, MMM d")}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Badge className="bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20">
+                  <Badge className="bg-sky-100 text-sky-700 hover:bg-sky-200">
                     {scheduledCount} of {totalPeriods} periods scheduled
                   </Badge>
                   <Badge variant="outline" className="border-amber-200 text-amber-700">
@@ -594,23 +703,21 @@ export default function TimetableManagement() {
             </div>
 
             <div className="md:col-span-3">
-              <div className="rounded-3xl border border-emerald-100 bg-white/80 p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700/80">
-                  Subjects for this class
-                </p>
+              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Subjects for this class</p>
                 {classSubjectChips.length > 0 ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {classSubjectChips.map((subject) => (
                       <span
                         key={subject}
-                        className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700"
+                        className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
                       >
                         {subject}
                       </span>
                     ))}
                   </div>
                 ) : (
-                  <p className="mt-3 text-xs text-emerald-700/70">
+                  <p className="mt-3 text-xs text-slate-500">
                     Assign subjects to this class to streamline scheduling.
                   </p>
                 )}
@@ -620,7 +727,7 @@ export default function TimetableManagement() {
 
           <ScrollArea className="max-h-[60vh] pr-3">
             {isLoading ? (
-              <div className="flex items-center justify-center gap-2 py-16 text-emerald-700/70">
+              <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
                 <Loader2 className="h-5 w-5 animate-spin" /> Loading timetable…
               </div>
             ) : (
@@ -637,17 +744,17 @@ export default function TimetableManagement() {
                         <div className="absolute inset-x-0 top-0 h-1 bg-amber-300/70" />
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div className="space-y-2">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-700">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-orange-700">
                               {period.label}
                             </span>
-                            <h3 className="text-lg font-semibold text-amber-900">10-minute Break</h3>
+                            <h3 className="text-lg font-semibold text-amber-900">{period.label}</h3>
                             <p className="text-sm text-amber-700/80">
                               Encourage students to hydrate, stretch and reset for the next sessions.
                             </p>
                           </div>
                           <div className="flex flex-col items-end gap-3 text-right">
                             <Coffee className="h-5 w-5 text-amber-600" />
-                            <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-amber-700 shadow-inner">
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-700 shadow-inner">
                               {range}
                             </span>
                           </div>
@@ -662,18 +769,18 @@ export default function TimetableManagement() {
                   return (
                     <div
                       key={period.id}
-                      className="relative overflow-hidden rounded-3xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50 via-white to-emerald-100 p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+                      className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-sky-50 p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
                     >
-                      <div className="absolute inset-x-0 top-0 h-1 bg-emerald-400/70" />
+                      <div className="absolute inset-x-0 top-0 h-1 bg-sky-300/70" />
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="space-y-2">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-sky-700">
                             {period.label}
                           </span>
-                          <h3 className="text-xl font-semibold text-emerald-900">
+                          <h3 className="text-xl font-semibold text-slate-900">
                             {hasSlot ? slot?.subject || "Subject not set" : "Free period"}
                           </h3>
-                          <p className="text-sm text-emerald-700/80">
+                          <p className="text-sm text-slate-600">
                             {hasSlot
                               ? [
                                   slot?.teacher ? `Teacher: ${slot.teacher}` : "Teacher pending",
@@ -685,7 +792,7 @@ export default function TimetableManagement() {
                           </p>
                         </div>
                         <div className="flex flex-col items-end gap-3 text-right">
-                          <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-inner">
+                          <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-inner">
                             {range}
                           </span>
                           {hasSlot && slot ? (
@@ -693,7 +800,7 @@ export default function TimetableManagement() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="border-emerald-300 text-emerald-700 hover:bg-emerald-600 hover:text-white"
+                                className="border-slate-300 text-slate-700 hover:bg-slate-800 hover:text-white"
                                 onClick={() => setDialogState({ mode: "edit", slot })}
                               >
                                 <Edit className="mr-1 h-4 w-4" /> Edit
@@ -710,11 +817,11 @@ export default function TimetableManagement() {
                           ) : (
                             <Button
                               size="sm"
-                              className="bg-emerald-600 text-white hover:bg-emerald-700"
+                              className="bg-indigo-600 text-white hover:bg-indigo-700"
                               onClick={() => setDialogState({ mode: "create", defaultTime: range })}
                               disabled={!selectedClass}
                             >
-                              <Plus className="mr-1 h-4 w-4" /> Schedule class
+                              <Plus className="mr-1 h-4 w-4" /> Schedule {period.label.toLowerCase()}
                             </Button>
                           )}
                         </div>
@@ -729,18 +836,18 @@ export default function TimetableManagement() {
       </Card>
 
       <Dialog open={!!dialogState} onOpenChange={(open) => (!open ? setDialogState(null) : undefined)}>
-        <DialogContent className="max-w-2xl border-emerald-200/70 bg-white/95 backdrop-blur">
+        <DialogContent className="max-w-2xl border border-slate-200 bg-white/95 backdrop-blur">
           <DialogHeader>
-            <DialogTitle className="text-emerald-900">
+            <DialogTitle className="text-slate-900">
               {dialogState?.mode === "edit" ? "Update period" : "Schedule new period"}
             </DialogTitle>
           </DialogHeader>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-emerald-900">Day</Label>
+              <Label className="text-sm font-medium text-slate-700">Day</Label>
               <Select value={slotForm.day} onValueChange={(value) => setSlotForm((prev) => ({ ...prev, day: value }))}>
-                <SelectTrigger className="rounded-2xl border-emerald-200 bg-white/80">
+                <SelectTrigger className="rounded-2xl border border-slate-200 bg-white/80">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -753,9 +860,9 @@ export default function TimetableManagement() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-emerald-900">Period</Label>
+              <Label className="text-sm font-medium text-slate-700">Period</Label>
               <Select value={slotForm.time} onValueChange={(value) => setSlotForm((prev) => ({ ...prev, time: value }))}>
-                <SelectTrigger className="rounded-2xl border-emerald-200 bg-white/80">
+                <SelectTrigger className="rounded-2xl border border-slate-200 bg-white/80">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -768,9 +875,9 @@ export default function TimetableManagement() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-emerald-900">Subject</Label>
+              <Label className="text-sm font-medium text-slate-700">Subject</Label>
               <Select value={slotForm.subject} onValueChange={(value) => setSlotForm((prev) => ({ ...prev, subject: value }))}>
-                <SelectTrigger className="rounded-2xl border-emerald-200 bg-white/80">
+                <SelectTrigger className="rounded-2xl border border-slate-200 bg-white/80">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -783,31 +890,31 @@ export default function TimetableManagement() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-emerald-900">Teacher</Label>
+              <Label className="text-sm font-medium text-slate-700">Teacher</Label>
               <Input
                 value={slotForm.teacher}
                 onChange={(event) => setSlotForm((prev) => ({ ...prev, teacher: event.target.value }))}
                 placeholder="Enter teacher's name"
-                className="rounded-2xl border-emerald-200 bg-white/80"
+                className="rounded-2xl border border-slate-200 bg-white/80"
               />
             </div>
             <div className="space-y-2 md:col-span-2">
-              <Label className="text-sm font-medium text-emerald-900">Location</Label>
+              <Label className="text-sm font-medium text-slate-700">Location</Label>
               <Input
                 value={slotForm.location}
                 onChange={(event) => setSlotForm((prev) => ({ ...prev, location: event.target.value }))}
                 placeholder="Laboratory, room number or hall"
-                className="rounded-2xl border-emerald-200 bg-white/80"
+                className="rounded-2xl border border-slate-200 bg-white/80"
               />
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogState(null)} className="border-emerald-200 text-emerald-700">
+            <Button variant="outline" onClick={() => setDialogState(null)} className="border-slate-200 text-slate-700">
               Cancel
             </Button>
             <Button
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              className="bg-indigo-600 text-white hover:bg-indigo-700"
               onClick={handleSlotSubmit}
               disabled={isSaving}
             >

@@ -83,6 +83,20 @@ export function normaliseTimeRangeLabel(range: string): string {
   return formatTimeRange(start, end)
 }
 
+const PERIOD_NAME_LOOKUP: Record<number, string> = {
+  1: "First Period",
+  2: "Second Period",
+  3: "Third Period",
+  4: "Fourth Period",
+  5: "Fifth Period",
+  6: "Sixth Period",
+  7: "Seventh Period",
+}
+
+function getPeriodLabel(index: number): string {
+  return PERIOD_NAME_LOOKUP[index] ?? `Period ${index}`
+}
+
 function createDefaultPeriods(): TimetablePeriodDefinition[] {
   const periods: TimetablePeriodDefinition[] = []
   let currentMinutes = 8 * 60 // 8:00 AM
@@ -92,7 +106,7 @@ function createDefaultPeriods(): TimetablePeriodDefinition[] {
     const end = minutesToTime(currentMinutes + 40)
     periods.push({
       id: `period-${index}`,
-      label: `Period ${index}`,
+      label: getPeriodLabel(index),
       startTime: start,
       endTime: end,
       kind: "class",
@@ -106,7 +120,7 @@ function createDefaultPeriods(): TimetablePeriodDefinition[] {
 
   periods.push({
     id: "break",
-    label: "Break",
+    label: "Breakfast Break",
     startTime: breakStart,
     endTime: breakEnd,
     kind: "break",
@@ -117,7 +131,7 @@ function createDefaultPeriods(): TimetablePeriodDefinition[] {
     const end = minutesToTime(currentMinutes + 40)
     periods.push({
       id: `period-${index}`,
-      label: `Period ${index}`,
+      label: getPeriodLabel(index),
       startTime: start,
       endTime: end,
       kind: "class",
