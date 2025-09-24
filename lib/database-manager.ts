@@ -425,6 +425,257 @@ class DatabaseManager {
     safeStorage.setItem("assignments", JSON.stringify(assignments))
   }
 
+  private shouldUseAssignmentsApi(): boolean {
+    return isBrowserEnvironment() && typeof fetch === "function"
+  }
+
+  private buildAssignmentsRequestUrl(filters: AssignmentFilters = {}): string {
+    const params = new URLSearchParams()
+
+    if (filters.teacherId) {
+      params.set("teacherId", filters.teacherId)
+    }
+
+    if (filters.studentId) {
+      params.set("studentId", filters.studentId)
+    }
+
+    if (filters.classId) {
+      params.set("classId", filters.classId)
+    }
+
+    const query = params.toString()
+    return query.length > 0 ? `/api/assignments?${query}` : "/api/assignments"
+  }
+
+  private normaliseAssignmentStatus(status: unknown): AssignmentStatus {
+    const allowedStatuses: AssignmentStatus[] = ["draft", "sent", "submitted", "graded", "overdue"]
+
+    if (typeof status === "string") {
+      const normalised = status.toLowerCase() as AssignmentStatus
+      if (allowedStatuses.includes(normalised)) {
+        return normalised
+      }
+    }
+
+    return "draft"
+  }
+
+  private normaliseNumericValue(value: unknown): number | null {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value
+    }
+
+    if (typeof value === "string") {
+      const parsed = Number(value)
+      return Number.isFinite(parsed) ? parsed : null
+    }
+
+    return null
+  }
+
+  private normaliseAssignmentSubmission(
+    payload: any,
+    assignmentId: string,
+  ): AssignmentSubmissionRecord | null {
+    if (!payload || typeof payload !== "object") {
+      return null
+    }
+
+    const studentIdCandidate = (payload as Record<string, any>).studentId
+    if (typeof studentIdCandidate !== "string" || studentIdCandidate.trim().length === 0) {
+      return null
+    }
+
+    const filesPayload = (payload as Record<string, any>).files
+    const files = Array.isArray(filesPayload)
+      ? filesPayload
+          .map((file) => {
+            if (typeof file === "string") {
+              return { id: this.generateId("file"), name: file }
+            }
+
+            if (file && typeof file === "object" && typeof (file as Record<string, any>).name === "string") {
+              const record = file as Record<string, any>
+              return {
+                id:
+                  typeof record.id === "string" && record.id.trim().length > 0
+                    ? record.id
+                    : this.generateId("file"),
+                name: record.name,
+              }
+            }
+
+            return null
+          })
+          .filter((file): file is { id: string; name: string } => Boolean(file))
+      : []
+
+    const statusCandidate = (payload as Record<string, any>).status
+    const allowedSubmissionStatuses = ["pending", "submitted", "graded"] as const
+    const status =
+      typeof statusCandidate === "string" &&
+      allowedSubmissionStatuses.includes(statusCandidate as (typeof allowedSubmissionStatuses)[number])
+        ? (statusCandidate as AssignmentSubmissionRecord["status"])
+        : "submitted"
+
+    return {
+      id:
+        typeof (payload as Record<string, any>).id === "string" &&
+        (payload as Record<string, any>).id.trim().length > 0
+          ? ((payload as Record<string, any>).id as string)
+          : this.generateId("submission"),
+      assignmentId,
+      studentId: studentIdCandidate,
+      status,
+      submittedAt:
+        typeof (payload as Record<string, any>).submittedAt === "string"
+          ? ((payload as Record<string, any>).submittedAt as string)
+          : null,
+      files,
+      comment:
+        typeof (payload as Record<string, any>).comment === "string"
+          ? ((payload as Record<string, any>).comment as string)
+          : null,
+      grade:
+        typeof (payload as Record<string, any>).grade === "string"
+          ? ((payload as Record<string, any>).grade as string)
+          : null,
+      score: this.normaliseNumericValue((payload as Record<string, any>).score),
+    }
+  }
+
+  private normaliseAssignmentPayload(payload: any): AssignmentRecord | null {
+    if (!payload || typeof payload !== "object") {
+      return null
+    }
+
+    const record = payload as Record<string, any>
+    const idCandidate = record.id
+    const id = typeof idCandidate === "string" && idCandidate.trim().length > 0 ? idCandidate : null
+
+    if (!id) {
+      return null
+    }
+
+    const assignedStudentIds = Array.isArray(record.assignedStudentIds)
+      ? record.assignedStudentIds
+          .map((studentId) => (typeof studentId === "string" ? studentId : null))
+          .filter((studentId): studentId is string => Boolean(studentId))
+      : []
+
+    const submissions = Array.isArray(record.submissions)
+      ? record.submissions
+          .map((submission) => this.normaliseAssignmentSubmission(submission, id))
+          .filter((submission): submission is AssignmentSubmissionRecord => Boolean(submission))
+      : []
+
+    return {
+      id,
+      title: typeof record.title === "string" ? record.title : String(record.title ?? "Assignment"),
+      description: typeof record.description === "string" ? record.description : "",
+      subject: typeof record.subject === "string" ? record.subject : String(record.subject ?? ""),
+      classId:
+        typeof record.classId === "string"
+          ? record.classId
+          : typeof record.class === "string"
+            ? record.class
+            : null,
+      className:
+        typeof record.className === "string"
+          ? record.className
+          : typeof record.class === "string"
+            ? record.class
+            : null,
+      teacherId:
+        typeof record.teacherId === "string"
+          ? record.teacherId
+          : typeof record.teacher === "string"
+            ? record.teacher
+            : null,
+      teacherName:
+        typeof record.teacherName === "string"
+          ? record.teacherName
+          : typeof record.teacher === "string"
+            ? record.teacher
+            : null,
+      dueDate:
+        typeof record.dueDate === "string" && record.dueDate.trim().length > 0
+          ? record.dueDate
+          : new Date().toISOString(),
+      status: this.normaliseAssignmentStatus(record.originalStatus ?? record.status),
+      assignedStudentIds,
+      submissions,
+      resourceName: typeof record.resourceName === "string" ? record.resourceName : null,
+      resourceSize: this.normaliseNumericValue(record.resourceSize),
+      resourceType: typeof record.resourceType === "string" ? record.resourceType : null,
+      resourceUrl: typeof record.resourceUrl === "string" ? record.resourceUrl : null,
+      createdAt:
+        typeof record.createdAt === "string" && record.createdAt.trim().length > 0
+          ? record.createdAt
+          : new Date().toISOString(),
+      updatedAt:
+        typeof record.updatedAt === "string" && record.updatedAt.trim().length > 0
+          ? record.updatedAt
+          : new Date().toISOString(),
+    }
+  }
+
+  private replaceAssignmentsCache(assignments: AssignmentRecord[]) {
+    this.persistAssignments(assignments)
+  }
+
+  private syncAssignmentCache(record: AssignmentRecord) {
+    const assignments = this.ensureAssignmentsStorage()
+    const index = assignments.findIndex((assignment) => assignment.id === record.id)
+
+    if (index >= 0) {
+      assignments[index] = {
+        ...assignments[index],
+        ...record,
+        submissions: record.submissions,
+        assignedStudentIds: record.assignedStudentIds,
+      }
+    } else {
+      assignments.push(record)
+    }
+
+    this.persistAssignments(assignments)
+  }
+
+  private removeAssignmentFromCache(assignmentId: string) {
+    const assignments = this.ensureAssignmentsStorage()
+    const filtered = assignments.filter((assignment) => assignment.id !== assignmentId)
+    this.persistAssignments(filtered)
+  }
+
+  private applySubmissionToCache(assignmentId: string, submission: AssignmentSubmissionRecord) {
+    const assignments = this.ensureAssignmentsStorage()
+    const index = assignments.findIndex((assignment) => assignment.id === assignmentId)
+
+    if (index === -1) {
+      return
+    }
+
+    const assignment = assignments[index]
+    const submissions = Array.isArray(assignment.submissions) ? [...assignment.submissions] : []
+    const submissionIndex = submissions.findIndex((entry) => entry.studentId === submission.studentId)
+
+    if (submissionIndex >= 0) {
+      submissions[submissionIndex] = submission
+    } else {
+      submissions.push(submission)
+    }
+
+    assignments[index] = {
+      ...assignment,
+      submissions,
+      updatedAt: submission.submittedAt ?? new Date().toISOString(),
+    }
+
+    this.persistAssignments(assignments)
+  }
+
   private ensureStudyMaterialsStorage(): StudyMaterialRecord[] {
     const raw = safeStorage.getItem("studyMaterials")
 
@@ -1535,6 +1786,28 @@ class DatabaseManager {
   }
 
   async getAssignments(filters: AssignmentFilters = {}) {
+    if (this.shouldUseAssignmentsApi()) {
+      try {
+        const response = await fetch(this.buildAssignmentsRequestUrl(filters))
+
+        if (response.ok) {
+          const payload = (await response.json()) as { assignments?: unknown }
+          const remoteAssignments = Array.isArray(payload.assignments) ? payload.assignments : []
+          const normalised = remoteAssignments
+            .map((record) => this.normaliseAssignmentPayload(record))
+            .filter((record): record is AssignmentRecord => Boolean(record))
+
+          if (normalised.length > 0 || remoteAssignments.length === 0) {
+            this.replaceAssignmentsCache(normalised)
+          }
+
+          return remoteAssignments
+        }
+      } catch (error) {
+        console.error("Failed to load assignments from API:", error)
+      }
+    }
+
     const assignments = this.ensureAssignmentsStorage()
 
     return assignments
@@ -1582,6 +1855,7 @@ class DatabaseManager {
 
         return {
           ...assignment,
+          originalStatus: assignment.status,
           teacher: assignment.teacherName ?? assignment.teacherId ?? "Subject Teacher",
           class: assignment.className ?? assignment.classId,
           status: submission ? (submission.status === "submitted" ? "submitted" : submission.status) : status,
@@ -1595,6 +1869,31 @@ class DatabaseManager {
   }
 
   async createAssignment(payload: CreateAssignmentInput): Promise<AssignmentRecord> {
+    if (this.shouldUseAssignmentsApi()) {
+      try {
+        const response = await fetch("/api/assignments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+
+        if (response.ok) {
+          const data = (await response.json()) as { assignment?: unknown }
+          const assignmentRecord = this.normaliseAssignmentPayload(data.assignment)
+
+          if (assignmentRecord) {
+            this.syncAssignmentCache(assignmentRecord)
+            this.triggerEvent("assignmentsUpdate", assignmentRecord)
+            return assignmentRecord
+          }
+        } else {
+          console.error("Failed to create assignment via API:", response.status, response.statusText)
+        }
+      } catch (error) {
+        console.error("Unable to create assignment via API:", error)
+      }
+    }
+
     const assignments = this.ensureAssignmentsStorage()
     const timestamp = new Date().toISOString()
 
@@ -1631,6 +1930,31 @@ class DatabaseManager {
       assignedStudentIds?: string[]
     },
   ): Promise<AssignmentRecord> {
+    if (this.shouldUseAssignmentsApi()) {
+      try {
+        const response = await fetch("/api/assignments", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assignmentId, updates }),
+        })
+
+        if (response.ok) {
+          const data = (await response.json()) as { assignment?: unknown }
+          const assignmentRecord = this.normaliseAssignmentPayload(data.assignment)
+
+          if (assignmentRecord) {
+            this.syncAssignmentCache(assignmentRecord)
+            this.triggerEvent("assignmentsUpdate", assignmentRecord)
+            return assignmentRecord
+          }
+        } else {
+          console.error("Failed to update assignment via API:", response.status, response.statusText)
+        }
+      } catch (error) {
+        console.error("Unable to update assignment via API:", error)
+      }
+    }
+
     const assignments = this.ensureAssignmentsStorage()
     const index = assignments.findIndex((item) => item.id === assignmentId)
 
@@ -1678,6 +2002,27 @@ class DatabaseManager {
   }
 
   async deleteAssignment(assignmentId: string): Promise<boolean> {
+    if (this.shouldUseAssignmentsApi()) {
+      try {
+        const params = new URLSearchParams({ assignmentId })
+        const response = await fetch(`/api/assignments?${params.toString()}`, { method: "DELETE" })
+
+        if (response.ok) {
+          this.removeAssignmentFromCache(assignmentId)
+          this.triggerEvent("assignmentsUpdate", { id: assignmentId, deleted: true })
+          return true
+        }
+
+        if (response.status === 404) {
+          return false
+        }
+
+        console.error("Failed to delete assignment via API:", response.status, response.statusText)
+      } catch (error) {
+        console.error("Unable to delete assignment via API:", error)
+      }
+    }
+
     const assignments = this.ensureAssignmentsStorage()
     const index = assignments.findIndex((item) => item.id === assignmentId)
 
@@ -1827,6 +2172,49 @@ class DatabaseManager {
   async createAssignmentSubmission(
     payload: CreateAssignmentSubmissionInput,
   ): Promise<AssignmentSubmissionRecord> {
+    if (this.shouldUseAssignmentsApi()) {
+      try {
+        const response = await fetch("/api/assignments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...payload,
+            files: payload.files ?? [],
+            type: "submission",
+          }),
+        })
+
+        if (response.ok) {
+          const data = (await response.json()) as { submission?: unknown }
+          const submissionRecord = this.normaliseAssignmentSubmission(data.submission, payload.assignmentId)
+
+          if (submissionRecord) {
+            this.applySubmissionToCache(payload.assignmentId, submissionRecord)
+
+            const eventPayload = {
+              id: payload.assignmentId,
+              studentId: submissionRecord.studentId,
+              status: submissionRecord.status === "submitted" ? "submitted" : submissionRecord.status,
+              submittedAt: submissionRecord.submittedAt,
+              submittedFile: submissionRecord.files[0]?.name ?? null,
+              submittedComment: submissionRecord.comment ?? "",
+              grade: submissionRecord.grade ?? null,
+              score: submissionRecord.score ?? null,
+            }
+
+            this.triggerEvent("assignmentsUpdate", eventPayload)
+            this.triggerEvent("assignmentSubmitted", eventPayload)
+
+            return submissionRecord
+          }
+        } else {
+          console.error("Failed to submit assignment via API:", response.status, response.statusText)
+        }
+      } catch (error) {
+        console.error("Unable to submit assignment via API:", error)
+      }
+    }
+
     const assignments = this.ensureAssignmentsStorage()
     const assignment = assignments.find((item) => item.id === payload.assignmentId)
 
