@@ -43,10 +43,12 @@ import { safeStorage } from "@/lib/safe-storage"
 import { getBrandingFromStorage } from "@/lib/branding"
 import { cn } from "@/lib/utils"
 import { logger } from "@/lib/logger"
+import { normalizeTimetableCollection } from "@/lib/timetable"
 import { toast } from "@/hooks/use-toast"
 import type { Viewport } from "next"
 import { SchoolCalendarManager } from "@/components/admin/school-calendar-manager"
 import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
+import { TimetableWeeklyView, type TimetableWeeklyViewSlot } from "@/components/timetable-weekly-view"
 import { TutorialLink } from "@/components/tutorial-link"
 import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
 import {
@@ -1359,6 +1361,8 @@ function ParentDashboard({ user }: { user: User }) {
   const [messagingParticipants, setMessagingParticipants] = useState<MessagingParticipant[]>(
     fallbackMessagingDirectory,
   )
+  const [parentTimetable, setParentTimetable] = useState<TimetableWeeklyViewSlot[]>([])
+  const [isParentTimetableLoading, setIsParentTimetableLoading] = useState(false)
 
   const linkedStudentId =
     typeof user.metadata?.linkedStudentId === "string"
@@ -1380,6 +1384,11 @@ function ParentDashboard({ user }: { user: User }) {
     email: "john.doe@student.vea.edu.ng",
     status: "active" as const,
   }
+
+  const studentFirstName = useMemo(() => {
+    const [first] = studentData.name.split(" ")
+    return first || "the student"
+  }, [studentData.name])
 
   const setAccessFromRecords = useCallback(
     (records: ReportCardAccessRecord[], term?: string, session?: string) => {
@@ -1561,6 +1570,62 @@ function ParentDashboard({ user }: { user: User }) {
       isMounted = false
     }
   }, [fallbackMessagingDirectory, linkedStudentId, studentData.class, user.id])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadTimetable = async () => {
+      try {
+        if (!studentData.class) {
+          if (isMounted) {
+            setParentTimetable([])
+          }
+          return
+        }
+
+        if (isMounted) {
+          setIsParentTimetableLoading(true)
+        }
+
+        const response = await fetch(`/api/timetable?className=${encodeURIComponent(studentData.class)}`)
+        if (!isMounted) {
+          return
+        }
+
+        if (response.ok) {
+          const payload: unknown = await response.json()
+          const normalized = normalizeTimetableCollection(
+            (payload as Record<string, unknown>)?.timetable,
+          ).map(({ id, day, time, subject, teacher, location }) => ({
+            id,
+            day,
+            time,
+            subject,
+            teacher,
+            location,
+          }))
+          setParentTimetable(normalized)
+        } else {
+          setParentTimetable([])
+        }
+      } catch (error) {
+        logger.error("Failed to load parent timetable", { error })
+        if (isMounted) {
+          setParentTimetable([])
+        }
+      } finally {
+        if (isMounted) {
+          setIsParentTimetableLoading(false)
+        }
+      }
+    }
+
+    void loadTimetable()
+
+    return () => {
+      isMounted = false
+    }
+  }, [studentData.class])
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -1879,6 +1944,33 @@ function ParentDashboard({ user }: { user: User }) {
             />
 
             <AttendanceTracker attendance={attendanceData} hasAccess={hasAccess || false} />
+
+            <Card className="border-blue-200 lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-blue-900">Class Timetable</CardTitle>
+                <CardDescription>{`Stay updated with ${studentFirstName}'s daily lessons.`}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isParentTimetableLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-6 text-blue-900/70">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading timetable...
+                  </div>
+                ) : (
+                  <TimetableWeeklyView
+                    slots={parentTimetable}
+                    emptyMessage="No timetable has been shared for this class yet."
+                    renderDetails={(slot) => (
+                      <p className="text-sm text-blue-900/80">
+                        {slot.teacher && slot.teacher.trim().length > 0
+                          ? `Teacher: ${slot.teacher}`
+                          : "Teacher to be announced"}
+                        {slot.location && slot.location.trim().length > 0 ? ` • Location: ${slot.location}` : ""}
+                      </p>
+                    )}
+                  />
+                )}
+              </CardContent>
+            </Card>
 
             <Card className="border-blue-200">
               <CardHeader>

@@ -34,18 +34,13 @@ import { Noticeboard } from "@/components/noticeboard"
 import { TutorialLink } from "@/components/tutorial-link"
 import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
 import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
+import { TimetableWeeklyView, type TimetableWeeklyViewSlot } from "@/components/timetable-weekly-view"
 import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
+import { normalizeTimetableCollection } from "@/lib/timetable"
 import { CONTINUOUS_ASSESSMENT_MAXIMUMS } from "@/lib/grade-utils"
 
-interface TimetableSlotSummary {
-  id: string
-  day: string
-  time: string
-  subject: string
-  teacher: string
-  location: string | null
-}
+type TimetableSlotSummary = TimetableWeeklyViewSlot
 
 interface IdentifiedRecord {
   id: string
@@ -142,31 +137,18 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
         // Load timetable
         const timetableResponse = await fetch(`/api/timetable?className=${encodeURIComponent(student.class)}`)
         if (timetableResponse.ok) {
-          const timetableJson = await timetableResponse.json()
-          const timetableData = Array.isArray(timetableJson.timetable) ? timetableJson.timetable : []
-          setTimetable(
-            timetableData.map((slot) => {
-              if (!isRecord(slot)) {
-                return {
-                  id: `slot_${Math.random().toString(36).slice(2)}`,
-                  day: "Monday",
-                  time: "8:00 AM - 8:45 AM",
-                  subject: "",
-                  teacher: "",
-                  location: null,
-                }
-              }
-
-              return {
-                id: typeof slot.id === "string" ? slot.id : String(slot.id ?? `slot_${Date.now()}`),
-                day: typeof slot.day === "string" ? slot.day : "Monday",
-                time: typeof slot.time === "string" ? slot.time : String(slot.startTime ?? "8:00 AM - 8:45 AM"),
-                subject: typeof slot.subject === "string" ? slot.subject : "",
-                teacher: typeof slot.teacher === "string" ? slot.teacher : "",
-                location: typeof slot.location === "string" ? slot.location : null,
-              }
-            }),
-          )
+          const timetableJson: unknown = await timetableResponse.json()
+          const normalized = normalizeTimetableCollection(
+            (timetableJson as Record<string, unknown>)?.timetable,
+          ).map(({ id, day, time, subject, teacher, location }) => ({
+            id,
+            day,
+            time,
+            subject,
+            teacher,
+            location,
+          }))
+          setTimetable(normalized)
         } else {
           setTimetable([])
         }
@@ -578,23 +560,18 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
               <CardDescription>Your weekly class schedule</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {timetable.map((slot, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-4">
-                      <Clock className="w-4 h-4 text-[#b29032]" />
-                      <div>
-                        <p className="font-medium">
-                          {slot.day} - {slot.time}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          {slot.subject} with {slot.teacher}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <TimetableWeeklyView
+                slots={timetable}
+                emptyMessage="No timetable available yet. Check back soon."
+                renderDetails={(slot) => (
+                  <p className="text-sm text-emerald-700/80">
+                    {slot.teacher && slot.teacher.trim().length > 0
+                      ? `With ${slot.teacher}`
+                      : "Teacher to be announced"}
+                    {slot.location && slot.location.trim().length > 0 ? ` • ${slot.location}` : ""}
+                  </p>
+                )}
+              />
             </CardContent>
           </Card>
         </TabsContent>
