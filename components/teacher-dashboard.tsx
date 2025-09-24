@@ -238,6 +238,7 @@ interface TeacherAssignmentSummary {
   className: string
   dueDate: string
   status: TeacherAssignmentStatus
+  maximumScore: number | null
   submissions: AssignmentSubmissionRecord[]
   assignedStudentIds: string[]
   resourceName?: string | null
@@ -350,12 +351,15 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [previewStudentId, setPreviewStudentId] = useState<string | null>(null)
   const [previewData, setPreviewData] = useState<RawReportCardData | null>(null)
 
+  const defaultAssignmentMaximum = CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment ?? 20
+
   const [assignmentForm, setAssignmentForm] = useState(() => ({
     title: "",
     description: "",
     dueDate: "",
     subject: teacher.subjects[0] ?? "",
     className: teacher.classes[0] ?? "",
+    maximumScore: String(defaultAssignmentMaximum),
     file: null as File | null,
     resourceName: "",
     resourceType: "",
@@ -370,7 +374,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [gradingDrafts, setGradingDrafts] = useState<Record<string, { score: string; comment: string }>>({})
   const [gradingSubmissionId, setGradingSubmissionId] = useState<string | null>(null)
 
-  const assignmentMaximum = CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment ?? 20
+  const assignmentMaximum = defaultAssignmentMaximum
+  const resolvedAssignmentMaximum = (() => {
+    const parsed = Number(assignmentForm.maximumScore)
+    return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : assignmentMaximum
+  })()
   const isEditingAssignment = assignmentDialogMode === "edit"
   const assignmentDialogTitle = isEditingAssignment ? "Update Assignment" : "Create New Assignment"
   const assignmentDialogDescription = isEditingAssignment
@@ -460,6 +468,12 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           className: record.className ?? (record as { class?: string }).class ?? "General",
           dueDate: record.dueDate,
           status: (record.status ?? "draft") as TeacherAssignmentStatus,
+          maximumScore:
+            typeof (record as { maximumScore?: unknown }).maximumScore === "number"
+              ? ((record as { maximumScore?: number }).maximumScore as number)
+              : (record as { maximumScore?: string | number | null }).maximumScore
+              ? Number((record as { maximumScore?: string | number | null }).maximumScore)
+              : null,
           submissions: normalisedSubmissions,
           assignedStudentIds,
           resourceName: record.resourceName ?? null,
@@ -1457,6 +1471,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       dueDate: "",
       subject: teacher.subjects[0] ?? "",
       className: teacher.classes[0] ?? "",
+      maximumScore: String(defaultAssignmentMaximum),
       file: null,
       resourceName: "",
       resourceType: "",
@@ -1465,7 +1480,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     })
     setEditingAssignmentId(null)
     setAssignmentDialogMode("create")
-  }, [teacher.classes, teacher.subjects])
+  }, [defaultAssignmentMaximum, teacher.classes, teacher.subjects])
 
   const openCreateAssignmentDialog = () => {
     resetAssignmentForm()
@@ -1481,6 +1496,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       dueDate: assignment.dueDate,
       subject: assignment.subject,
       className: assignment.className,
+      maximumScore: assignment.maximumScore ? String(assignment.maximumScore) : String(defaultAssignmentMaximum),
       file: null,
       resourceName: assignment.resourceName ?? "",
       resourceType: assignment.resourceType ?? "",
@@ -1520,6 +1536,18 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       return
     }
 
+    const parsedMaximum = Number(assignmentForm.maximumScore)
+    if (!Number.isFinite(parsedMaximum) || parsedMaximum <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Invalid mark",
+        description: "Please set a valid maximum score greater than zero for this assignment.",
+      })
+      return
+    }
+
+    const maximumScoreValue = Math.round(parsedMaximum)
+
     try {
       setIsSavingAssignment(true)
 
@@ -1544,6 +1572,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         teacherName: teacher.name,
         dueDate: assignmentForm.dueDate,
         status: intent,
+        maximumScore: maximumScoreValue,
         resourceName: resourceName || null,
         resourceType: resourceType || null,
         resourceUrl: resourceUrl || null,
@@ -1657,6 +1686,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const handleGradeSubmission = async (submission: AssignmentSubmissionRecord) => {
     if (!selectedAssignment) return
 
+    const assignmentMaxScore = selectedAssignment.maximumScore ?? assignmentMaximum
     const draft = gradingDrafts[submission.id] ?? { score: "", comment: "" }
     const trimmedComment = draft.comment.trim()
     const trimmedScore = draft.score.trim()
@@ -1672,11 +1702,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       return
     }
 
-    if (parsedScore !== null && parsedScore > assignmentMaximum) {
+    if (parsedScore !== null && parsedScore > assignmentMaxScore) {
       toast({
         variant: "destructive",
         title: "Score too high",
-        description: `The maximum obtainable score is ${assignmentMaximum}.`,
+        description: `The maximum obtainable score is ${assignmentMaxScore}.`,
       })
       return
     }
@@ -1687,7 +1717,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       const grade =
         normalizedScore === null
           ? null
-          : deriveGradeFromScore((normalizedScore / Math.max(assignmentMaximum, 1)) * 100)
+          : deriveGradeFromScore((normalizedScore / Math.max(assignmentMaxScore, 1)) * 100)
 
       const updatedSubmission = await dbManager.gradeAssignmentSubmission(selectedAssignment.id, submission.studentId, {
         score: normalizedScore,
@@ -1718,7 +1748,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         description:
           normalizedScore === null
             ? "Feedback saved without a score."
-            : `Marked ${normalizedScore}/${assignmentMaximum}${grade ? ` (${grade})` : ""}.`,
+            : `Marked ${normalizedScore}/${assignmentMaxScore}${grade ? ` (${grade})` : ""}.`,
       })
 
       void loadAssignments()
@@ -2920,6 +2950,10 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                   Due {formatExamDate(assignment.dueDate)}
                                 </span>
                                 <span className="text-slate-500">{describeDueDate(assignment.dueDate)}</span>
+                                <span className="inline-flex items-center gap-1 font-medium text-slate-600">
+                                  <Trophy className="h-3.5 w-3.5 text-purple-500" />
+                                  {assignment.maximumScore ?? assignmentMaximum} marks
+                                </span>
                                 {assignment.updatedAt ? (
                                   <span className="inline-flex items-center gap-1">
                                     <Clock className="h-3.5 w-3.5 text-slate-400" />
@@ -3264,10 +3298,29 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                   />
                 </div>
                 <div>
-                  <Label>Maximum Score</Label>
-                  <div className="flex items-center gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                    <Trophy className="h-4 w-4 text-emerald-600" /> {assignmentMaximum} marks
+                  <Label htmlFor="maximumScore">Maximum Score</Label>
+                  <div className="relative mt-1">
+                    <Input
+                      id="maximumScore"
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={assignmentForm.maximumScore}
+                      onChange={(e) =>
+                        setAssignmentForm((prev) => ({
+                          ...prev,
+                          maximumScore: e.target.value,
+                        }))
+                      }
+                      placeholder={`e.g. ${assignmentMaximum}`}
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+                      marks
+                    </span>
                   </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Set how many marks this assignment contributes for your students.
+                  </p>
                 </div>
               </div>
               <div>
@@ -3286,7 +3339,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             </div>
             <Separator />
             <p className="text-xs text-muted-foreground">
-              Tip: Assignment scores contribute up to {assignmentMaximum} marks to continuous assessment this term.
+              Tip: Assignment scores contribute up to {resolvedAssignmentMaximum} marks to continuous assessment this term.
             </p>
           </div>
           <DialogFooter className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:gap-2">
@@ -3336,7 +3389,9 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             <DialogTitle>{previewAssignment?.title ?? "Assignment Preview"}</DialogTitle>
             <DialogDescription>
               {previewAssignment
-                ? `${previewAssignment.subject} • ${previewAssignment.className} • Due ${formatExamDate(previewAssignment.dueDate)}`
+                ? `${previewAssignment.subject} • ${previewAssignment.className} • Worth ${
+                    previewAssignment.maximumScore ?? assignmentMaximum
+                  } marks • Due ${formatExamDate(previewAssignment.dueDate)}`
                 : "Select an assignment to preview the student experience."}
             </DialogDescription>
           </DialogHeader>
@@ -3438,6 +3493,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           <div className="space-y-4">
             {selectedAssignment?.submissions && selectedAssignment.submissions.length > 0 ? (
               selectedAssignment.submissions.map((submission) => {
+                const assignmentMaxScore = selectedAssignment.maximumScore ?? assignmentMaximum
                 const draft = gradingDrafts[submission.id] ?? { score: "", comment: "" }
                 const submissionStatusMeta = submission.status === "graded" ? ASSIGNMENT_STATUS_META.graded : ASSIGNMENT_STATUS_META.sent
 
@@ -3467,7 +3523,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                           <Input
                             type="number"
                             min={0}
-                            max={assignmentMaximum}
+                            max={assignmentMaxScore}
                             value={draft.score}
                             onChange={(e) =>
                               setGradingDrafts((prev) => ({
@@ -3479,11 +3535,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                               }))
                             }
                           />
-                          <span className="text-xs text-muted-foreground">/ {assignmentMaximum}</span>
+                          <span className="text-xs text-muted-foreground">/ {assignmentMaxScore}</span>
                         </div>
                         {submission.grade || submission.score !== null ? (
                           <p className="text-xs text-slate-500">
-                            Last score: {submission.score ?? "--"}/{assignmentMaximum}
+                            Last score: {submission.score ?? "--"}/{assignmentMaxScore}
                             {submission.grade ? ` (${submission.grade})` : ""}
                           </p>
                         ) : null}

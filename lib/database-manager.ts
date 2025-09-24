@@ -56,6 +56,7 @@ interface AssignmentRecord {
   teacherName?: string | null
   dueDate: string
   status: AssignmentStatus
+  maximumScore?: number | null
   assignedStudentIds: string[]
   submissions: AssignmentSubmissionRecord[]
   resourceName?: string | null
@@ -82,6 +83,7 @@ interface CreateAssignmentInput {
   teacherName?: string | null
   dueDate: string
   status?: AssignmentStatus
+  maximumScore?: number | null
   assignedStudentIds?: string[]
   resourceName?: string | null
   resourceSize?: number | null
@@ -403,6 +405,12 @@ class DatabaseManager {
         assignedStudentIds: Array.isArray(assignment.assignedStudentIds)
           ? assignment.assignedStudentIds
           : [],
+        maximumScore:
+          typeof assignment.maximumScore === "number"
+            ? assignment.maximumScore
+            : assignment.maximumScore
+              ? Number(assignment.maximumScore)
+              : null,
         resourceName: assignment.resourceName ?? null,
         resourceSize:
           typeof assignment.resourceSize === "number"
@@ -604,6 +612,7 @@ class DatabaseManager {
           ? record.dueDate
           : new Date().toISOString(),
       status: this.normaliseAssignmentStatus(record.originalStatus ?? record.status),
+      maximumScore: this.normaliseNumericValue(record.maximumScore),
       assignedStudentIds,
       submissions,
       resourceName: typeof record.resourceName === "string" ? record.resourceName : null,
@@ -726,6 +735,7 @@ class DatabaseManager {
         teacherName: "Mr. John Smith",
         dueDate: dateFromNow(3),
         status: "sent",
+        maximumScore: 20,
         assignedStudentIds: ["student_john_doe"],
         submissions: [],
         resourceName: "fraction-practice.pdf",
@@ -747,6 +757,7 @@ class DatabaseManager {
         teacherName: "Mrs. Sarah Johnson",
         dueDate: dateFromNow(5),
         status: "sent",
+        maximumScore: 20,
         assignedStudentIds: ["student_john_doe"],
         submissions: [],
         resourceName: "reading-comprehension.docx",
@@ -768,6 +779,7 @@ class DatabaseManager {
         teacherName: "Mr. Adewale Okoro",
         dueDate: dateFromNow(4),
         status: "sent",
+        maximumScore: 20,
         assignedStudentIds: ["student_alice_smith"],
         submissions: [],
         resourceName: "physics-practical-guide.pdf",
@@ -1786,64 +1798,41 @@ class DatabaseManager {
   }
 
   async getAssignments(filters: AssignmentFilters = {}) {
-    if (this.shouldUseAssignmentsApi()) {
-      try {
-        const response = await fetch(this.buildAssignmentsRequestUrl(filters))
-
-        if (response.ok) {
-          const payload = (await response.json()) as { assignments?: unknown }
-          const remoteAssignments = Array.isArray(payload.assignments) ? payload.assignments : []
-          const normalised = remoteAssignments
-            .map((record) => this.normaliseAssignmentPayload(record))
-            .filter((record): record is AssignmentRecord => Boolean(record))
-
-          if (normalised.length > 0 || remoteAssignments.length === 0) {
-            this.replaceAssignmentsCache(normalised)
-          }
-
-          return remoteAssignments
-        }
-      } catch (error) {
-        console.error("Failed to load assignments from API:", error)
-      }
-    }
-
-    const assignments = this.ensureAssignmentsStorage()
-
-    return assignments
-      .filter((assignment) => {
-        if (filters.teacherId && assignment.teacherId !== filters.teacherId) {
-          return false
-        }
-
-        if (filters.classId && assignment.classId !== filters.classId) {
-          return false
-        }
-
-        if (filters.studentId) {
-          const assignedStudents = Array.isArray(assignment.assignedStudentIds)
-            ? assignment.assignedStudentIds
-            : []
-          const isAssigned = assignedStudents.length === 0 || assignedStudents.includes(filters.studentId)
-
-          if (!isAssigned) {
+    const filterAndDecorate = (records: AssignmentRecord[]) =>
+      records
+        .filter((assignment) => {
+          if (filters.teacherId && assignment.teacherId !== filters.teacherId) {
             return false
           }
 
-          // Hide drafts from students until the teacher sends them out
-          if (assignment.status === "draft") {
+          if (filters.classId && assignment.classId !== filters.classId) {
             return false
           }
-        }
 
-        return true
-      })
-      .map((assignment) => {
-        const submission = filters.studentId
-          ? assignment.submissions.find((record) => record.studentId === filters.studentId)
-          : undefined
+          if (filters.studentId) {
+            const assignedStudents = Array.isArray(assignment.assignedStudentIds)
+              ? assignment.assignedStudentIds
+              : []
+            const isAssigned = assignedStudents.length === 0 || assignedStudents.includes(filters.studentId)
 
-        const baseStatus = submission ? submission.status : assignment.status
+            if (!isAssigned) {
+              return false
+            }
+
+            // Hide drafts from students until the teacher sends them out
+            if (assignment.status === "draft") {
+              return false
+            }
+          }
+
+          return true
+        })
+        .map((assignment) => {
+          const submission = filters.studentId
+            ? assignment.submissions.find((record) => record.studentId === filters.studentId)
+            : undefined
+
+          const baseStatus = submission ? submission.status : assignment.status
         let status: AssignmentStatus = baseStatus
 
         if (!submission && assignment.status === "sent") {
@@ -1865,7 +1854,61 @@ class DatabaseManager {
           grade: submission?.grade ?? null,
           score: submission?.score ?? null,
         }
-      })
+        })
+
+    let assignments = this.ensureAssignmentsStorage()
+
+    if (this.shouldUseAssignmentsApi()) {
+      try {
+        const response = await fetch(this.buildAssignmentsRequestUrl(filters))
+
+        if (response.ok) {
+          const payload = (await response.json()) as { assignments?: unknown }
+          const remoteAssignments = Array.isArray(payload.assignments) ? payload.assignments : []
+          const normalised = remoteAssignments
+            .map((record) => this.normaliseAssignmentPayload(record))
+            .filter((record): record is AssignmentRecord => Boolean(record))
+
+          if (normalised.length > 0) {
+            const buildSignature = (record: AssignmentRecord) => {
+              const teacherKey = (record.teacherId ?? record.teacherName ?? "")
+                .toString()
+                .trim()
+                .toLowerCase()
+              const titleKey = record.title.trim().toLowerCase()
+              const dueDateKey = record.dueDate.trim()
+              return `${teacherKey}__${titleKey}__${dueDateKey}`
+            }
+
+            const remoteById = new Map(normalised.map((record) => [record.id, record]))
+            const remoteBySignature = new Set(normalised.map((record) => buildSignature(record)))
+            const localExtras = assignments.filter((record) => {
+              if (remoteById.has(record.id)) {
+                return false
+              }
+
+              if (remoteBySignature.has(buildSignature(record))) {
+                return false
+              }
+
+              return true
+            })
+
+            const merged = [...normalised, ...localExtras]
+            this.replaceAssignmentsCache(merged)
+            assignments = merged
+          } else if (remoteAssignments.length === 0) {
+            this.replaceAssignmentsCache(assignments)
+          }
+
+          return filterAndDecorate(assignments)
+        }
+      } catch (error) {
+        console.error("Failed to load assignments from API:", error)
+      }
+    }
+
+    return filterAndDecorate(assignments)
   }
 
   async createAssignment(payload: CreateAssignmentInput): Promise<AssignmentRecord> {
@@ -1908,6 +1951,7 @@ class DatabaseManager {
       teacherName: payload.teacherName ?? null,
       dueDate: payload.dueDate,
       status: payload.status ?? "draft",
+      maximumScore: this.normaliseNumericValue(payload.maximumScore),
       assignedStudentIds: payload.assignedStudentIds ?? [],
       submissions: [],
       resourceName: payload.resourceName ?? null,
@@ -1976,6 +2020,9 @@ class DatabaseManager {
       teacherName: updates.teacherName ?? existing.teacherName ?? null,
       dueDate: updates.dueDate ?? existing.dueDate,
       status: updates.status ?? existing.status,
+      maximumScore:
+        this.normaliseNumericValue(updates.maximumScore) ??
+        (typeof existing.maximumScore === "number" ? existing.maximumScore : null),
       assignedStudentIds: Array.isArray(updates.assignedStudentIds)
         ? updates.assignedStudentIds
         : existing.assignedStudentIds,
