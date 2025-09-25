@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react"
 import { Download, PrinterIcon as Print } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { useBranding } from "@/hooks/use-branding"
 import {
   AFFECTIVE_TRAITS,
@@ -213,32 +212,6 @@ const formatDateDisplay = (value?: string) => {
     year: "numeric",
   })
 }
-
-const BEHAVIORAL_LABELS: Record<string, string> = {
-  excel: "Excellent",
-  vgood: "Very Good",
-  good: "Good",
-  fair: "Fair",
-  poor: "Needs Improvement",
-}
-
-const formatBehavioralLabel = (value?: string) => {
-  const normalized = normalizeBehavioralRating(value)
-  if (!normalized) {
-    return "Not Recorded"
-  }
-
-  return BEHAVIORAL_LABELS[normalized] ?? normalized
-}
-
-const GRADING_SCALE = [
-  { grade: "A", range: "80 - 100%", meaning: "Distinction" },
-  { grade: "B", range: "70 - 79%", meaning: "Excellent" },
-  { grade: "C", range: "60 - 69%", meaning: "Very Good" },
-  { grade: "D", range: "50 - 59%", meaning: "Good" },
-  { grade: "E", range: "40 - 49%", meaning: "Pass" },
-  { grade: "F", range: "0 - 39%", meaning: "Needs Improvement" },
-] as const
 
 const PRIMARY_AFFECTIVE_TRAITS = [
   { key: "neatness", label: "Neatness" },
@@ -465,18 +438,14 @@ const normalizeReportCard = (
 const getBehavioralMark = (ratings: Record<string, string>, traitKey: string, target: string) => {
   const rating = normalizeBehavioralRating(ratings[traitKey])
   if (!rating) {
-    return "○"
+    return ""
   }
 
   if (rating === target) {
     return "●"
   }
 
-  if (rating === "poor" && target === "poor") {
-    return "●"
-  }
-
-  return "○"
+  return ""
 }
 
 export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
@@ -501,233 +470,31 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     }
 
     window.addEventListener("storage", handleStorageChange)
-    return () => {
-      window.removeEventListener("storage", handleStorageChange)
-    }
-  }, [data, branding])
-
-  useEffect(() => {
-    if (!reportCardData?.student.id) {
-      return
-    }
-
-    try {
-      const storedPhotos = safeStorage.getItem("studentPhotos")
-      if (!storedPhotos) {
-        setStudentPhoto("")
-        return
-      }
-      const parsed = JSON.parse(storedPhotos) as Record<string, string>
-      setStudentPhoto(parsed[reportCardData.student.id] ?? "")
-    } catch (error) {
-      setStudentPhoto("")
-    }
-  }, [reportCardData?.student.id])
-
-  const handlePrint = () => window.print()
-  const handleDownload = () => alert("Report card downloaded as PDF")
-
-  const summaryItems = useMemo(() => {
-    if (!reportCardData) {
-      return []
-    }
-
-    const items = [
-      {
-        label: "Total Marks Obtainable",
-        value: reportCardData.summary.totalMarksObtainable.toLocaleString(),
-      },
-      {
-        label: "Total Marks Obtained",
-        value: reportCardData.summary.totalMarksObtained.toLocaleString(),
-      },
-      {
-        label: "Average Score",
-        value: `${reportCardData.summary.averageScore.toFixed(1)}%`,
-      },
-      {
-        label: "Class Position",
-        value: reportCardData.summary.positionLabel,
-        helper:
-          reportCardData.student.numberInClass && reportCardData.student.numberInClass > 0
-            ? `of ${reportCardData.student.numberInClass}`
-            : undefined,
-      },
-      {
-        label: "Overall Grade",
-        value: reportCardData.summary.grade ?? "—",
-      },
-    ] as Array<{ label: string; value: string; helper?: string }>
-
-    return items
-  }, [reportCardData])
-
-  const totalsRow = useMemo(() => {
-    if (!reportCardData) {
-      return null
-    }
-
-    return reportCardData.subjects.reduce(
-      (acc, subject) => {
-        acc.ca1 += subject.ca1
-        acc.ca2 += subject.ca2
-        acc.assignment += subject.assignment
-        acc.caTotal += subject.caTotal
-        acc.exam += subject.exam
-        acc.total += subject.total
-        return acc
-      },
-      { ca1: 0, ca2: 0, assignment: 0, caTotal: 0, exam: 0, total: 0 },
-    )
-  }, [reportCardData])
-
-  const classSummaryItems = useMemo(() => {
-    if (!reportCardData) {
-      return []
-    }
-
-    const items: Array<{ label: string; value: string }> = [
-      {
-        label: "Number in Class",
-        value: reportCardData.student.numberInClass
-          ? reportCardData.student.numberInClass.toString()
-          : "—",
-      },
-      {
-        label: "Class Average",
-        value:
-          typeof reportCardData.summary.classAverage === "number"
-            ? `${reportCardData.summary.classAverage.toFixed(1)}%`
-            : "—",
-      },
-      {
-        label: "Highest Score",
-        value:
-          typeof reportCardData.summary.highestScore === "number"
-            ? reportCardData.summary.highestScore.toLocaleString()
-            : "—",
-      },
-      {
-        label: "Lowest Score",
-        value:
-          typeof reportCardData.summary.lowestScore === "number"
-            ? reportCardData.summary.lowestScore.toLocaleString()
-            : "—",
-      },
-      {
-        label: "Student Status",
-        value: reportCardData.student.statusLabel ?? "Active",
-      },
-    ]
-
-    return items
-  }, [reportCardData])
-
-  const affectiveTraits = useMemo(() => {
-    const seen = new Set<string>()
-    return [...PRIMARY_AFFECTIVE_TRAITS, ...AFFECTIVE_TRAITS].filter((trait) => {
-      if (seen.has(trait.key)) {
-        return false
-      }
-      seen.add(trait.key)
-      return true
-    })
-  }, [])
-
-  const psychomotorSkills = useMemo(() => {
-    const seen = new Set<string>()
-    return [...PRIMARY_PSYCHOMOTOR_SKILLS, ...PSYCHOMOTOR_SKILLS].filter((skill) => {
-      if (seen.has(skill.key)) {
-        return false
-      }
-      seen.add(skill.key)
-      return true
-    })
-  }, [])
-
-  const learnerDetails = useMemo(() => {
-    if (!reportCardData) {
-      return []
-    }
-
-    const details: Array<{ label: string; value: string; helper?: string }> = [
-      {
-        label: "Student Name",
-        value: reportCardData.student.name,
-      },
-      {
-        label: "Admission Number",
-        value: reportCardData.student.admissionNumber || "—",
-      },
-      {
-        label: "Class",
-        value: reportCardData.student.class || "—",
-      },
-      {
-        label: "Term",
-        value: reportCardData.student.term || "—",
-      },
-      {
-        label: "Session",
-        value: reportCardData.student.session || "—",
-      },
-      {
-        label: "Gender",
-        value: reportCardData.student.gender ?? "—",
-      },
-      {
-        label: "Date of Birth",
-        value: formatDateDisplay(reportCardData.student.dateOfBirth) ?? "—",
-      },
-      {
-        label: "Age",
-        value:
-          reportCardData.student.age !== undefined ? `${reportCardData.student.age} years` : "—",
-      },
-      {
-        label: "Overall Position",
-        value: reportCardData.summary.positionLabel || "—",
-        helper:
-          reportCardData.student.numberInClass && reportCardData.student.numberInClass > 0
-            ? `of ${reportCardData.student.numberInClass}`
-            : undefined,
-      },
-      {
-        label: "Number in Class",
-        value: reportCardData.student.numberInClass
-          ? reportCardData.student.numberInClass.toString()
-          : "—",
-      },
-      {
-        label: "Student Status",
-        value: reportCardData.student.statusLabel ?? "Active",
-      },
-    ]
-
-    return details
-  }, [reportCardData])
-
-  if (!reportCardData) {
-    return (
-      <div className="max-w-4xl mx-auto bg-white p-8">
-        <Card className="border-2 border-gray-300">
-          <CardContent className="p-8 text-center">
-            <div className="text-gray-500">
-              <h3 className="text-lg font-semibold mb-2">No Report Card Data Available</h3>
-              <p>Please select a student to view their report card.</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
+    const commentEntries = [
+    {
+      label: "Class Teacher Remarks:",
+      value: reportCardData.remarks.classTeacher || "________________",
+    },
+    {
+      label: "Vacation Date:",
+      value: formatDateDisplay(reportCardData.termInfo.vacationEnds) ?? "________________",
+    },
+    {
+      label: "Resumption Date:",
+      value: formatDateDisplay(reportCardData.termInfo.nextTermBegins) ?? "________________",
+    },
+    {
+      label: "Teacher's Comment",
+      value: reportCardData.remarks.headTeacher || "________________",
+    },
+  ]
 
   return (
-    <div className="mx-auto w-full max-w-[230mm] py-6 print:w-[210mm] print:max-w-none print:py-0">
+    <div className="mx-auto w-full max-w-5xl py-6 print:w-[210mm] print:max-w-none print:py-0">
       <div className="mb-4 flex justify-end gap-2 px-2 print:hidden">
         <Button
           onClick={handlePrint}
-          className="bg-emerald-700 px-3 text-xs font-medium text-white shadow-md hover:bg-emerald-800"
+          className="bg-[#2d5016] px-3 text-xs font-medium text-white shadow-md hover:bg-[#244012]"
         >
           <Print className="mr-2 h-4 w-4" />
           Print
@@ -735,450 +502,297 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         <Button
           onClick={handleDownload}
           variant="outline"
-          className="border-emerald-600 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-600 hover:text-white"
+          className="border-[#2d5016] px-3 text-xs font-medium text-[#2d5016] hover:bg-[#2d5016] hover:text-white"
         >
           <Download className="mr-2 h-4 w-4" />
           Download
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white text-[13px] leading-tight text-slate-800 shadow-lg print:overflow-visible print:rounded-none print:border-slate-300 print:shadow-none">
-        <div className="space-y-6 p-6 md:p-8 print:p-[16mm]">
-          <header className="rounded-lg border border-slate-200 bg-slate-50 px-5 py-4 print:bg-white">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="flex flex-1 items-center gap-4 text-center md:text-left">
-                <div className="flex h-16 w-16 items-center justify-center rounded-md border border-slate-200 bg-white">
-                  {reportCardData.branding.logo ? (
-                    <img
-                      src={reportCardData.branding.logo}
-                      alt={`${reportCardData.branding.schoolName} logo`}
-                      className="h-12 w-12 object-contain"
-                    />
-                  ) : (
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-500">
-                      School
-                      <br />
-                      Logo
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 space-y-1">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-600">
-                    Official Report Card
-                  </p>
-                  <h1 className="text-xl font-bold uppercase tracking-[0.18em] text-slate-900">
-                    {reportCardData.branding.schoolName}
-                  </h1>
-                  {reportCardData.branding.address ? (
-                    <p className="text-sm text-slate-700">{reportCardData.branding.address}</p>
-                  ) : null}
-                  {reportCardData.branding.defaultRemark ? (
-                    <p className="text-xs text-slate-500">{reportCardData.branding.defaultRemark}</p>
-                  ) : null}
-                  <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px] uppercase tracking-[0.2em] text-slate-600 md:justify-start">
-                    {reportCardData.branding.educationZone ? (
-                      <span>Education Zone: {reportCardData.branding.educationZone}</span>
-                    ) : null}
-                    {reportCardData.branding.councilArea ? (
-                      <span>L.G.A: {reportCardData.branding.councilArea}</span>
-                    ) : null}
-                  </div>
-                  <div className="mt-1 flex flex-wrap justify-center gap-3 text-[10px] text-slate-500 md:justify-start">
-                    {reportCardData.branding.contactPhone ? (
-                      <span>Tel: {reportCardData.branding.contactPhone}</span>
-                    ) : null}
-                    {reportCardData.branding.contactEmail ? (
-                      <span>Email: {reportCardData.branding.contactEmail}</span>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col items-center gap-2 text-center md:items-end md:text-right">
-                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white">
-                  {studentPhoto ? (
-                    <img
-                      src={studentPhoto}
-                      alt={`${reportCardData.student.name} passport`}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-500">Passport</div>
-                  )}
-                </div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-600">
-                  {reportCardData.student.term} • {reportCardData.student.session}
-                </div>
-              </div>
+      <div className="border-[3px] border-[#2d5016] bg-white text-[13px] leading-tight text-slate-800 shadow-xl print:shadow-none">
+        <div className="bg-white">
+          <div className="m-3 flex flex-col items-center gap-4 border-2 border-[#2d5016] bg-[#e8f5e8] px-4 py-4 md:flex-row md:items-start">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-[#2d5016] bg-[#2d5016] text-center text-[10px] font-semibold uppercase leading-tight text-white">
+              {reportCardData.branding.logo ? (
+                <img
+                  src={reportCardData.branding.logo}
+                  alt={`${reportCardData.branding.schoolName} logo`}
+                  className="h-16 w-16 rounded-full object-cover"
+                />
+              ) : (
+                <span>
+                  School
+                  <br />
+                  Logo
+                </span>
+              )}
             </div>
-          </header>
+            <div className="flex-1 text-center md:text-left">
+              <h1 className="text-2xl font-bold uppercase tracking-wide text-[#2d5016]">
+                {reportCardData.branding.schoolName}
+              </h1>
+              {reportCardData.branding.address ? (
+                <p className="text-sm font-medium text-slate-700">{reportCardData.branding.address}</p>
+              ) : null}
+              <p className="mt-3 text-base font-semibold uppercase tracking-wide text-[#2d5016]">
+                Terminal Report Sheet
+              </p>
+            </div>
+            <div className="flex h-24 w-20 items-center justify-center border border-[#2d5016] bg-[#f5f5f5]">
+              {studentPhoto ? (
+                <img
+                  src={studentPhoto}
+                  alt={`${reportCardData.student.name} passport`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span className="text-[11px] font-medium text-slate-500">Photo</span>
+              )}
+            </div>
+          </div>
 
-        <section className="rounded-lg border border-slate-200 px-5 py-4">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">Learner Information</h2>
-          <div className="mt-3 grid gap-3 text-xs text-slate-700 md:grid-cols-2 xl:grid-cols-3">
-            {learnerDetails.map((detail) => (
-              <div key={detail.label} className="space-y-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{detail.label}</p>
-                <div className="rounded-md border border-slate-200 px-3 py-2 font-semibold text-slate-800">
-                  {detail.value}
-                </div>
-                {detail.helper ? (
-                  <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500">{detail.helper}</p>
-                ) : null}
+          <div className="mx-3 border border-[#2d5016] text-[12px]">
+            {infoRows.map((row, rowIndex) => (
+              <div
+                key={`info-row-${rowIndex}`}
+                className={`flex flex-wrap ${rowIndex !== infoRows.length - 1 ? "border-b border-[#2d5016]" : ""}`}
+              >
+                {row.map((cell) => (
+                  <div
+                    key={cell.label}
+                    className={`w-full px-3 py-2 sm:flex sm:items-center ${row.length === 4 ? "sm:w-1/4" : "sm:w-1/3"}`}
+                  >
+                    <span className="text-[12px] font-semibold uppercase tracking-wide text-[#2d5016]">
+                      {cell.label}
+                    </span>
+                    <span className="mt-1 block text-[12px] font-semibold text-[#2d5016] sm:ml-2 sm:mt-0">
+                      {cell.value || "—"}
+                    </span>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
-        </section>
 
-        <section className="rounded-lg border border-slate-200 px-5 py-4">
-          <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
-            <div className="overflow-hidden rounded-lg border border-slate-200">
-              <div className="bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
-                Performance Summary
+          <div className="mx-3 mt-3 grid gap-3 text-white sm:grid-cols-2">
+            {summaryBoxes.map((box) => (
+              <div
+                key={box.label}
+                className="rounded-md border border-[#2d5016] bg-gradient-to-br from-[#2d5016] to-[#6fa233] px-4 py-3 text-center shadow-sm"
+              >
+                <p className="text-[12px] font-semibold uppercase tracking-wide">{box.label}</p>
+                <p className="mt-2 text-lg font-bold">{box.value}</p>
               </div>
-              <table className="w-full text-xs text-slate-700">
-                <tbody>
-                  {summaryItems.map((item) => (
-                    <tr key={item.label} className="border-b border-slate-200 last:border-b-0">
-                      <th className="w-1/2 bg-slate-50 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-slate-600">
-                        {item.label}
-                      </th>
-                      <td className="px-3 py-2 font-semibold text-slate-800">
-                        {item.value}
-                        {item.helper ? (
-                          <span className="ml-2 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
-                            {item.helper}
-                          </span>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="space-y-3">
-              <div className="overflow-hidden rounded-lg border border-slate-200">
-                <div className="bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Attendance Record
-                </div>
-                <table className="w-full text-xs text-slate-700">
-                  <tbody>
-                    <tr className="border-b border-slate-200">
-                      <th className="bg-slate-50 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-slate-600">
-                        Days Present
-                      </th>
-                      <td className="px-3 py-2 font-semibold text-slate-800">{reportCardData.attendance.present}</td>
-                    </tr>
-                    <tr className="border-b border-slate-200">
-                      <th className="bg-slate-50 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-slate-600">
-                        Days Absent
-                      </th>
-                      <td className="px-3 py-2 font-semibold text-slate-800">{reportCardData.attendance.absent}</td>
-                    </tr>
-                    <tr className="border-b border-slate-200">
-                      <th className="bg-slate-50 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-slate-600">
-                        Total Days
-                      </th>
-                      <td className="px-3 py-2 font-semibold text-slate-800">{reportCardData.attendance.total}</td>
-                    </tr>
-                    <tr>
-                      <th className="bg-slate-50 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-slate-600">
-                        Attendance %
-                      </th>
-                      <td className="px-3 py-2 font-semibold text-slate-800">{reportCardData.attendance.percentage}%</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div className="overflow-hidden rounded-lg border border-slate-200">
-                <div className="bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Class Overview
-                </div>
-                <table className="w-full text-xs text-slate-700">
-                  <tbody>
-                    {classSummaryItems.map((item) => (
-                      <tr key={item.label} className="border-b border-slate-200 last:border-b-0">
-                        <th className="bg-slate-50 px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-slate-600">
-                          {item.label}
-                        </th>
-                        <td className="px-3 py-2 font-semibold text-slate-800">{item.value}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            ))}
           </div>
-        </section>
 
-        <section className="rounded-lg border border-slate-200 px-5 py-4">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">Academic Performance</h2>
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full border border-slate-300 text-[12px] text-slate-700">
-              <thead className="bg-slate-100 text-[11px] uppercase tracking-[0.18em] text-slate-700">
-                <tr>
-                  <th className="border border-slate-300 px-3 py-2 text-left">Subject</th>
-                  <th className="border border-slate-300 px-3 py-2 text-center">1st C.A (10)</th>
-                  <th className="border border-slate-300 px-3 py-2 text-center">2nd C.A (10)</th>
-                  <th className="border border-slate-300 px-3 py-2 text-center">Assignments (20)</th>
-                  <th className="border border-slate-300 px-3 py-2 text-center">C.A Total (40)</th>
-                  <th className="border border-slate-300 px-3 py-2 text-center">Exam (60)</th>
-                  <th className="border border-slate-300 px-3 py-2 text-center">Grand Total (100)</th>
-                  <th className="border border-slate-300 px-3 py-2 text-center">Grade</th>
-                  <th className="border border-slate-300 px-3 py-2 text-center">Subject Position</th>
-                  <th className="border border-slate-300 px-3 py-2 text-left">Teacher&apos;s Remark</th>
+          <div className="mx-3 mt-3 overflow-x-auto">
+            <table className="w-full border border-[#2d5016] text-[12px] text-slate-800">
+              <thead>
+                <tr className="bg-[#f0f0f0] text-[#2d5016]">
+                  <th className="border border-[#2d5016] px-2 py-2 text-left font-semibold uppercase">Subject</th>
+                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
+                    1st C.A
+                    <br />
+                    10
+                  </th>
+                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
+                    2nd C.A
+                    <br />
+                    10
+                  </th>
+                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
+                    Note/
+                    <br />
+                    Assign
+                    <br />
+                    20
+                  </th>
+                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
+                    Total
+                    <br />
+                    40
+                  </th>
+                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
+                    Exam
+                    <br />
+                    60
+                  </th>
+                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
+                    Total
+                    <br />
+                    100
+                  </th>
+                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
+                    Subject
+                    <br />
+                    Position
+                  </th>
+                  <th className="border border-[#2d5016] px-2 py-2 text-left font-semibold uppercase">
+                    Teacher&apos;s
+                    <br />
+                    Remarks
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {reportCardData.subjects.length > 0 ? (
                   reportCardData.subjects.map((subject, index) => (
-                    <tr key={`${subject.name}-${index}`} className="odd:bg-white even:bg-slate-50">
-                      <td className="border border-slate-300 px-3 py-2 font-semibold text-slate-900">{subject.name}</td>
-                      <td className="border border-slate-300 px-3 py-2 text-center">{subject.ca1}</td>
-                      <td className="border border-slate-300 px-3 py-2 text-center">{subject.ca2}</td>
-                      <td className="border border-slate-300 px-3 py-2 text-center">{subject.assignment}</td>
-                      <td className="border border-slate-300 px-3 py-2 text-center font-semibold text-slate-900">{subject.caTotal}</td>
-                      <td className="border border-slate-300 px-3 py-2 text-center">{subject.exam}</td>
-                      <td className="border border-slate-300 px-3 py-2 text-center font-semibold text-slate-900">{subject.total}</td>
-                      <td className="border border-slate-300 px-3 py-2 text-center font-bold text-emerald-700">
-                        {subject.grade || deriveGradeFromScore(subject.total)}
+                    <tr key={`${subject.name}-${index}`} className={index % 2 === 0 ? "bg-white" : "bg-[#f9f9f9]"}>
+                      <td className="border border-[#2d5016] px-3 py-2 font-semibold uppercase text-[#2d5016]">
+                        {subject.name}
                       </td>
-                      <td className="border border-slate-300 px-3 py-2 text-center font-semibold text-slate-800">
+                      <td className="border border-[#2d5016] px-2 py-2 text-center">{subject.ca1}</td>
+                      <td className="border border-[#2d5016] px-2 py-2 text-center">{subject.ca2}</td>
+                      <td className="border border-[#2d5016] px-2 py-2 text-center">{subject.assignment}</td>
+                      <td className="border border-[#2d5016] px-2 py-2 text-center font-semibold text-[#2d5016]">
+                        {subject.caTotal}
+                      </td>
+                      <td className="border border-[#2d5016] px-2 py-2 text-center">{subject.exam}</td>
+                      <td className="border border-[#2d5016] px-2 py-2 text-center font-semibold text-[#2d5016]">
+                        {subject.total}
+                      </td>
+                      <td className="border border-[#2d5016] px-2 py-2 text-center font-semibold text-[#2d5016]">
                         {subject.position ?? "—"}
                       </td>
-                      <td className="border border-slate-300 px-3 py-2 text-left text-[11px] text-slate-600">
+                      <td className="border border-[#2d5016] px-2 py-2 text-left text-[11px] text-slate-700">
                         {subject.remarks || "—"}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={10} className="border border-slate-300 px-3 py-4 text-center text-sm text-slate-600">
+                    <td
+                      colSpan={9}
+                      className="border border-[#2d5016] px-3 py-4 text-center text-sm text-slate-600"
+                    >
                       No subject scores have been recorded for this student.
                     </td>
                   </tr>
                 )}
               </tbody>
               <tfoot>
-                <tr className="bg-slate-100 font-semibold text-slate-900">
-                  <td className="border border-slate-300 px-3 py-2 text-center uppercase tracking-[0.18em]">Totals</td>
-                  <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.ca1 ?? "—"}</td>
-                  <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.ca2 ?? "—"}</td>
-                  <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.assignment ?? "—"}</td>
-                  <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.caTotal ?? "—"}</td>
-                  <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.exam ?? "—"}</td>
-                  <td className="border border-slate-300 px-3 py-2 text-center">{totalsRow?.total ?? "—"}</td>
-                  <td className="border border-slate-300 px-3 py-2 text-center">—</td>
-                  <td className="border border-slate-300 px-3 py-2 text-center">—</td>
-                  <td className="border border-slate-300 px-3 py-2">&nbsp;</td>
+                <tr className="bg-[#f0f0f0] font-semibold text-[#2d5016]">
+                  <td className="border border-[#2d5016] px-3 py-2 text-left uppercase">Total</td>
+                  <td className="border border-[#2d5016] px-2 py-2 text-center">{totalsRow?.ca1 ?? "—"}</td>
+                  <td className="border border-[#2d5016] px-2 py-2 text-center">{totalsRow?.ca2 ?? "—"}</td>
+                  <td className="border border-[#2d5016] px-2 py-2 text-center">{totalsRow?.assignment ?? "—"}</td>
+                  <td className="border border-[#2d5016] px-2 py-2 text-center">{totalsRow?.caTotal ?? "—"}</td>
+                  <td className="border border-[#2d5016] px-2 py-2 text-center">{totalsRow?.exam ?? "—"}</td>
+                  <td className="border border-[#2d5016] px-2 py-2 text-center">{totalsRow?.total ?? "—"}</td>
+                  <td className="border border-[#2d5016] px-2 py-2 text-center">—</td>
+                  <td className="border border-[#2d5016] px-2 py-2">&nbsp;</td>
                 </tr>
               </tfoot>
             </table>
           </div>
-          <p className="mt-3 text-[11px] text-slate-600">
-            Continuous assessments contribute 40% of the total score while examinations account for 60%.
-          </p>
-        </section>
 
-        <section className="rounded-lg border border-slate-200 px-5 py-4">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">Whole Child Development</h2>
-          <div className="mt-3 grid gap-4 lg:grid-cols-2">
-            <div className="overflow-hidden rounded-lg border border-slate-200">
-              <div className="bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
-                Affective (Behavioural) Domain
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-[11px] text-slate-700">
-                  <thead className="bg-slate-50 uppercase tracking-[0.18em] text-slate-600">
-                    <tr>
-                      <th className="border border-slate-300 px-3 py-2 text-left">Traits</th>
-                      {BEHAVIORAL_RATING_COLUMNS.map((column) => (
-                        <th key={column.key} className="border border-slate-300 px-2 py-2 text-center">
-                          {column.label}
-                        </th>
-                      ))}
-                      <th className="border border-slate-300 px-3 py-2 text-center">Recorded Rating</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {affectiveTraits.map((trait) => (
-                      <tr key={trait.key} className="odd:bg-white even:bg-slate-50">
-                        <td className="border border-slate-300 px-3 py-2 font-semibold text-slate-800">{trait.label}</td>
-                        {BEHAVIORAL_RATING_COLUMNS.map((option) => {
-                          const mark = getBehavioralMark(reportCardData.affectiveDomain, trait.key, option.key)
-                          return (
-                            <td
-                              key={`${trait.key}-${option.key}`}
-                              className="border border-slate-300 px-2 py-2 text-center font-bold text-slate-700"
-                            >
-                              {mark}
-                            </td>
-                          )
-                        })}
-                        <td className="border border-slate-300 px-3 py-2 text-center font-medium text-emerald-700">
-                          {formatBehavioralLabel(reportCardData.affectiveDomain[trait.key])}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div className="overflow-hidden rounded-lg border border-slate-200">
-              <div className="bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
-                Psychomotor Skills
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-[11px] text-slate-700">
-                  <thead className="bg-slate-50 uppercase tracking-[0.18em] text-slate-600">
-                    <tr>
-                      <th className="border border-slate-300 px-3 py-2 text-left">Skills</th>
-                      {BEHAVIORAL_RATING_COLUMNS.map((column) => (
-                        <th key={column.key} className="border border-slate-300 px-2 py-2 text-center">
-                          {column.label}
-                        </th>
-                      ))}
-                      <th className="border border-slate-300 px-3 py-2 text-center">Recorded Rating</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {psychomotorSkills.map((skill) => (
-                      <tr key={skill.key} className="odd:bg-white even:bg-slate-50">
-                        <td className="border border-slate-300 px-3 py-2 font-semibold text-slate-800">{skill.label}</td>
-                        {BEHAVIORAL_RATING_COLUMNS.map((option) => {
-                          const mark = getBehavioralMark(reportCardData.psychomotorDomain, skill.key, option.key)
-                          return (
-                            <td
-                              key={`${skill.key}-${option.key}`}
-                              className="border border-slate-300 px-2 py-2 text-center font-bold text-slate-700"
-                            >
-                              {mark}
-                            </td>
-                          )
-                        })}
-                        <td className="border border-slate-300 px-3 py-2 text-center font-medium text-emerald-700">
-                          {formatBehavioralLabel(reportCardData.psychomotorDomain[skill.key])}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+          <div className="mx-3 mt-3 bg-[#d4a574] py-2 text-center text-[14px] font-bold uppercase tracking-wide text-white">
+            Remarks, Affective and Psychomotor Domains
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-slate-300 px-4 py-3 text-[11px] text-slate-600">
-            <span className="font-semibold uppercase tracking-[0.2em] text-slate-700">Rating Legend:</span>
-            {BEHAVIORAL_RATING_COLUMNS.map((column) => (
-              <span key={column.key} className="flex items-center gap-2 font-medium">
-                <span className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-500 text-[9px] font-bold text-slate-700">
-                  ●
-                </span>
-                {column.label}
-              </span>
-            ))}
-          </div>
-        </section>
 
-        <section className="rounded-lg border border-slate-200 px-5 py-4">
-          <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-            <div className="space-y-3">
-              <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Class Teacher&apos;s Remark</h3>
-                <p className="mt-2 text-sm leading-snug text-slate-800">
-                  {reportCardData.remarks.classTeacher || "Class teacher remark pending."}
-                </p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Head Teacher&apos;s Remark &amp; Signature</h3>
-                <p className="mt-2 text-sm italic text-slate-800">{reportCardData.remarks.headTeacher}</p>
-                <div className="mt-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-                  {reportCardData.branding.signature ? (
-                    <img
-                      src={reportCardData.branding.signature}
-                      alt={`${reportCardData.branding.headmasterName} signature`}
-                      className="h-14 w-44 object-contain"
-                    />
-                  ) : (
-                    <div className="h-10 w-44 border-b border-dashed border-slate-400"></div>
-                  )}
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">
-                      {reportCardData.branding.headmasterName}
-                    </p>
-                    <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
-                      Head Teacher / Principal
-                    </p>
+          <div className="mx-3 -mt-[1px] border border-[#2d5016]">
+            <div className="flex flex-col lg:flex-row">
+              <div className="flex flex-1 flex-col">
+                {commentEntries.map((entry, index) => (
+                  <div
+                    key={entry.label}
+                    className={`px-4 py-3 ${index !== commentEntries.length - 1 ? "border-b border-[#2d5016]" : ""}`}
+                  >
+                    <p className="text-[13px] font-bold uppercase tracking-wide text-[#2d5016]">{entry.label}</p>
+                    <p className="mt-1 text-[13px] font-semibold text-[#2d5016]">{entry.value}</p>
                   </div>
+                ))}
+              </div>
+              <div className="flex flex-1 flex-col border-t border-[#2d5016] lg:border-t-0 lg:border-l">
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-[11px] text-slate-800">
+                    <thead>
+                      <tr className="bg-[#f0f0f0] text-[#2d5016]">
+                        <th className="border border-[#2d5016] px-3 py-2 text-left font-semibold uppercase">
+                          Affective Domain
+                        </th>
+                        {domainColumns.map((column) => (
+                          <th
+                            key={`affective-header-${column.key}`}
+                            className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase"
+                          >
+                            {column.label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {affectiveTraits.map((trait) => (
+                        <tr key={trait.key} className="odd:bg-white even:bg-[#f9f9f9]">
+                          <td className="border border-[#2d5016] px-3 py-2 font-semibold text-[#2d5016]">{trait.label}</td>
+                          {domainColumns.map((column) => (
+                            <td
+                              key={`${trait.key}-${column.key}`}
+                              className="border border-[#2d5016] px-2 py-2 text-center text-[#2d5016]"
+                            >
+                              {getBehavioralMark(reportCardData.affectiveDomain, trait.key, column.key)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                      <tr className="bg-[#f0f0f0] text-[#2d5016]">
+                        <th className="border border-[#2d5016] px-3 py-2 text-left font-semibold uppercase">
+                          Psychomotor Domain
+                        </th>
+                        {domainColumns.map((column) => (
+                          <th
+                            key={`psychomotor-header-${column.key}`}
+                            className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase"
+                          >
+                            {column.label}
+                          </th>
+                        ))}
+                      </tr>
+                      {psychomotorSkills.map((skill) => (
+                        <tr key={skill.key} className="odd:bg-white even:bg-[#f9f9f9]">
+                          <td className="border border-[#2d5016] px-3 py-2 font-semibold text-[#2d5016]">{skill.label}</td>
+                          {domainColumns.map((column) => (
+                            <td
+                              key={`${skill.key}-${column.key}`}
+                              className="border border-[#2d5016] px-2 py-2 text-center text-[#2d5016]"
+                            >
+                              {getBehavioralMark(reportCardData.psychomotorDomain, skill.key, column.key)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <div className="rounded-lg border border-slate-200 px-4 py-3">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Term Information</h3>
-                <dl className="mt-2 space-y-2 text-sm text-slate-800">
-                  <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Vacation Date</dt>
-                    <dd>{formatDateDisplay(reportCardData.termInfo.vacationEnds) ?? "________________"}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Resumption Date</dt>
-                    <dd>{formatDateDisplay(reportCardData.termInfo.nextTermBegins) ?? "________________"}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Next Term Fees</dt>
-                    <dd>{reportCardData.termInfo.nextTermFees || "________________"}</dd>
-                  </div>
+                <div className="border-t border-[#2d5016] px-4 py-3 text-[12px] text-[#2d5016]">
                   <div className="flex items-center justify-between gap-3">
-                    <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Outstanding Fees</dt>
-                    <dd>{reportCardData.termInfo.feesBalance || "________________"}</dd>
+                    <span className="font-semibold">Teacher&apos;s Signature:</span>
+                    <span className="min-w-[140px] border-b border-dashed border-[#2d5016]">&nbsp;</span>
                   </div>
-                </dl>
-              </div>
-              <div className="rounded-lg border border-slate-200 px-4 py-3">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">Parent / Guardian Acknowledgement</h3>
-                <div className="mt-4 space-y-5 text-xs uppercase tracking-[0.18em] text-slate-500">
-                  <div>
-                    <div className="h-8 border-b border-slate-400"></div>
-                    <p className="mt-2">Signature</p>
-                  </div>
-                  <div>
-                    <div className="h-8 border-b border-slate-400"></div>
-                    <p className="mt-2">Date</p>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <span className="font-semibold">Headmaster&apos;s Signature:</span>
+                    {reportCardData.branding.signature ? (
+                      <img
+                        src={reportCardData.branding.signature}
+                        alt={`${reportCardData.branding.headmasterName} signature`}
+                        className="h-10 w-36 object-contain"
+                      />
+                    ) : (
+                      <span className="min-w-[140px] border-b border-dashed border-[#2d5016]">&nbsp;</span>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </section>
 
-        <section className="rounded-lg border border-slate-200 px-5 py-4">
-          <div className="overflow-hidden rounded-lg border border-slate-200">
-            <div className="bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
-              Grading Scale
-            </div>
-            <div className="grid gap-3 p-4 sm:grid-cols-3 md:grid-cols-4">
-              {GRADING_SCALE.map((item) => (
-                <div
-                  key={item.grade}
-                  className="flex flex-col items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-center"
-                >
-                  <span className="text-xl font-bold text-emerald-700">{item.grade}</span>
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">{item.range}</span>
-                  <span className="mt-1 text-xs text-slate-600">{item.meaning}</span>
-                </div>
-              ))}
-            </div>
+          <div className="mx-3 -mt-[1px] border border-[#2d5016] border-t-0 px-3 py-2 text-[10px] text-gray-600">
+            <p className="font-semibold text-[#2d5016]">Grading</p>
+            <p>75 - 100 A (Excellent) | 60 - 74 B (V.Good) | 50 - 59 C (Good) | 40 - 49 D (Pass) | 0 - 39 F (Poor)</p>
           </div>
-        </section>
-
-        <footer className="rounded-lg border border-slate-200 bg-slate-50 px-5 py-4 text-center text-[11px] text-slate-600 print:bg-white">
-          <p>
-            Report generated for {reportCardData.student.name}. For enquiries, contact {reportCardData.branding.contactPhone ||
-              reportCardData.branding.contactEmail || "the school"}.
-          </p>
-          <p className="mt-1">© {reportCardData.branding.schoolName}. All rights reserved.</p>
-        </footer>
+        </div>
       </div>
-    </div>
     </div>
   )
 }
