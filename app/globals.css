@@ -318,6 +318,27 @@
 
 /* Print styles for report cards */
 @media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .report-card-print-area,
+  .report-card-print-area * {
+    visibility: visible;
+  }
+
+  .report-card-print-area {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0 !important;
+    background-color: white !important;
+    padding: 0 !important;
+    width: auto !important;
+    max-width: 210mm !important;
+  }
+
   .print\:hidden {
     display: none !important;
   }

@@ -80,7 +80,7 @@ export function ReportCardViewer({
   return (
     <div className="space-y-6">
       {/* Selection Controls */}
-      <div className="flex gap-4 items-end">
+      <div className="flex gap-4 items-end print:hidden">
         <div>
           <Label>Term</Label>
           <Select value={selectedTerm} onValueChange={setSelectedTerm}>
