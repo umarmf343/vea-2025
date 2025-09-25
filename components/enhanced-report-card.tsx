@@ -106,9 +106,19 @@ const parseJsonRecord = (value: string | null) => {
   try {
     const parsed = JSON.parse(value)
     return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {}
-  } catch (error) {
+  } catch {
     return {}
   }
+}
+
+const resolveBrowserWindow = () => {
+  if (typeof globalThis === "undefined") {
+    return null
+  }
+
+  const candidate = globalThis as Window & typeof globalThis
+
+  return typeof candidate.addEventListener === "function" ? candidate : null
 }
 
 const formatStatusLabel = (value?: string) => {
@@ -456,8 +466,29 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   const [studentPhoto, setStudentPhoto] = useState<string>("")
 
   useEffect(() => {
+    const browserWindow = resolveBrowserWindow()
+    if (!browserWindow) {
+      return undefined
+    }
+
     const updateData = () => {
-      setReportCardData(normalizeReportCard(data, branding))
+      const normalized = normalizeReportCard(data, branding)
+      setReportCardData(normalized)
+
+      if (!normalized) {
+        setStudentPhoto("")
+        return
+      }
+
+      const storageKey = `${normalized.student.id}-${normalized.student.term}-${normalized.student.session}`
+      const photoStore = parseJsonRecord(safeStorage.getItem("studentPhotos"))
+      const storedPhoto = photoStore[storageKey]
+
+      if (typeof storedPhoto === "string" && storedPhoto.trim().length > 0) {
+        setStudentPhoto(storedPhoto)
+      } else {
+        setStudentPhoto("")
+      }
     }
 
     updateData()
@@ -469,25 +500,246 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
       updateData()
     }
 
-    window.addEventListener("storage", handleStorageChange)
-    const commentEntries = [
-    {
-      label: "Class Teacher Remarks:",
-      value: reportCardData.remarks.classTeacher || "________________",
-    },
-    {
-      label: "Vacation Date:",
-      value: formatDateDisplay(reportCardData.termInfo.vacationEnds) ?? "________________",
-    },
-    {
-      label: "Resumption Date:",
-      value: formatDateDisplay(reportCardData.termInfo.nextTermBegins) ?? "________________",
-    },
-    {
-      label: "Teacher's Comment",
-      value: reportCardData.remarks.headTeacher || "________________",
-    },
-  ]
+    browserWindow.addEventListener("storage", handleStorageChange)
+
+    return () => {
+      browserWindow.removeEventListener("storage", handleStorageChange)
+    }
+  }, [data, branding])
+
+  const domainColumns = useMemo(() => [...BEHAVIORAL_RATING_COLUMNS], [])
+
+  const affectiveTraits = useMemo(() => {
+    if (!reportCardData) {
+      return [] as Array<{ key: string; label: string }>
+    }
+
+    const seen = new Set<string>()
+    const ordered = [...PRIMARY_AFFECTIVE_TRAITS, ...AFFECTIVE_TRAITS]
+    const traits: Array<{ key: string; label: string }> = []
+
+    ordered.forEach((trait) => {
+      if (!seen.has(trait.key)) {
+        traits.push(trait)
+        seen.add(trait.key)
+      }
+    })
+
+    Object.keys(reportCardData.affectiveDomain).forEach((key) => {
+      if (!seen.has(key)) {
+        traits.push({ key, label: formatStatusLabel(key) ?? key })
+        seen.add(key)
+      }
+    })
+
+    return traits
+  }, [reportCardData])
+
+  const psychomotorSkills = useMemo(() => {
+    if (!reportCardData) {
+      return [] as Array<{ key: string; label: string }>
+    }
+
+    const seen = new Set<string>()
+    const ordered = [...PRIMARY_PSYCHOMOTOR_SKILLS, ...PSYCHOMOTOR_SKILLS]
+    const traits: Array<{ key: string; label: string }> = []
+
+    ordered.forEach((trait) => {
+      if (!seen.has(trait.key)) {
+        traits.push(trait)
+        seen.add(trait.key)
+      }
+    })
+
+    Object.keys(reportCardData.psychomotorDomain).forEach((key) => {
+      if (!seen.has(key)) {
+        traits.push({ key, label: formatStatusLabel(key) ?? key })
+        seen.add(key)
+      }
+    })
+
+    return traits
+  }, [reportCardData])
+
+  const infoRows = useMemo(() => {
+    if (!reportCardData) {
+      return [] as Array<
+        Array<{
+          label: string
+          value: string
+        }>
+      >
+    }
+
+    const { student, attendance, termInfo } = reportCardData
+
+    return [
+      [
+        { label: "Student Name", value: student.name },
+        { label: "Admission No", value: student.admissionNumber },
+        { label: "Class", value: student.class },
+        { label: "Term", value: student.term },
+      ],
+      [
+        { label: "Session", value: student.session },
+        { label: "Position", value: student.positionLabel || "—" },
+        {
+          label: "No. in Class",
+          value: student.numberInClass ? String(student.numberInClass) : "—",
+        },
+        { label: "Status", value: student.statusLabel || "—" },
+      ],
+      [
+        {
+          label: "Date of Birth",
+          value: formatDateDisplay(student.dateOfBirth) ?? "—",
+        },
+        {
+          label: "Age",
+          value: student.age ? `${student.age} yrs` : "—",
+        },
+        { label: "Gender", value: student.gender ?? "—" },
+        {
+          label: "Attendance",
+          value: `${attendance.present} / ${attendance.total} (${attendance.percentage}%)`,
+        },
+      ],
+      [
+        {
+          label: "Vacation Ends",
+          value: formatDateDisplay(termInfo.vacationEnds) ?? "—",
+        },
+        {
+          label: "Next Term Begins",
+          value: formatDateDisplay(termInfo.nextTermBegins) ?? "—",
+        },
+        {
+          label: "Next Term Fees",
+          value: termInfo.nextTermFees ?? "—",
+        },
+        {
+          label: "Outstanding Fees",
+          value: termInfo.feesBalance ?? "—",
+        },
+      ],
+    ]
+  }, [reportCardData])
+
+  const summaryBoxes = useMemo(() => {
+    if (!reportCardData) {
+      return [] as Array<{ label: string; value: string }>
+    }
+
+    const { summary } = reportCardData
+
+    return [
+      {
+        label: "Total Obtainable",
+        value: summary.totalMarksObtainable.toLocaleString(),
+      },
+      {
+        label: "Total Obtained",
+        value: summary.totalMarksObtained.toLocaleString(),
+      },
+      {
+        label: "Average Score",
+        value: `${summary.averageScore.toFixed(2)}%`,
+      },
+      {
+        label: "Position",
+        value:
+          summary.positionLabel && summary.positionLabel.trim().length > 0
+            ? summary.positionLabel
+            : "—",
+      },
+      {
+        label: "Class Average",
+        value:
+          typeof summary.classAverage === "number"
+            ? `${summary.classAverage.toFixed(2)}%`
+            : "—",
+      },
+      {
+        label: "Class Size",
+        value: summary.numberOfStudents ? String(summary.numberOfStudents) : "—",
+      },
+    ]
+  }, [reportCardData])
+
+  const commentEntries = useMemo(() => {
+    if (!reportCardData) {
+      return [] as Array<{ label: string; value: string }>
+    }
+
+    return [
+      {
+        label: "Class Teacher's Remarks",
+        value: reportCardData.remarks.classTeacher || "________________",
+      },
+      {
+        label: "Head Teacher's Comment",
+        value: reportCardData.remarks.headTeacher || "________________",
+      },
+      {
+        label: "Vacation Ends",
+        value: formatDateDisplay(reportCardData.termInfo.vacationEnds) ?? "________________",
+      },
+      {
+        label: "Resumption Date",
+        value: formatDateDisplay(reportCardData.termInfo.nextTermBegins) ?? "________________",
+      },
+    ]
+  }, [reportCardData])
+
+  const totalsRow = useMemo(() => {
+    if (!reportCardData || reportCardData.subjects.length === 0) {
+      return null
+    }
+
+    return reportCardData.subjects.reduce(
+      (totals, subject) => {
+        totals.ca1 += subject.ca1
+        totals.ca2 += subject.ca2
+        totals.assignment += subject.assignment
+        totals.caTotal += subject.caTotal
+        totals.exam += subject.exam
+        totals.total += subject.total
+        return totals
+      },
+      { ca1: 0, ca2: 0, assignment: 0, caTotal: 0, exam: 0, total: 0 },
+    )
+  }, [reportCardData])
+
+  const handlePrint = () => {
+    const browserWindow = resolveBrowserWindow()
+    if (!browserWindow || typeof browserWindow.print !== "function") {
+      return
+    }
+
+    browserWindow.print()
+  }
+
+  const handleDownload = () => {
+    const browserWindow = resolveBrowserWindow()
+    if (!browserWindow || typeof browserWindow.print !== "function") {
+      return
+    }
+
+    browserWindow.print()
+  }
+
+  if (!reportCardData) {
+    return (
+      <div className="mx-auto w-full max-w-5xl py-6">
+        <div className="rounded-lg border border-dashed border-[#2d5016] bg-white p-8 text-center text-[#2d5016] shadow-sm">
+          <h2 className="text-lg font-semibold">No report card data available</h2>
+          <p className="mt-2 text-sm">
+            Please select a student with recorded assessments to preview the enhanced report card.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto w-full max-w-5xl py-6 print:w-[210mm] print:max-w-none print:py-0">
@@ -662,10 +914,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                   ))
                 ) : (
                   <tr>
-                    <td
-                      colSpan={9}
-                      className="border border-[#2d5016] px-3 py-4 text-center text-sm text-slate-600"
-                    >
+                    <td colSpan={9} className="border border-[#2d5016] px-3 py-4 text-center text-sm text-slate-600">
                       No subject scores have been recorded for this student.
                     </td>
                   </tr>
@@ -723,8 +972,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {affectiveTraits.map((trait) => (
-                        <tr key={trait.key} className="odd:bg-white even:bg-[#f9f9f9]">
+                      {affectiveTraits.map((trait, index) => (
+                        <tr key={trait.key} className={index % 2 === 0 ? "bg-white" : "bg-[#f9f9f9]"}>
                           <td className="border border-[#2d5016] px-3 py-2 font-semibold text-[#2d5016]">{trait.label}</td>
                           {domainColumns.map((column) => (
                             <td
@@ -736,6 +985,12 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                           ))}
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="overflow-x-auto border-t border-[#2d5016]">
+                  <table className="w-full border-collapse text-[11px] text-slate-800">
+                    <thead>
                       <tr className="bg-[#f0f0f0] text-[#2d5016]">
                         <th className="border border-[#2d5016] px-3 py-2 text-left font-semibold uppercase">
                           Psychomotor Domain
@@ -749,8 +1004,10 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                           </th>
                         ))}
                       </tr>
-                      {psychomotorSkills.map((skill) => (
-                        <tr key={skill.key} className="odd:bg-white even:bg-[#f9f9f9]">
+                    </thead>
+                    <tbody>
+                      {psychomotorSkills.map((skill, index) => (
+                        <tr key={skill.key} className={index % 2 === 0 ? "bg-white" : "bg-[#f9f9f9]"}>
                           <td className="border border-[#2d5016] px-3 py-2 font-semibold text-[#2d5016]">{skill.label}</td>
                           {domainColumns.map((column) => (
                             <td
@@ -789,7 +1046,9 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
           <div className="mx-3 -mt-[1px] border border-[#2d5016] border-t-0 px-3 py-2 text-[10px] text-gray-600">
             <p className="font-semibold text-[#2d5016]">Grading</p>
-            <p>75 - 100 A (Excellent) | 60 - 74 B (V.Good) | 50 - 59 C (Good) | 40 - 49 D (Pass) | 0 - 39 F (Poor)</p>
+            <p>
+              75 - 100 A (Excellent) | 60 - 74 B (V.Good) | 50 - 59 C (Good) | 40 - 49 D (Pass) | 0 - 39 F (Poor)
+            </p>
           </div>
         </div>
       </div>
