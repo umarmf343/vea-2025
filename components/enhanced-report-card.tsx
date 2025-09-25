@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Download, PrinterIcon as Print } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useBranding } from "@/hooks/use-branding"
+import { useToast } from "@/hooks/use-toast"
 import {
   AFFECTIVE_TRAITS,
   BEHAVIORAL_RATING_COLUMNS,
@@ -97,6 +98,15 @@ const STORAGE_KEYS_TO_WATCH = [
   "classTeacherRemarks",
   "studentPhotos",
 ]
+
+const sanitizeFileName = (value: string) => {
+  const cleaned = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+
+  return cleaned.length > 0 ? cleaned : "report-card"
+}
 
 const parseJsonRecord = (value: string | null) => {
   if (!value) {
@@ -460,10 +470,13 @@ const getBehavioralMark = (ratings: Record<string, string>, traitKey: string, ta
 
 export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   const branding = useBranding()
+  const { toast } = useToast()
   const [reportCardData, setReportCardData] = useState<NormalizedReportCard | null>(() =>
     normalizeReportCard(data, branding),
   )
   const [studentPhoto, setStudentPhoto] = useState<string>("")
+  const [isDownloading, setIsDownloading] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const browserWindow = resolveBrowserWindow()
@@ -710,23 +723,58 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     )
   }, [reportCardData])
 
-  const handlePrint = () => {
+  const handlePrint = useCallback(() => {
     const browserWindow = resolveBrowserWindow()
     if (!browserWindow || typeof browserWindow.print !== "function") {
       return
     }
 
     browserWindow.print()
-  }
+  }, [])
 
-  const handleDownload = () => {
-    const browserWindow = resolveBrowserWindow()
-    if (!browserWindow || typeof browserWindow.print !== "function") {
+  const handleDownload = useCallback(async () => {
+    if (isDownloading) {
       return
     }
 
-    browserWindow.print()
-  }
+    const target = containerRef.current
+    if (!target || !reportCardData) {
+      return
+    }
+
+    try {
+      setIsDownloading(true)
+      const { toPng } = await import("html-to-image")
+      const dataUrl = await toPng(target, {
+        backgroundColor: "#ffffff",
+        pixelRatio: 2,
+        cacheBust: true,
+        filter: (element) => !element?.classList?.contains("print:hidden"),
+      })
+
+      const doc = typeof document === "undefined" ? null : document
+      if (!doc) {
+        throw new Error("Document context is not available")
+      }
+
+      const link = doc.createElement("a")
+      const filename = sanitizeFileName(
+        `${reportCardData.student.name}-${reportCardData.student.term}-${reportCardData.student.session}`,
+      )
+      link.download = `${filename}.png`
+      link.href = dataUrl
+      link.click()
+    } catch (error) {
+      console.error("Failed to export report card as image", error)
+      toast({
+        title: "Download failed",
+        description: "Unable to prepare the report card image. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDownloading(false)
+    }
+  }, [isDownloading, reportCardData, toast])
 
   if (!reportCardData) {
     return (
@@ -755,13 +803,17 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           onClick={handleDownload}
           variant="outline"
           className="border-[#2d5016] px-3 text-xs font-medium text-[#2d5016] hover:bg-[#2d5016] hover:text-white"
+          disabled={isDownloading}
         >
           <Download className="mr-2 h-4 w-4" />
-          Download
+          {isDownloading ? "Preparing..." : "Download"}
         </Button>
       </div>
 
-      <div className="border-[3px] border-[#2d5016] bg-white text-[13px] leading-tight text-slate-800 shadow-xl print:shadow-none">
+      <div
+        ref={containerRef}
+        className="report-card-print-area border-[3px] border-[#2d5016] bg-white text-[13px] leading-tight text-slate-800 shadow-xl print:shadow-none"
+      >
         <div className="bg-white">
           <div className="m-3 flex flex-col items-center gap-4 border-2 border-[#2d5016] bg-[#e8f5e8] px-4 py-4 md:flex-row md:items-start">
             <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-[#2d5016] bg-[#2d5016] text-center text-[10px] font-semibold uppercase leading-tight text-white">
@@ -786,9 +838,33 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
               {reportCardData.branding.address ? (
                 <p className="text-sm font-medium text-slate-700">{reportCardData.branding.address}</p>
               ) : null}
+              {(reportCardData.branding.educationZone || reportCardData.branding.councilArea) && (
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#2d5016]/80">
+                  {reportCardData.branding.educationZone}
+                  {reportCardData.branding.educationZone && reportCardData.branding.councilArea ? " • " : ""}
+                  {reportCardData.branding.councilArea}
+                </p>
+              )}
+              {(reportCardData.branding.contactPhone || reportCardData.branding.contactEmail) && (
+                <div className="mt-1 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-xs text-slate-600 md:justify-start">
+                  {reportCardData.branding.contactPhone ? (
+                    <span>
+                      <span className="font-semibold text-[#2d5016]">Tel:</span> {reportCardData.branding.contactPhone}
+                    </span>
+                  ) : null}
+                  {reportCardData.branding.contactEmail ? (
+                    <span>
+                      <span className="font-semibold text-[#2d5016]">Email:</span> {reportCardData.branding.contactEmail}
+                    </span>
+                  ) : null}
+                </div>
+              )}
               <p className="mt-3 text-base font-semibold uppercase tracking-wide text-[#2d5016]">
                 Terminal Report Sheet
               </p>
+              {reportCardData.branding.defaultRemark ? (
+                <p className="mt-1 text-sm italic text-[#2d5016]/80">{reportCardData.branding.defaultRemark}</p>
+              ) : null}
             </div>
             <div className="flex h-24 w-20 items-center justify-center border border-[#2d5016] bg-[#f5f5f5]">
               {studentPhoto ? (

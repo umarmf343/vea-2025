@@ -2,6 +2,8 @@ import { calculateFinancialAnalytics, normaliseFinancialPeriodKey, normalisePaym
 import type { AnalyticsPayment, FinancialAnalyticsPeriod, FinancialAnalyticsSnapshot } from "./financial-analytics"
 import { deriveGradeFromScore } from "./grade-utils"
 import { safeStorage } from "./safe-storage"
+import { readStudentMarksStore } from "./report-card-data"
+import type { StoredSubjectRecord } from "./report-card-types"
 
 const serverSideStorage = new Map<string, string>()
 
@@ -1266,6 +1268,197 @@ class DatabaseManager {
     })
 
     return reports
+  }
+
+  private buildCumulativeReportFromStoredMarks(
+    studentId: string,
+    session?: string,
+  ): StudentCumulativeReportRecord | null {
+    if (!studentId) {
+      return null
+    }
+
+    const marksStore = readStudentMarksStore()
+    const studentEntries = Object.values(marksStore).filter(
+      (entry) => entry.studentId === studentId && (!session || entry.session === session),
+    )
+
+    if (studentEntries.length === 0) {
+      return null
+    }
+
+    const normaliseTerm = (term: string) => {
+      const lookup = term.trim().toLowerCase()
+      if (lookup === "first" || lookup === "first term") {
+        return "First Term"
+      }
+      if (lookup === "second" || lookup === "second term") {
+        return "Second Term"
+      }
+      if (lookup === "third" || lookup === "third term") {
+        return "Third Term"
+      }
+      return term.trim().replace(/\b\w/g, (match) => match.toUpperCase()) || "First Term"
+    }
+
+    const termOrder = ["First Term", "Second Term", "Third Term"]
+    const resolveTermIndex = (term: string) => {
+      const index = termOrder.indexOf(term)
+      return index === -1 ? termOrder.length : index
+    }
+
+    const toFiniteNumber = (value: unknown): number => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value
+      }
+      if (typeof value === "string") {
+        const parsed = Number.parseFloat(value)
+        if (!Number.isNaN(parsed)) {
+          return parsed
+        }
+      }
+      return 0
+    }
+
+    const parsePosition = (value: unknown): number | null => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value
+      }
+      if (typeof value === "string") {
+        const match = value.match(/\d+/)
+        if (match) {
+          const parsed = Number.parseInt(match[0], 10)
+          return Number.isNaN(parsed) ? null : parsed
+        }
+      }
+      return null
+    }
+
+    const sessionKey = session ?? studentEntries[0]?.session ?? ""
+    const sessionEntries = studentEntries.map((entry) => ({
+      record: entry,
+      term: normaliseTerm(entry.term ?? ""),
+    }))
+
+    const subjectHistory = new Map<string, Array<{ termIndex: number; total: number }>>()
+
+    const sortedTerms = sessionEntries.sort((a, b) => resolveTermIndex(a.term) - resolveTermIndex(b.term))
+
+    const terms: CumulativeTermRecord[] = sortedTerms.map(({ record, term }) => {
+      const subjects = Object.values(record.subjects ?? {}) as StoredSubjectRecord[]
+      let termTotal = 0
+      let subjectCount = 0
+      let positionSum = 0
+      let positionCount = 0
+
+      const mappedSubjects = subjects.map((subject) => {
+        const ca1 = toFiniteNumber(subject.ca1)
+        const ca2 = toFiniteNumber(subject.ca2)
+        const assignment = toFiniteNumber(subject.assignment)
+        const exam = toFiniteNumber(subject.exam)
+        const total = Number.isFinite(subject.total)
+          ? Number(subject.total)
+          : Math.round(ca1 + ca2 + assignment + exam)
+        const grade = subject.grade && subject.grade.trim().length > 0
+          ? subject.grade
+          : this.calculateGradeFromTotal(total)
+        const subjectPosition = parsePosition(subject.position)
+
+        termTotal += total
+        subjectCount += 1
+        if (typeof subjectPosition === "number") {
+          positionSum += subjectPosition
+          positionCount += 1
+        }
+
+        const termIndex = resolveTermIndex(term)
+        const history = subjectHistory.get(subject.subject) ?? []
+        history.push({ termIndex, total })
+        subjectHistory.set(subject.subject, history)
+
+        return {
+          name: subject.subject,
+          ca1,
+          ca2,
+          assignment,
+          exam,
+          total,
+          grade,
+          position: subjectPosition ?? null,
+        }
+      })
+
+      const overallAverage = subjectCount > 0 ? Math.round(termTotal / subjectCount) : 0
+      const overallPosition =
+        parsePosition(record.overallPosition) ??
+        (positionCount > 0 ? Math.max(1, Math.round(positionSum / positionCount)) : 1)
+      const totalStudents =
+        parsePosition(record.numberInClass) ??
+        (positionCount > 0 ? Math.max(positionCount, overallPosition) : Math.max(1, subjectCount))
+
+      return {
+        term,
+        session: record.session ?? sessionKey,
+        subjects: mappedSubjects,
+        overallAverage,
+        overallGrade: this.calculateGradeFromTotal(overallAverage),
+        classPosition: overallPosition,
+        totalStudents,
+      }
+    })
+
+    const validTerms = terms.filter((term) => term.subjects.length > 0 || term.overallAverage > 0)
+
+    if (validTerms.length === 0) {
+      return null
+    }
+
+    const cumulativeAverage = Math.round(
+      validTerms.reduce((sum, term) => sum + term.overallAverage, 0) / validTerms.length,
+    )
+    const cumulativePosition = Math.max(
+      1,
+      Math.round(validTerms.reduce((sum, term) => sum + term.classPosition, 0) / validTerms.length),
+    )
+    const totalStudents =
+      validTerms.reduce((max, term) => Math.max(max, term.totalStudents), 0) ||
+      parsePosition(studentEntries[0]?.numberInClass) ||
+      validTerms.length
+
+    const subjectAverages: CumulativeSubjectAverage[] = Array.from(subjectHistory.entries())
+      .map(([name, history]) => {
+        const sortedHistory = history.sort((a, b) => a.termIndex - b.termIndex)
+        const average = Math.round(sortedHistory.reduce((sum, item) => sum + item.total, 0) / sortedHistory.length)
+        const trendDelta =
+          sortedHistory.length > 1
+            ? sortedHistory[sortedHistory.length - 1].total - sortedHistory[0].total
+            : 0
+        const trend: "up" | "down" | "stable" = trendDelta > 0 ? "up" : trendDelta < 0 ? "down" : "stable"
+
+        return {
+          name,
+          average,
+          grade: this.calculateGradeFromTotal(average),
+          trend,
+        }
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+
+    const referenceRecord = sortedTerms[0]?.record ?? studentEntries[0]
+
+    return {
+      studentId,
+      studentName: referenceRecord?.studentName ?? "",
+      className: referenceRecord?.className ?? "",
+      session: sessionKey,
+      terms: validTerms,
+      cumulativeAverage,
+      cumulativeGrade: this.calculateGradeFromTotal(cumulativeAverage),
+      cumulativePosition,
+      totalStudents,
+      subjectAverages,
+      updatedAt: new Date().toISOString(),
+    }
   }
 
   private updateCumulativeReportsForStudents(studentIds: string[], session: string): void {
@@ -2644,12 +2837,25 @@ class DatabaseManager {
       return null
     }
 
+    const persistAndReturn = (record: StudentCumulativeReportRecord | null) => {
+      if (!record) {
+        return null
+      }
+
+      const existing = this.ensureCumulativeReports()
+      const filtered = existing.filter(
+        (entry) => entry.studentId !== record.studentId || entry.session !== record.session,
+      )
+      this.persistCumulativeReports([...filtered, record])
+      return this.deepClone(record)
+    }
+
     const results = this.ensureExamResults().filter(
       (result) => result.studentId === studentId && (!session || result.session === session),
     )
 
     if (results.length === 0) {
-      return null
+      return persistAndReturn(this.buildCumulativeReportFromStoredMarks(studentId, session))
     }
 
     if (session) {
@@ -2662,12 +2868,15 @@ class DatabaseManager {
     const reports = this.ensureCumulativeReports().filter((report) => report.studentId === studentId)
 
     if (reports.length === 0) {
-      return null
+      return persistAndReturn(this.buildCumulativeReportFromStoredMarks(studentId, session))
     }
 
     if (session) {
       const match = reports.find((report) => report.session === session)
-      return match ? this.deepClone(match) : null
+      if (match) {
+        return this.deepClone(match)
+      }
+      return persistAndReturn(this.buildCumulativeReportFromStoredMarks(studentId, session))
     }
 
     const sorted = reports.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
