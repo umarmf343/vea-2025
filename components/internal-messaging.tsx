@@ -338,6 +338,8 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
     return [] as Participant[]
   }, [activeConversationParticipants, directory, recipientId])
 
+  const hasComposerParticipants = composerParticipants.length > 0
+
   const editingMessage = useMemo(() => {
     if (!editingMessageId) {
       return null
@@ -1075,9 +1077,9 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
               <ScrollArea className="h-[360px] pr-2">
                 <div className="flex flex-col divide-y divide-emerald-100/70">
                   {filteredConversations.length === 0 && (
-                    <div className="p-6 text-center text-sm text-muted-foreground">
+                    <p className="text-center text-sm text-muted-foreground">
                       No conversations yet. Start a chat below.
-                    </div>
+                    </p>
                   )}
                   {filteredConversations.map((conversation) => {
                     const others = conversation.participants.filter((participant) => participant.id !== currentUser.id)
@@ -1127,37 +1129,42 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
 
           <div className="flex min-h-[360px] flex-col gap-5">
             <div className="rounded-3xl border border-white/70 bg-white/70 shadow-[0_28px_80px_-48px_rgba(15,118,110,0.65)] backdrop-blur-sm">
-              <div className="flex items-center justify-between border-b border-white/60 px-6 py-4">
-                <div>
-                  <p className="text-base font-semibold text-emerald-950">
-                    {composerParticipants.length > 0
-                      ? composerParticipants.map((participant) => participant.name).join(", ")
-                      : "Select a recipient"}
-                  </p>
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
-                    {composerParticipants.length > 0
-                      ? composerParticipants.map((participant) => participant.role).join(", ")
-                      : "Start a new conversation"}
-                  </p>
-                </div>
-                {activeTypingIndicators.length > 0 && (
-                  <div className="flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50/70 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-emerald-700">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    {activeTypingIndicators[0].senderName} is typing…
-                  </div>
-                )}
-              </div>
-              <ScrollArea className="h-[280px] px-6 py-4">
-                <div className="flex flex-col gap-4">
-                  {activeConversationMessages.length === 0 && (
-                    <div className="rounded-2xl border border-dashed border-emerald-200/70 bg-emerald-50/50 p-8 text-center text-sm text-emerald-900/70">
-                      <p className="text-base font-semibold">No messages yet</p>
-                      <p className="text-sm">Use the composer below to start chatting.</p>
+              {hasComposerParticipants ? (
+                <>
+                  <div className="flex items-center justify-between border-b border-white/60 px-6 py-4">
+                    <div>
+                      <p className="text-base font-semibold text-emerald-950">
+                        {composerParticipants.map((participant) => participant.name).join(", ")}
+                      </p>
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+                        {composerParticipants.map((participant) => participant.role).join(", ")}
+                      </p>
                     </div>
-                  )}
-                  {activeConversationMessages.map((message) => renderMessageBubble(message))}
+                    {activeTypingIndicators.length > 0 && (
+                      <div className="flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50/70 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-emerald-700">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        {activeTypingIndicators[0].senderName} is typing…
+                      </div>
+                    )}
+                  </div>
+                  <ScrollArea className="h-[280px] px-6 py-4">
+                    <div className="flex flex-col gap-4">
+                      {activeConversationMessages.length === 0 && (
+                        <div className="space-y-1 text-center text-sm text-emerald-900/70">
+                          <p className="text-base font-semibold">No messages yet</p>
+                          <p className="text-sm">Use the composer below to start chatting.</p>
+                        </div>
+                      )}
+                      {activeConversationMessages.map((message) => renderMessageBubble(message))}
+                    </div>
+                  </ScrollArea>
+                </>
+              ) : (
+                <div className="px-6 py-12 text-center text-emerald-900/70">
+                  <p className="text-base font-semibold">Select a recipient</p>
+                  <p className="text-sm">Start a new conversation</p>
                 </div>
-              </ScrollArea>
+              )}
             </div>
 
             <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-[0_28px_80px_-48px_rgba(15,118,110,0.65)] backdrop-blur-sm">
