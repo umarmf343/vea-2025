@@ -1150,7 +1150,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
               <ScrollArea className="h-[280px] px-6 py-4">
                 <div className="flex flex-col gap-4">
                   {activeConversationMessages.length === 0 && (
-                    <div className="rounded-2xl border border-dashed border-emerald-200/70 bg-emerald-50/50 p-8 text-center text-sm text-emerald-900/70">
+                    <div className="space-y-1 text-center text-sm text-emerald-900/70">
                       <p className="text-base font-semibold">No messages yet</p>
                       <p className="text-sm">Use the composer below to start chatting.</p>
                     </div>
