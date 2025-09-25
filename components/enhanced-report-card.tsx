@@ -14,6 +14,7 @@ import {
 } from "@/lib/report-card-constants"
 import type { RawReportCardData } from "@/lib/report-card-types"
 import { deriveGradeFromScore } from "@/lib/grade-utils"
+import { getHtmlToImage } from "@/lib/html-to-image-loader"
 import { safeStorage } from "@/lib/safe-storage"
 
 interface SubjectScore {
@@ -744,7 +745,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
     try {
       setIsDownloading(true)
-      const { toPng } = await import("html-to-image")
+      const { toPng } = await getHtmlToImage()
       const dataUrl = await toPng(target, {
         backgroundColor: "#ffffff",
         pixelRatio: 2,
@@ -752,7 +753,10 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         filter: (element) => !element?.classList?.contains("print:hidden"),
       })
 
-      const doc = typeof document === "undefined" ? null : document
+      const doc =
+        typeof globalThis === "undefined" || !("document" in globalThis)
+          ? null
+          : (globalThis as Window & typeof globalThis).document
       if (!doc) {
         throw new Error("Document context is not available")
       }
