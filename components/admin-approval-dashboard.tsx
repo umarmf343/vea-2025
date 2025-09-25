@@ -587,14 +587,14 @@ export function AdminApprovalDashboard() {
 
       setRecords(updated)
       toast({
-        title: "Report published",
-        description: `${publishRecord.studentName}'s results are now available to selected parents.`,
+        title: "Report published successfully",
+        description: `${publishRecord.studentName}'s report card is now visible to the selected parents.`,
       })
       closePublishDialog()
     } catch (error) {
       toast({
         variant: "destructive",
-        title: "Unable to publish",
+        title: "Publish failed",
         description: error instanceof Error ? error.message : "Please try again.",
       })
     } finally {

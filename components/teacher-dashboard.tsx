@@ -301,6 +301,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [selectedSession, setSelectedSession] = useState("2024/2025")
   const [workflowRecords, setWorkflowRecords] = useState<ReportCardWorkflowRecord[]>([])
   const [isSubmittingForApproval, setIsSubmittingForApproval] = useState(false)
+  const [isSavingDraft, setIsSavingDraft] = useState(false)
   const [isCancellingSubmission, setIsCancellingSubmission] = useState(false)
   const [additionalData, setAdditionalData] = useState(() => ({
     classPositions: {
@@ -1397,6 +1398,50 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   const currentStatus = useMemo(() => getWorkflowSummary(currentWorkflowRecords), [currentWorkflowRecords])
 
+  const handleSaveDraft = useCallback(async () => {
+    if (!selectedClass || !selectedSubject) {
+      toast({
+        variant: "destructive",
+        title: "Select class & subject",
+        description: "Choose a class and subject before saving your progress.",
+      })
+      return
+    }
+
+    if (!marksData.length) {
+      toast({
+        variant: "destructive",
+        title: "No student results",
+        description: "Add student scores before saving progress.",
+      })
+      return
+    }
+
+    try {
+      setIsSavingDraft(true)
+      await Promise.resolve(persistAcademicMarksToStorage())
+      toast({
+        title: "Progress saved",
+        description: "Your report card entries are stored until you're ready to submit for approval.",
+      })
+    } catch (error) {
+      logger.error("Failed to save report card draft", { error })
+      toast({
+        variant: "destructive",
+        title: "Unable to save progress",
+        description: error instanceof Error ? error.message : "Please try again.",
+      })
+    } finally {
+      setIsSavingDraft(false)
+    }
+  }, [
+    marksData.length,
+    persistAcademicMarksToStorage,
+    selectedClass,
+    selectedSubject,
+    toast,
+  ])
+
   const handleSubmitForApproval = useCallback(async () => {
     if (!selectedClass || !selectedSubject) {
       toast({
@@ -2193,9 +2238,22 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                   )}
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button
+                      variant="outline"
+                      onClick={() => void handleSaveDraft()}
+                      disabled={isSavingDraft || isSubmittingForApproval}
+                    >
+                      {isSavingDraft ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      Save Progress
+                    </Button>
+                    <Button
                       className="bg-[#2d682d] hover:bg-[#1f4a1f] text-white"
                       onClick={() => void handleSubmitForApproval()}
                       disabled={
+                        isSavingDraft ||
                         isSubmittingForApproval ||
                         currentStatus.status === "pending" ||
                         currentStatus.status === "approved"
@@ -2216,7 +2274,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                       <Button
                         variant="outline"
                         onClick={() => void handleSubmitForApproval()}
-                        disabled={isSubmittingForApproval}
+                        disabled={isSavingDraft || isSubmittingForApproval}
                       >
                         Resubmit to Admin
                       </Button>
