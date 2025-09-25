@@ -39,7 +39,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
 import { dbManager } from "@/lib/database-manager"
 import { safeStorage } from "@/lib/safe-storage"
@@ -62,7 +61,6 @@ import { UserManagement } from "@/components/admin/user-management"
 import { SchoolCalendarApprovalPanel } from "@/components/school-calendar-approval"
 import { TutorialLink } from "@/components/tutorial-link"
 import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
-import { EnhancedReportCard } from "@/components/enhanced-report-card"
 import {
   BarChart3,
   Calendar,
@@ -82,15 +80,6 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import {
-  grantReportCardAccess,
-  REPORT_CARD_ACCESS_EVENT,
-  type ReportCardAccessRecord,
-  revokeReportCardAccess,
-  syncReportCardAccess,
-} from "@/lib/report-card-access"
-import { mapReportCardRecordToRaw } from "@/lib/report-card-transformers"
-import type { RawReportCardData } from "@/lib/report-card-types"
 
 interface SystemMetrics {
   serverStatus: string
@@ -107,7 +96,6 @@ type DashboardTab =
   | "overview"
   | "branding"
   | "messages"
-  | "reportcards"
   | "approval"
   | "receipts"
   | "students"
@@ -581,28 +569,6 @@ export default function SuperAdminDashboard() {
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null)
 
   const [reportCards, setReportCards] = useState<ReportCardRow[]>([])
-  const [accessRecords, setAccessRecords] = useState<ReportCardAccessRecord[]>([])
-  const [selectedReportCard, setSelectedReportCard] = useState<ReportCardRow | null>(null)
-  const [reportDialogOpen, setReportDialogOpen] = useState(false)
-  const [reportRemarks, setReportRemarks] = useState({ classTeacherRemark: "", headTeacherRemark: "" })
-  const [reportToDelete, setReportToDelete] = useState<ReportCardRow | null>(null)
-  const [isSavingReport, setIsSavingReport] = useState(false)
-
-  const reportPreviewData = useMemo<RawReportCardData | null>(() => {
-    if (!selectedReportCard) {
-      return null
-    }
-
-    const base = mapReportCardRecordToRaw(selectedReportCard)
-    return {
-      ...base,
-      remarks: {
-        classTeacher: reportRemarks.classTeacherRemark || base.remarks?.classTeacher,
-        headTeacher: reportRemarks.headTeacherRemark || base.remarks?.headTeacher,
-      },
-      classTeacherRemarks: reportRemarks.classTeacherRemark || base.classTeacherRemarks,
-    }
-  }, [selectedReportCard, reportRemarks.classTeacherRemark, reportRemarks.headTeacherRemark])
 
   const refreshUsers = useCallback(async () => {
     const data = await fetchJson<{ users: StoredUser[] }>("/api/users")
@@ -760,36 +726,6 @@ export default function SuperAdminDashboard() {
     }
   }, [refreshPayments])
 
-  useEffect(() => {
-    if (!systemSettings.currentTerm || !systemSettings.academicYear) {
-      return
-    }
-
-    const records = syncReportCardAccess(systemSettings.currentTerm, systemSettings.academicYear)
-    setAccessRecords(records)
-  }, [systemSettings.academicYear, systemSettings.currentTerm])
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return
-    }
-
-    const handleUpdate = (event: Event) => {
-      const detail = (event as CustomEvent<{ records?: ReportCardAccessRecord[] }>).detail
-      const incoming = Array.isArray(detail?.records) ? detail.records : []
-      const filtered = incoming.filter(
-        (record) =>
-          record.term === systemSettings.currentTerm && record.session === systemSettings.academicYear,
-      )
-      setAccessRecords(filtered)
-    }
-
-    window.addEventListener(REPORT_CARD_ACCESS_EVENT, handleUpdate as EventListener)
-    return () => {
-      window.removeEventListener(REPORT_CARD_ACCESS_EVENT, handleUpdate as EventListener)
-    }
-  }, [systemSettings.academicYear, systemSettings.currentTerm])
-
   const sortedPayments = useMemo(() => {
     const getTime = (value?: string | null) => {
       if (!value) {
@@ -855,64 +791,6 @@ export default function SuperAdminDashboard() {
     [reportCards],
   )
 
-  const studentLookup = useMemo(() => {
-    const map = new Map<string, StudentRow>()
-    students.forEach((student) => {
-      map.set(student.id, student)
-      map.set(student.admissionNumber, student)
-      map.set(student.parentEmail, student)
-    })
-    return map
-  }, [students])
-
-  const parentAccessRows = useMemo(() => {
-    return users
-      .filter((user) => user.role === "parent")
-      .flatMap((parent) => {
-        const linkedIds = Array.isArray(parent.studentIds) && parent.studentIds.length
-          ? parent.studentIds
-          : typeof parent.metadata?.linkedStudentId === "string"
-            ? [String(parent.metadata.linkedStudentId)]
-            : []
-
-        if (linkedIds.length === 0) {
-          return [
-            {
-              key: `${parent.id}::none`,
-              parentId: parent.id,
-              parentName: parent.name,
-              parentEmail: parent.email,
-              studentId: null as string | null,
-              studentLabel: "No linked student",
-              hasAccess: false,
-              grantedBy: null as ReportCardAccessRecord["grantedBy"] | null,
-              disabled: true,
-            },
-          ]
-        }
-
-        return linkedIds.map((studentId) => {
-          const student = studentLookup.get(studentId)
-          const record = accessRecords.find(
-            (entry) => entry.parentId === parent.id && entry.studentId === studentId,
-          )
-
-          return {
-            key: `${parent.id}::${studentId}`,
-            parentId: parent.id,
-            parentName: parent.name,
-            parentEmail: parent.email,
-            studentId,
-            studentLabel: student ? `${student.name} (${student.className})` : studentId,
-            hasAccess: Boolean(record),
-            grantedBy: record?.grantedBy ?? null,
-            disabled: false,
-          }
-        })
-      })
-      .sort((a, b) => a.parentName.localeCompare(b.parentName))
-  }, [accessRecords, studentLookup, users])
-
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true)
     try {
@@ -925,57 +803,6 @@ export default function SuperAdminDashboard() {
       setIsRefreshing(false)
     }
   }, [refreshAll, toast])
-
-  const handleManualAccessChange = useCallback(
-    (parentId: string, studentId: string | null, enable: boolean) => {
-      if (!studentId) {
-        toast({
-          title: "No linked student",
-          description: "Assign a student to this parent before managing access.",
-          variant: "destructive",
-        })
-        return
-      }
-
-      if (!systemSettings.currentTerm || !systemSettings.academicYear) {
-        toast({
-          title: "Unable to update access",
-          description: "Set the current term and academic session in system settings first.",
-          variant: "destructive",
-        })
-        return
-      }
-
-      try {
-        const updated = enable
-          ? grantReportCardAccess({
-              parentId,
-              studentId,
-              term: systemSettings.currentTerm,
-              session: systemSettings.academicYear,
-              grantedBy: "manual",
-            })
-          : revokeReportCardAccess({
-              parentId,
-              studentId,
-              term: systemSettings.currentTerm,
-              session: systemSettings.academicYear,
-            })
-        setAccessRecords(updated)
-
-        toast({
-          title: enable ? "Access granted" : "Access revoked",
-          description: enable
-            ? "Parent can now view report cards for the current term."
-            : "Parent access has been removed for this term.",
-        })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to update access"
-        toast({ title: "Unable to update access", description: message, variant: "destructive" })
-      }
-    },
-    [systemSettings.academicYear, systemSettings.currentTerm, toast],
-  )
 
   const handleSaveBranding = useCallback(async () => {
     setIsSavingBranding(true)
@@ -1173,64 +1000,6 @@ export default function SuperAdminDashboard() {
     }
   }, [classToDelete, refreshClasses, toast])
 
-  const handleOpenReportCard = useCallback((report: ReportCardRow) => {
-    setSelectedReportCard(report)
-    setReportRemarks({
-      classTeacherRemark: report.classTeacherRemark ?? "",
-      headTeacherRemark: report.headTeacherRemark ?? "",
-    })
-    setReportDialogOpen(true)
-  }, [])
-
-  const handleSaveReportCard = useCallback(async () => {
-    if (!selectedReportCard) {
-      return
-    }
-
-    setIsSavingReport(true)
-    try {
-      await fetchJson("/api/report-cards", {
-        method: "PUT",
-        body: JSON.stringify({
-          id: selectedReportCard.id,
-          studentId: selectedReportCard.studentId,
-          studentName: selectedReportCard.studentName,
-          className: selectedReportCard.className,
-          term: selectedReportCard.term,
-          session: selectedReportCard.session,
-          subjects: selectedReportCard.subjects,
-          classTeacherRemark: reportRemarks.classTeacherRemark,
-          headTeacherRemark: reportRemarks.headTeacherRemark,
-        }),
-      })
-
-      toast({ title: "Report card updated" })
-      await refreshReportCards()
-      setReportDialogOpen(false)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to update report card"
-      toast({ title: "Update failed", description: message, variant: "destructive" })
-    } finally {
-      setIsSavingReport(false)
-    }
-  }, [refreshReportCards, reportRemarks.classTeacherRemark, reportRemarks.headTeacherRemark, selectedReportCard, toast])
-
-  const handleDeleteReport = useCallback(async () => {
-    if (!reportToDelete) {
-      return
-    }
-
-    try {
-      await fetchJson(`/api/report-cards?id=${encodeURIComponent(reportToDelete.id)}`, { method: "DELETE" })
-      toast({ title: "Report card removed" })
-      setReportToDelete(null)
-      await refreshReportCards()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to delete report card"
-      toast({ title: "Deletion failed", description: message, variant: "destructive" })
-    }
-  }, [refreshReportCards, reportToDelete, toast])
-
   return (
     <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1252,11 +1021,10 @@ export default function SuperAdminDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DashboardTab)}>
-        <TabsList className="grid w-full grid-cols-10">
+        <TabsList className="grid w-full grid-cols-9">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="branding">Branding</TabsTrigger>
           <TabsTrigger value="messages">Messages</TabsTrigger>
-          <TabsTrigger value="reportcards">Report Cards</TabsTrigger>
           <TabsTrigger value="approval">Report Approval</TabsTrigger>
           <TabsTrigger value="receipts">Payments</TabsTrigger>
           <TabsTrigger value="students">Students</TabsTrigger>
@@ -1681,145 +1449,6 @@ export default function SuperAdminDashboard() {
           <InternalMessaging currentUser={{ id: "super-admin", name: "Super Admin", role: "super_admin" }} />
         </TabsContent>
 
-        <TabsContent value="reportcards" className="space-y-6">
-          <Card className="border-[#2d682d]/20">
-            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-[#2d682d]" />
-                  Manual Report Card Access
-                </CardTitle>
-                <CardDescription>
-                  Grant temporary access to parents who completed offline payments. Access resets automatically when the
-                  term changes.
-                </CardDescription>
-              </div>
-              <Badge variant="outline" className="border-[#2d682d]/30 text-[#2d682d]">
-                {systemSettings.currentTerm} • {systemSettings.academicYear}
-              </Badge>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Parent</TableHead>
-                    <TableHead>Linked Student</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Manual Override</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {parentAccessRows.length ? (
-                    parentAccessRows.map((row) => (
-                      <TableRow key={row.key}>
-                        <TableCell>
-                          <div className="font-medium text-[#1f3d1f]">{row.parentName}</div>
-                          <div className="text-xs text-gray-500">{row.parentEmail}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{row.studentLabel}</div>
-                          {row.disabled && (
-                            <p className="text-xs text-red-500">Link a student to enable overrides.</p>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {row.hasAccess ? (
-                            <Badge
-                              variant={row.grantedBy === "manual" ? "default" : "secondary"}
-                              className={row.grantedBy === "manual" ? "bg-[#2d682d]/10 text-[#2d682d]" : ""}
-                            >
-                              {row.grantedBy === "manual" ? "Manual" : "Payment"} access
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="border-gray-300 text-gray-600">
-                              No access
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-3">
-                            {row.grantedBy && (
-                              <span className="text-xs text-gray-500">
-                                {row.grantedBy === "manual" ? "Super admin" : "Payment"} granted
-                              </span>
-                            )}
-                            <Switch
-                              checked={row.hasAccess}
-                              onCheckedChange={(checked) =>
-                                handleManualAccessChange(row.parentId, row.studentId, checked)
-                              }
-                              disabled={row.disabled}
-                            />
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-sm text-gray-500">
-                        No parent accounts available yet.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <CardTitle>Academic Records</CardTitle>
-                <CardDescription>All generated report cards across the school.</CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Student</TableHead>
-                    <TableHead>Class</TableHead>
-                    <TableHead>Term</TableHead>
-                    <TableHead className="text-right">Average</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reportCards.length ? (
-                    sortedReportCards.map((report) => (
-                      <TableRow key={report.id}>
-                        <TableCell>
-                          <div className="font-medium">{report.studentName}</div>
-                          <div className="text-xs text-gray-500">{formatDate(report.updatedAt)}</div>
-                        </TableCell>
-                        <TableCell>{report.className}</TableCell>
-                        <TableCell>
-                          {report.term} ({report.session})
-                        </TableCell>
-                        <TableCell className="text-right">{calculateReportAverage(report)}%</TableCell>
-                        <TableCell className="flex justify-end gap-2">
-                          <Button variant="outline" size="sm" onClick={() => handleOpenReportCard(report)}>
-                            View
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setReportToDelete(report)}>
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-sm text-gray-500">
-                        No report cards available yet.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         <TabsContent value="approval" className="space-y-6">
           <SchoolCalendarApprovalPanel />
           <AdminApprovalDashboard />
@@ -2162,64 +1791,6 @@ export default function SuperAdminDashboard() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
-        <DialogContent className="max-w-6xl">
-          <DialogHeader>
-            <DialogTitle>Report Card Overview</DialogTitle>
-            <DialogDescription>
-              {selectedReportCard?.studentName} • {selectedReportCard?.className} • {selectedReportCard?.term} ({selectedReportCard?.session})
-            </DialogDescription>
-          </DialogHeader>
-          {reportPreviewData ? (
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-              <div className="max-h-[70vh] overflow-y-auto rounded-lg border bg-white p-2 shadow-sm">
-                <EnhancedReportCard data={reportPreviewData} />
-              </div>
-              <div className="flex flex-col gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="report-class-remark">Class Teacher Remark</Label>
-                  <Textarea
-                    id="report-class-remark"
-                    rows={4}
-                    value={reportRemarks.classTeacherRemark}
-                    onChange={(event) =>
-                      setReportRemarks((prev) => ({ ...prev, classTeacherRemark: event.target.value }))
-                    }
-                    placeholder="Enter the class teacher's overall remark..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="report-head-remark">Head Teacher Remark</Label>
-                  <Textarea
-                    id="report-head-remark"
-                    rows={4}
-                    value={reportRemarks.headTeacherRemark}
-                    onChange={(event) =>
-                      setReportRemarks((prev) => ({ ...prev, headTeacherRemark: event.target.value }))
-                    }
-                    placeholder="Enter the head teacher's remark that will appear on the final report."
-                  />
-                </div>
-                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  Customize the remarks to match the school’s tone before publishing this report card to parents.
-                </div>
-              </div>
-            </div>
-          ) : (
-            <p>No report selected.</p>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReportDialogOpen(false)}>
-              Close
-            </Button>
-            <Button onClick={handleSaveReportCard} disabled={isSavingReport}>
-              <Save className={cn("mr-2 h-4 w-4", isSavingReport && "animate-spin")} />
-              Save Remarks
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <AlertDialog open={!!classToDelete} onOpenChange={(open) => !open && setClassToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -2237,22 +1808,6 @@ export default function SuperAdminDashboard() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={!!reportToDelete} onOpenChange={(open) => !open && setReportToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete report card?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Parents and teachers will no longer be able to view this result until it is regenerated.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteReport} className="bg-red-600 hover:bg-red-600/90">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }
