@@ -1801,16 +1801,20 @@ function ParentDashboard({ user }: { user: User }) {
   const resolveApprovalStatus = useCallback(() => {
     try {
       const approvedReports = JSON.parse(safeStorage.getItem("approvedReports") || "[]") as string[]
+      const releasedCumulative = JSON.parse(
+        safeStorage.getItem("releasedCumulativeReports") || "[]",
+      ) as string[]
       const approvalKeys = [studentData.id, linkedStudentId, "1"].filter(
         (value, index, array) => value && array.indexOf(value) === index,
       )
 
       return {
         isApproved: approvalKeys.some((key) => approvedReports.includes(key)),
+        hasCumulative: approvalKeys.some((key) => releasedCumulative.includes(key)),
       }
     } catch (error) {
       logger.error("Unable to resolve report approval state", { error })
-      return { isApproved: false }
+      return { isApproved: false, hasCumulative: false }
     }
   }, [linkedStudentId, studentData.id])
 
@@ -1956,6 +1960,7 @@ function ParentDashboard({ user }: { user: User }) {
   }
 
   const accessStatus = getAccessStatus()
+  const approvalStatus = resolveApprovalStatus()
 
   return (
     <div className="space-y-6">
@@ -2064,6 +2069,7 @@ function ParentDashboard({ user }: { user: User }) {
                   hasAccess={hasAccess || false}
                   studentId={studentData.id}
                   className={studentData.class}
+                  isReleased={approvalStatus.hasCumulative}
                 >
                   <Button
                     className={cn(
@@ -2078,14 +2084,21 @@ function ParentDashboard({ user }: { user: User }) {
                       event.preventDefault()
                       event.stopPropagation()
 
-                      const { isApproved } = resolveApprovalStatus()
+                      const { isApproved, hasCumulative } = resolveApprovalStatus()
                       setAccessNotice(
                         isApproved
-                          ? {
-                              title: "Cumulative report unavailable",
-                              description:
-                                "The cumulative performance summary hasn't been shared to your dashboard yet. Please reach out to the school for an update.",
-                            }
+                          ? hasCumulative
+                            ? {
+                                title: "Unlock with payment",
+                                description:
+                                  "Please complete the school fee payment to view the cumulative performance summary.",
+                                showPayment: true,
+                              }
+                            : {
+                                title: "Cumulative report unavailable",
+                                description:
+                                  "The cumulative performance summary hasn't been shared to your dashboard yet. Please reach out to the school for an update.",
+                              }
                           : {
                               title: "Cumulative report locked",
                               description:

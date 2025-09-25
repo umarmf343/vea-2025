@@ -38,6 +38,7 @@ import {
   Download,
   Trophy,
   CheckCircle,
+  RefreshCw,
 } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
@@ -73,6 +74,7 @@ import {
   getWorkflowSummary,
   resetReportCardSubmission,
   submitReportCardsForApproval,
+  type ReportCardCumulativeSummary,
   type ReportCardWorkflowRecord,
 } from "@/lib/report-card-workflow"
 import type { ReportCardRecord, ReportCardSubjectRecord } from "@/lib/database"
@@ -392,6 +394,10 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [teacherTimetable, setTeacherTimetable] = useState<TeacherTimetableSlot[]>([])
   const [isTeacherTimetableLoading, setIsTeacherTimetableLoading] = useState(true)
   const [isSyncingGrades, setIsSyncingGrades] = useState(false)
+  const [cumulativeSummaries, setCumulativeSummaries] = useState<
+    Record<string, ReportCardCumulativeSummary>
+  >({})
+  const [isGeneratingCumulative, setIsGeneratingCumulative] = useState(false)
 
   const normalizedTermLabel = useMemo(() => mapTermKeyToLabel(selectedTerm), [selectedTerm])
 
@@ -1125,6 +1131,87 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     ],
   )
 
+  const generateCumulativeSummaries = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      if (marksData.length === 0) {
+        setCumulativeSummaries({})
+        if (!options.silent) {
+          toast({
+            title: "No students loaded",
+            description: "Add students to the grade sheet before generating cumulative summaries.",
+          })
+        }
+        return {}
+      }
+
+      try {
+        setIsGeneratingCumulative(true)
+        const summaries = await Promise.all(
+          marksData.map(async (student) => {
+            try {
+              const report = await dbManager.getStudentCumulativeReport(
+                String(student.studentId),
+                selectedSession,
+              )
+              if (!report) {
+                return { studentId: String(student.studentId), summary: undefined }
+              }
+              const summary: ReportCardCumulativeSummary = {
+                average: report.cumulativeAverage,
+                grade: report.cumulativeGrade,
+                position: report.cumulativePosition,
+                totalStudents: report.totalStudents ?? marksData.length,
+              }
+              return { studentId: String(student.studentId), summary }
+            } catch (error) {
+              logger.warn("Failed to resolve cumulative summary", {
+                error,
+                studentId: student.studentId,
+              })
+              return { studentId: String(student.studentId), summary: undefined }
+            }
+          }),
+        )
+
+        const nextSummaries: Record<string, ReportCardCumulativeSummary> = {}
+        let generatedCount = 0
+        summaries.forEach(({ studentId, summary }) => {
+          if (summary) {
+            nextSummaries[studentId] = summary
+            generatedCount += 1
+          }
+        })
+
+        setCumulativeSummaries(nextSummaries)
+
+        if (!options.silent) {
+          toast({
+            title: generatedCount > 0 ? "Cumulative summary ready" : "Cumulative summary pending",
+            description:
+              generatedCount > 0
+                ? `Updated cumulative snapshots for ${generatedCount} ${generatedCount === 1 ? "student" : "students"}.`
+                : "No cumulative data is available yet. Sync exam results to generate summaries.",
+          })
+        }
+
+        return nextSummaries
+      } catch (error) {
+        logger.error("Failed to generate cumulative summaries", { error })
+        if (!options.silent) {
+          toast({
+            variant: "destructive",
+            title: "Unable to generate cumulative summary",
+            description: error instanceof Error ? error.message : "Please try again.",
+          })
+        }
+        return {}
+      } finally {
+        setIsGeneratingCumulative(false)
+      }
+    },
+    [marksData, selectedSession, toast],
+  )
+
   const handleSyncAcademicMarks = async () => {
     try {
       if (!selectedClass || !selectedSubject) {
@@ -1196,9 +1283,16 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       })
 
       await dbManager.saveExamResults(matchingExam.id, resultsPayload, { autoPublish: false })
+      const summaries = await generateCumulativeSummaries({ silent: true })
+      const generatedCount = Object.keys(summaries).length
+      const cumulativeMessage =
+        generatedCount > 0
+          ? `Cumulative snapshots updated for ${generatedCount} ${generatedCount === 1 ? "student" : "students"}.`
+          : "Cumulative summaries will refresh once the exam office confirms the remaining subject scores."
+
       toast({
         title: "Grades synced",
-        description: "Marks are now available in the admin Exam Management portal for consolidation.",
+        description: `Marks are now available in the admin Exam Management portal for consolidation. ${cumulativeMessage}`,
       })
     } catch (error) {
       logger.error("Failed to sync academic marks", { error })
@@ -1464,6 +1558,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     try {
       persistAcademicMarksToStorage()
       setIsSubmittingForApproval(true)
+      const cumulativeSnapshot = await generateCumulativeSummaries({ silent: true })
+      const generatedCount = Object.keys(cumulativeSnapshot).length
       const updated = submitReportCardsForApproval({
         teacherId: teacher.id,
         teacherName: teacher.name,
@@ -1475,12 +1571,16 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           id: student.studentId,
           name: student.studentName,
         })),
+        cumulativeSummaries: cumulativeSnapshot,
       })
 
       setWorkflowRecords(updated)
       toast({
         title: "Sent for approval",
-        description: "Admin has been notified to review this result batch.",
+        description:
+          generatedCount > 0
+            ? `Admin has been notified to review this result batch, including cumulative snapshots for ${generatedCount} ${generatedCount === 1 ? "student" : "students"}.`
+            : "Admin has been notified to review this result batch. Cumulative summaries will update after the exam office finalises other subjects.",
       })
     } catch (error) {
       logger.error("Failed to submit report cards for approval", { error })
@@ -1493,6 +1593,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       setIsSubmittingForApproval(false)
     }
   }, [
+    generateCumulativeSummaries,
     marksData,
     normalizedTermLabel,
     selectedClass,
@@ -2559,6 +2660,68 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                         </CardContent>
                       </Card>
                     </div>
+                    {marksData.length > 0 && (
+                      <Card className="mt-4">
+                        <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <CardTitle className="text-sm text-[#2d682d]">Cumulative Snapshots</CardTitle>
+                            <CardDescription className="text-xs text-gray-500">
+                              These summaries are bundled with your submission to help admins and parents review progress.
+                            </CardDescription>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="self-start md:self-auto"
+                            onClick={() => void generateCumulativeSummaries()}
+                            disabled={isGeneratingCumulative}
+                          >
+                            {isGeneratingCumulative ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                            )}
+                            {isGeneratingCumulative ? "Generating" : "Refresh"}
+                          </Button>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          {marksData.map((student) => {
+                            const summary = cumulativeSummaries[String(student.studentId)]
+                            return (
+                              <div
+                                key={student.studentId}
+                                className="flex flex-col gap-3 rounded-lg border border-dashed border-[#2d682d]/20 p-3 sm:flex-row sm:items-center sm:justify-between"
+                              >
+                                <div>
+                                  <p className="text-sm font-semibold text-[#2d682d]">{student.studentName}</p>
+                                  <p className="text-xs text-gray-500">ID: {student.studentId}</p>
+                                </div>
+                                {summary ? (
+                                  <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm">
+                                    <span className="font-medium text-[#2d682d]">{summary.average}% Avg</span>
+                                    <Badge variant="secondary" className="text-xs">
+                                      {summary.grade}
+                                    </Badge>
+                                    <span className="text-gray-600">
+                                      Position {summary.position}/{summary.totalStudents}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    {isGeneratingCumulative ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Clock className="h-4 w-4" />
+                                    )}
+                                    <span>Pending update</span>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </CardContent>
+                      </Card>
+                    )}
                   </TabsContent>
 
                   <TabsContent value="behavioral" className="space-y-4">

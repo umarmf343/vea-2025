@@ -332,9 +332,17 @@ interface CumulativeReportTriggerProps {
   studentId: string
   className: string
   session?: string
+  isReleased?: boolean
 }
 
-export function CumulativeReportTrigger({ children, hasAccess, studentId, className, session }: CumulativeReportTriggerProps) {
+export function CumulativeReportTrigger({
+  children,
+  hasAccess,
+  studentId,
+  className,
+  session,
+  isReleased,
+}: CumulativeReportTriggerProps) {
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
   const [data, setData] = useState<CumulativeReportData | null>(null)
@@ -386,8 +394,19 @@ export function CumulativeReportTrigger({ children, hasAccess, studentId, classN
     return <div>{children}</div>
   }
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen && isReleased === false) {
+      toast({
+        title: "Cumulative summary not published",
+        description: "The administrator hasn't released the cumulative report yet. Please check back later.",
+      })
+      return
+    }
+    setOpen(nextOpen)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{children}</DialogTrigger>
       {open && <CumulativeReport data={data} isLoading={isLoading} error={error} onRetry={fetchReport} />}
     </Dialog>

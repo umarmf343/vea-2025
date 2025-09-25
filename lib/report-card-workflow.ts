@@ -4,6 +4,13 @@ import { safeStorage } from "@/lib/safe-storage"
 
 export type ReportCardWorkflowStatus = "draft" | "pending" | "approved" | "revoked"
 
+export interface ReportCardCumulativeSummary {
+  average: number
+  grade: string
+  position: number
+  totalStudents: number
+}
+
 export interface ParentRecipientInfo {
   parentId: string
   name: string
@@ -28,6 +35,7 @@ export interface ReportCardWorkflowRecord {
   adminId?: string | null
   adminName?: string | null
   publishedTo?: ParentRecipientInfo[]
+  cumulativeSummary?: ReportCardCumulativeSummary
 }
 
 export interface SubmitReportCardPayload {
@@ -38,6 +46,7 @@ export interface SubmitReportCardPayload {
   term: string
   session: string
   students: Array<{ id: string | number; name: string }>
+  cumulativeSummaries?: Record<string, ReportCardCumulativeSummary | undefined>
 }
 
 export interface UpdateWorkflowStatusPayload {
@@ -60,6 +69,7 @@ export interface WorkflowSummary {
 }
 
 const STORAGE_KEY = "vea_report_card_workflow"
+const RELEASED_CUMULATIVE_KEY = "releasedCumulativeReports"
 export const REPORT_CARD_WORKFLOW_EVENT = "vea:report-card-workflow"
 
 const now = () => new Date().toISOString()
@@ -128,6 +138,7 @@ const syncApprovedReports = (records: ReportCardWorkflowRecord[]) => {
   try {
     const approved = records.filter((record) => record.status === "approved")
     const approvalKeys = new Set<string>()
+    const cumulativeKeys = new Set<string>()
     approved.forEach((record) => {
       approvalKeys.add(String(record.studentId))
       if (record.studentId && !Number.isNaN(Number.parseInt(record.studentId, 10))) {
@@ -136,9 +147,27 @@ const syncApprovedReports = (records: ReportCardWorkflowRecord[]) => {
       if (record.className) {
         approvalKeys.add(`${record.studentId}::${record.className}`)
       }
+      if (record.session) {
+        approvalKeys.add(`${record.studentId}::${record.session}`)
+      }
+
+      if (record.cumulativeSummary) {
+        cumulativeKeys.add(String(record.studentId))
+        if (record.session) {
+          cumulativeKeys.add(`${record.studentId}::${record.session}`)
+        }
+        if (record.className) {
+          cumulativeKeys.add(`${record.studentId}::${record.className}`)
+        }
+      }
     })
 
     safeStorage.setItem("approvedReports", JSON.stringify(Array.from(approvalKeys)))
+    if (cumulativeKeys.size > 0) {
+      safeStorage.setItem(RELEASED_CUMULATIVE_KEY, JSON.stringify(Array.from(cumulativeKeys)))
+    } else {
+      safeStorage.removeItem(RELEASED_CUMULATIVE_KEY)
+    }
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("Failed to sync approved report cache", error)
@@ -251,6 +280,8 @@ export const submitReportCardsForApproval = (payload: SubmitReportCardPayload): 
       adminId: existing?.adminId,
       adminName: existing?.adminName,
       publishedTo: existing?.publishedTo ?? [],
+      cumulativeSummary:
+        payload.cumulativeSummaries?.[studentId] ?? existing?.cumulativeSummary ?? undefined,
     }
   })
 

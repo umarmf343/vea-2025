@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Download, Check, X, Calendar, Clock, User, BookOpen, Loader2, Eye } from "lucide-react"
+import { Download, Check, X, Calendar, Clock, User, BookOpen, Loader2, Eye, Sparkles } from "lucide-react"
 import { safeStorage } from "@/lib/safe-storage"
 import { TutorialLink } from "@/components/tutorial-link"
 import {
@@ -588,7 +588,9 @@ export function AdminApprovalDashboard() {
       setRecords(updated)
       toast({
         title: "Report published successfully",
-        description: `${publishRecord.studentName}'s report card is now visible to the selected parents.`,
+        description: publishRecord.cumulativeSummary
+          ? `${publishRecord.studentName}'s report card and cumulative summary are now visible to the selected parents.`
+          : `${publishRecord.studentName}'s report card is now visible to the selected parents.`,
       })
       closePublishDialog()
     } catch (error) {
@@ -940,17 +942,37 @@ export function AdminApprovalDashboard() {
                         Revoke Access
                       </Button>
                     )}
-                    {record.status === "revoked" && (
-                      <Badge variant="outline" className="border-red-200 text-red-700 bg-red-50">
-                        Awaiting teacher updates
-                      </Badge>
-                    )}
+                  {record.status === "revoked" && (
+                    <Badge variant="outline" className="border-red-200 text-red-700 bg-red-50">
+                      Awaiting teacher updates
+                    </Badge>
+                  )}
+                </div>
+                {record.cumulativeSummary ? (
+                  <div className="mt-4 flex flex-col gap-2 rounded-md border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-900">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <Sparkles className="h-4 w-4" /> Cumulative Snapshot
+                    </div>
+                    <div className="text-xs sm:text-sm">
+                      Average: <span className="font-semibold">{record.cumulativeSummary.average}%</span> • Grade:
+                      <span className="font-semibold"> {record.cumulativeSummary.grade}</span> • Position:
+                      <span className="font-semibold">
+                        {" "}
+                        {record.cumulativeSummary.position}/{record.cumulativeSummary.totalStudents}
+                      </span>
+                    </div>
                   </div>
-                  {record.publishedTo && record.publishedTo.length > 0 ? (
-                    <div className="mt-4 rounded-md border border-green-100 bg-green-50 p-3 text-sm text-green-700">
-                      <p className="font-medium">Published to:</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {record.publishedTo.map((recipient) => (
+                ) : (
+                  <div className="mt-4 flex items-center gap-2 rounded-md border border-dashed border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                    <Clock className="h-4 w-4" /> Awaiting cumulative summary from the teacher. Ask them to sync exam results
+                    before approving.
+                  </div>
+                )}
+                {record.publishedTo && record.publishedTo.length > 0 ? (
+                  <div className="mt-4 rounded-md border border-green-100 bg-green-50 p-3 text-sm text-green-700">
+                    <p className="font-medium">Published to:</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {record.publishedTo.map((recipient) => (
                           <Badge
                             key={`${record.id}-${recipient.parentId}`}
                             variant="outline"
@@ -1011,6 +1033,19 @@ export function AdminApprovalDashboard() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {publishRecord?.cumulativeSummary ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                <p className="font-semibold">Cumulative summary will be shared with this report card.</p>
+                <p className="text-xs sm:text-sm">
+                  Average: <span className="font-semibold">{publishRecord.cumulativeSummary.average}%</span> • Grade:
+                  <span className="font-semibold"> {publishRecord.cumulativeSummary.grade}</span> • Position:
+                  <span className="font-semibold">
+                    {" "}
+                    {publishRecord.cumulativeSummary.position}/{publishRecord.cumulativeSummary.totalStudents}
+                  </span>
+                </p>
+              </div>
+            ) : null}
             {directoryError ? (
               <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                 {directoryError}
