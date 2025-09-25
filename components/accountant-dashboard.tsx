@@ -956,13 +956,40 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       </div>
 
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="payments">Payments</TabsTrigger>
-          <TabsTrigger value="receipts">Receipts</TabsTrigger>
-          <TabsTrigger value="fees">Fee Structure</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
-        </TabsList>
+        <div className="w-full overflow-x-auto">
+          <TabsList className="grid w-full min-w-max grid-cols-5 lg:grid-cols-10 bg-green-50 gap-1 p-1">
+            <TabsTrigger
+              value="overview"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Overview
+            </TabsTrigger>
+            <TabsTrigger
+              value="payments"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Payments
+            </TabsTrigger>
+            <TabsTrigger
+              value="receipts"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Receipts
+            </TabsTrigger>
+            <TabsTrigger
+              value="fees"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Fee Structure
+            </TabsTrigger>
+            <TabsTrigger
+              value="reports"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Reports
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
