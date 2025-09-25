@@ -2219,17 +2219,64 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
       {/* Main Content */}
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-        <TabsList className="grid w-full grid-cols-9">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="marks">Enter Marks</TabsTrigger>
-          <TabsTrigger value="assignments">Assignments</TabsTrigger>
-          <TabsTrigger value="students">Students</TabsTrigger>
-          <TabsTrigger value="timetable">Timetable</TabsTrigger>
-          <TabsTrigger value="materials">Materials</TabsTrigger>
-          <TabsTrigger value="noticeboard">Noticeboard</TabsTrigger>
-          <TabsTrigger value="messages">Messages</TabsTrigger>
-        </TabsList>
+        <div className="w-full overflow-x-auto">
+          <TabsList className="grid w-full min-w-max grid-cols-9 lg:grid-cols-16 bg-green-50 gap-1 p-1">
+            <TabsTrigger
+              value="overview"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Overview
+            </TabsTrigger>
+            <TabsTrigger
+              value="profile"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Profile
+            </TabsTrigger>
+            <TabsTrigger
+              value="marks"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Enter Marks
+            </TabsTrigger>
+            <TabsTrigger
+              value="assignments"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Assignments
+            </TabsTrigger>
+            <TabsTrigger
+              value="students"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Students
+            </TabsTrigger>
+            <TabsTrigger
+              value="timetable"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Timetable
+            </TabsTrigger>
+            <TabsTrigger
+              value="materials"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Materials
+            </TabsTrigger>
+            <TabsTrigger
+              value="noticeboard"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Noticeboard
+            </TabsTrigger>
+            <TabsTrigger
+              value="messages"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Messages
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

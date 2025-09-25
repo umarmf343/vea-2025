@@ -1063,17 +1063,64 @@ export default function SuperAdminDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DashboardTab)}>
-        <TabsList className="grid w-full grid-cols-9">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="branding">Branding</TabsTrigger>
-          <TabsTrigger value="messages">Messages</TabsTrigger>
-          <TabsTrigger value="approval">Report Approval</TabsTrigger>
-          <TabsTrigger value="receipts">Payments</TabsTrigger>
-          <TabsTrigger value="students">Students</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="system">System</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
-        </TabsList>
+        <div className="w-full overflow-x-auto">
+          <TabsList className="grid w-full min-w-max grid-cols-9 lg:grid-cols-16 bg-green-50 gap-1 p-1">
+            <TabsTrigger
+              value="overview"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Overview
+            </TabsTrigger>
+            <TabsTrigger
+              value="branding"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Branding
+            </TabsTrigger>
+            <TabsTrigger
+              value="messages"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Messages
+            </TabsTrigger>
+            <TabsTrigger
+              value="approval"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Report Approval
+            </TabsTrigger>
+            <TabsTrigger
+              value="receipts"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Payments
+            </TabsTrigger>
+            <TabsTrigger
+              value="students"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Students
+            </TabsTrigger>
+            <TabsTrigger
+              value="users"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Users
+            </TabsTrigger>
+            <TabsTrigger
+              value="system"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              System
+            </TabsTrigger>
+            <TabsTrigger
+              value="reports"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Reports
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="space-y-6">
           {loading ? (

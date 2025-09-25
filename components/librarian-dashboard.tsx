@@ -501,12 +501,34 @@ export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
 
       {/* Main Content */}
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="books">Books</TabsTrigger>
-          <TabsTrigger value="borrowed">Borrowed</TabsTrigger>
-          <TabsTrigger value="requests">Requests</TabsTrigger>
-        </TabsList>
+        <div className="w-full overflow-x-auto">
+          <TabsList className="grid w-full min-w-max grid-cols-4 lg:grid-cols-8 bg-green-50 gap-1 p-1">
+            <TabsTrigger
+              value="overview"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Overview
+            </TabsTrigger>
+            <TabsTrigger
+              value="books"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Books
+            </TabsTrigger>
+            <TabsTrigger
+              value="borrowed"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Borrowed
+            </TabsTrigger>
+            <TabsTrigger
+              value="requests"
+              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+            >
+              Requests
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
