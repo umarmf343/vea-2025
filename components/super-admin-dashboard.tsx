@@ -806,23 +806,65 @@ export default function SuperAdminDashboard() {
 
   const handleSaveBranding = useCallback(async () => {
     setIsSavingBranding(true)
-    try {
-      const payload = { ...branding, ...brandingUploads }
+    const compressWhitespace = (value: string) => value.replace(/\s+/g, " ").trim()
+    const resolveMediaValue = (value?: string | null, fallback?: string | null) => {
+      if (typeof value === "string") {
+        const trimmed = value.trim()
+        if (trimmed.length > 0) {
+          return trimmed
+        }
+      }
 
-      await fetchJson("/api/system/branding", {
+      if (typeof fallback === "string") {
+        const trimmed = fallback.trim()
+        if (trimmed.length > 0) {
+          return trimmed
+        }
+      }
+
+      return null
+    }
+
+    try {
+      const normalizedFields = {
+        schoolName: compressWhitespace(branding.schoolName),
+        schoolAddress: compressWhitespace(branding.schoolAddress),
+        educationZone: compressWhitespace(branding.educationZone),
+        councilArea: compressWhitespace(branding.councilArea),
+        contactPhone: branding.contactPhone.trim(),
+        contactEmail: branding.contactEmail.trim(),
+        headmasterName: compressWhitespace(branding.headmasterName),
+        defaultRemark: branding.defaultRemark.trim(),
+      }
+
+      const payload = {
+        ...normalizedFields,
+        logoUrl: resolveMediaValue(brandingUploads.logoUrl, branding.logoUrl),
+        signatureUrl: resolveMediaValue(brandingUploads.signatureUrl, branding.signatureUrl),
+      }
+
+      const response = await fetchJson<{ branding: BrandingRecord }>("/api/system/branding", {
         method: "PUT",
         body: JSON.stringify(payload),
       })
 
+      await dbManager.saveBranding({ ...payload })
+
+      const mapped = mapBranding(response.branding)
+      setBranding(mapped)
+      setBrandingUploads({
+        logoUrl: mapped.logoUrl ?? "",
+        signatureUrl: mapped.signatureUrl ?? "",
+      })
+
       toast({ title: "Branding updated" })
-      await refreshBranding()
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to update branding"
       toast({ title: "Update failed", description: message, variant: "destructive" })
     } finally {
       setIsSavingBranding(false)
     }
-  }, [branding, brandingUploads, refreshBranding, toast])
+  }, [branding, brandingUploads, toast])
 
   const handleBrandingFile = useCallback((file: File, key: "logoUrl" | "signatureUrl") => {
     const reader = new FileReader()
