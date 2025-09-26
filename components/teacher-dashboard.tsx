@@ -2220,58 +2220,58 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       {/* Main Content */}
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
         <div className="w-full overflow-x-auto">
-          <TabsList className="grid w-full min-w-max grid-cols-9 lg:grid-cols-16 bg-green-50 gap-1 p-1">
+          <TabsList className="flex w-max flex-nowrap gap-1 bg-green-50 p-1">
             <TabsTrigger
               value="overview"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Overview
             </TabsTrigger>
             <TabsTrigger
               value="profile"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Profile
             </TabsTrigger>
             <TabsTrigger
               value="marks"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Enter Marks
             </TabsTrigger>
             <TabsTrigger
               value="assignments"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Assignments
             </TabsTrigger>
             <TabsTrigger
               value="students"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Students
             </TabsTrigger>
             <TabsTrigger
               value="timetable"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Timetable
             </TabsTrigger>
             <TabsTrigger
               value="materials"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Materials
             </TabsTrigger>
             <TabsTrigger
               value="noticeboard"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Noticeboard
             </TabsTrigger>
             <TabsTrigger
               value="messages"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Messages
             </TabsTrigger>

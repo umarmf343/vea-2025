@@ -1064,58 +1064,58 @@ export default function SuperAdminDashboard() {
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DashboardTab)}>
         <div className="w-full overflow-x-auto">
-          <TabsList className="grid w-full min-w-max grid-cols-9 lg:grid-cols-16 bg-green-50 gap-1 p-1">
+          <TabsList className="flex w-max flex-nowrap gap-1 bg-green-50 p-1">
             <TabsTrigger
               value="overview"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Overview
             </TabsTrigger>
             <TabsTrigger
               value="branding"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Branding
             </TabsTrigger>
             <TabsTrigger
               value="messages"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Messages
             </TabsTrigger>
             <TabsTrigger
               value="approval"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Report Approval
             </TabsTrigger>
             <TabsTrigger
               value="receipts"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Payments
             </TabsTrigger>
             <TabsTrigger
               value="students"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Students
             </TabsTrigger>
             <TabsTrigger
               value="users"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Users
             </TabsTrigger>
             <TabsTrigger
               value="system"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               System
             </TabsTrigger>
             <TabsTrigger
               value="reports"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Reports
             </TabsTrigger>
