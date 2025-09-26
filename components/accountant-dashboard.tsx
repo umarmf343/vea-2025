@@ -369,6 +369,27 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
     setPaymentDialogOpen(true)
   }, [resetPaymentForm])
 
+  const safeParseJson = useCallback(async (response: Response, label: string) => {
+    try {
+      return (await response.json()) as Record<string, unknown>
+    } catch (error) {
+      console.warn(`${label} response payload is not valid JSON`, error)
+      return {}
+    }
+  }, [])
+
+  const normalizeApiArray = useCallback(
+    <T,>(value: unknown, key: string): T[] => {
+      if (Array.isArray(value)) {
+        return value as T[]
+      }
+
+      console.warn(`Expected '${key}' to be an array but received`, value)
+      return []
+    },
+    [],
+  )
+
   const loadFinancialData = useCallback(async () => {
     setLoading(true)
     setBanner(null)
@@ -392,9 +413,13 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
         throw new Error("Unable to load fee structure")
       }
 
-      const paymentsData = (await paymentsResponse.json()) as { payments: ApiPaymentRecord[] }
-      const receiptsData = (await receiptsResponse.json()) as { receipts: ApiReceiptRecord[] }
-      const feeData = (await feeResponse.json()) as { feeStructure: ApiFeeStructureRecord[] }
+      const paymentsPayload = await safeParseJson(paymentsResponse, "Payments")
+      const receiptsPayload = await safeParseJson(receiptsResponse, "Receipts")
+      const feePayload = await safeParseJson(feeResponse, "Fee structure")
+
+      const remotePayments = normalizeApiArray<ApiPaymentRecord>(paymentsPayload["payments"], "payments")
+      const remoteReceipts = normalizeApiArray<ApiReceiptRecord>(receiptsPayload["receipts"], "receipts")
+      const remoteFeeStructure = normalizeApiArray<ApiFeeStructureRecord>(feePayload["feeStructure"], "feeStructure")
 
       let localPayments: PaymentRecord[] = []
       try {
@@ -408,11 +433,11 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
         console.warn("Unable to load local payment records:", error)
       }
 
-      const combinedPayments = mergePaymentRecords(paymentsData.payments.map(mapPayment), localPayments)
+      const combinedPayments = mergePaymentRecords(remotePayments.map(mapPayment), localPayments)
 
       setPayments(combinedPayments)
-      setReceipts(receiptsData.receipts.map(mapReceipt))
-      setFeeStructure(feeData.feeStructure)
+      setReceipts(remoteReceipts.map(mapReceipt))
+      setFeeStructure(remoteFeeStructure)
       if (typeof dbManager.syncFinancialAnalytics === "function") {
         await dbManager.syncFinancialAnalytics(combinedPayments)
       }
@@ -423,7 +448,7 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [normalizeApiArray, safeParseJson])
 
   useEffect(() => {
     void loadFinancialData()
@@ -1801,3 +1826,5 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
     </div>
   )
 }
+
+export default AccountantDashboard
