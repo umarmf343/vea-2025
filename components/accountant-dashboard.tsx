@@ -392,9 +392,30 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
         throw new Error("Unable to load fee structure")
       }
 
-      const paymentsData = (await paymentsResponse.json()) as { payments: ApiPaymentRecord[] }
-      const receiptsData = (await receiptsResponse.json()) as { receipts: ApiReceiptRecord[] }
-      const feeData = (await feeResponse.json()) as { feeStructure: ApiFeeStructureRecord[] }
+      const paymentsPayload = (await paymentsResponse.json()) as { payments?: unknown }
+      const receiptsPayload = (await receiptsResponse.json()) as { receipts?: unknown }
+      const feePayload = (await feeResponse.json()) as { feeStructure?: unknown }
+
+      let remotePayments: ApiPaymentRecord[] = []
+      if (Array.isArray(paymentsPayload.payments)) {
+        remotePayments = paymentsPayload.payments as ApiPaymentRecord[]
+      } else {
+        console.warn("Payments response payload missing 'payments' array", paymentsPayload)
+      }
+
+      let remoteReceipts: ApiReceiptRecord[] = []
+      if (Array.isArray(receiptsPayload.receipts)) {
+        remoteReceipts = receiptsPayload.receipts as ApiReceiptRecord[]
+      } else {
+        console.warn("Receipts response payload missing 'receipts' array", receiptsPayload)
+      }
+
+      let remoteFeeStructure: ApiFeeStructureRecord[] = []
+      if (Array.isArray(feePayload.feeStructure)) {
+        remoteFeeStructure = feePayload.feeStructure as ApiFeeStructureRecord[]
+      } else {
+        console.warn("Fee structure response payload missing 'feeStructure' array", feePayload)
+      }
 
       let localPayments: PaymentRecord[] = []
       try {
@@ -408,11 +429,11 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
         console.warn("Unable to load local payment records:", error)
       }
 
-      const combinedPayments = mergePaymentRecords(paymentsData.payments.map(mapPayment), localPayments)
+      const combinedPayments = mergePaymentRecords(remotePayments.map(mapPayment), localPayments)
 
       setPayments(combinedPayments)
-      setReceipts(receiptsData.receipts.map(mapReceipt))
-      setFeeStructure(feeData.feeStructure)
+      setReceipts(remoteReceipts.map(mapReceipt))
+      setFeeStructure(remoteFeeStructure)
       if (typeof dbManager.syncFinancialAnalytics === "function") {
         await dbManager.syncFinancialAnalytics(combinedPayments)
       }
