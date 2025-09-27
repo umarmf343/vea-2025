@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -77,6 +78,8 @@ import {
   DollarSign,
   Wallet,
   X,
+  CheckCircle2,
+  Clock,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -149,6 +152,17 @@ interface BrandingState {
   logoUrl: string | null
   signatureUrl: string | null
   updatedAt?: string
+}
+
+interface BrandingUploadsState {
+  logoUrl: string
+  signatureUrl: string
+  logoFileName: string
+  signatureFileName: string
+  logoFileSize: number
+  signatureFileSize: number
+  logoUploadedAt: string | null
+  signatureUploadedAt: string | null
 }
 
 interface SystemSettingsState {
@@ -273,6 +287,37 @@ function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(
     value,
   )
+}
+
+function formatFileSize(bytes?: number): string {
+  if (!bytes || Number.isNaN(bytes) || bytes <= 0) {
+    return "—"
+  }
+
+  const UNITS = ["B", "KB", "MB", "GB", "TB"]
+  let size = bytes
+  let unitIndex = 0
+
+  while (size >= 1024 && unitIndex < UNITS.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+
+  const formatted = size >= 10 || size % 1 === 0 ? size.toFixed(0) : size.toFixed(1)
+  return `${formatted} ${UNITS[unitIndex]}`
+}
+
+function formatDateTime(value?: string | null): string {
+  if (!value) {
+    return "Not saved yet"
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return "Not saved yet"
+  }
+
+  return date.toLocaleString()
 }
 
 function calculateReportAverage(report: ReportCardRow): number {
@@ -560,7 +605,16 @@ export default function SuperAdminDashboard() {
   const [payments, setPayments] = useState<PaymentRow[]>([])
 
   const [branding, setBranding] = useState<BrandingState>(DEFAULT_BRANDING)
-  const [brandingUploads, setBrandingUploads] = useState({ logoUrl: "", signatureUrl: "" })
+  const [brandingUploads, setBrandingUploads] = useState<BrandingUploadsState>({
+    logoUrl: "",
+    signatureUrl: "",
+    logoFileName: "",
+    signatureFileName: "",
+    logoFileSize: 0,
+    signatureFileSize: 0,
+    logoUploadedAt: null,
+    signatureUploadedAt: null,
+  })
   const [isSavingBranding, setIsSavingBranding] = useState(false)
 
   const [systemSettings, setSystemSettings] = useState<SystemSettingsState>(DEFAULT_SETTINGS)
@@ -569,6 +623,35 @@ export default function SuperAdminDashboard() {
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null)
 
   const [reportCards, setReportCards] = useState<ReportCardRow[]>([])
+
+  const brandingChecklist = useMemo(
+    () => {
+      const trimmed = (value: string | null | undefined) => (typeof value === "string" ? value.trim() : "")
+
+      return [
+        { label: "School name", completed: trimmed(branding.schoolName).length > 0 },
+        { label: "School address", completed: trimmed(branding.schoolAddress).length > 0 },
+        { label: "Education zone", completed: trimmed(branding.educationZone).length > 0 },
+        { label: "Local council area", completed: trimmed(branding.councilArea).length > 0 },
+        { label: "Contact phone", completed: trimmed(branding.contactPhone).length > 0 },
+        { label: "Contact email", completed: trimmed(branding.contactEmail).length > 0 },
+        { label: "Head of school", completed: trimmed(branding.headmasterName).length > 0 },
+        { label: "Default remark", completed: trimmed(branding.defaultRemark).length > 0 },
+        { label: "Logo uploaded", completed: brandingUploads.logoUrl.trim().length > 0 },
+        { label: "Signature uploaded", completed: brandingUploads.signatureUrl.trim().length > 0 },
+      ]
+    },
+    [branding, brandingUploads.logoUrl, brandingUploads.signatureUrl],
+  )
+
+  const brandingCompletion = useMemo(() => {
+    if (!brandingChecklist.length) {
+      return 0
+    }
+
+    const completed = brandingChecklist.filter((item) => item.completed).length
+    return Math.min(100, Math.max(0, Math.round((completed / brandingChecklist.length) * 100)))
+  }, [brandingChecklist])
 
   const refreshUsers = useCallback(async () => {
     const data = await fetchJson<{ users: StoredUser[] }>("/api/users")
@@ -607,7 +690,22 @@ export default function SuperAdminDashboard() {
     const data = await fetchJson<{ branding: BrandingRecord }>("/api/system/branding")
     const mapped = mapBranding(data.branding)
     setBranding(mapped)
-    setBrandingUploads({ logoUrl: mapped.logoUrl ?? "", signatureUrl: mapped.signatureUrl ?? "" })
+    setBrandingUploads((previous) => {
+      const hasLogo = Boolean(mapped.logoUrl)
+      const hasSignature = Boolean(mapped.signatureUrl)
+
+      return {
+        ...previous,
+        logoUrl: mapped.logoUrl ?? "",
+        signatureUrl: mapped.signatureUrl ?? "",
+        logoFileName: hasLogo ? previous.logoFileName || "Synced logo" : "",
+        signatureFileName: hasSignature ? previous.signatureFileName || "Synced signature" : "",
+        logoFileSize: hasLogo ? previous.logoFileSize : 0,
+        signatureFileSize: hasSignature ? previous.signatureFileSize : 0,
+        logoUploadedAt: hasLogo ? mapped.updatedAt ?? previous.logoUploadedAt : null,
+        signatureUploadedAt: hasSignature ? mapped.updatedAt ?? previous.signatureUploadedAt : null,
+      }
+    })
 
     safeStorage.setItem("schoolBranding", JSON.stringify(mapped))
 
@@ -843,7 +941,7 @@ export default function SuperAdminDashboard() {
         signatureUrl: resolveMediaValue(brandingUploads.signatureUrl, branding.signatureUrl),
       }
 
-      const response = await fetchJson<{ branding: BrandingRecord }>("/api/system/branding", {
+      const response = await fetchJson<{ branding: BrandingRecord; message?: string }>("/api/system/branding", {
         method: "PUT",
         body: JSON.stringify(payload),
       })
@@ -852,12 +950,21 @@ export default function SuperAdminDashboard() {
 
       const mapped = mapBranding(response.branding)
       setBranding(mapped)
-      setBrandingUploads({
+      const updatedTimestamp = mapped.updatedAt ?? new Date().toISOString()
+
+      setBrandingUploads((previous) => ({
+        ...previous,
         logoUrl: mapped.logoUrl ?? "",
         signatureUrl: mapped.signatureUrl ?? "",
-      })
+        logoUploadedAt: mapped.logoUrl ? updatedTimestamp : previous.logoUploadedAt,
+        signatureUploadedAt: mapped.signatureUrl ? updatedTimestamp : previous.signatureUploadedAt,
+      }))
 
-      toast({ title: "Branding updated" })
+      const successTitle = response.message ?? "Branding updated"
+      toast({
+        title: successTitle,
+        description: "Your school's identity has been refreshed across every connected portal.",
+      })
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to update branding"
       toast({ title: "Update failed", description: message, variant: "destructive" })
@@ -866,11 +973,31 @@ export default function SuperAdminDashboard() {
     }
   }, [branding, brandingUploads, toast])
 
-  const handleBrandingFile = useCallback((file: File, key: "logoUrl" | "signatureUrl") => {
+  const handleBrandingFile = useCallback((file: File, key: "logo" | "signature") => {
     const reader = new FileReader()
     reader.onload = (event) => {
       const value = typeof event.target?.result === "string" ? event.target.result : ""
-      setBrandingUploads((prev) => ({ ...prev, [key]: value }))
+      setBrandingUploads((previous) => {
+        const uploadedAt = new Date().toISOString()
+
+        if (key === "logo") {
+          return {
+            ...previous,
+            logoUrl: value,
+            logoFileName: file.name,
+            logoFileSize: file.size,
+            logoUploadedAt: uploadedAt,
+          }
+        }
+
+        return {
+          ...previous,
+          signatureUrl: value,
+          signatureFileName: file.name,
+          signatureFileSize: file.size,
+          signatureUploadedAt: uploadedAt,
+        }
+      })
     }
     reader.readAsDataURL(file)
   }, [])
@@ -1391,144 +1518,381 @@ export default function SuperAdminDashboard() {
         </TabsContent>
 
         <TabsContent value="branding" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>School Identity</CardTitle>
-              <CardDescription>Control the visuals and remarks shared across all portals and documents.</CardDescription>
+          <Card className="overflow-hidden border-none shadow-xl ring-1 ring-emerald-100/70">
+            <CardHeader className="relative overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-500 to-amber-500 px-6 py-8 text-white">
+              <div className="absolute -right-32 -top-32 h-64 w-64 rounded-full bg-white/20 blur-3xl" />
+              <div className="absolute -bottom-24 left-10 h-72 w-72 rounded-full bg-white/10 blur-2xl" />
+              <div className="relative z-10 space-y-4">
+                <Badge variant="secondary" className="bg-white/20 text-white backdrop-blur">
+                  Visual Experience
+                </Badge>
+                <CardTitle className="text-3xl font-semibold tracking-tight text-white">School Identity</CardTitle>
+                <CardDescription className="max-w-2xl text-sm text-white/80">
+                  Curate the logos, signatures, and official details that appear on every dashboard, report card, and notification.
+                </CardDescription>
+              </div>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-                <div className="text-center">
-                  <div className="mb-4 flex h-24 items-center justify-center rounded-lg border">
-                    {brandingUploads.logoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={brandingUploads.logoUrl} alt="School logo preview" className="max-h-24" />
-                    ) : (
-                      <GraduationCap className="h-10 w-10 text-[#2d682d]" />
-                    )}
+            <CardContent className="space-y-8 bg-slate-50/80 p-6">
+              <div className="grid gap-6 lg:grid-cols-[360px,1fr]">
+                <div className="space-y-6">
+                  <div className="relative overflow-hidden rounded-3xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50 to-amber-50 p-6 shadow-inner">
+                    <div className="absolute -right-12 -top-12 h-24 w-24 rounded-full bg-emerald-200/60 blur-3xl" />
+                    <div className="absolute -bottom-16 left-6 h-28 w-28 rounded-full bg-amber-200/50 blur-2xl" />
+                    <div className="relative space-y-5 text-center">
+                      <div className="mx-auto flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl border-2 border-white/70 bg-white/70 shadow-lg">
+                        {brandingUploads.logoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={brandingUploads.logoUrl} alt="School logo preview" className="h-full w-full object-contain" />
+                        ) : (
+                          <GraduationCap className="h-10 w-10 text-emerald-600" />
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700/80">Official Identity</p>
+                        <h3 className="text-2xl font-bold text-emerald-900">{branding.schoolName || "Add your school name"}</h3>
+                        <p className="text-sm text-emerald-900/80">
+                          {branding.educationZone || "Education zone will appear here"}
+                        </p>
+                      </div>
+                      <p className="text-sm text-emerald-900/70">
+                        {branding.schoolAddress || "Share your official address to update receipts and transcripts."}
+                      </p>
+                      <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-emerald-800/90">
+                        {branding.contactPhone && (
+                          <Badge variant="outline" className="border-emerald-200 bg-white/90 text-emerald-700">
+                            {branding.contactPhone}
+                          </Badge>
+                        )}
+                        {branding.contactEmail && (
+                          <Badge variant="outline" className="border-emerald-200 bg-white/90 text-emerald-700">
+                            {branding.contactEmail}
+                          </Badge>
+                        )}
+                        {branding.councilArea && (
+                          <Badge variant="outline" className="border-emerald-200 bg-white/90 text-emerald-700">
+                            {branding.councilArea}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="rounded-2xl border border-emerald-100/70 bg-white/70 p-4 text-left text-sm text-emerald-900/80 shadow-sm">
+                        <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                          <span>Head of School</span>
+                          <span>{branding.headmasterName ? "Ready" : "Pending"}</span>
+                        </div>
+                        <p className="mt-2 text-base font-semibold text-emerald-900">
+                          {branding.headmasterName || "Awaiting update"}
+                        </p>
+                        <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-emerald-600">Default Remark</p>
+                        <p className="mt-1 text-sm italic text-emerald-800/80">
+                          {branding.defaultRemark || "Add an encouraging note that appears on every report card."}
+                        </p>
+                        <p className="mt-4 text-xs text-emerald-700/80">Last saved {formatDateTime(branding.updatedAt)}</p>
+                      </div>
+                    </div>
                   </div>
-                  <Label htmlFor="branding-logo">School Logo</Label>
-                  <Input
-                    id="branding-logo"
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0]
-                      if (file) {
-                        handleBrandingFile(file, "logoUrl")
-                      }
-                    }}
-                  />
-                </div>
-                <div className="text-center">
-                  <div className="mb-4 flex h-24 items-center justify-center rounded-lg border">
-                    {brandingUploads.signatureUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={brandingUploads.signatureUrl} alt="Headmaster signature" className="max-h-24" />
-                    ) : (
-                      <Edit className="h-10 w-10 text-[#b29032]" />
-                    )}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="group relative rounded-2xl border border-dashed border-emerald-200 bg-white p-5 shadow-sm transition hover:border-emerald-400 hover:shadow-lg">
+                      <Label htmlFor="branding-logo" className="sr-only">
+                        School Logo
+                      </Label>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-emerald-50 text-emerald-600 shadow-inner">
+                          {brandingUploads.logoUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={brandingUploads.logoUrl} alt="School logo preview" className="h-full w-full object-contain" />
+                          ) : (
+                            <GraduationCap className="h-6 w-6" />
+                          )}
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "border-emerald-200 bg-emerald-50 text-emerald-700",
+                            !brandingUploads.logoUrl && "border-amber-200 bg-amber-50 text-amber-700",
+                          )}
+                        >
+                          {brandingUploads.logoUrl ? "Preview ready" : "Awaiting upload"}
+                        </Badge>
+                      </div>
+                      <div className="mt-4 space-y-1">
+                        <p className="text-sm font-semibold text-gray-900">School Logo</p>
+                        <p className="text-xs text-gray-500">Upload a transparent PNG or SVG for crisp documents.</p>
+                      </div>
+                      <Input
+                        id="branding-logo"
+                        type="file"
+                        accept="image/*"
+                        className="mt-3 cursor-pointer rounded-full border border-dashed border-emerald-200 bg-white/80 text-xs text-gray-600 file:mr-4 file:rounded-full file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-white hover:border-emerald-400 focus-visible:ring-emerald-500"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0]
+                          if (file) {
+                            handleBrandingFile(file, "logo")
+                            event.target.value = ""
+                          }
+                        }}
+                      />
+                      <dl className="mt-3 space-y-1 text-[11px] text-gray-500">
+                        <div className="flex items-center justify-between">
+                          <dt className="font-medium text-gray-700">File</dt>
+                          <dd className="text-gray-600">{brandingUploads.logoFileName || "Not uploaded"}</dd>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <dt className="font-medium text-gray-700">Size</dt>
+                          <dd className="text-gray-600">{formatFileSize(brandingUploads.logoFileSize)}</dd>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <dt className="font-medium text-gray-700">Updated</dt>
+                          <dd className="text-gray-600">{formatDateTime(brandingUploads.logoUploadedAt)}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                    <div className="group relative rounded-2xl border border-dashed border-emerald-200 bg-white p-5 shadow-sm transition hover:border-emerald-400 hover:shadow-lg">
+                      <Label htmlFor="branding-signature" className="sr-only">
+                        Headmaster Signature
+                      </Label>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-amber-50 text-amber-600 shadow-inner">
+                          {brandingUploads.signatureUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={brandingUploads.signatureUrl}
+                              alt="Headmaster signature preview"
+                              className="h-full w-full object-contain"
+                            />
+                          ) : (
+                            <Edit className="h-6 w-6" />
+                          )}
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "border-emerald-200 bg-emerald-50 text-emerald-700",
+                            !brandingUploads.signatureUrl && "border-amber-200 bg-amber-50 text-amber-700",
+                          )}
+                        >
+                          {brandingUploads.signatureUrl ? "Signature ready" : "Awaiting upload"}
+                        </Badge>
+                      </div>
+                      <div className="mt-4 space-y-1">
+                        <p className="text-sm font-semibold text-gray-900">Headmaster Signature</p>
+                        <p className="text-xs text-gray-500">Add a clear signature to authenticate student reports.</p>
+                      </div>
+                      <Input
+                        id="branding-signature"
+                        type="file"
+                        accept="image/*"
+                        className="mt-3 cursor-pointer rounded-full border border-dashed border-emerald-200 bg-white/80 text-xs text-gray-600 file:mr-4 file:rounded-full file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-white hover:border-emerald-400 focus-visible:ring-emerald-500"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0]
+                          if (file) {
+                            handleBrandingFile(file, "signature")
+                            event.target.value = ""
+                          }
+                        }}
+                      />
+                      <dl className="mt-3 space-y-1 text-[11px] text-gray-500">
+                        <div className="flex items-center justify-between">
+                          <dt className="font-medium text-gray-700">File</dt>
+                          <dd className="text-gray-600">{brandingUploads.signatureFileName || "Not uploaded"}</dd>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <dt className="font-medium text-gray-700">Size</dt>
+                          <dd className="text-gray-600">{formatFileSize(brandingUploads.signatureFileSize)}</dd>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <dt className="font-medium text-gray-700">Updated</dt>
+                          <dd className="text-gray-600">{formatDateTime(brandingUploads.signatureUploadedAt)}</dd>
+                        </div>
+                      </dl>
+                    </div>
                   </div>
-                  <Label htmlFor="branding-signature">Headmaster Signature</Label>
-                  <Input
-                    id="branding-signature"
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0]
-                      if (file) {
-                        handleBrandingFile(file, "signatureUrl")
-                      }
-                    }}
-                  />
+                  <div className="rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-emerald-700">Branding completion</p>
+                        <p className="text-xs text-gray-500">Complete these essentials to keep your reports and portals aligned.</p>
+                      </div>
+                      <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                        {brandingCompletion}% complete
+                      </Badge>
+                    </div>
+                    <Progress
+                      value={brandingCompletion}
+                      className="mt-4 h-2 bg-emerald-100 [&_[data-slot=progress-indicator]]:bg-emerald-500"
+                    />
+                    <ul className="mt-4 space-y-2">
+                      {brandingChecklist.map((item) => (
+                        <li
+                          key={item.label}
+                          className={cn(
+                            "flex items-center justify-between rounded-xl border px-3 py-2 text-xs font-medium transition",
+                            item.completed
+                              ? "border-transparent bg-emerald-50/80 text-emerald-700 shadow-sm"
+                              : "border-dashed border-emerald-200 bg-white text-gray-500",
+                          )}
+                        >
+                          <span className="flex items-center gap-2">
+                            {item.completed ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                            ) : (
+                              <Clock className="h-4 w-4 text-amber-500" />
+                            )}
+                            {item.label}
+                          </span>
+                          <span className="text-[10px] uppercase tracking-wide">
+                            {item.completed ? "Ready" : "Pending"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Last Updated</Label>
-                  <p className="rounded border bg-muted px-3 py-2 text-sm text-gray-600">
-                    {branding.updatedAt ? formatDate(branding.updatedAt) : "Not set"}
-                  </p>
+                <div className="space-y-6">
+                  <div className="rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-emerald-700">Core school details</p>
+                        <p className="text-xs text-gray-500">Displayed on login screens, dashboards, and PDF exports.</p>
+                      </div>
+                      <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                        Brand essentials
+                      </Badge>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="branding-school-name"
+                          className="text-xs font-semibold uppercase tracking-wide text-emerald-700"
+                        >
+                          School Name
+                        </Label>
+                        <Input
+                          id="branding-school-name"
+                          value={branding.schoolName}
+                          onChange={(event) => setBranding((prev) => ({ ...prev, schoolName: event.target.value }))}
+                          className="rounded-xl border-emerald-100 bg-white/90 focus-visible:border-emerald-400 focus-visible:ring-emerald-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="branding-head-name"
+                          className="text-xs font-semibold uppercase tracking-wide text-emerald-700"
+                        >
+                          Headmaster Name
+                        </Label>
+                        <Input
+                          id="branding-head-name"
+                          value={branding.headmasterName}
+                          onChange={(event) => setBranding((prev) => ({ ...prev, headmasterName: event.target.value }))}
+                          className="rounded-xl border-emerald-100 bg-white/90 focus-visible:border-emerald-400 focus-visible:ring-emerald-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="branding-zone" className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                          Education Zone
+                        </Label>
+                        <Input
+                          id="branding-zone"
+                          value={branding.educationZone}
+                          onChange={(event) => setBranding((prev) => ({ ...prev, educationZone: event.target.value }))}
+                          placeholder="e.g. Municipal Education Zone"
+                          className="rounded-xl border-emerald-100 bg-white/90 focus-visible:border-emerald-400 focus-visible:ring-emerald-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="branding-council"
+                          className="text-xs font-semibold uppercase tracking-wide text-emerald-700"
+                        >
+                          Local Council Area
+                        </Label>
+                        <Input
+                          id="branding-council"
+                          value={branding.councilArea}
+                          onChange={(event) => setBranding((prev) => ({ ...prev, councilArea: event.target.value }))}
+                          placeholder="e.g. Bwari Area Council"
+                          className="rounded-xl border-emerald-100 bg-white/90 focus-visible:border-emerald-400 focus-visible:ring-emerald-500"
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      <Label htmlFor="branding-address" className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                        School Address
+                      </Label>
+                      <Textarea
+                        id="branding-address"
+                        rows={3}
+                        value={branding.schoolAddress}
+                        onChange={(event) => setBranding((prev) => ({ ...prev, schoolAddress: event.target.value }))}
+                        className="rounded-xl border-emerald-100 bg-white/90 focus-visible:border-emerald-400 focus-visible:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-emerald-700">Contact & reporting</p>
+                        <p className="text-xs text-gray-500">Used on invoices, report cards, and notification emails.</p>
+                      </div>
+                      <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                        Communication ready
+                      </Badge>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="branding-phone" className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                          Contact Phone
+                        </Label>
+                        <Input
+                          id="branding-phone"
+                          value={branding.contactPhone}
+                          onChange={(event) => setBranding((prev) => ({ ...prev, contactPhone: event.target.value }))}
+                          placeholder="e.g. +234 (0) 700-832-2025"
+                          className="rounded-xl border-emerald-100 bg-white/90 focus-visible:border-emerald-400 focus-visible:ring-emerald-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="branding-email" className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                          Contact Email
+                        </Label>
+                        <Input
+                          id="branding-email"
+                          type="email"
+                          value={branding.contactEmail}
+                          onChange={(event) => setBranding((prev) => ({ ...prev, contactEmail: event.target.value }))}
+                          placeholder="e.g. info@victoryacademy.edu.ng"
+                          className="rounded-xl border-emerald-100 bg-white/90 focus-visible:border-emerald-400 focus-visible:ring-emerald-500"
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      <Label htmlFor="branding-remark" className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                        Default Report Remark
+                      </Label>
+                      <Textarea
+                        id="branding-remark"
+                        rows={4}
+                        value={branding.defaultRemark}
+                        onChange={(event) => setBranding((prev) => ({ ...prev, defaultRemark: event.target.value }))}
+                        className="rounded-xl border-emerald-100 bg-white/90 focus-visible:border-emerald-400 focus-visible:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-3 rounded-2xl border border-emerald-100 bg-white/80 p-6 shadow-sm md:flex-row md:items-center md:justify-between">
+                    <p className="text-sm text-gray-600">
+                      Changes sync instantly across report cards, receipts, and parent portals once saved.
+                    </p>
+                    <Button
+                      type="button"
+                      onClick={handleSaveBranding}
+                      disabled={isSavingBranding}
+                      className="group inline-flex items-center gap-2 rounded-full bg-emerald-600 px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-500 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-400/70"
+                    >
+                      <Save className={cn("h-4 w-4", isSavingBranding && "animate-spin")} />
+                      <span>{isSavingBranding ? "Saving changes" : "Save branding"}</span>
+                    </Button>
+                  </div>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="branding-school-name">School Name</Label>
-                  <Input
-                    id="branding-school-name"
-                    value={branding.schoolName}
-                    onChange={(event) => setBranding((prev) => ({ ...prev, schoolName: event.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="branding-head-name">Headmaster Name</Label>
-                  <Input
-                    id="branding-head-name"
-                    value={branding.headmasterName}
-                    onChange={(event) => setBranding((prev) => ({ ...prev, headmasterName: event.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="branding-address">School Address</Label>
-                  <Textarea
-                    id="branding-address"
-                    rows={3}
-                    value={branding.schoolAddress}
-                    onChange={(event) => setBranding((prev) => ({ ...prev, schoolAddress: event.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="branding-zone">Education Zone</Label>
-                  <Input
-                    id="branding-zone"
-                    value={branding.educationZone}
-                    onChange={(event) => setBranding((prev) => ({ ...prev, educationZone: event.target.value }))}
-                    placeholder="e.g. Municipal Education Zone"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="branding-council">Local Council Area</Label>
-                  <Input
-                    id="branding-council"
-                    value={branding.councilArea}
-                    onChange={(event) => setBranding((prev) => ({ ...prev, councilArea: event.target.value }))}
-                    placeholder="e.g. Bwari Area Council"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="branding-phone">Contact Phone</Label>
-                  <Input
-                    id="branding-phone"
-                    value={branding.contactPhone}
-                    onChange={(event) => setBranding((prev) => ({ ...prev, contactPhone: event.target.value }))}
-                    placeholder="e.g. +234 (0) 700-832-2025"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="branding-email">Contact Email</Label>
-                  <Input
-                    id="branding-email"
-                    type="email"
-                    value={branding.contactEmail}
-                    onChange={(event) => setBranding((prev) => ({ ...prev, contactEmail: event.target.value }))}
-                    placeholder="e.g. info@victoryacademy.edu.ng"
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="branding-remark">Default Report Remark</Label>
-                  <Textarea
-                    id="branding-remark"
-                    rows={3}
-                    value={branding.defaultRemark}
-                    onChange={(event) => setBranding((prev) => ({ ...prev, defaultRemark: event.target.value }))}
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <Button onClick={handleSaveBranding} disabled={isSavingBranding}>
-                  <Save className={cn("mr-2 h-4 w-4", isSavingBranding && "animate-spin")} />
-                  Save Branding
-                </Button>
               </div>
             </CardContent>
           </Card>
