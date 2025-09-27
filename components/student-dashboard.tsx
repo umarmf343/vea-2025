@@ -738,6 +738,16 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     ? Math.min((sentenceAttempts.length / totalSentenceRounds) * 100, 100)
     : 0
 
+  const getSentenceRoundDuration = useCallback(
+    (round: SentenceScrambleRound | null | undefined) => {
+      if (!round) {
+        return difficultyDurations.medium
+      }
+      return difficultyDurations[round.difficulty]
+    },
+    [],
+  )
+
   const currentSentenceDuration = useMemo(
     () => getSentenceRoundDuration(currentSentenceRound),
     [currentSentenceRound, getSentenceRoundDuration],
@@ -765,16 +775,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const sentenceAccuracy = sentenceAttempts.length
     ? Math.round((totalSentenceCorrect / sentenceAttempts.length) * 100)
     : 0
-
-  const getSentenceRoundDuration = useCallback(
-    (round: SentenceScrambleRound | null | undefined) => {
-      if (!round) {
-        return difficultyDurations.medium
-      }
-      return difficultyDurations[round.difficulty]
-    },
-    [],
-  )
 
   const prepareSentenceRound = useCallback(
     (round: SentenceScrambleRound | null) => {
