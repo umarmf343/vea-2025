@@ -785,40 +785,40 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       {/* Main Content */}
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
         <div className="w-full overflow-x-auto">
-          <TabsList className="grid w-full min-w-max grid-cols-6 lg:grid-cols-12 bg-green-50 gap-1 p-1">
+          <TabsList className="flex w-max flex-nowrap gap-1 bg-green-50 p-1">
             <TabsTrigger
               value="overview"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Overview
             </TabsTrigger>
             <TabsTrigger
               value="subjects"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Subjects
             </TabsTrigger>
             <TabsTrigger
               value="timetable"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Timetable
             </TabsTrigger>
             <TabsTrigger
               value="assignments"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Assignments
             </TabsTrigger>
             <TabsTrigger
               value="materials"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Materials
             </TabsTrigger>
             <TabsTrigger
               value="library"
-              className="data-[state=active]:bg-[#2d682d] data-[state=active]:text-white text-xs px-2"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
               Library
             </TabsTrigger>
