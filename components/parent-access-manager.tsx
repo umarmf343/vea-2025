@@ -256,52 +256,54 @@ export function ParentAccessManager({
             No parent records available. Add parents to manage manual access.
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Parent</TableHead>
-                <TableHead>Student</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Manual Access</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.key}>
-                  <TableCell>
-                    <div className="font-medium text-[#2d682d]">{row.parent.name}</div>
-                    <div className="text-xs text-gray-500">{row.parent.email}</div>
-                  </TableCell>
-                  <TableCell>
-                    {row.student ? (
-                      <div>
-                        <div className="font-medium">{row.student.name}</div>
-                        <div className="text-xs text-gray-500">{row.student.className ?? "Class not set"}</div>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-red-600">No linked student</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {row.grantedBy ? (
-                      <Badge variant="outline" className="capitalize">
-                        {row.grantedBy === "manual" ? "Manual" : "Payment"}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-gray-500">Not granted</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="flex justify-end">
-                    <Switch
-                      checked={row.hasAccess}
-                      disabled={row.disabled}
-                      onCheckedChange={(checked) => handleToggle(row.parent.id, row.student?.id ?? null, checked)}
-                    />
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Parent</TableHead>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Manual Access</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell>
+                      <div className="font-medium text-[#2d682d]">{row.parent.name}</div>
+                      <div className="text-xs text-gray-500">{row.parent.email}</div>
+                    </TableCell>
+                    <TableCell>
+                      {row.student ? (
+                        <div>
+                          <div className="font-medium">{row.student.name}</div>
+                          <div className="text-xs text-gray-500">{row.student.className ?? "Class not set"}</div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-red-600">No linked student</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {row.grantedBy ? (
+                        <Badge variant="outline" className="capitalize">
+                          {row.grantedBy === "manual" ? "Manual" : "Payment"}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-gray-500">Not granted</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="flex justify-end">
+                      <Switch
+                        checked={row.hasAccess}
+                        disabled={row.disabled}
+                        onCheckedChange={(checked) => handleToggle(row.parent.id, row.student?.id ?? null, checked)}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </CardContent>
     </Card>
