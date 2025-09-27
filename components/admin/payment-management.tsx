@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CreditCard, Search, CheckCircle, XCircle, Clock, DollarSign, Loader2 } from "lucide-react"
 import { ParentAccessManager } from "@/components/parent-access-manager"
 
@@ -76,11 +77,14 @@ function mapPayment(record: ApiPaymentRecord): PaymentRecord {
   }
 }
 
+type StatusFilter = "all" | PaymentRecord["status"]
+
 export function PaymentManagement() {
   const [payments, setPayments] = useState<PaymentRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
@@ -153,6 +157,10 @@ export function PaymentManagement() {
 
   const filteredPayments = useMemo(() => {
     return payments.filter((payment) => {
+      if (statusFilter !== "all" && payment.status !== statusFilter) {
+        return false
+      }
+
       const term = searchTerm.trim().toLowerCase()
       if (!term) {
         return true
@@ -163,7 +171,7 @@ export function PaymentManagement() {
         (payment.reference ?? "").toLowerCase().includes(term)
       )
     })
-  }, [payments, searchTerm])
+  }, [payments, searchTerm, statusFilter])
 
   const totals = useMemo(() => {
     const totalRevenue = payments
@@ -292,19 +300,55 @@ export function PaymentManagement() {
           </div>
         </CardHeader>
 
-        <CardContent className="p-0">
+        <CardContent className="space-y-4 p-0">
+          <div className="px-4 pt-4">
+            <Tabs
+              value={statusFilter}
+              onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+              className="w-full"
+            >
+              <div className="w-full overflow-x-auto">
+                <TabsList className="flex w-max flex-nowrap gap-1 rounded-md bg-green-50 p-1">
+                  <TabsTrigger
+                    value="all"
+                    className="min-w-[100px] px-3 py-2 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
+                  >
+                    All
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="paid"
+                    className="min-w-[100px] px-3 py-2 text-xs capitalize data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
+                  >
+                    Paid
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="pending"
+                    className="min-w-[100px] px-3 py-2 text-xs capitalize data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
+                  >
+                    Pending
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="failed"
+                    className="min-w-[100px] px-3 py-2 text-xs capitalize data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
+                  >
+                    Failed
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+            </Tabs>
+          </div>
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="min-w-[960px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Student</TableHead>
-                  <TableHead>Parent</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Method</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="hidden md:table-cell">Reference</TableHead>
-                  <TableHead>Access</TableHead>
+                  <TableHead className="whitespace-nowrap">Student</TableHead>
+                  <TableHead className="whitespace-nowrap">Parent</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">Amount</TableHead>
+                  <TableHead className="whitespace-nowrap">Status</TableHead>
+                  <TableHead className="whitespace-nowrap">Method</TableHead>
+                  <TableHead className="whitespace-nowrap">Date</TableHead>
+                  <TableHead className="hidden whitespace-nowrap md:table-cell">Reference</TableHead>
+                  <TableHead className="whitespace-nowrap">Access</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -321,8 +365,10 @@ export function PaymentManagement() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>{payment.parentName}</TableCell>
-                    <TableCell>₦{payment.amount.toLocaleString()}</TableCell>
+                    <TableCell className="whitespace-nowrap">{payment.parentName}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right font-medium text-[#2d682d]">
+                      ₦{payment.amount.toLocaleString()}
+                    </TableCell>
                     <TableCell>
                       <Badge className={getStatusBadge(payment.status)}>{payment.status}</Badge>
                     </TableCell>
@@ -331,8 +377,8 @@ export function PaymentManagement() {
                         {payment.method}
                       </Badge>
                     </TableCell>
-                    <TableCell>{payment.date}</TableCell>
-                    <TableCell className="hidden md:table-cell text-xs text-gray-500">
+                    <TableCell className="whitespace-nowrap">{payment.date}</TableCell>
+                    <TableCell className="hidden whitespace-nowrap text-xs text-gray-500 md:table-cell">
                       {payment.reference ?? "—"}
                     </TableCell>
                     <TableCell>
