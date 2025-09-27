@@ -124,6 +124,14 @@ const getNumber = (value: unknown): number => {
   return 0
 }
 
+const ensureNumberLike = (value: unknown): number => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  return getNumber(value)
+}
+
 const ensureDate = (value: unknown): string | null => {
   if (typeof value === "string" && value.trim().length > 0) {
     const parsed = new Date(value)
@@ -335,11 +343,13 @@ const buildFeeCollection = (payments: AnalyticsPayment[]): FeeCollectionEntry[] 
     }
 
     const bucket = groups.get(key)!
+    const amount = ensureNumberLike(payment.amount)
+
     if (payment.status === "completed") {
-      bucket.collected += payment.amount
-      bucket.expected += payment.amount
+      bucket.collected += amount
+      bucket.expected += amount
     } else if (payment.status === "pending") {
-      bucket.expected += payment.amount
+      bucket.expected += amount
     }
   })
 
@@ -363,16 +373,18 @@ const buildClassCollection = (payments: AnalyticsPayment[]): ClassCollectionEntr
     }
 
     const bucket = groups.get(classKey)!
+    const amount = ensureNumberLike(payment.amount)
+
     if (payment.status === "completed") {
-      bucket.collected += payment.amount
-      bucket.expected += payment.amount
+      bucket.collected += amount
+      bucket.expected += amount
       if (payment.studentId) {
         bucket.students.add(payment.studentId)
       } else if (payment.studentName) {
         bucket.students.add(payment.studentName)
       }
     } else if (payment.status === "pending") {
-      bucket.expected += payment.amount
+      bucket.expected += amount
     }
   })
 
@@ -390,8 +402,14 @@ const buildClassCollection = (payments: AnalyticsPayment[]): ClassCollectionEntr
 const calculateSummary = (payments: AnalyticsPayment[]): FinancialSummary => {
   const completed = payments.filter((payment) => payment.status === "completed")
   const outstanding = payments.filter((payment) => payment.status !== "completed")
-  const totalCollected = completed.reduce((sum, payment) => sum + payment.amount, 0)
-  const outstandingAmount = outstanding.reduce((sum, payment) => sum + payment.amount, 0)
+  const totalCollected = completed.reduce(
+    (sum, payment) => sum + ensureNumberLike(payment.amount),
+    0,
+  )
+  const outstandingAmount = outstanding.reduce(
+    (sum, payment) => sum + ensureNumberLike(payment.amount),
+    0,
+  )
   const expected = totalCollected + outstandingAmount
   const studentsPaid = new Set(
     completed.map((payment) => payment.studentId ?? payment.studentName ?? payment.id),
@@ -465,11 +483,14 @@ const buildDefaulters = (payments: AnalyticsPayment[]): FinancialDefaulterEntry[
     }
 
     const entry = defaulterMap.get(key)!
-    entry.amount += payment.amount
+    entry.amount += ensureNumberLike(payment.amount)
   })
 
   return Array.from(defaulterMap.values())
-    .map((entry) => ({ ...entry, amount: Number(entry.amount.toFixed(2)) }))
+    .map((entry) => {
+      const normalisedAmount = ensureNumberLike(entry.amount)
+      return { ...entry, amount: Number(normalisedAmount.toFixed(2)) }
+    })
     .sort((a, b) => b.amount - a.amount)
 }
 
