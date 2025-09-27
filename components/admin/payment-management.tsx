@@ -250,7 +250,7 @@ export function PaymentManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 [@media(min-width:420px)]:grid-cols-2 md:grid-cols-4">
         <StatCard
           title="Total Revenue"
           icon={DollarSign}
