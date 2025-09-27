@@ -1822,3 +1822,5 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
     </div>
   )
 }
+
+export default AccountantDashboard
