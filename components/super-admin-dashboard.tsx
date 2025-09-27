@@ -1129,7 +1129,7 @@ export default function SuperAdminDashboard() {
             </Card>
           ) : (
             <>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <div className="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2 md:grid-cols-4">
                 <Card>
                   <CardContent className="flex items-center justify-between p-4">
                     <div>
