@@ -338,17 +338,17 @@ export function PaymentManagement() {
             </Tabs>
           </div>
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="min-w-[960px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Student</TableHead>
-                  <TableHead>Parent</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Method</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="hidden md:table-cell">Reference</TableHead>
-                  <TableHead>Access</TableHead>
+                  <TableHead className="whitespace-nowrap">Student</TableHead>
+                  <TableHead className="whitespace-nowrap">Parent</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">Amount</TableHead>
+                  <TableHead className="whitespace-nowrap">Status</TableHead>
+                  <TableHead className="whitespace-nowrap">Method</TableHead>
+                  <TableHead className="whitespace-nowrap">Date</TableHead>
+                  <TableHead className="hidden whitespace-nowrap md:table-cell">Reference</TableHead>
+                  <TableHead className="whitespace-nowrap">Access</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -365,8 +365,10 @@ export function PaymentManagement() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>{payment.parentName}</TableCell>
-                    <TableCell>₦{payment.amount.toLocaleString()}</TableCell>
+                    <TableCell className="whitespace-nowrap">{payment.parentName}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right font-medium text-[#2d682d]">
+                      ₦{payment.amount.toLocaleString()}
+                    </TableCell>
                     <TableCell>
                       <Badge className={getStatusBadge(payment.status)}>{payment.status}</Badge>
                     </TableCell>
@@ -375,8 +377,8 @@ export function PaymentManagement() {
                         {payment.method}
                       </Badge>
                     </TableCell>
-                    <TableCell>{payment.date}</TableCell>
-                    <TableCell className="hidden md:table-cell text-xs text-gray-500">
+                    <TableCell className="whitespace-nowrap">{payment.date}</TableCell>
+                    <TableCell className="hidden whitespace-nowrap text-xs text-gray-500 md:table-cell">
                       {payment.reference ?? "—"}
                     </TableCell>
                     <TableCell>
