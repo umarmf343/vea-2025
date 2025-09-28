@@ -40,6 +40,9 @@ import {
   Frown,
   RotateCcw,
   Undo2,
+  Calculator,
+  Brain,
+  Timer,
 } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
@@ -276,6 +279,142 @@ type SpellingCelebrationState =
     }
 
 type FeedbackMessage = { type: "success" | "error" | "info"; message: string }
+
+interface MathProblem {
+  id: string
+  prompt: string
+  answer: number
+  options: number[]
+  operation: "+" | "-" | "×"
+  difficulty: "easy" | "medium" | "hard"
+  strategy: string
+}
+
+type MathCelebrationState =
+  | null
+  | {
+      mode: "win" | "lose"
+      score: number
+      total: number
+    }
+
+const MATH_CHALLENGE_SIZE = 8
+const MATH_ROUND_DURATION_SECONDS = 45
+const MATH_WIN_THRESHOLD = 0.75
+
+interface MathOperationConfig {
+  symbol: MathProblem["operation"]
+  difficulty: MathProblem["difficulty"]
+  min: number
+  max: number
+}
+
+const MATH_OPERATION_CONFIGS: MathOperationConfig[] = [
+  { symbol: "+", difficulty: "easy", min: 1, max: 20 },
+  { symbol: "-", difficulty: "easy", min: 1, max: 20 },
+  { symbol: "+", difficulty: "medium", min: 10, max: 60 },
+  { symbol: "-", difficulty: "medium", min: 10, max: 60 },
+  { symbol: "×", difficulty: "medium", min: 2, max: 12 },
+  { symbol: "+", difficulty: "hard", min: 25, max: 99 },
+  { symbol: "-", difficulty: "hard", min: 25, max: 99 },
+  { symbol: "×", difficulty: "hard", min: 5, max: 15 },
+]
+
+const randomInt = (min: number, max: number): number => {
+  return Math.floor(Math.random() * (max - min + 1)) + min
+}
+
+const buildMathStrategy = (operation: MathProblem["operation"]): string => {
+  switch (operation) {
+    case "+":
+      return "Add the tens first, then the ones for a speedy total."
+    case "-":
+      return "Count up from the smaller number or subtract the ones first."
+    case "×":
+      return "Use skip counting or a friendly times table you know well."
+    default:
+      return "Break the numbers into easier pieces to solve quickly."
+  }
+}
+
+const generateMathProblem = (index: number): MathProblem => {
+  const config = MATH_OPERATION_CONFIGS[randomInt(0, MATH_OPERATION_CONFIGS.length - 1)]
+
+  let a = randomInt(config.min, config.max)
+  let b = randomInt(config.min, config.max)
+
+  if (config.symbol === "-") {
+    if (b > a) {
+      ;[a, b] = [b, a]
+    }
+  }
+
+  if (config.symbol === "×") {
+    a = randomInt(config.min, Math.min(config.max, 12))
+    b = randomInt(config.min, Math.min(config.max, 12))
+  }
+
+  let answer: number
+  switch (config.symbol) {
+    case "+":
+      answer = a + b
+      break
+    case "-":
+      answer = a - b
+      break
+    case "×":
+      answer = a * b
+      break
+    default:
+      answer = a + b
+      break
+  }
+
+  const prompt = `${a} ${config.symbol} ${b}`
+  const strategy = buildMathStrategy(config.symbol)
+
+  const options = new Set<number>([answer])
+  while (options.size < 4) {
+    const variance = randomInt(-12, 12) || 1
+    const candidate = answer + variance
+    if (candidate >= 0) {
+      options.add(candidate)
+    }
+  }
+
+  const shuffledOptions = shuffleArray(Array.from(options)).slice(0, 4)
+
+  return {
+    id: `math_${index}_${prompt}_${answer}`,
+    prompt,
+    answer,
+    options: shuffledOptions,
+    operation: config.symbol,
+    difficulty: config.difficulty,
+    strategy,
+  }
+}
+
+const prepareMathProblems = () =>
+  Array.from({ length: MATH_CHALLENGE_SIZE }, (_, index) => generateMathProblem(index))
+
+const formatSeconds = (totalSeconds: number): string => {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = Math.max(0, totalSeconds % 60)
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`
+}
+
+const mathDifficultyLabels: Record<MathProblem["difficulty"], string> = {
+  easy: "Warm-up",
+  medium: "Brain Boost",
+  hard: "Genius Mode",
+}
+
+const mathDifficultyStyles: Record<MathProblem["difficulty"], string> = {
+  easy: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  medium: "border-amber-200 bg-amber-50 text-amber-700",
+  hard: "border-purple-200 bg-purple-50 text-purple-700",
+}
 
 const SPELLING_WORD_BANK: SpellingWord[] = [
   {
@@ -523,6 +662,18 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const spellingRoundDuration = 22
   const [spellingWords, setSpellingWords] = useState<SpellingWord[]>(() => prepareSpellingWords())
 
+  const mathRoundDuration = MATH_ROUND_DURATION_SECONDS
+  const [mathProblems, setMathProblems] = useState<MathProblem[]>(() => prepareMathProblems())
+  const [mathActive, setMathActive] = useState(false)
+  const [currentMathIndex, setCurrentMathIndex] = useState(0)
+  const [mathTimeLeft, setMathTimeLeft] = useState(mathRoundDuration)
+  const [mathScore, setMathScore] = useState(0)
+  const [mathAttempts, setMathAttempts] = useState(0)
+  const [mathFeedback, setMathFeedback] = useState<FeedbackMessage | null>(null)
+  const [mathAnswered, setMathAnswered] = useState(false)
+  const [mathSelectedAnswer, setMathSelectedAnswer] = useState<number | null>(null)
+  const [mathCelebration, setMathCelebration] = useState<MathCelebrationState>(null)
+
   const [spellingActive, setSpellingActive] = useState(false)
   const [spellingPaused, setSpellingPaused] = useState(false)
   const [currentSpellingIndex, setCurrentSpellingIndex] = useState(0)
@@ -536,6 +687,160 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const [spellingCelebration, setSpellingCelebration] = useState<SpellingCelebrationState>(null)
   const spellingInputRef = useRef<HTMLInputElement | null>(null)
   const advanceTimeoutRef = useRef<number | null>(null)
+
+  const totalMathProblems = mathProblems.length
+  const currentMathProblem = mathProblems[currentMathIndex] ?? null
+  const mathCompletion = useMemo(
+    () => (totalMathProblems ? Math.min((mathAttempts / totalMathProblems) * 100, 100) : 0),
+    [mathAttempts, totalMathProblems],
+  )
+  const mathAccuracy = useMemo(
+    () => (mathAttempts ? Math.round((mathScore / mathAttempts) * 100) : 0),
+    [mathAttempts, mathScore],
+  )
+  const mathTimePercentage = useMemo(
+    () => (mathRoundDuration ? Math.min((mathTimeLeft / mathRoundDuration) * 100, 100) : 0),
+    [mathRoundDuration, mathTimeLeft],
+  )
+
+  const handleCloseMathCelebration = useCallback(() => {
+    setMathCelebration(null)
+  }, [])
+
+  const handleStartMath = useCallback(() => {
+    setMathProblems(prepareMathProblems())
+    setMathActive(true)
+    setCurrentMathIndex(0)
+    setMathTimeLeft(mathRoundDuration)
+    setMathScore(0)
+    setMathAttempts(0)
+    setMathFeedback({
+      type: "info",
+      message: "Choose the correct answer before the timer runs out!",
+    })
+    setMathAnswered(false)
+    setMathSelectedAnswer(null)
+    setMathCelebration(null)
+  }, [mathRoundDuration])
+
+  const handleStopMath = useCallback(() => {
+    setMathActive(false)
+    setMathTimeLeft(mathRoundDuration)
+    setMathAnswered(false)
+    setMathSelectedAnswer(null)
+    setMathFeedback({
+      type: "info",
+      message: "Challenge paused. Press start to try a new round.",
+    })
+  }, [mathRoundDuration])
+
+  const handleSkipMath = useCallback(() => {
+    if (!mathActive || mathAnswered || !currentMathProblem) {
+      return
+    }
+
+    setMathAttempts((previous) => previous + 1)
+    setMathSelectedAnswer(null)
+    setMathFeedback({
+      type: "info",
+      message: `Skipped! The correct answer was ${currentMathProblem.answer}.`,
+    })
+    setMathAnswered(true)
+  }, [currentMathProblem, mathActive, mathAnswered])
+
+  const handleSelectMathOption = useCallback(
+    (option: number) => {
+      if (!mathActive || mathAnswered || !currentMathProblem) {
+        return
+      }
+
+      const isCorrect = option === currentMathProblem.answer
+      setMathSelectedAnswer(option)
+      setMathAttempts((previous) => previous + 1)
+      setMathScore((previous) => (isCorrect ? previous + 1 : previous))
+      setMathFeedback({
+        type: isCorrect ? "success" : "error",
+        message: isCorrect
+          ? "Brilliant! You solved it."
+          : `Almost! The correct answer was ${currentMathProblem.answer}.`,
+      })
+      setMathAnswered(true)
+    },
+    [currentMathProblem, mathActive, mathAnswered],
+  )
+
+  useEffect(() => {
+    if (!mathActive || mathAnswered) {
+      return
+    }
+
+    const interval = setInterval(() => {
+      setMathTimeLeft((previous) => (previous > 0 ? previous - 1 : 0))
+    }, 1000)
+
+    return () => {
+      clearInterval(interval)
+    }
+  }, [mathActive, mathAnswered])
+
+  useEffect(() => {
+    if (!mathActive || mathAnswered || !currentMathProblem) {
+      return
+    }
+
+    if (mathTimeLeft > 0) {
+      return
+    }
+
+    setMathAttempts((previous) => previous + 1)
+    setMathSelectedAnswer(null)
+    setMathFeedback({
+      type: "error",
+      message: `Time's up! The correct answer was ${currentMathProblem.answer}.`,
+    })
+    setMathAnswered(true)
+  }, [currentMathProblem, mathActive, mathAnswered, mathTimeLeft])
+
+  useEffect(() => {
+    if (!mathActive || !mathAnswered) {
+      return
+    }
+
+    const timeout = setTimeout(() => {
+      const nextIndex = currentMathIndex + 1
+      const hasNext = nextIndex < totalMathProblems
+
+      if (hasNext) {
+        setCurrentMathIndex(nextIndex)
+        setMathTimeLeft(mathRoundDuration)
+        setMathSelectedAnswer(null)
+        setMathFeedback(null)
+        setMathAnswered(false)
+        return
+      }
+
+      const total = totalMathProblems || 1
+      const accuracy = mathScore / total
+      const celebrationMode: MathCelebrationState["mode"] = accuracy >= MATH_WIN_THRESHOLD ? "win" : "lose"
+
+      setMathActive(false)
+      setMathTimeLeft(0)
+      setMathSelectedAnswer(null)
+      setMathAnswered(false)
+      setMathFeedback({
+        type: celebrationMode === "win" ? "success" : "info",
+        message:
+          celebrationMode === "win"
+            ? "Math mastery unlocked! Ready for a tougher level?"
+            : "Challenge complete! Give it another go to beat your score.",
+      })
+      setMathCelebration({ mode: celebrationMode, score: mathScore, total })
+    }, 1500)
+
+    return () => {
+      clearTimeout(timeout)
+    }
+  }, [currentMathIndex, mathActive, mathAnswered, mathRoundDuration, mathScore, totalMathProblems])
 
   const totalSpellingWords = spellingWords.length
   const currentSpellingWord = spellingWords[currentSpellingIndex] ?? null
@@ -1927,6 +2232,12 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
               Library
             </TabsTrigger>
             <TabsTrigger
+              value="mathSprint"
+              className="min-w-[140px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
+            >
+              Math Sprint
+            </TabsTrigger>
+            <TabsTrigger
               value="spellingBee"
               className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
@@ -2236,6 +2547,202 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="mathSprint" className="space-y-4">
+          <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+            <Card className="border-emerald-200">
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="flex items-center gap-2 text-[#2d682d]">
+                      <Calculator className="h-5 w-5" />
+                      Lightning Math Sprint
+                    </CardTitle>
+                    <CardDescription>
+                      Solve quick-fire arithmetic puzzles to strengthen your number sense.
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 text-right">
+                    <Badge variant="outline" className="border-[#2d682d] text-[#2d682d]">
+                      {mathActive ? `Question ${currentMathIndex + 1} / ${totalMathProblems}` : `${totalMathProblems} puzzles`}
+                    </Badge>
+                    {mathActive && currentMathProblem ? (
+                      <Badge
+                        variant="outline"
+                        className={`text-xs font-semibold ${mathDifficultyStyles[currentMathProblem.difficulty]}`}
+                      >
+                        {mathDifficultyLabels[currentMathProblem.difficulty]}
+                      </Badge>
+                    ) : null}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-[#2d682d]">
+                    <Timer className="h-5 w-5" />
+                    <span className="text-sm font-semibold">
+                      {mathActive ? `${formatSeconds(mathTimeLeft)} remaining` : "Timer ready"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[#b29032]">
+                    <Sparkles className="h-5 w-5" />
+                    <span className="text-sm font-semibold">Score: {mathScore}</span>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white p-6 shadow-sm">
+                  {mathActive && currentMathProblem ? (
+                    <div className="space-y-6">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-emerald-600">Solve</p>
+                        <p className="mt-2 text-4xl font-bold text-[#2d682d]">{currentMathProblem.prompt}</p>
+                        <p className="mt-3 text-sm text-slate-600">{currentMathProblem.strategy}</p>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {currentMathProblem.options.map((option) => {
+                          const isSelected = mathSelectedAnswer === option
+                          const isCorrect = currentMathProblem.answer === option
+                          const isDisabled = !mathActive || mathAnswered
+                          const baseClass = "h-14 justify-start border-2 text-left text-lg font-semibold transition-all"
+                          const stateClass = mathAnswered
+                            ? isCorrect
+                              ? "border-emerald-400 bg-emerald-50 text-emerald-900"
+                              : isSelected
+                                ? "border-red-400 bg-red-50 text-red-900"
+                                : "border-slate-200 bg-white text-slate-700"
+                            : "border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/80"
+
+                          return (
+                            <Button
+                              key={option}
+                              type="button"
+                              variant="outline"
+                              disabled={isDisabled}
+                              onClick={() => handleSelectMathOption(option)}
+                              className={`${baseClass} ${stateClass}`}
+                            >
+                              {option}
+                            </Button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 text-center">
+                      <p className="text-lg font-semibold text-[#2d682d]">Ready for a mental math workout?</p>
+                      <p className="text-sm text-slate-600">
+                        Press start to tackle {totalMathProblems} curated arithmetic challenges. Each puzzle gives you
+                        {" "}
+                        {formatSeconds(mathRoundDuration)} to respond.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {mathFeedback ? (
+                  <div
+                    className={`flex items-start gap-2 rounded-xl border p-4 text-sm ${
+                      mathFeedback.type === "success"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : mathFeedback.type === "error"
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : "border-slate-200 bg-slate-50 text-slate-700"
+                    }`}
+                  >
+                    {mathFeedback.type === "success" ? (
+                      <CheckCircle className="mt-0.5 h-4 w-4" />
+                    ) : mathFeedback.type === "error" ? (
+                      <AlertCircle className="mt-0.5 h-4 w-4" />
+                    ) : (
+                      <Sparkles className="mt-0.5 h-4 w-4" />
+                    )}
+                    <span>{mathFeedback.message}</span>
+                  </div>
+                ) : null}
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+                    onClick={handleStartMath}
+                  >
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    {mathActive ? "Restart challenge" : "Start Math Sprint"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleSkipMath}
+                    disabled={!mathActive || mathAnswered}
+                  >
+                    Skip question
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={handleStopMath} disabled={!mathActive}>
+                    End round
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-[#2d682d]">Math Sprint Stats</CardTitle>
+                <CardDescription>Track your progress and celebrate wins.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4">
+                  <div className="flex items-center justify-between text-sm font-medium text-[#2d682d]">
+                    <div className="flex items-center gap-2">
+                      <Timer className="h-4 w-4" />
+                      Time per puzzle
+                    </div>
+                    <span className="text-lg font-semibold">
+                      {mathActive ? formatSeconds(mathTimeLeft) : formatSeconds(mathRoundDuration)}
+                    </span>
+                  </div>
+                  <Progress value={mathActive ? mathTimePercentage : 100} className="mt-3 h-2" />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-emerald-100 bg-white p-4">
+                    <p className="text-xs uppercase text-slate-500">Correct answers</p>
+                    <p className="mt-1 flex items-center gap-2 text-2xl font-bold text-[#2d682d]">
+                      <Trophy className="h-5 w-5 text-[#b29032]" />
+                      {mathScore}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-amber-100 bg-white p-4">
+                    <p className="text-xs uppercase text-slate-500">Accuracy</p>
+                    <p className="mt-1 flex items-center gap-2 text-2xl font-bold text-[#b29032]">
+                      <Brain className="h-5 w-5 text-[#f59e0b]" />
+                      {mathAccuracy}%
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-600">Challenge progress</span>
+                    <span className="text-sm font-semibold text-[#2d682d]">
+                      {Math.min(mathAttempts, totalMathProblems)} / {totalMathProblems}
+                    </span>
+                  </div>
+                  <Progress value={mathCompletion} className="h-2" />
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                  <p className="font-medium text-[#2d682d]">Quick tips</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    <li>Break big numbers into tens and ones for speedy addition.</li>
+                    <li>Use skip counting to power through multiplication questions.</li>
+                    <li>Skip a puzzle if you're unsure—momentum matters more than perfection.</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="spellingBee" className="space-y-4">
@@ -2823,6 +3330,70 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={Boolean(mathCelebration)}
+        onOpenChange={(open) => {
+          if (!open) {
+            handleCloseMathCelebration()
+          }
+        }}
+      >
+        {mathCelebration ? (
+          <DialogContent className="sm:max-w-md border-emerald-200 bg-gradient-to-b from-emerald-50 via-white to-white">
+            <DialogHeader className="items-center text-center">
+              <div
+                className={`flex h-16 w-16 items-center justify-center rounded-full ${
+                  mathCelebration.mode === "win"
+                    ? "bg-emerald-500/20 text-emerald-600"
+                    : "bg-amber-500/20 text-amber-600"
+                }`}
+              >
+                {mathCelebration.mode === "win" ? (
+                  <PartyPopper className="h-8 w-8 animate-bounce" />
+                ) : (
+                  <Brain className="h-8 w-8 animate-pulse" />
+                )}
+              </div>
+              <DialogTitle className="mt-4 text-2xl font-bold text-[#2d682d]">
+                {mathCelebration.mode === "win" ? "Math Champ!" : "Great Practice!"}
+              </DialogTitle>
+              <DialogDescription className="text-sm text-slate-600">
+                You solved {mathCelebration.score} out of {mathCelebration.total} puzzles.
+                {" "}
+                {mathCelebration.mode === "win"
+                  ? "Your quick thinking is impressive—try a harder round next!"
+                  : "Keep going and you'll master these numbers in no time."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4 text-center">
+              <p className="text-xs uppercase text-emerald-600">Accuracy</p>
+              <p className="mt-1 text-3xl font-bold text-emerald-700">
+                {Math.round((mathCelebration.score / (mathCelebration.total || 1)) * 100)}%
+              </p>
+              <Progress
+                value={(mathCelebration.score / (mathCelebration.total || 1)) * 100}
+                className="mt-3 h-2"
+              />
+            </div>
+            <DialogFooter className="mt-6 flex flex-col gap-2 sm:flex-row">
+              <Button type="button" variant="outline" className="w-full" onClick={handleCloseMathCelebration}>
+                Close
+              </Button>
+              <Button
+                type="button"
+                className="w-full bg-[#2d682d] hover:bg-[#2d682d]/90"
+                onClick={() => {
+                  handleCloseMathCelebration()
+                  handleStartMath()
+                }}
+              >
+                <RefreshCcw className="mr-2 h-4 w-4" /> Play again
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        ) : null}
+      </Dialog>
 
       <Dialog
         open={Boolean(spellingCelebration)}
