@@ -42,16 +42,19 @@ export async function POST(request: NextRequest) {
       attachmentSize,
       attachmentType,
       attachmentData,
+      assignedStudentIds,
     } = body
 
     if (type === "submission") {
-      const { assignmentId, studentId, files } = body
+      const { assignmentId, studentId, files, comment, submittedAt, status: submissionStatus } = body
 
       const submission = await dbManager.createAssignmentSubmission({
         assignmentId,
         studentId,
         files: files || [],
-        status: "submitted",
+        comment: typeof comment === "string" ? comment : typeof body?.submittedComment === "string" ? body.submittedComment : null,
+        submittedAt: typeof submittedAt === "string" ? submittedAt : undefined,
+        status: typeof submissionStatus === "string" ? submissionStatus : "submitted",
       })
 
       return NextResponse.json({
@@ -70,6 +73,7 @@ export async function POST(request: NextRequest) {
         dueDate,
         status: typeof status === "string" ? status : "sent",
         maximumScore,
+        assignedStudentIds: Array.isArray(assignedStudentIds) ? assignedStudentIds : undefined,
         resourceName: attachmentName ?? null,
         resourceSize:
           typeof attachmentSize === "number"

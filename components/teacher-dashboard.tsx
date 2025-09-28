@@ -1747,6 +1747,9 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     try {
       setIsSavingAssignment(true)
 
+      const trimmedClassName = assignmentForm.className.trim()
+      const resolvedClassId = trimmedClassName.length > 0 ? trimmedClassName : null
+
       let resourceUrl = assignmentForm.resourceUrl || ""
       let resourceType = assignmentForm.resourceType || ""
       let resourceSize = assignmentForm.resourceSize ?? null
@@ -1763,7 +1766,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         title: assignmentForm.title.trim(),
         description: assignmentForm.description.trim(),
         subject: assignmentForm.subject,
-        className: assignmentForm.className,
+        classId: resolvedClassId,
+        className: trimmedClassName,
         teacherId: teacher.id,
         teacherName: teacher.name,
         dueDate: assignmentForm.dueDate,
