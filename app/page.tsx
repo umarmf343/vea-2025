@@ -1152,7 +1152,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
       <main className="max-w-7xl mx-auto px-4 sm:px:6 lg:px-8 py-8">
         {user.role === "super-admin" && <SuperAdminDashboard />}
-        {user.role === "admin" && <AdminDashboard />}
+        {user.role === "admin" && <AdminDashboard user={user} />}
         {user.role === "parent" && <ParentDashboard user={user} />}
         {user.role === "student" && (
           <StudentDashboard
@@ -1202,7 +1202,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   )
 }
 
-function AdminDashboard() {
+function AdminDashboard({ user }: { user: User }) {
   const [activeTab, setActiveTab] = useState("overview")
 
   return (
@@ -1312,7 +1312,7 @@ function AdminDashboard() {
               <ExamScheduleOverview role="admin" description="Track upcoming school-wide examinations" />
             </div>
             <div className="space-y-6">
-              <NotificationCenter userRole="admin" />
+              <NotificationCenter userRole={user.role} userId={user.id} />
             </div>
           </div>
         </TabsContent>
@@ -1366,7 +1366,7 @@ function AdminDashboard() {
         </TabsContent>
 
         <TabsContent value="messages" className="space-y-6">
-          <InternalMessaging currentUser={{ id: "admin", name: "Admin", role: "admin" }} />
+          <InternalMessaging currentUser={{ id: user.id, name: user.name, role: user.role }} />
         </TabsContent>
       </Tabs>
     </div>
@@ -2119,12 +2119,16 @@ function ParentDashboard({ user }: { user: User }) {
               description="Upcoming exams relevant to your child"
             />
 
-            <SchoolCalendarViewer role="parent" />
-          </div>
+          <SchoolCalendarViewer role="parent" />
+        </div>
 
-          <div className="mt-8">
-            <Noticeboard userRole="parent" userName={user.name} />
-          </div>
+        <div className="mt-8">
+          <NotificationCenter userRole="parent" userId={user.id} studentIds={[studentData.id]} />
+        </div>
+
+        <div className="mt-8">
+          <Noticeboard userRole="parent" userName={user.name} />
+        </div>
 
           <div className="mt-8">
             <Card>

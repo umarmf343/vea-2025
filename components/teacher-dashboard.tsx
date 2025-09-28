@@ -42,6 +42,7 @@ import {
 } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
+import { NotificationCenter } from "@/components/notification-center"
 import { InternalMessaging } from "@/components/internal-messaging"
 import { TutorialLink } from "@/components/tutorial-link"
 import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
@@ -2308,6 +2309,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           </div>
 
           <SchoolCalendarViewer role="teacher" />
+
+          <NotificationCenter userRole="teacher" userId={teacher.id} />
         </TabsContent>
 
         {/* Profile tab */}

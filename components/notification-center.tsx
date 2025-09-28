@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -18,8 +18,27 @@ import {
   BookOpen,
   DollarSign,
   Loader2,
+  MessageCircle,
+  CalendarClock,
+  ClipboardCheck,
+  Megaphone,
 } from "lucide-react"
 import { dbManager } from "@/lib/database-manager"
+import { safeStorage } from "@/lib/safe-storage"
+
+const resolveBrowserWindow = (): (Window & typeof globalThis) | null => {
+  if (typeof globalThis === "undefined") {
+    return null
+  }
+
+  const candidate = globalThis as Window & typeof globalThis
+
+  if (typeof candidate.window === "undefined") {
+    return null
+  }
+
+  return candidate
+}
 
 interface StoredNotification {
   id: string
@@ -29,10 +48,11 @@ interface StoredNotification {
   timestamp?: string
   createdAt?: string
   read?: boolean
-  category?: "system" | "academic" | "payment" | "user"
+  category?: "system" | "academic" | "payment" | "user" | "message" | "calendar" | "task" | "promotion"
   audience?: string[] | string | null
   actionRequired?: boolean
   metadata?: Record<string, unknown>
+  actionUrl?: string | null
 }
 
 interface NotificationCenterProps {
@@ -45,12 +65,43 @@ export function NotificationCenter({ userRole, userId, studentIds }: Notificatio
   const [notifications, setNotifications] = useState<StoredNotification[]>([])
   const [showUnreadOnly, setShowUnreadOnly] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const eventSourceRef = useRef<EventSource | null>(null)
 
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications])
 
   const normalizedRole = useMemo(() => userRole.toLowerCase().replace(/\s+/g, "-"), [userRole])
 
-  const normalizedUserId = useMemo(() => (userId ? String(userId).trim().toLowerCase() : null), [userId])
+  const resolvedUserId = useMemo(() => {
+    if (userId) {
+      const trimmed = String(userId).trim()
+      return trimmed.length > 0 ? trimmed : null
+    }
+
+    const runtime = resolveBrowserWindow()
+    if (!runtime) {
+      return null
+    }
+
+    try {
+      const cached = safeStorage.getItem("vea_current_user")
+      if (!cached) {
+        return null
+      }
+
+      const parsed = JSON.parse(cached) as { id?: unknown }
+      const parsedId = typeof parsed?.id === "string" ? parsed.id.trim() : String(parsed?.id ?? "").trim()
+      return parsedId.length > 0 ? parsedId : null
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("Unable to resolve current user ID for notifications", error)
+      return null
+    }
+  }, [userId])
+
+  const normalizedUserId = useMemo(
+    () => (resolvedUserId ? resolvedUserId.trim().toLowerCase() : null),
+    [resolvedUserId],
+  )
 
   const normalizedStudentIds = useMemo(() => {
     if (!studentIds || studentIds.length === 0) {
@@ -59,6 +110,7 @@ export function NotificationCenter({ userRole, userId, studentIds }: Notificatio
 
     return new Set(studentIds.map((value) => String(value).trim().toLowerCase()))
   }, [studentIds])
+
 
   const toAudienceArray = useCallback((audience: StoredNotification["audience"]) => {
     if (!audience) {
@@ -131,6 +183,8 @@ export function NotificationCenter({ userRole, userId, studentIds }: Notificatio
     if ("studentIds" in metadata) candidates.push((metadata as Record<string, unknown>).studentIds)
     if ("studentIDs" in metadata) candidates.push((metadata as Record<string, unknown>).studentIDs)
     if ("students" in metadata) candidates.push((metadata as Record<string, unknown>).students)
+    if ("targetStudentId" in metadata) candidates.push((metadata as Record<string, unknown>).targetStudentId)
+    if ("targetStudentIds" in metadata) candidates.push((metadata as Record<string, unknown>).targetStudentIds)
 
     const toStrings = (value: unknown): string[] => {
       if (!value) return []
@@ -168,8 +222,11 @@ export function NotificationCenter({ userRole, userId, studentIds }: Notificatio
     ): StoredNotification["category"] => {
       const normaliseCategory = (value: string) => value.toLowerCase()
 
-      if (typeof category === "string" && category.trim().length > 0) {
-        const normalized = normaliseCategory(category)
+      const tryResolve = (value?: string | null) => {
+        if (!value) {
+          return null
+        }
+        const normalized = normaliseCategory(value)
         if (["payment", "payments", "finance", "financial", "fee", "fees"].includes(normalized)) {
           return "payment"
         }
@@ -178,26 +235,30 @@ export function NotificationCenter({ userRole, userId, studentIds }: Notificatio
         }
         if (["user", "users", "profile", "profiles"].includes(normalized)) {
           return "user"
+        }
+        if (["message", "messages", "chat", "communication"].includes(normalized)) {
+          return "message"
+        }
+        if (["calendar", "schedule", "event", "timetable"].includes(normalized)) {
+          return "calendar"
+        }
+        if (["task", "action", "approval", "review", "assignment"].includes(normalized)) {
+          return "task"
+        }
+        if (["promotion", "announcement", "news", "update"].includes(normalized)) {
+          return "promotion"
         }
         if (normalized === "system") {
           return "system"
         }
+        return null
       }
 
-      if (typeof rawType === "string") {
-        const normalized = normaliseCategory(rawType)
-        if (["payment", "payments", "finance", "financial", "fee", "fees"].includes(normalized)) {
-          return "payment"
-        }
-        if (["academic", "academics", "result", "results", "report", "reports"].includes(normalized)) {
-          return "academic"
-        }
-        if (["user", "users", "profile", "profiles"].includes(normalized)) {
-          return "user"
-        }
-      }
-
-      return "system"
+      return (
+        tryResolve(typeof category === "string" ? category : null) ??
+        tryResolve(typeof rawType === "string" ? rawType : null) ??
+        "system"
+      )
     }
 
     const resolveTimestamp = (value: unknown) => {
@@ -210,24 +271,84 @@ export function NotificationCenter({ userRole, userId, studentIds }: Notificatio
       return new Date().toISOString()
     }
 
+    const mergeMetadata = (...sources: Array<Record<string, unknown> | undefined>) => {
+      return sources.reduce<Record<string, unknown>>((accumulator, source) => {
+        if (!source) {
+          return accumulator
+        }
+
+        Object.entries(source).forEach(([key, value]) => {
+          if (value === undefined) {
+            return
+          }
+          accumulator[key] = value
+        })
+
+        return accumulator
+      }, {})
+    }
+
     const rawType = typeof entry?.type === "string" ? entry.type : undefined
 
     const timestamp = resolveTimestamp(entry?.timestamp ?? entry?.createdAt ?? entry?.sentAt ?? entry?.updatedAt)
 
+    const baseAudience = entry?.audience ?? entry?.targetAudience
+    const roleAudience = Array.isArray(entry?.targetRoles)
+      ? (entry.targetRoles as unknown[])
+          .map((role) => (typeof role === "string" ? role : String(role)))
+          .map((role) => `role:${role}`)
+      : []
+    const userAudience = Array.isArray(entry?.targetUserIds)
+      ? (entry.targetUserIds as unknown[])
+          .map((id) => (typeof id === "string" ? id : String(id)))
+          .map((id) => `user:${id}`)
+      : []
+    const studentAudience = Array.isArray(entry?.targetStudentIds)
+      ? (entry.targetStudentIds as unknown[])
+          .map((id) => (typeof id === "string" ? id : String(id)))
+          .map((id) => `student:${id}`)
+      : []
+
+    const combinedAudience = [...toAudienceArray(baseAudience), ...roleAudience, ...userAudience, ...studentAudience]
+    const resolvedAudience = combinedAudience.length > 0 ? Array.from(new Set(combinedAudience)) : baseAudience ?? null
+
+    const resolveActionUrl = (value: unknown): string | null => {
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value.trim()
+      }
+      return null
+    }
+
     return {
       id: String(entry?.id ?? `${Date.now()}`),
       title: typeof entry?.title === "string" ? entry.title : "Notification",
-      message: typeof entry?.message === "string" ? entry.message : "",
+      message:
+        typeof entry?.message === "string" && entry.message.trim().length > 0
+          ? entry.message
+          : typeof entry?.body === "string"
+            ? entry.body
+            : typeof entry?.description === "string"
+              ? entry.description
+              : "",
       type: resolveType(rawType),
       timestamp,
       createdAt: typeof entry?.createdAt === "string" ? entry.createdAt : timestamp,
       read: Boolean(entry?.read),
       category: resolveCategory(entry?.category, rawType),
-      audience: (entry?.audience ?? entry?.targetAudience ?? null) as StoredNotification["audience"],
-      actionRequired: Boolean(entry?.actionRequired),
-      metadata: (entry?.metadata ?? {}) as Record<string, unknown>,
+      audience: resolvedAudience as StoredNotification["audience"],
+      actionRequired: Boolean(entry?.actionRequired ?? entry?.requiresAction ?? entry?.requireAction),
+      metadata: mergeMetadata(
+        (entry?.metadata as Record<string, unknown>) ?? undefined,
+        (entry?.meta as Record<string, unknown>) ?? undefined,
+        (entry?.data as Record<string, unknown>) ?? undefined,
+      ),
+      actionUrl:
+        resolveActionUrl(entry?.actionUrl) ??
+        resolveActionUrl(entry?.url) ??
+        resolveActionUrl(entry?.link) ??
+        null,
     }
-  }, [])
+  }, [toAudienceArray])
 
   const applyAudienceFilter = useCallback(
     (items: any[]) => {
@@ -367,6 +488,79 @@ export function NotificationCenter({ userRole, userId, studentIds }: Notificatio
     void loadNotifications(true)
   }, [loadNotifications])
 
+  const ingestRealtimeNotification = useCallback(
+    async (payload: unknown) => {
+      const normalised = normaliseNotification(payload)
+
+      try {
+        await dbManager.saveNotification({
+          ...normalised,
+          read: false,
+        })
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("Failed to store realtime notification", error)
+      }
+    },
+    [normaliseNotification],
+  )
+
+  useEffect(() => {
+    if (!resolvedUserId) {
+      return () => undefined
+    }
+
+    const runtime = resolveBrowserWindow()
+    if (!runtime) {
+      return () => undefined
+    }
+
+    const url = new URL("/api/realtime/stream", runtime.location.origin)
+    url.searchParams.set("userId", resolvedUserId)
+    if (normalizedRole) {
+      url.searchParams.set("role", normalizedRole)
+    }
+
+    const eventSource = new EventSource(url.toString())
+    eventSourceRef.current = eventSource
+
+    const handleInit = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data) as { notifications?: unknown[] }
+        if (Array.isArray(data.notifications)) {
+          void Promise.all(data.notifications.map((entry) => ingestRealtimeNotification(entry)))
+        }
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("Failed to process initial notifications", error)
+      }
+    }
+
+    const handleNotification = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data) as unknown
+        void ingestRealtimeNotification(data)
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("Failed to process realtime notification", error)
+      }
+    }
+
+    eventSource.addEventListener("init", handleInit as EventListener)
+    eventSource.addEventListener("notification", handleNotification as EventListener)
+
+    eventSource.onerror = () => {
+      eventSource.close()
+    }
+
+    return () => {
+      eventSource.removeEventListener("init", handleInit as EventListener)
+      eventSource.removeEventListener("notification", handleNotification as EventListener)
+      eventSource.close()
+      eventSourceRef.current = null
+    }
+  }, [ingestRealtimeNotification, normalizedRole, resolvedUserId])
+
   useEffect(() => {
     const handleRefresh = () => {
       void loadNotifications(false)
@@ -442,6 +636,10 @@ export function NotificationCenter({ userRole, userId, studentIds }: Notificatio
     if (category === "payment") return <DollarSign className="h-4 w-4" />
     if (category === "academic") return <BookOpen className="h-4 w-4" />
     if (category === "user") return <User className="h-4 w-4" />
+    if (category === "message") return <MessageCircle className="h-4 w-4" />
+    if (category === "calendar") return <CalendarClock className="h-4 w-4" />
+    if (category === "task") return <ClipboardCheck className="h-4 w-4" />
+    if (category === "promotion") return <Megaphone className="h-4 w-4" />
 
     switch (type) {
       case "success":
@@ -557,8 +755,8 @@ export function NotificationCenter({ userRole, userId, studentIds }: Notificatio
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3 flex-1">
-                      <div className={`p-2 rounded-full ${getNotificationColor(notification.type)}`}>
-                        {getNotificationIcon(notification.type, notification.category)}
+                      <div className={`p-2 rounded-full ${getNotificationColor(notification.type ?? "info")}`}>
+                        {getNotificationIcon(notification.type ?? "info", notification.category ?? "system")}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
@@ -572,16 +770,30 @@ export function NotificationCenter({ userRole, userId, studentIds }: Notificatio
                             </Badge>
                           )}
                         </div>
-                        <p className={`text-sm ${notification.read ? "text-gray-500" : "text-gray-600"}`}>
-                          {notification.message}
-                        </p>
+                        {notification.message ? (
+                          <p className={`text-sm ${notification.read ? "text-gray-500" : "text-gray-600"}`}>
+                            {notification.message}
+                          </p>
+                        ) : null}
+                        {notification.actionUrl ? (
+                          <Button
+                            variant="link"
+                            className="h-auto p-0 text-xs text-[#2d682d]"
+                            onClick={() => {
+                              const runtime = resolveBrowserWindow()
+                              runtime?.open?.(notification.actionUrl ?? "#", "_blank")
+                            }}
+                          >
+                            View details
+                          </Button>
+                        ) : null}
                         <div className="flex items-center gap-2 mt-2">
                           <Clock className="h-3 w-3 text-gray-400" />
                           <span className="text-xs text-gray-400">
                             {formatTimestamp(notification.timestamp ?? notification.createdAt)}
                           </span>
                           <Badge variant="outline" className="text-xs">
-                            {notification.category ?? "system"}
+                            {(notification.category ?? "system").replace(/-/g, " ")}
                           </Badge>
                         </div>
                       </div>
