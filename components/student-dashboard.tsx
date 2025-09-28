@@ -55,8 +55,32 @@ import { logger } from "@/lib/logger"
 import { normalizeTimetableCollection } from "@/lib/timetable"
 import { CONTINUOUS_ASSESSMENT_MAXIMUMS } from "@/lib/grade-utils"
 import { useBranding } from "@/hooks/use-branding"
+import { useSchoolCalendar } from "@/hooks/use-school-calendar"
 
 type TimetableSlotSummary = TimetableWeeklyViewSlot
+
+type UpcomingEventSource = "calendar" | "assignment"
+
+interface UpcomingEventSummary {
+  id: string
+  title: string
+  date: string
+  description?: string
+  source: UpcomingEventSource
+  location?: string | null
+  category?: string | null
+}
+
+const UPCOMING_EVENT_SOURCE_STYLES: Record<UpcomingEventSource, { label: string; badgeClass: string }> = {
+  calendar: {
+    label: "School calendar",
+    badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  assignment: {
+    label: "Assignment due",
+    badgeClass: "border-blue-200 bg-blue-50 text-blue-700",
+  },
+}
 
 interface IdentifiedRecord {
   id: string
@@ -637,6 +661,7 @@ interface StudentDashboardProps {
 export function StudentDashboard({ student }: StudentDashboardProps) {
   const branding = useBranding()
   const resolvedSchoolName = branding.schoolName
+  const calendar = useSchoolCalendar()
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const [selectedAssignment, setSelectedAssignment] = useState<IdentifiedRecord | null>(null)
@@ -653,7 +678,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const [assignments, setAssignments] = useState<IdentifiedRecord[]>([])
   const [libraryBooks, setLibraryBooks] = useState<IdentifiedRecord[]>([])
   const [attendance, setAttendance] = useState({ present: 0, total: 0, percentage: 0 })
-  const [upcomingEvents, setUpcomingEvents] = useState<IdentifiedRecord[]>([])
   const [studentProfile, setStudentProfile] = useState(student)
   const [loading, setLoading] = useState(true)
 
@@ -1856,13 +1880,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
 
         setAttendance(attendanceData)
 
-        const eventsData = await dbManager.getUpcomingEvents(resolvedClassName)
-        if (!isMounted) {
-          return
-        }
-
-        setUpcomingEvents(normalizeIdentifiedCollection(eventsData, "event"))
-
         const profileData = await dbManager.getStudentProfile(resolvedStudentId)
         if (!isMounted) {
           return
@@ -1946,12 +1963,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       }
     }
 
-    const handleEventsUpdate = (payload: unknown) => {
-      if (isRecord(payload) && normalizeKey(payload.class) === normalizeKey(effectiveClassName)) {
-        setUpcomingEvents(normalizeIdentifiedCollection(payload.events, "event"))
-      }
-    }
-
     const handleProfileUpdate = (payload: unknown) => {
       const record = toIdentifiedRecord(payload, "profile")
       if (record && normalizeKey(record.id) === normalizeKey(effectiveStudentId)) {
@@ -1966,14 +1977,12 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     dbManager.addEventListener("gradesUpdate", handleGradesUpdate)
     dbManager.addEventListener("assignmentsUpdate", handleAssignmentsUpdate)
     dbManager.addEventListener("attendanceUpdate", handleAttendanceUpdate)
-    dbManager.addEventListener("eventsUpdate", handleEventsUpdate)
     dbManager.addEventListener("profileUpdate", handleProfileUpdate)
 
     return () => {
       dbManager.removeEventListener("gradesUpdate", handleGradesUpdate)
       dbManager.removeEventListener("assignmentsUpdate", handleAssignmentsUpdate)
       dbManager.removeEventListener("attendanceUpdate", handleAttendanceUpdate)
-      dbManager.removeEventListener("eventsUpdate", handleEventsUpdate)
       dbManager.removeEventListener("profileUpdate", handleProfileUpdate)
     }
   }, [effectiveClassName, effectiveStudentId])
@@ -2105,6 +2114,136 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       logger.error("Failed to submit assignment", { error })
     }
   }
+
+  const aggregatedUpcomingEvents = useMemo<UpcomingEventSummary[]>(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const dateFormatter = new Intl.DateTimeFormat("en-NG", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    })
+
+    const parseDateValue = (value: unknown): Date | null => {
+      if (typeof value !== "string" || value.trim().length === 0) {
+        return null
+      }
+
+      const parsed = new Date(value)
+      if (Number.isNaN(parsed.getTime())) {
+        return null
+      }
+
+      return parsed
+    }
+
+    const formatRangeLabel = (start: Date, end?: Date | null) => {
+      if (!end || end.getTime() === start.getTime()) {
+        return dateFormatter.format(start)
+      }
+
+      return `${dateFormatter.format(start)} – ${dateFormatter.format(end)}`
+    }
+
+    const collected: Array<{ sortKey: number; event: UpcomingEventSummary }> = []
+
+    if (calendar.status === "published") {
+      calendar.events.forEach((event) => {
+        const start = parseDateValue(event.startDate)
+        if (!start) {
+          return
+        }
+
+        const end = parseDateValue(event.endDate ?? event.startDate)
+        const endBoundary = new Date(end ?? start)
+        endBoundary.setHours(23, 59, 59, 999)
+        if (endBoundary < today) {
+          return
+        }
+
+        const audience = typeof event.audience === "string" ? event.audience : "all"
+        if (!["all", "students"].includes(audience)) {
+          return
+        }
+
+        const normalizedStart = new Date(start)
+        normalizedStart.setHours(0, 0, 0, 0)
+
+        collected.push({
+          sortKey: normalizedStart.getTime(),
+          event: {
+            id:
+              typeof event.id === "string" && event.id.trim().length > 0
+                ? `calendar_${event.id}`
+                : `calendar_${normalizedStart.getTime()}`,
+            title:
+              typeof event.title === "string" && event.title.trim().length > 0
+                ? event.title.trim()
+                : "School event",
+            date: formatRangeLabel(start, end),
+            description:
+              typeof event.description === "string" && event.description.trim().length > 0
+                ? event.description
+                : undefined,
+            source: "calendar",
+            location:
+              typeof event.location === "string" && event.location.trim().length > 0
+                ? event.location.trim()
+                : null,
+            category: typeof event.category === "string" ? event.category : null,
+          },
+        })
+      })
+    }
+
+    assignments.forEach((assignment) => {
+      const dueDate = typeof assignment.dueDate === "string" ? assignment.dueDate : null
+      if (!dueDate) {
+        return
+      }
+
+      const due = parseDateValue(dueDate)
+      if (!due) {
+        return
+      }
+
+      const endBoundary = new Date(due)
+      endBoundary.setHours(23, 59, 59, 999)
+      if (endBoundary < today) {
+        return
+      }
+
+      collected.push({
+        sortKey: due.getTime(),
+        event: {
+          id: `assignment_${assignment.id}`,
+          title:
+            typeof assignment.title === "string" && assignment.title.trim().length > 0
+              ? `Assignment: ${assignment.title}`
+              : "Assignment due",
+          date: dateFormatter.format(due),
+          description:
+            typeof assignment.description === "string" && assignment.description.trim().length > 0
+              ? assignment.description
+              : undefined,
+          source: "assignment",
+        },
+      })
+    })
+
+    const orderedUnique = new Map<string, UpcomingEventSummary>()
+
+    collected
+      .sort((a, b) => a.sortKey - b.sortKey)
+      .forEach((entry) => {
+        if (!orderedUnique.has(entry.event.id)) {
+          orderedUnique.set(entry.event.id, entry.event)
+        }
+      })
+
+    return Array.from(orderedUnique.values())
+  }, [assignments, calendar.events, calendar.status])
 
   if (loading) {
     return (
@@ -2279,16 +2418,40 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {upcomingEvents.length > 0 ? (
-                    upcomingEvents.slice(0, 3).map((event, index) => (
-                      <div key={index} className="p-2 bg-yellow-50 border-l-4 border-[#b29032] rounded">
-                        <p className="font-medium">{event.title}</p>
-                        <p className="text-sm text-gray-600">{event.date}</p>
-                        {event.description && <p className="text-xs text-gray-500">{event.description}</p>}
-                      </div>
-                    ))
+                  {aggregatedUpcomingEvents.length > 0 ? (
+                    aggregatedUpcomingEvents.slice(0, 3).map((event) => {
+                      const style = UPCOMING_EVENT_SOURCE_STYLES[event.source] ?? {
+                        label: "Schedule",
+                        badgeClass: "border-gray-200 bg-gray-50 text-gray-600",
+                      }
+
+                      return (
+                        <div
+                          key={event.id}
+                          className="rounded border border-[#b29032]/40 bg-yellow-50/60 p-3 shadow-sm"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-medium text-[#2d682d]">{event.title}</p>
+                            <Badge variant="outline" className={`${style.badgeClass} text-[10px] font-semibold`}>
+                              {style.label}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-gray-600">{event.date}</p>
+                          {event.location ? (
+                            <p className="text-xs text-gray-500">Location: {event.location}</p>
+                          ) : null}
+                          {event.description ? (
+                            <p className="text-xs text-gray-500">{event.description}</p>
+                          ) : null}
+                        </div>
+                      )
+                    })
                   ) : (
-                    <p className="text-sm text-gray-500">No upcoming events</p>
+                    <p className="text-sm text-gray-500">
+                      {calendar.status === "published"
+                        ? "No upcoming events"
+                        : "No visible activities yet. Awaiting published calendar or class updates."}
+                    </p>
                   )}
                 </div>
               </CardContent>
