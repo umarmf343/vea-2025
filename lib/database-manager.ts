@@ -632,6 +632,401 @@ class DatabaseManager {
     }
   }
 
+  private normalisePersonName(value: unknown): string | null {
+    if (typeof value === "string") {
+      const trimmed = value.trim()
+      return trimmed.length > 0 ? trimmed : null
+    }
+
+    return null
+  }
+
+  private shouldEmitNotifications(): boolean {
+    return isBrowserEnvironment()
+  }
+
+  private async resolveUserSummary(
+    userId: string | null | undefined,
+  ): Promise<{ id: string; name: string | null; role: string | null } | null> {
+    const normalizedId = typeof userId === "string" ? userId.trim() : ""
+
+    if (normalizedId.length === 0) {
+      return null
+    }
+
+    try {
+      const users = await this.getAllUsers()
+      const match = users.find((user: any) => {
+        const candidateId = typeof user?.id === "string" ? user.id : String(user?.id ?? "")
+        return candidateId.trim() === normalizedId
+      })
+
+      if (!match) {
+        return { id: normalizedId, name: null, role: null }
+      }
+
+      const nameCandidate =
+        this.normalisePersonName(match.name) ??
+        this.normalisePersonName(match.fullName) ??
+        this.normalisePersonName(match.username)
+
+      const roleCandidate =
+        typeof match.role === "string" && match.role.trim().length > 0
+          ? match.role.trim().toLowerCase()
+          : null
+
+      return { id: normalizedId, name: nameCandidate ?? null, role: roleCandidate }
+    } catch (error) {
+      console.error("Unable to resolve user summary", error)
+      return { id: normalizedId, name: null, role: null }
+    }
+  }
+
+  private async resolveStudentInfo(
+    studentId: string,
+  ): Promise<{ id: string; name: string | null; className: string | null }> {
+    const normalizedId = String(studentId).trim()
+
+    if (!normalizedId) {
+      return { id: "", name: null, className: null }
+    }
+
+    try {
+      const users = await this.getAllUsers()
+      const match = users.find((user: any) => {
+        const candidateId = typeof user?.id === "string" ? user.id : String(user?.id ?? "")
+        return candidateId.trim() === normalizedId
+      })
+
+      const nameCandidate =
+        match
+          ? this.normalisePersonName(match.name) ??
+            this.normalisePersonName(match.fullName) ??
+            this.normalisePersonName(match.username)
+          : null
+
+      const className = match ? this.resolveStudentClass(match) : null
+
+      return { id: normalizedId, name: nameCandidate ?? null, className }
+    } catch (error) {
+      console.error("Unable to resolve student info", error)
+      return { id: normalizedId, name: null, className: null }
+    }
+  }
+
+  private describeAssignmentDueDate(value: string | null | undefined): string | null {
+    if (!value) {
+      return null
+    }
+
+    const dueDate = new Date(value)
+
+    if (Number.isNaN(dueDate.getTime())) {
+      return null
+    }
+
+    const oneDay = 1000 * 60 * 60 * 24
+    const diff = Math.ceil((dueDate.getTime() - Date.now()) / oneDay)
+
+    if (diff > 1) {
+      return `due in ${diff} days`
+    }
+
+    if (diff === 1) {
+      return "due tomorrow"
+    }
+
+    if (diff === 0) {
+      return "due today"
+    }
+
+    return `overdue by ${Math.abs(diff)} day${Math.abs(diff) === 1 ? "" : "s"}`
+  }
+
+  private resolveClassMetadata(
+    classId?: string | null,
+    className?: string | null,
+  ): { classId: string | null; className: string | null } {
+    const trimmedId = typeof classId === "string" ? classId.trim() : ""
+    const trimmedName = typeof className === "string" ? className.trim() : ""
+    const targetIdentifier = this.normaliseClassIdentifier(trimmedName || trimmedId)
+
+    let resolvedClassId = trimmedId.length > 0 ? trimmedId : null
+    let resolvedClassName = trimmedName.length > 0 ? trimmedName : null
+
+    if (!targetIdentifier) {
+      return { classId: resolvedClassId, className: resolvedClassName }
+    }
+
+    try {
+      const classes = this.getClasses()
+      const match = classes.find((entry: any) => {
+        const candidates = [entry?.id, entry?.name, entry?.className]
+        return candidates.some(
+          (candidate) =>
+            typeof candidate === "string" && this.normaliseClassIdentifier(candidate) === targetIdentifier,
+        )
+      })
+
+      if (match) {
+        if (!resolvedClassId && match.id) {
+          resolvedClassId = String(match.id)
+        }
+
+        if (!resolvedClassName) {
+          const nameCandidate = this.normalisePersonName(match.name) ?? this.normalisePersonName(match.className)
+          resolvedClassName = nameCandidate ?? (typeof match.name === "string" ? match.name : null)
+        }
+      }
+    } catch (error) {
+      console.error("Unable to resolve class metadata", error)
+    }
+
+    return { classId: resolvedClassId, className: resolvedClassName }
+  }
+
+  private async resolveAssignmentStudentIds(payload: CreateAssignmentInput): Promise<string[]> {
+    if (Array.isArray(payload.assignedStudentIds) && payload.assignedStudentIds.length > 0) {
+      return payload.assignedStudentIds
+        .map((studentId) => (typeof studentId === "string" ? studentId.trim() : String(studentId ?? "")))
+        .filter((studentId) => studentId.length > 0)
+    }
+
+    const classLabel = this.normalisePersonName(payload.className) ?? this.normalisePersonName(payload.classId)
+
+    if (!classLabel) {
+      return []
+    }
+
+    try {
+      const students = await this.getStudentsByClass(classLabel)
+      return students
+        .map((student: any) => (typeof student?.id === "string" ? student.id : String(student?.id ?? "")))
+        .map((studentId: string) => studentId.trim())
+        .filter((studentId: string) => studentId.length > 0)
+    } catch (error) {
+      console.error("Unable to resolve assignment student IDs", error)
+      return []
+    }
+  }
+
+  private async notifyAssignmentSent(assignment: AssignmentRecord) {
+    if (!this.shouldEmitNotifications() || assignment.status !== "sent") {
+      return
+    }
+
+    const recipients = Array.isArray(assignment.assignedStudentIds) ? assignment.assignedStudentIds : []
+    const uniqueRecipients = new Map<string, { id: string; name: string | null }>()
+
+    if (recipients.length > 0) {
+      await Promise.all(
+        recipients.map(async (studentId) => {
+          const details = await this.resolveStudentInfo(studentId)
+          uniqueRecipients.set(details.id, { id: details.id, name: details.name })
+        }),
+      )
+    } else if (assignment.className) {
+      try {
+        const students = await this.getStudentsByClass(assignment.className)
+        students.forEach((student: any) => {
+          const id = typeof student?.id === "string" ? student.id : String(student?.id ?? "")
+          if (!uniqueRecipients.has(id)) {
+            const name =
+              this.normalisePersonName(student?.name) ??
+              this.normalisePersonName(student?.fullName) ??
+              this.normalisePersonName(student?.username)
+            uniqueRecipients.set(id, { id, name: name ?? null })
+          }
+        })
+      } catch (error) {
+        console.error("Unable to resolve class recipients for assignment", error)
+      }
+    }
+
+    const teacherSummary = await this.resolveUserSummary(assignment.teacherId ?? null)
+    const teacherName = this.normalisePersonName(assignment.teacherName) ?? teacherSummary?.name ?? "Your teacher"
+    const classLabel = assignment.className ?? assignment.classId ?? "your class"
+    const duePhrase = this.describeAssignmentDueDate(assignment.dueDate)
+    const baseMetadata = {
+      assignmentId: assignment.id,
+      className: assignment.className ?? assignment.classId ?? null,
+      subject: assignment.subject,
+      dueDate: assignment.dueDate,
+      teacherId: assignment.teacherId,
+      teacherName,
+    }
+
+    await Promise.allSettled(
+      Array.from(uniqueRecipients.values()).map((recipient) => {
+        const audience = [recipient.id, "student"]
+        const messageParts = [
+          `${teacherName} assigned "${assignment.title}" to ${classLabel}.`,
+          duePhrase ? `It is ${duePhrase}.` : null,
+        ].filter(Boolean)
+
+        return this.saveNotification({
+          title: `New ${assignment.subject} assignment`,
+          message: messageParts.join(" "),
+          type: "info",
+          category: "task",
+          audience,
+          targetAudience: audience,
+          metadata: {
+            ...baseMetadata,
+            studentId: recipient.id,
+            studentName: recipient.name ?? undefined,
+            targetStudentIds: Array.from(uniqueRecipients.keys()),
+          },
+        })
+      }),
+    )
+
+    if (assignment.teacherId) {
+      const audience = [assignment.teacherId, "teacher"]
+      try {
+        await this.saveNotification({
+          title: "Assignment sent",
+          message: `"${assignment.title}" was shared with ${classLabel}.`,
+          type: "success",
+          category: "task",
+          audience,
+          targetAudience: audience,
+          metadata: {
+            ...baseMetadata,
+            targetStudentIds: Array.from(uniqueRecipients.keys()),
+          },
+        })
+      } catch (error) {
+        console.error("Unable to notify teacher about assignment dispatch", error)
+      }
+    }
+  }
+
+  private async notifyAssignmentSubmission(
+    assignment: AssignmentRecord,
+    submission: AssignmentSubmissionRecord,
+  ) {
+    if (!this.shouldEmitNotifications()) {
+      return
+    }
+
+    const studentDetails = await this.resolveStudentInfo(submission.studentId)
+    const teacherSummary = await this.resolveUserSummary(assignment.teacherId ?? null)
+    const teacherName = this.normalisePersonName(assignment.teacherName) ?? teacherSummary?.name ?? "Your teacher"
+    const classLabel = assignment.className ?? assignment.classId ?? "your class"
+
+    const metadata = {
+      assignmentId: assignment.id,
+      submissionId: submission.id,
+      studentId: studentDetails.id,
+      studentName: studentDetails.name ?? undefined,
+      className: classLabel,
+      submittedAt: submission.submittedAt,
+      score: submission.score ?? null,
+      grade: submission.grade ?? null,
+      teacherId: assignment.teacherId ?? null,
+      teacherName,
+    }
+
+    if (assignment.teacherId) {
+      const audience = [assignment.teacherId, "teacher"]
+      try {
+        await this.saveNotification({
+          title: "Assignment submitted",
+          message: `${studentDetails.name ?? "A student"} submitted "${assignment.title}" for ${classLabel}.`,
+          type: "info",
+          category: "task",
+          audience,
+          targetAudience: audience,
+          metadata,
+        })
+      } catch (error) {
+        console.error("Unable to notify teacher about assignment submission", error)
+      }
+    }
+
+    const studentAudience = [studentDetails.id, "student"]
+    try {
+      await this.saveNotification({
+        title: "Submission received",
+        message: `You submitted "${assignment.title}".`,
+        type: "success",
+        category: "task",
+        audience: studentAudience,
+        targetAudience: studentAudience,
+        metadata,
+      })
+    } catch (error) {
+      console.error("Unable to notify student about submission receipt", error)
+    }
+  }
+
+  private async notifyAssignmentGraded(
+    assignment: AssignmentRecord,
+    submission: AssignmentSubmissionRecord,
+  ) {
+    if (!this.shouldEmitNotifications()) {
+      return
+    }
+
+    const studentDetails = await this.resolveStudentInfo(submission.studentId)
+    const teacherSummary = await this.resolveUserSummary(assignment.teacherId ?? null)
+    const teacherName = this.normalisePersonName(assignment.teacherName) ?? teacherSummary?.name ?? "Your teacher"
+    const classLabel = assignment.className ?? assignment.classId ?? "your class"
+
+    const scoreLabel =
+      typeof submission.score === "number"
+        ? `${submission.score}${assignment.maximumScore ? `/${assignment.maximumScore}` : ""}`
+        : submission.grade
+          ? submission.grade
+          : "feedback available"
+
+    const metadata = {
+      assignmentId: assignment.id,
+      submissionId: submission.id,
+      studentId: studentDetails.id,
+      studentName: studentDetails.name ?? undefined,
+      className: classLabel,
+      score: submission.score ?? null,
+      grade: submission.grade ?? null,
+      teacherId: assignment.teacherId ?? null,
+      teacherName,
+      updatedAt: submission.submittedAt,
+    }
+
+    const studentAudience = [studentDetails.id, "student"]
+    try {
+      await this.saveNotification({
+        title: "Assignment graded",
+        message: `You received ${scoreLabel} for "${assignment.title}".`,
+        type: "success",
+        category: "task",
+        audience: studentAudience,
+        targetAudience: studentAudience,
+        metadata,
+      })
+    } catch (error) {
+      console.error("Unable to notify student about graded assignment", error)
+    }
+
+    if (assignment.teacherId) {
+      const teacherAudience = [assignment.teacherId, "teacher"]
+      try {
+        await this.saveNotification({
+          title: "Mark recorded",
+          message: `${studentDetails.name ?? "A student"} now has ${scoreLabel} for "${assignment.title}".`,
+          type: "info",
+          category: "task",
+          audience: teacherAudience,
+          targetAudience: teacherAudience,
+          metadata,
+        })
+      } catch (error) {
+        console.error("Unable to notify teacher about graded assignment", error)
+      }
+    }
+  }
+
   private replaceAssignmentsCache(assignments: AssignmentRecord[]) {
     this.persistAssignments(assignments)
   }
@@ -660,12 +1055,15 @@ class DatabaseManager {
     this.persistAssignments(filtered)
   }
 
-  private applySubmissionToCache(assignmentId: string, submission: AssignmentSubmissionRecord) {
+  private applySubmissionToCache(
+    assignmentId: string,
+    submission: AssignmentSubmissionRecord,
+  ): AssignmentRecord | null {
     const assignments = this.ensureAssignmentsStorage()
     const index = assignments.findIndex((assignment) => assignment.id === assignmentId)
 
     if (index === -1) {
-      return
+      return null
     }
 
     const assignment = assignments[index]
@@ -685,6 +1083,7 @@ class DatabaseManager {
     }
 
     this.persistAssignments(assignments)
+    return assignments[index]
   }
 
   private ensureStudyMaterialsStorage(): StudyMaterialRecord[] {
@@ -1991,6 +2390,12 @@ class DatabaseManager {
   }
 
   async getAssignments(filters: AssignmentFilters = {}) {
+    const normalizedStudentId = filters.studentId ? String(filters.studentId).trim() : ""
+    const studentContext = normalizedStudentId ? await this.resolveStudentInfo(normalizedStudentId) : null
+    const studentClassIdentifier = studentContext?.className
+      ? this.normaliseClassIdentifier(studentContext.className)
+      : ""
+
     const filterAndDecorate = (records: AssignmentRecord[]) =>
       records
         .filter((assignment) => {
@@ -2006,7 +2411,28 @@ class DatabaseManager {
             const assignedStudents = Array.isArray(assignment.assignedStudentIds)
               ? assignment.assignedStudentIds
               : []
-            const isAssigned = assignedStudents.length === 0 || assignedStudents.includes(filters.studentId)
+            const trimmedAssignments = assignedStudents.map((studentId) =>
+              typeof studentId === "string" ? studentId.trim() : String(studentId ?? ""),
+            )
+            const studentIdToMatch = studentContext?.id ?? normalizedStudentId
+            const hasDirectAssignment =
+              trimmedAssignments.length > 0 && studentIdToMatch
+                ? trimmedAssignments.includes(studentIdToMatch)
+                : false
+
+            const assignmentClassIdentifier = this.normaliseClassIdentifier(
+              assignment.classId ?? assignment.className ?? "",
+            )
+
+            const matchesByClass =
+              !hasDirectAssignment &&
+              trimmedAssignments.length === 0 &&
+              studentClassIdentifier &&
+              assignmentClassIdentifier &&
+              assignmentClassIdentifier === studentClassIdentifier
+
+            const isAssigned =
+              hasDirectAssignment || matchesByClass || trimmedAssignments.length === 0
 
             if (!isAssigned) {
               return false
@@ -2026,27 +2452,27 @@ class DatabaseManager {
             : undefined
 
           const baseStatus = submission ? submission.status : assignment.status
-        let status: AssignmentStatus = baseStatus
+          let status: AssignmentStatus = baseStatus
 
-        if (!submission && assignment.status === "sent") {
-          const dueDate = assignment.dueDate ? new Date(assignment.dueDate) : null
-          if (dueDate && !Number.isNaN(dueDate.getTime()) && dueDate.getTime() < Date.now()) {
-            status = "overdue"
+          if (!submission && assignment.status === "sent") {
+            const dueDate = assignment.dueDate ? new Date(assignment.dueDate) : null
+            if (dueDate && !Number.isNaN(dueDate.getTime()) && dueDate.getTime() < Date.now()) {
+              status = "overdue"
+            }
           }
-        }
 
-        return {
-          ...assignment,
-          originalStatus: assignment.status,
-          teacher: assignment.teacherName ?? assignment.teacherId ?? "Subject Teacher",
-          class: assignment.className ?? assignment.classId,
-          status: submission ? (submission.status === "submitted" ? "submitted" : submission.status) : status,
-          submittedAt: submission?.submittedAt ?? null,
-          submittedFile: submission?.files?.[0]?.name ?? null,
-          submittedComment: submission?.comment ?? "",
-          grade: submission?.grade ?? null,
-          score: submission?.score ?? null,
-        }
+          return {
+            ...assignment,
+            originalStatus: assignment.status,
+            teacher: assignment.teacherName ?? assignment.teacherId ?? "Subject Teacher",
+            class: assignment.className ?? assignment.classId,
+            status: submission ? (submission.status === "submitted" ? "submitted" : submission.status) : status,
+            submittedAt: submission?.submittedAt ?? null,
+            submittedFile: submission?.files?.[0]?.name ?? null,
+            submittedComment: submission?.comment ?? "",
+            grade: submission?.grade ?? null,
+            score: submission?.score ?? null,
+          }
         })
 
     let assignments = this.ensureAssignmentsStorage()
@@ -2105,12 +2531,26 @@ class DatabaseManager {
   }
 
   async createAssignment(payload: CreateAssignmentInput): Promise<AssignmentRecord> {
+    const classMetadata = this.resolveClassMetadata(payload.classId ?? null, payload.className ?? null)
+    const resolvedStudentIds = await this.resolveAssignmentStudentIds({
+      ...payload,
+      classId: classMetadata.classId ?? undefined,
+      className: classMetadata.className ?? undefined,
+    })
+
+    const normalizedPayload: CreateAssignmentInput = {
+      ...payload,
+      classId: classMetadata.classId ?? undefined,
+      className: classMetadata.className ?? undefined,
+      assignedStudentIds: resolvedStudentIds,
+    }
+
     if (this.shouldUseAssignmentsApi()) {
       try {
         const response = await fetch("/api/assignments", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(normalizedPayload),
         })
 
         if (response.ok) {
@@ -2120,6 +2560,7 @@ class DatabaseManager {
           if (assignmentRecord) {
             this.syncAssignmentCache(assignmentRecord)
             this.triggerEvent("assignmentsUpdate", assignmentRecord)
+            await this.notifyAssignmentSent(assignmentRecord)
             return assignmentRecord
           }
         } else {
@@ -2135,22 +2576,22 @@ class DatabaseManager {
 
     const record: AssignmentRecord = {
       id: this.generateId("assignment"),
-      title: payload.title,
-      description: payload.description,
-      subject: payload.subject,
-      classId: payload.classId ?? null,
-      className: payload.className ?? null,
-      teacherId: payload.teacherId ?? null,
-      teacherName: payload.teacherName ?? null,
-      dueDate: payload.dueDate,
-      status: payload.status ?? "draft",
-      maximumScore: this.normaliseNumericValue(payload.maximumScore),
-      assignedStudentIds: payload.assignedStudentIds ?? [],
+      title: normalizedPayload.title,
+      description: normalizedPayload.description,
+      subject: normalizedPayload.subject,
+      classId: normalizedPayload.classId ?? null,
+      className: normalizedPayload.className ?? null,
+      teacherId: normalizedPayload.teacherId ?? null,
+      teacherName: normalizedPayload.teacherName ?? null,
+      dueDate: normalizedPayload.dueDate,
+      status: normalizedPayload.status ?? "draft",
+      maximumScore: this.normaliseNumericValue(normalizedPayload.maximumScore),
+      assignedStudentIds: normalizedPayload.assignedStudentIds ?? [],
       submissions: [],
-      resourceName: payload.resourceName ?? null,
-      resourceSize: payload.resourceSize ?? null,
-      resourceType: payload.resourceType ?? null,
-      resourceUrl: payload.resourceUrl ?? null,
+      resourceName: normalizedPayload.resourceName ?? null,
+      resourceSize: normalizedPayload.resourceSize ?? null,
+      resourceType: normalizedPayload.resourceType ?? null,
+      resourceUrl: normalizedPayload.resourceUrl ?? null,
       createdAt: timestamp,
       updatedAt: timestamp,
     }
@@ -2158,6 +2599,7 @@ class DatabaseManager {
     assignments.push(record)
     this.persistAssignments(assignments)
     this.triggerEvent("assignmentsUpdate", record)
+    await this.notifyAssignmentSent(record)
     return record
   }
 
@@ -2167,6 +2609,8 @@ class DatabaseManager {
       assignedStudentIds?: string[]
     },
   ): Promise<AssignmentRecord> {
+    const cachedBeforeUpdate = this.ensureAssignmentsStorage().find((item) => item.id === assignmentId) ?? null
+
     if (this.shouldUseAssignmentsApi()) {
       try {
         const response = await fetch("/api/assignments", {
@@ -2182,6 +2626,9 @@ class DatabaseManager {
           if (assignmentRecord) {
             this.syncAssignmentCache(assignmentRecord)
             this.triggerEvent("assignmentsUpdate", assignmentRecord)
+            if (assignmentRecord.status === "sent" && (updates.status === "sent" || (cachedBeforeUpdate?.status ?? "") !== "sent")) {
+              await this.notifyAssignmentSent(assignmentRecord)
+            }
             return assignmentRecord
           }
         } else {
@@ -2202,23 +2649,50 @@ class DatabaseManager {
     const existing = assignments[index]
     const timestamp = new Date().toISOString()
 
+    const classMetadata = this.resolveClassMetadata(
+      updates.classId ?? existing.classId ?? null,
+      updates.className ?? existing.className ?? null,
+    )
+
+    const baseAssignedStudents = Array.isArray(updates.assignedStudentIds)
+      ? updates.assignedStudentIds
+      : existing.assignedStudentIds
+
+    const sanitizedAssigned = Array.isArray(baseAssignedStudents)
+      ? baseAssignedStudents
+          .map((studentId) => (typeof studentId === "string" ? studentId.trim() : String(studentId ?? "")))
+          .filter((studentId) => studentId.length > 0)
+      : []
+
+    const statusWasSent = existing.status === "sent" || cachedBeforeUpdate?.status === "sent"
+    const nextStatus = updates.status ?? existing.status
+    let resolvedAssignedStudents = sanitizedAssigned
+
+    if (nextStatus === "sent" && sanitizedAssigned.length === 0) {
+      resolvedAssignedStudents = await this.resolveAssignmentStudentIds({
+        ...existing,
+        ...updates,
+        classId: classMetadata.classId ?? undefined,
+        className: classMetadata.className ?? undefined,
+        assignedStudentIds: sanitizedAssigned,
+      })
+    }
+
     const normalised: AssignmentRecord = {
       ...existing,
       title: updates.title ?? existing.title,
       description: updates.description ?? existing.description,
       subject: updates.subject ?? existing.subject,
-      classId: updates.classId ?? existing.classId ?? null,
-      className: updates.className ?? existing.className ?? null,
+      classId: classMetadata.classId ?? null,
+      className: classMetadata.className ?? null,
       teacherId: updates.teacherId ?? existing.teacherId ?? null,
       teacherName: updates.teacherName ?? existing.teacherName ?? null,
       dueDate: updates.dueDate ?? existing.dueDate,
-      status: updates.status ?? existing.status,
+      status: nextStatus,
       maximumScore:
         this.normaliseNumericValue(updates.maximumScore) ??
         (typeof existing.maximumScore === "number" ? existing.maximumScore : null),
-      assignedStudentIds: Array.isArray(updates.assignedStudentIds)
-        ? updates.assignedStudentIds
-        : existing.assignedStudentIds,
+      assignedStudentIds: resolvedAssignedStudents,
       resourceName: updates.resourceName ?? existing.resourceName ?? null,
       resourceSize:
         typeof updates.resourceSize === "number"
@@ -2234,6 +2708,9 @@ class DatabaseManager {
     assignments[index] = normalised
     this.persistAssignments(assignments)
     this.triggerEvent("assignmentsUpdate", normalised)
+    if (!statusWasSent && normalised.status === "sent") {
+      await this.notifyAssignmentSent(normalised)
+    }
     return normalised
   }
 
@@ -2325,6 +2802,8 @@ class DatabaseManager {
       submittedFile: gradedSubmission.files[0]?.name ?? null,
       submittedComment: gradedSubmission.comment ?? "",
     })
+
+    await this.notifyAssignmentGraded(assignment, gradedSubmission)
 
     return gradedSubmission
   }
@@ -2429,7 +2908,10 @@ class DatabaseManager {
           const submissionRecord = this.normaliseAssignmentSubmission(data.submission, payload.assignmentId)
 
           if (submissionRecord) {
-            this.applySubmissionToCache(payload.assignmentId, submissionRecord)
+            const updatedAssignment =
+              this.applySubmissionToCache(payload.assignmentId, submissionRecord) ??
+              this.ensureAssignmentsStorage().find((item) => item.id === payload.assignmentId) ??
+              null
 
             const eventPayload = {
               id: payload.assignmentId,
@@ -2444,6 +2926,10 @@ class DatabaseManager {
 
             this.triggerEvent("assignmentsUpdate", eventPayload)
             this.triggerEvent("assignmentSubmitted", eventPayload)
+
+            if (updatedAssignment) {
+              await this.notifyAssignmentSubmission(updatedAssignment, submissionRecord)
+            }
 
             return submissionRecord
           }
@@ -2513,6 +2999,7 @@ class DatabaseManager {
 
     this.triggerEvent("assignmentsUpdate", eventPayload)
     this.triggerEvent("assignmentSubmitted", eventPayload)
+    await this.notifyAssignmentSubmission(assignment, submissionRecord)
 
     return submissionRecord
   }

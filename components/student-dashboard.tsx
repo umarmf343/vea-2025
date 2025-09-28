@@ -140,6 +140,26 @@ const normalizeString = (value: unknown): string => {
 
 const normalizeKey = (value: unknown): string => normalizeString(value).toLowerCase()
 
+const sortAssignmentsByDueDate = (records: IdentifiedRecord[]): IdentifiedRecord[] => {
+  const toTimestamp = (record: IdentifiedRecord) => {
+    const rawDate =
+      (typeof record.dueDate === "string" && record.dueDate.trim().length > 0
+        ? record.dueDate
+        : typeof (record as Record<string, unknown>).due_date === "string"
+          ? ((record as Record<string, unknown>).due_date as string)
+          : null) ?? null
+
+    if (!rawDate) {
+      return Number.POSITIVE_INFINITY
+    }
+
+    const parsed = Date.parse(rawDate)
+    return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed
+  }
+
+  return [...records].sort((a, b) => toTimestamp(a) - toTimestamp(b))
+}
+
 const extractRecordId = (record: Record<string, unknown>): string | null => {
   const candidates = [
     record.id,
@@ -1951,7 +1971,18 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
         return
       }
 
-      setAssignments((prev) => prev.map((assignment) => (assignment.id === record.id ? { ...assignment, ...record } : assignment)))
+      setAssignments((prev) => {
+        const normalizedId = normalizeKey(record.id)
+        const existingIndex = prev.findIndex((assignment) => normalizeKey(assignment.id) === normalizedId)
+
+        if (existingIndex === -1) {
+          return sortAssignmentsByDueDate([...prev, { ...record }])
+        }
+
+        const updated = [...prev]
+        updated[existingIndex] = { ...updated[existingIndex], ...record }
+        return sortAssignmentsByDueDate(updated)
+      })
     }
 
     const handleAttendanceUpdate = (payload: unknown) => {
