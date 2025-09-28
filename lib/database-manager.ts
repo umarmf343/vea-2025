@@ -4363,13 +4363,38 @@ class DatabaseManager {
   async saveNotification(notificationData: any) {
     try {
       const notifications = await this.getAllNotifications()
+      const now = new Date().toISOString()
+      const providedId =
+        typeof notificationData?.id === "string" && notificationData.id.trim().length > 0
+          ? notificationData.id.trim()
+          : undefined
       const newNotification = {
         ...notificationData,
-        id: Date.now().toString(),
-        timestamp: new Date().toISOString(),
-        read: false,
+        id: providedId ?? Date.now().toString(),
+        timestamp:
+          typeof notificationData?.timestamp === "string" && notificationData.timestamp.trim().length > 0
+            ? notificationData.timestamp
+            : typeof notificationData?.createdAt === "string" && notificationData.createdAt.trim().length > 0
+              ? notificationData.createdAt
+              : now,
+        createdAt:
+          typeof notificationData?.createdAt === "string" && notificationData.createdAt.trim().length > 0
+            ? notificationData.createdAt
+            : undefined,
+        read: Boolean(notificationData?.read),
       }
-      notifications.push(newNotification)
+
+      if (!newNotification.createdAt) {
+        newNotification.createdAt = newNotification.timestamp
+      }
+
+      const index = notifications.findIndex((entry: any) => entry.id === newNotification.id)
+      if (index >= 0) {
+        notifications[index] = { ...notifications[index], ...newNotification }
+      } else {
+        notifications.push(newNotification)
+      }
+
       safeStorage.setItem("notifications", JSON.stringify(notifications))
       this.triggerEvent("notificationReceived", newNotification)
       return newNotification

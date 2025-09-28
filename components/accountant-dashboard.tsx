@@ -32,6 +32,7 @@ import {
 import { TutorialLink } from "@/components/tutorial-link"
 import { useBranding } from "@/hooks/use-branding"
 import { dbManager } from "@/lib/database-manager"
+import { NotificationCenter } from "@/components/notification-center"
 
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
@@ -1060,6 +1061,8 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
               </CardContent>
             </Card>
           </div>
+
+          <NotificationCenter userRole="accountant" userId={accountant.id} />
         </TabsContent>
 
         <TabsContent value="payments" className="space-y-4">

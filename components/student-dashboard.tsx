@@ -46,6 +46,7 @@ import {
 } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
+import { NotificationCenter } from "@/components/notification-center"
 import { TutorialLink } from "@/components/tutorial-link"
 import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
 import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
@@ -2471,6 +2472,14 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
             limit={4}
           />
           <SchoolCalendarViewer role="student" className="md:col-span-2 xl:col-span-3" />
+        </div>
+
+        <div className="mt-8">
+          <NotificationCenter
+            userRole="student"
+            userId={studentProfile.id}
+            studentIds={[studentProfile.id, effectiveStudentId]}
+          />
         </div>
 
         <div className="mt-8">
