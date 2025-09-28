@@ -610,6 +610,25 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     previousSpellingFeedbackRef.current = null
   }, [clearAdvanceTimeout, prepareSpellingWords, spellingRoundDuration])
 
+  const speakCurrentWord = useCallback(() => {
+    if (!currentSpellingWord || typeof window === "undefined") {
+      return
+    }
+
+    const synth = window.speechSynthesis
+    synth.cancel()
+
+    const wordUtterance = new SpeechSynthesisUtterance(currentSpellingWord.word)
+    wordUtterance.lang = "en-US"
+    wordUtterance.rate = 0.9
+    synth.speak(wordUtterance)
+
+    const sentenceUtterance = new SpeechSynthesisUtterance(`In a sentence: ${currentSpellingWord.example}`)
+    sentenceUtterance.lang = "en-US"
+    sentenceUtterance.rate = 0.95
+    synth.speak(sentenceUtterance)
+  }, [currentSpellingWord])
+
   const handlePauseSpelling = useCallback(() => {
     if (!spellingActive) {
       return
@@ -683,25 +702,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     setSpellingFeedback({ type: "info", message: "Challenge stopped. Press start to try again." })
     previousSpellingFeedbackRef.current = null
   }, [clearAdvanceTimeout, spellingActive])
-
-  const speakCurrentWord = useCallback(() => {
-    if (!currentSpellingWord || typeof window === "undefined") {
-      return
-    }
-
-    const synth = window.speechSynthesis
-    synth.cancel()
-
-    const wordUtterance = new SpeechSynthesisUtterance(currentSpellingWord.word)
-    wordUtterance.lang = "en-US"
-    wordUtterance.rate = 0.9
-    synth.speak(wordUtterance)
-
-    const sentenceUtterance = new SpeechSynthesisUtterance(`In a sentence: ${currentSpellingWord.example}`)
-    sentenceUtterance.lang = "en-US"
-    sentenceUtterance.rate = 0.95
-    synth.speak(sentenceUtterance)
-  }, [currentSpellingWord])
 
   const handleHearWordAgain = useCallback(() => {
     if (!spellingActive || spellingPaused) {
