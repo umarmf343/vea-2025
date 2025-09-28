@@ -181,7 +181,7 @@ const FALLBACK_ACCOUNTS: FallbackAccount[] = [
     token: "demo-token-teacher",
   },
   {
-    id: "user_student",
+    id: "student_john_doe",
     email: "student@vea.edu.ng",
     password: "Student2025!",
     role: "student",
@@ -202,7 +202,7 @@ const FALLBACK_ACCOUNTS: FallbackAccount[] = [
     name: "Parent Guardian",
     hasAccess: roleHasPortalAccess("parent"),
     metadata: {
-      linkedStudentId: "user_student",
+      linkedStudentId: "student_john_doe",
     },
     token: "demo-token-parent",
   },

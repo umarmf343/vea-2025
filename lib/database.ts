@@ -537,6 +537,7 @@ interface DefaultUserSeed {
   role: string
   password: string
   classId?: string | null
+  className?: string | null
   studentIds?: string[]
   subjects?: string[]
   metadata?: Record<string, unknown> | null
@@ -576,12 +577,17 @@ function createDefaultUsers(): StoredUser[] {
       subjects: ["Mathematics", "English"],
     },
     {
-      id: "user_student",
+      id: "student_john_doe",
       name: "John Student",
       email: "student@vea.edu.ng",
       role: "student",
       password: "Student2025!",
       classId: "class_jss1a",
+      className: "JSS 1A",
+      metadata: {
+        className: "JSS 1A",
+        admissionNumber: "VEA2025001",
+      },
     },
     {
       id: "user_parent",
@@ -620,6 +626,7 @@ function createDefaultUsers(): StoredUser[] {
     isActive: true,
     status: "active",
     classId: seed.classId ?? null,
+    className: seed.className ?? null,
     studentIds: seed.studentIds ?? [],
     subjects: seed.subjects ?? [],
     metadata: seed.metadata ?? null,
