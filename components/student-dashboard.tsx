@@ -31,6 +31,9 @@ import {
   Download,
   Volume2,
   PlayCircle,
+  PauseCircle,
+  Play,
+  StopCircle,
   RefreshCcw,
   Sparkles,
   PartyPopper,
@@ -271,6 +274,8 @@ type SpellingCelebrationState =
       correct: number
       total: number
     }
+
+type FeedbackMessage = { type: "success" | "error" | "info"; message: string }
 
 const SPELLING_WORD_BANK: SpellingWord[] = [
   {
@@ -519,12 +524,12 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const [spellingWords, setSpellingWords] = useState<SpellingWord[]>(() => prepareSpellingWords())
 
   const [spellingActive, setSpellingActive] = useState(false)
+  const [spellingPaused, setSpellingPaused] = useState(false)
   const [currentSpellingIndex, setCurrentSpellingIndex] = useState(0)
   const [spellingInput, setSpellingInput] = useState("")
   const [spellingTimeLeft, setSpellingTimeLeft] = useState(spellingRoundDuration)
-  const [spellingFeedback, setSpellingFeedback] = useState<
-    { type: "success" | "error" | "info"; message: string } | null
-  >(null)
+  const [spellingFeedback, setSpellingFeedback] = useState<FeedbackMessage | null>(null)
+  const previousSpellingFeedbackRef = useRef<FeedbackMessage | null>(null)
   const [spellingAttempts, setSpellingAttempts] = useState<SpellingAttempt[]>([])
   const [spellingHintVisible, setSpellingHintVisible] = useState(false)
   const [spellingAnswered, setSpellingAnswered] = useState(false)
@@ -562,6 +567,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       }
 
       setSpellingActive(false)
+      setSpellingPaused(false)
       setSpellingTimeLeft(0)
       return prevIndex
     })
@@ -589,6 +595,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
 
     setSpellingWords(prepareSpellingWords())
     setSpellingActive(true)
+    setSpellingPaused(false)
     setCurrentSpellingIndex(0)
     setSpellingTimeLeft(spellingRoundDuration)
     setSpellingAttempts([])
@@ -600,7 +607,82 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     setSpellingHintVisible(false)
     setSpellingAnswered(false)
     setSpellingCelebration(null)
+    previousSpellingFeedbackRef.current = null
   }, [clearAdvanceTimeout, prepareSpellingWords, spellingRoundDuration])
+
+  const handlePauseSpelling = useCallback(() => {
+    if (!spellingActive) {
+      return
+    }
+
+    clearAdvanceTimeout()
+
+    if (typeof window !== "undefined") {
+      window.speechSynthesis.cancel()
+    }
+
+    previousSpellingFeedbackRef.current = spellingFeedback
+    setSpellingPaused(true)
+    setSpellingFeedback({ type: "info", message: "Game paused. Tap continue when you're ready." })
+  }, [clearAdvanceTimeout, spellingActive, spellingFeedback])
+
+  const handleResumeSpelling = useCallback(() => {
+    if (!spellingActive) {
+      return
+    }
+
+    setSpellingPaused(false)
+
+    if (spellingAnswered) {
+      queueAdvanceToNextWord()
+    } else {
+      speakCurrentWord()
+    }
+
+    setSpellingFeedback((previous) => {
+      const stored = previousSpellingFeedbackRef.current
+      previousSpellingFeedbackRef.current = null
+
+      if (!previous) {
+        return stored ?? previous
+      }
+
+      if (previous.type === "info" && previous.message.toLowerCase().includes("paused")) {
+        return stored ?? null
+      }
+
+      return previous
+    })
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        spellingInputRef.current?.focus()
+        spellingInputRef.current?.select()
+      })
+    }
+  }, [queueAdvanceToNextWord, speakCurrentWord, spellingActive, spellingAnswered])
+
+  const handleStopSpelling = useCallback(() => {
+    if (!spellingActive) {
+      return
+    }
+
+    clearAdvanceTimeout()
+
+    if (typeof window !== "undefined") {
+      window.speechSynthesis.cancel()
+    }
+
+    setSpellingActive(false)
+    setSpellingPaused(false)
+    setCurrentSpellingIndex(0)
+    setSpellingTimeLeft(0)
+    setSpellingInput("")
+    setSpellingHintVisible(false)
+    setSpellingAnswered(false)
+    setSpellingCelebration(null)
+    setSpellingFeedback({ type: "info", message: "Challenge stopped. Press start to try again." })
+    previousSpellingFeedbackRef.current = null
+  }, [clearAdvanceTimeout, spellingActive])
 
   const speakCurrentWord = useCallback(() => {
     if (!currentSpellingWord || typeof window === "undefined") {
@@ -622,11 +704,15 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   }, [currentSpellingWord])
 
   const handleHearWordAgain = useCallback(() => {
+    if (!spellingActive || spellingPaused) {
+      return
+    }
+
     speakCurrentWord()
-  }, [speakCurrentWord])
+  }, [speakCurrentWord, spellingActive, spellingPaused])
 
   const handleSkipWord = useCallback(() => {
-    if (!spellingActive || spellingAnswered || !currentSpellingWord) {
+    if (!spellingActive || spellingPaused || spellingAnswered || !currentSpellingWord) {
       return
     }
 
@@ -646,10 +732,17 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     })
     setSpellingAnswered(true)
     queueAdvanceToNextWord()
-  }, [currentSpellingWord, queueAdvanceToNextWord, spellingActive, spellingAnswered, spellingTimeLeft])
+  }, [
+    currentSpellingWord,
+    queueAdvanceToNextWord,
+    spellingActive,
+    spellingPaused,
+    spellingAnswered,
+    spellingTimeLeft,
+  ])
 
   const handleRevealHint = useCallback(() => {
-    if (!spellingActive || spellingAnswered || !currentSpellingWord) {
+    if (!spellingActive || spellingPaused || spellingAnswered || !currentSpellingWord) {
       return
     }
 
@@ -658,13 +751,13 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       type: "info",
       message: `Hint: ${currentSpellingWord.definition}`,
     })
-  }, [currentSpellingWord, spellingActive, spellingAnswered])
+  }, [currentSpellingWord, spellingActive, spellingPaused, spellingAnswered])
 
   const handleSubmitSpelling = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
 
-      if (!spellingActive || spellingAnswered || !currentSpellingWord) {
+      if (!spellingActive || spellingPaused || spellingAnswered || !currentSpellingWord) {
         return
       }
 
@@ -696,7 +789,15 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       setSpellingAnswered(true)
       queueAdvanceToNextWord()
     },
-    [currentSpellingWord, queueAdvanceToNextWord, spellingActive, spellingAnswered, spellingInput, spellingTimeLeft],
+    [
+      currentSpellingWord,
+      queueAdvanceToNextWord,
+      spellingActive,
+      spellingPaused,
+      spellingAnswered,
+      spellingInput,
+      spellingTimeLeft,
+    ],
   )
 
   const spellingProgress = totalSpellingWords
@@ -711,7 +812,8 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
 
   const currentWordPosition = Math.min(currentSpellingIndex + 1, totalSpellingWords)
   const timerProgress = spellingActive ? (spellingTimeLeft / spellingRoundDuration) * 100 : 0
-  const canSubmitSpelling = spellingActive && !spellingAnswered && spellingInput.trim().length > 0
+  const canSubmitSpelling =
+    spellingActive && !spellingPaused && !spellingAnswered && spellingInput.trim().length > 0
 
   const [sentenceRounds, setSentenceRounds] = useState<SentenceScrambleRound[]>(() => prepareSentenceRounds())
   const [sentenceScrambleActive, setSentenceScrambleActive] = useState(false)
@@ -719,9 +821,8 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0)
   const [sentenceScrambledWords, setSentenceScrambledWords] = useState<string[]>([])
   const [sentenceSelectedWords, setSentenceSelectedWords] = useState<string[]>([])
-  const [sentenceFeedback, setSentenceFeedback] = useState<
-    { type: "success" | "error" | "info"; message: string } | null
-  >(null)
+  const [sentenceFeedback, setSentenceFeedback] = useState<FeedbackMessage | null>(null)
+  const previousSentenceFeedbackRef = useRef<FeedbackMessage | null>(null)
   const [sentenceHintVisible, setSentenceHintVisible] = useState(false)
   const [sentenceAnswered, setSentenceAnswered] = useState(false)
   const [sentenceTimeLeft, setSentenceTimeLeft] = useState(0)
@@ -845,7 +946,65 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     })
     const firstRound = rounds[0] ?? null
     prepareSentenceRound(firstRound)
+    previousSentenceFeedbackRef.current = null
   }, [prepareSentenceRound, prepareSentenceRounds])
+
+  const handlePauseSentence = useCallback(() => {
+    if (!sentenceScrambleActive) {
+      return
+    }
+
+    previousSentenceFeedbackRef.current = sentenceFeedback
+    setSentencePaused(true)
+    setSentenceFeedback({
+      type: "info",
+      message: "Quest paused. Tap continue to resume your sentence adventure.",
+    })
+  }, [sentenceFeedback, sentenceScrambleActive])
+
+  const handleResumeSentence = useCallback(() => {
+    if (!sentenceScrambleActive) {
+      return
+    }
+
+    setSentencePaused(false)
+    setSentenceFeedback((previous) => {
+      const stored = previousSentenceFeedbackRef.current
+      previousSentenceFeedbackRef.current = null
+
+      if (!previous) {
+        return stored ?? previous
+      }
+
+      if (previous.type === "info" && previous.message.toLowerCase().includes("paused")) {
+        return stored ?? null
+      }
+
+      return previous
+    })
+  }, [sentenceScrambleActive])
+
+  const handleStopSentence = useCallback(() => {
+    if (!sentenceScrambleActive) {
+      return
+    }
+
+    setSentenceScrambleActive(false)
+    setSentencePaused(false)
+    setCurrentSentenceIndex(0)
+    setSentenceSelectedWords([])
+    setSentenceScrambledWords([])
+    setSentenceHintVisible(false)
+    setSentenceAnswered(false)
+    setSentenceCelebration(null)
+    setSentencePendingAdvance(null)
+    setSentenceTimeLeft(0)
+    setSentenceFeedback({
+      type: "info",
+      message: "Sentence scramble stopped. Press start to begin a fresh quest.",
+    })
+    previousSentenceFeedbackRef.current = null
+  }, [sentenceScrambleActive])
 
   const handleSentenceSelectWord = useCallback(
     (word: string) => {
@@ -992,7 +1151,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     setSpellingCelebration(null)
   }, [])
   useEffect(() => {
-    if (!spellingActive) {
+    if (!spellingActive || spellingPaused) {
       return
     }
 
@@ -1011,10 +1170,10 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     return () => {
       window.clearInterval(intervalId)
     }
-  }, [spellingActive, spellingTimeLeft])
+  }, [spellingActive, spellingPaused, spellingTimeLeft])
 
   useEffect(() => {
-    if (!spellingActive || spellingAnswered || !currentSpellingWord) {
+    if (!spellingActive || spellingPaused || spellingAnswered || !currentSpellingWord) {
       return
     }
 
@@ -1042,6 +1201,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     currentSpellingWord,
     queueAdvanceToNextWord,
     spellingActive,
+    spellingPaused,
     spellingAnswered,
     spellingTimeLeft,
   ])
@@ -2104,7 +2264,11 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                       <div className="flex items-center gap-2 text-[#2d682d]">
                         <Clock className="h-5 w-5" />
                         <span className="text-sm font-semibold">
-                          {spellingActive ? `${spellingTimeLeft}s remaining` : "Timer paused"}
+                          {spellingActive
+                            ? spellingPaused
+                              ? "Paused"
+                              : `${spellingTimeLeft}s remaining`
+                            : "Timer stopped"}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-[#b29032]">
@@ -2134,7 +2298,33 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                       <PlayCircle className="mr-2 h-4 w-4" />
                       {spellingActive ? "Restart Challenge" : "Start Challenge"}
                     </Button>
-                    <Button type="button" variant="outline" onClick={handleHearWordAgain} disabled={!spellingActive}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={spellingPaused ? handleResumeSpelling : handlePauseSpelling}
+                      disabled={!spellingActive}
+                    >
+                      {spellingPaused ? (
+                        <Play className="mr-2 h-4 w-4" />
+                      ) : (
+                        <PauseCircle className="mr-2 h-4 w-4" />
+                      )}
+                      {spellingPaused ? "Continue" : "Pause"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleStopSpelling}
+                      disabled={!spellingActive}
+                    >
+                      <StopCircle className="mr-2 h-4 w-4" /> Stop
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleHearWordAgain}
+                      disabled={!spellingActive || spellingPaused}
+                    >
                       <Volume2 className="mr-2 h-4 w-4" />
                       Hear word again
                     </Button>
@@ -2142,7 +2332,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                       type="button"
                       variant="outline"
                       onClick={handleRevealHint}
-                      disabled={!spellingActive || spellingHintVisible || spellingAnswered}
+                      disabled={!spellingActive || spellingPaused || spellingHintVisible || spellingAnswered}
                     >
                       <Sparkles className="mr-2 h-4 w-4" />
                       Reveal hint
@@ -2151,7 +2341,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                       type="button"
                       variant="outline"
                       onClick={handleSkipWord}
-                      disabled={!spellingActive || spellingAnswered}
+                      disabled={!spellingActive || spellingPaused || spellingAnswered}
                     >
                       <RefreshCcw className="mr-2 h-4 w-4" />
                       Skip word
@@ -2168,8 +2358,14 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                         id="spelling-answer"
                         value={spellingInput}
                         onChange={(event) => setSpellingInput(event.target.value)}
-                        disabled={!spellingActive || spellingAnswered}
-                        placeholder={spellingActive ? "Enter the word..." : "Tap start to begin"}
+                        disabled={!spellingActive || spellingPaused || spellingAnswered}
+                        placeholder={
+                          !spellingActive
+                            ? "Tap start to begin"
+                            : spellingPaused
+                              ? "Resume to keep spelling"
+                              : "Enter the word..."
+                        }
                         autoComplete="off"
                         spellCheck={false}
                       />
@@ -2366,7 +2562,13 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                     </div>
                     <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-700">
                       <p className="font-semibold">Timer</p>
-                      <p className="text-xl font-bold">{sentenceScrambleActive ? `${sentenceTimeLeft}s` : "--"}</p>
+                      <p className="text-xl font-bold">
+                        {sentenceScrambleActive
+                          ? sentencePaused
+                            ? "Paused"
+                            : `${sentenceTimeLeft}s`
+                          : "--"}
+                      </p>
                       <p className="text-xs text-amber-700/80">Beat the countdown before the sparkle fades.</p>
                     </div>
                   </div>
@@ -2378,7 +2580,9 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                     <div className="flex flex-wrap items-center justify-between text-xs text-slate-500">
                       <span>
                         {sentenceScrambleActive
-                          ? `Stay sharp! ${sentenceTimeLeft}s remaining.`
+                          ? sentencePaused
+                            ? "Quest paused. Tap continue when you're ready."
+                            : `Stay sharp! ${sentenceTimeLeft}s remaining.`
                           : "Press start to begin the scramble journey."}
                       </span>
                       <span>
@@ -2480,6 +2684,27 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                       className="bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20"
                     >
                       <CheckCircle className="mr-2 h-4 w-4" /> Submit sentence
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={sentencePaused ? handleResumeSentence : handlePauseSentence}
+                      disabled={!sentenceScrambleActive}
+                    >
+                      {sentencePaused ? (
+                        <Play className="mr-2 h-4 w-4" />
+                      ) : (
+                        <PauseCircle className="mr-2 h-4 w-4" />
+                      )}
+                      {sentencePaused ? "Continue" : "Pause"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={handleStopSentence}
+                      disabled={!sentenceScrambleActive}
+                    >
+                      <StopCircle className="mr-2 h-4 w-4" /> Stop
                     </Button>
                     <Button
                       type="button"
