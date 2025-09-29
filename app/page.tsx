@@ -959,20 +959,28 @@ export default function HomePage() {
   )
 }
 
+type TeacherClassAssignment = { id: string; name: string }
+
 function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const branding = useBranding()
   const resolvedLogo = branding.logoUrl
   const resolvedSchoolName = branding.schoolName
-  const [teacherAssignments, setTeacherAssignments] = useState({
-    classes:
-      user.role === "teacher"
-        ? user.className
-          ? [user.className]
-          : user.classId
-            ? [String(user.classId)]
-            : []
-        : [],
-    subjects: user.role === "teacher" && Array.isArray(user.subjects) ? user.subjects : [],
+  const [teacherAssignments, setTeacherAssignments] = useState<{
+    classes: TeacherClassAssignment[]
+    subjects: string[]
+  }>(() => {
+    if (user.role !== "teacher") {
+      return { classes: [], subjects: [] }
+    }
+
+    const classId = typeof user.classId === "string" ? user.classId.trim() : ""
+    const className = typeof user.className === "string" ? user.className.trim() : ""
+    const identifier = classId || className
+
+    return {
+      classes: identifier ? [{ id: classId || identifier, name: className || identifier }] : [],
+      subjects: Array.isArray(user.subjects) ? user.subjects : [],
+    }
   })
   const [studentClassInfo, setStudentClassInfo] = useState<{ className: string; classId: string | null }>(
     user.role === "student"
@@ -993,25 +1001,43 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
     const loadTeacherAssignments = async () => {
       const subjects = Array.isArray(user.subjects) ? user.subjects : []
-      let classes: string[] = []
+      let classes: TeacherClassAssignment[] = []
 
       const classId = typeof user.classId === "string" ? user.classId.trim() : ""
+      const fallbackClassName = typeof user.className === "string" ? user.className.trim() : ""
 
       if (classId) {
         try {
           const response = await fetch(`/api/classes?id=${encodeURIComponent(classId)}`)
           if (response.ok) {
             const payload = (await response.json()) as {
-              class?: { id: string; name: string }
-              classes?: Array<{ id: string; name: string }>
+              class?: { id?: string; name?: string }
+              classes?: Array<{ id?: string; name?: string }>
             }
 
-            const match = payload.class
-              ? payload.class
-              : payload.classes?.find((cls) => cls.id === classId)
+            const rawRecords = [
+              ...(payload.class ? [payload.class] : []),
+              ...(Array.isArray(payload.classes) ? payload.classes : []),
+            ]
 
-            if (match?.name) {
-              classes = [match.name]
+            const normalized = rawRecords
+              .map((record) => {
+                const rawId = typeof record.id === "string" ? record.id.trim() : ""
+                const rawName = typeof record.name === "string" ? record.name.trim() : ""
+                const id = rawId || rawName || classId
+                const name = rawName || rawId || fallbackClassName || classId
+                if (!id && !name) {
+                  return null
+                }
+                return { id, name }
+              })
+              .filter((record): record is TeacherClassAssignment => Boolean(record))
+
+            if (normalized.length > 0) {
+              const matched = normalized.find((record) => record.id === classId)
+              classes = matched
+                ? [matched, ...normalized.filter((record) => record.id !== matched.id)]
+                : normalized
             }
           } else if (response.status !== 404) {
             logger.error("Unable to load class assignments", {
@@ -1024,8 +1050,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         }
       }
 
-      if (classes.length === 0 && user.className) {
-        classes = [user.className]
+      if (classes.length === 0 && (classId || fallbackClassName)) {
+        const identifier = classId || fallbackClassName
+        classes = [{ id: classId || identifier, name: fallbackClassName || identifier }]
       }
 
       if (isMounted) {
