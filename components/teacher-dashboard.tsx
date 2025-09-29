@@ -259,6 +259,8 @@ interface TeacherAssignmentSummary {
   updatedAt?: string
 }
 
+type RawAssignmentRecord = Awaited<ReturnType<typeof dbManager.getAssignments>>[number]
+
 const ASSIGNMENT_STATUS_META: Record<
   TeacherAssignmentStatus,
   { label: string; badgeClass: string; accent: string; glow: string }
@@ -388,6 +390,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [deletingAssignmentId, setDeletingAssignmentId] = useState<string | null>(null)
   const [gradingDrafts, setGradingDrafts] = useState<Record<string, { score: string; comment: string }>>({})
   const [gradingSubmissionId, setGradingSubmissionId] = useState<string | null>(null)
+  const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false)
 
   const assignmentMaximum = defaultAssignmentMaximum
   const resolvedAssignmentMaximum = (() => {
@@ -450,6 +453,18 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   const normalizeClassName = (value: string) => value.replace(/\s+/g, "").toLowerCase()
 
+  const buildInitialGradingDrafts = (submissions: AssignmentSubmissionRecord[]) =>
+    submissions.reduce(
+      (acc, submission) => {
+        acc[submission.id] = {
+          score: typeof submission.score === "number" ? String(submission.score) : "",
+          comment: submission.comment ?? "",
+        }
+        return acc
+      },
+      {} as Record<string, { score: string; comment: string }>,
+    )
+
   const readFileAsDataUrl = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
       const reader = new FileReader()
@@ -458,58 +473,63 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       reader.readAsDataURL(file)
     })
 
+  const normaliseAssignmentRecord = useCallback(
+    (record: RawAssignmentRecord): TeacherAssignmentSummary => {
+      const submissions = Array.isArray(record.submissions) ? record.submissions : []
+      const assignedStudentIds = Array.isArray(record.assignedStudentIds)
+        ? record.assignedStudentIds
+        : []
+
+      const normalisedSubmissions: AssignmentSubmissionRecord[] = submissions.map((submission) => ({
+        id: submission.id,
+        studentId: submission.studentId,
+        status: submission.status,
+        submittedAt: submission.submittedAt ?? null,
+        files: Array.isArray(submission.files) ? submission.files : [],
+        comment: submission.comment ?? null,
+        grade: submission.grade ?? null,
+        score: typeof submission.score === "number" ? submission.score : null,
+      }))
+
+      return {
+        id: String(record.id),
+        title: record.title,
+        description: record.description ?? "",
+        subject: record.subject,
+        className: record.className ?? (record as { class?: string }).class ?? "General",
+        classId: record.classId ?? null,
+        dueDate: record.dueDate,
+        status: (record.status ?? "draft") as TeacherAssignmentStatus,
+        maximumScore:
+          typeof (record as { maximumScore?: unknown }).maximumScore === "number"
+            ? ((record as { maximumScore?: number }).maximumScore as number)
+            : (record as { maximumScore?: string | number | null }).maximumScore
+            ? Number((record as { maximumScore?: string | number | null }).maximumScore)
+            : null,
+        submissions: normalisedSubmissions,
+        assignedStudentIds,
+        resourceName: record.resourceName ?? null,
+        resourceType: record.resourceType ?? null,
+        resourceUrl: record.resourceUrl ?? null,
+        resourceSize:
+          typeof record.resourceSize === "number"
+            ? record.resourceSize
+            : record.resourceSize
+              ? Number(record.resourceSize)
+              : null,
+        createdAt: "createdAt" in record ? (record as { createdAt?: string | null }).createdAt ?? null : null,
+        updatedAt: record.updatedAt,
+      }
+    },
+    [],
+  )
+
   const loadAssignments = useCallback(async () => {
     try {
       setIsAssignmentsLoading(true)
       const records = await dbManager.getAssignments({ teacherId: teacher.id })
 
-      const normalised = records.map((record) => {
-        const submissions = Array.isArray(record.submissions) ? record.submissions : []
-        const assignedStudentIds = Array.isArray(record.assignedStudentIds)
-          ? record.assignedStudentIds
-          : []
-
-        const normalisedSubmissions: AssignmentSubmissionRecord[] = submissions.map((submission) => ({
-          id: submission.id,
-          studentId: submission.studentId,
-          status: submission.status,
-          submittedAt: submission.submittedAt ?? null,
-          files: Array.isArray(submission.files) ? submission.files : [],
-          comment: submission.comment ?? null,
-          grade: submission.grade ?? null,
-          score: typeof submission.score === "number" ? submission.score : null,
-        }))
-
-        return {
-          id: String(record.id),
-          title: record.title,
-          description: record.description ?? "",
-          subject: record.subject,
-          className: record.className ?? (record as { class?: string }).class ?? "General",
-          classId: record.classId ?? null,
-          dueDate: record.dueDate,
-          status: (record.status ?? "draft") as TeacherAssignmentStatus,
-          maximumScore:
-            typeof (record as { maximumScore?: unknown }).maximumScore === "number"
-              ? ((record as { maximumScore?: number }).maximumScore as number)
-              : (record as { maximumScore?: string | number | null }).maximumScore
-              ? Number((record as { maximumScore?: string | number | null }).maximumScore)
-              : null,
-          submissions: normalisedSubmissions,
-          assignedStudentIds,
-          resourceName: record.resourceName ?? null,
-          resourceType: record.resourceType ?? null,
-          resourceUrl: record.resourceUrl ?? null,
-          resourceSize:
-            typeof record.resourceSize === "number"
-              ? record.resourceSize
-              : record.resourceSize
-                ? Number(record.resourceSize)
-                : null,
-          createdAt: "createdAt" in record ? (record as { createdAt?: string | null }).createdAt ?? null : null,
-          updatedAt: record.updatedAt,
-        } satisfies TeacherAssignmentSummary
-      })
+      const normalised = records.map((record) => normaliseAssignmentRecord(record))
 
       setAssignments(normalised)
     } catch (error) {
@@ -522,7 +542,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     } finally {
       setIsAssignmentsLoading(false)
     }
-  }, [teacher.id, toast])
+  }, [normaliseAssignmentRecord, teacher.id, toast])
 
   useEffect(() => {
     void loadAssignments()
@@ -1888,20 +1908,41 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
   }
 
-  const handleViewSubmissions = (assignment: TeacherAssignmentSummary) => {
+  const handleViewSubmissions = async (assignment: TeacherAssignmentSummary) => {
     setSelectedAssignment(assignment)
-    const initialDrafts = assignment.submissions.reduce(
-      (acc, submission) => {
-        acc[submission.id] = {
-          score: typeof submission.score === "number" ? String(submission.score) : "",
-          comment: submission.comment ?? "",
-        }
-        return acc
-      },
-      {} as Record<string, { score: string; comment: string }>,
-    )
-    setGradingDrafts(initialDrafts)
+    setGradingDrafts(buildInitialGradingDrafts(assignment.submissions))
     setShowSubmissions(true)
+    setIsLoadingSubmissions(true)
+
+    try {
+      const records = await dbManager.getAssignments({
+        teacherId: teacher.id,
+        assignmentId: assignment.id,
+      })
+
+      const latest = records.find((record) => String(record.id) === assignment.id)
+
+      if (latest) {
+        const normalised = normaliseAssignmentRecord(latest)
+        setSelectedAssignment((prev) => {
+          if (!prev || prev.id !== assignment.id) {
+            return prev
+          }
+
+          setGradingDrafts(buildInitialGradingDrafts(normalised.submissions))
+          return normalised
+        })
+      }
+    } catch (error) {
+      logger.error("Failed to load assignment submissions", { error })
+      toast({
+        variant: "destructive",
+        title: "Unable to load submissions",
+        description: "Please try again shortly.",
+      })
+    } finally {
+      setIsLoadingSubmissions(false)
+    }
   }
 
   const handleGradeSubmission = async (submission: AssignmentSubmissionRecord) => {
@@ -3349,7 +3390,9 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                               size="sm"
                               variant="outline"
                               className="border-emerald-200 text-emerald-700 transition hover:bg-emerald-50"
-                              onClick={() => handleViewSubmissions(assignment)}
+                              onClick={() => {
+                                void handleViewSubmissions(assignment)
+                              }}
                             >
                               <Users className="mr-1 h-4 w-4" /> View submissions
                             </Button>
@@ -3811,7 +3854,14 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 >
                   <Pencil className="mr-2 h-4 w-4" /> Edit
                 </Button>
-                <Button variant="outline" onClick={() => handleViewSubmissions(previewAssignment)}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (previewAssignment) {
+                      void handleViewSubmissions(previewAssignment)
+                    }
+                  }}
+                >
                   <Users className="mr-2 h-4 w-4" /> View submissions
                 </Button>
                 {previewAssignment.status === "draft" ? (
@@ -3839,6 +3889,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           if (!open) {
             setSelectedAssignment(null)
             setGradingDrafts({})
+            setIsLoadingSubmissions(false)
           }
         }}
       >
@@ -3852,7 +3903,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {selectedAssignment?.submissions && selectedAssignment.submissions.length > 0 ? (
+            {isLoadingSubmissions ? (
+              <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading submissions...
+              </div>
+            ) : selectedAssignment?.submissions && selectedAssignment.submissions.length > 0 ? (
               selectedAssignment.submissions.map((submission) => {
                 const assignmentMaxScore = selectedAssignment.maximumScore ?? assignmentMaximum
                 const draft = gradingDrafts[submission.id] ?? { score: "", comment: "" }
