@@ -239,6 +239,83 @@ const toNumber = (value: unknown): number => {
 
 const normalizeSubjectName = (value: unknown): string => normalizeKey(value)
 
+const collectTeacherTokens = (value: unknown): string[] => {
+  if (typeof value !== "string") {
+    return []
+  }
+
+  const trimmed = value.trim()
+
+  if (!trimmed) {
+    return []
+  }
+
+  const lower = trimmed.toLowerCase()
+  const withoutPunctuation = lower.replace(/[\.]+/g, " ")
+  const collapsedWhitespace = withoutPunctuation.replace(/\s+/g, " ").trim()
+  const alphanumeric = collapsedWhitespace.replace(/[^a-z0-9]+/g, "")
+
+  const tokens = new Set<string>([lower])
+
+  if (collapsedWhitespace.length > 0) {
+    tokens.add(collapsedWhitespace)
+  }
+
+  if (alphanumeric.length > 0) {
+    tokens.add(alphanumeric)
+  }
+
+  return Array.from(tokens)
+}
+
+const extractAttendanceSummary = (
+  value: unknown,
+  fallback?: { present: number; total: number; percentage: number },
+): { present: number; total: number; percentage: number } | null => {
+  if (!isRecord(value)) {
+    if (!fallback) {
+      return null
+    }
+
+    const adjustedTotal = fallback.total > 0 ? fallback.total : Math.max(fallback.present, 0)
+    const adjustedPercentage =
+      fallback.percentage >= 0
+        ? fallback.percentage
+        : adjustedTotal > 0
+          ? Math.round((fallback.present / adjustedTotal) * 100)
+          : 0
+
+    return {
+      present: Math.max(0, Math.round(fallback.present)),
+      total: Math.max(0, Math.round(adjustedTotal)),
+      percentage: adjustedPercentage,
+    }
+  }
+
+  const presentCandidate = Number(value.present ?? value.presentDays ?? value.attended ?? fallback?.present ?? 0)
+  const absentCandidate = Number(value.absent ?? value.absentDays ?? fallback?.total ?? 0) - presentCandidate
+  const totalCandidate = Number(
+    value.total ??
+      value.totalDays ??
+      (Number.isFinite(absentCandidate) && absentCandidate >= 0
+        ? presentCandidate + absentCandidate
+        : fallback?.total ?? 0),
+  )
+
+  const present = Number.isFinite(presentCandidate) && presentCandidate >= 0 ? Math.round(presentCandidate) : 0
+  const total = Number.isFinite(totalCandidate) && totalCandidate > 0 ? Math.round(totalCandidate) : present
+
+  const percentageCandidate = Number(value.percentage ?? fallback?.percentage ?? NaN)
+  const percentage =
+    Number.isFinite(percentageCandidate) && percentageCandidate >= 0
+      ? Math.round(percentageCandidate)
+      : total > 0
+        ? Math.round((present / total) * 100)
+        : 0
+
+  return { present, total, percentage }
+}
+
 const resolveAssignmentMaximum = (assignment: IdentifiedRecord, fallback: number): number => {
   const candidates = [
     assignment.maximumScore,
@@ -806,32 +883,54 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
 
   const filterAssignmentsForStudent = useCallback(
     (items: IdentifiedRecord[], teacherCandidates?: Iterable<string>) => {
-      const normalizedTeacherSet = new Set(
+      const normalizedStudentClass = normalizeClassIdentifier(effectiveClassName)
+      const teacherTokenSet = new Set(
         Array.from(teacherCandidates ?? studentTeachers)
-          .map((teacher) =>
-            typeof teacher === "string" ? teacher.trim().toLowerCase() : "",
-          )
-          .filter((teacher): teacher is string => teacher.length > 0),
+          .flatMap((teacher) => collectTeacherTokens(teacher))
+          .filter((token): token is string => token.length > 0),
       )
 
       const filtered =
-        normalizedTeacherSet.size > 0
+        teacherTokenSet.size > 0
           ? items.filter((assignment) => {
-              const teacherName =
-                typeof assignment.teacher === "string"
-                  ? assignment.teacher.trim().toLowerCase()
-                  : ""
-              if (!teacherName) {
+              const assignmentRecord = assignment as Record<string, unknown>
+              const assignmentTokens = new Set<string>()
+
+              collectTeacherTokens(assignmentRecord.teacher).forEach((token) => assignmentTokens.add(token))
+              collectTeacherTokens(assignmentRecord.teacherName).forEach((token) => assignmentTokens.add(token))
+              collectTeacherTokens(assignmentRecord.teacherId).forEach((token) => assignmentTokens.add(token))
+              collectTeacherTokens(assignmentRecord.teacher_id).forEach((token) => assignmentTokens.add(token))
+
+              if (assignmentTokens.size === 0) {
                 return true
               }
 
-              return normalizedTeacherSet.has(teacherName)
+              const matchesTeacher = Array.from(assignmentTokens).some((token) => teacherTokenSet.has(token))
+
+              if (matchesTeacher) {
+                return true
+              }
+
+              if (!normalizedStudentClass) {
+                return false
+              }
+
+              const classCandidates = [
+                assignmentRecord.className,
+                assignmentRecord.class,
+                assignmentRecord.classId,
+                assignmentRecord.class_id,
+              ]
+
+              return classCandidates
+                .map((value) => normalizeClassIdentifier(value))
+                .some((identifier) => identifier && identifier === normalizedStudentClass)
             })
           : items
 
       return sortAssignmentsByDueDate(filtered)
     },
-    [studentTeachers],
+    [effectiveClassName, studentTeachers],
   )
 
   const refreshAssignments = useCallback(async () => {
@@ -1867,11 +1966,28 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
             subjectTeacherMap.set(normalizeSubjectName(subjectName), primaryTeacher)
             teacherSet.add(primaryTeacher)
           }
+
+          const teacherIdentifiers = Array.isArray((record as Record<string, unknown>).teacherIds)
+            ? ((record as Record<string, unknown>).teacherIds as unknown[])
+            : []
+
+          teacherIdentifiers.forEach((identifier) => {
+            if (typeof identifier === "string" && identifier.trim().length > 0) {
+              teacherSet.add(identifier)
+            }
+          })
+
+          if (typeof (record as Record<string, unknown>).teacherId === "string") {
+            const identifier = ((record as Record<string, unknown>).teacherId as string).trim()
+            if (identifier.length > 0) {
+              teacherSet.add(identifier)
+            }
+          }
         })
 
         const normalizedTeacherSet = new Set(
           Array.from(teacherSet)
-            .map((teacher) => teacher.trim().toLowerCase())
+            .flatMap((teacher) => collectTeacherTokens(teacher))
             .filter((teacher) => teacher.length > 0),
         )
 
@@ -1950,7 +2066,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
         }
 
         const normalizedAssignments = normalizeIdentifiedCollection(assignmentsData, "assignment")
-        setAssignments(filterAssignmentsForStudent(normalizedAssignments, teacherSet))
+        setAssignments(filterAssignmentsForStudent(normalizedAssignments, normalizedTeacherSet))
 
         const timetableSlots = await dbManager.getTimetable(resolvedClassName)
         if (!isMounted) {
@@ -1976,7 +2092,13 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
 
         setLibraryBooks(normalizeIdentifiedCollection(libraryData, "book"))
 
-        const attendanceData = await dbManager.getStudentAttendance(resolvedStudentId)
+        const attendanceFromStudent = extractAttendanceSummary(getRecordValue(matchedStudent, "attendance"))
+        const attendanceData =
+          attendanceFromStudent ?? (await dbManager.getStudentAttendance(resolvedStudentId)) ?? {
+            present: 0,
+            total: 0,
+            percentage: 0,
+          }
         if (!isMounted) {
           return
         }
@@ -2113,13 +2235,16 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     }
 
     const handleAttendanceUpdate = (payload: unknown) => {
-      if (isRecord(payload) && normalizeKey(payload.studentId) === normalizeKey(effectiveStudentId)) {
-        setAttendance((prev) => ({
-          present: Number(payload.present ?? prev.present),
-          total: Number(payload.total ?? prev.total),
-          percentage: Number(payload.percentage ?? prev.percentage),
-        }))
+      if (!isRecord(payload) || normalizeKey(payload.studentId) !== normalizeKey(effectiveStudentId)) {
+        return
       }
+
+      setAttendance((prev) => {
+        const attendanceSummary =
+          extractAttendanceSummary(getRecordValue(payload, "attendance"), prev) ?? extractAttendanceSummary(payload, prev)
+
+        return attendanceSummary ?? prev
+      })
     }
 
     const handleProfileUpdate = (payload: unknown) => {
