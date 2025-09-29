@@ -240,7 +240,7 @@ interface AssignmentSubmissionRecord {
   studentId: string
   status: "pending" | "submitted" | "graded"
   submittedAt: string | null
-  files?: { id: string; name: string }[]
+  files?: { id: string; name: string; url?: string | null }[]
   comment?: string | null
   grade?: string | null
   score?: number | null
@@ -585,7 +585,13 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         studentId: submission.studentId,
         status: submission.status,
         submittedAt: submission.submittedAt ?? null,
-        files: Array.isArray(submission.files) ? submission.files : [],
+        files: Array.isArray(submission.files)
+          ? submission.files.map((file) => ({
+              id: typeof file.id === "string" ? file.id : `${submission.id}_${Math.random().toString(36).slice(2)}`,
+              name: typeof file.name === "string" ? file.name : "Submission attachment",
+              url: typeof (file as { url?: unknown }).url === "string" ? (file as { url?: string }).url : null,
+            }))
+          : [],
         comment: submission.comment ?? null,
         grade: submission.grade ?? null,
         score: typeof submission.score === "number" ? submission.score : null,
@@ -1800,6 +1806,38 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     const link = runtime.document.createElement("a")
     link.href = assignment.resourceUrl
     link.download = assignment.resourceName || `${assignment.title}.attachment`
+    runtime.document.body?.appendChild(link)
+    link.click()
+    runtime.document.body?.removeChild(link)
+  }
+
+  const handleDownloadSubmissionFile = (
+    submission: AssignmentSubmissionRecord,
+    file: NonNullable<AssignmentSubmissionRecord["files"]>[number],
+  ) => {
+    if (!file.url) {
+      toast({
+        variant: "destructive",
+        title: "Download unavailable",
+        description: "This submission file could not be downloaded.",
+      })
+      return
+    }
+
+    const runtime = getBrowserRuntime()
+
+    if (!runtime?.document) {
+      toast({
+        variant: "destructive",
+        title: "Download unavailable",
+        description: "Submission files can only be downloaded in a browser environment.",
+      })
+      return
+    }
+
+    const link = runtime.document.createElement("a")
+    link.href = file.url
+    link.download = file.name || `${submission.studentId}-submission`
     runtime.document.body?.appendChild(link)
     link.click()
     runtime.document.body?.removeChild(link)
@@ -4221,6 +4259,38 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {selectedAssignment ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-700">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                  <span className="inline-flex items-center gap-1">
+                    <CalendarClock className="h-3.5 w-3.5 text-amber-500" /> Due {formatExamDate(selectedAssignment.dueDate)}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Users className="h-3.5 w-3.5 text-emerald-500" /> Assigned to {selectedAssignment.className ?? "assigned students"}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Trophy className="h-3.5 w-3.5 text-purple-500" />
+                    {selectedAssignment.maximumScore ?? assignmentMaximum} marks
+                  </span>
+                </div>
+                <p className="mt-3 text-sm">
+                  {selectedAssignment.description?.length
+                    ? selectedAssignment.description
+                    : "No additional description was provided for this assignment."}
+                </p>
+                {selectedAssignment.resourceName ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadAssignmentAttachment(selectedAssignment)}
+                    className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-emerald-700 transition hover:text-emerald-900"
+                  >
+                    <Download className="h-3.5 w-3.5" /> Download assignment attachment ({selectedAssignment.resourceName})
+                  </button>
+                ) : (
+                  <p className="mt-3 text-xs text-slate-500">No assignment attachment to download.</p>
+                )}
+              </div>
+            ) : null}
             {isLoadingSubmissions ? (
               <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading submissions...
@@ -4236,17 +4306,31 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                     key={submission.id}
                     className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:bg-slate-50/70"
                   >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="space-y-1">
-                        <h3 className="font-medium text-slate-800">Student ID: {submission.studentId}</h3>
-                        <p className="text-xs text-slate-500">
-                          Submitted {submission.submittedAt ? formatExamDate(submission.submittedAt) : "—"}
-                        </p>
-                        {submission.files && submission.files.length > 0 ? (
-                          <p className="text-xs text-emerald-700">
-                            Attachment: {submission.files.map((file) => file.name).join(", ")}
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-2">
+                        <div>
+                          <h3 className="font-medium text-slate-800">Student ID: {submission.studentId}</h3>
+                          <p className="text-xs text-slate-500">
+                            Submitted {submission.submittedAt ? formatExamDate(submission.submittedAt) : "—"}
                           </p>
-                        ) : null}
+                        </div>
+                        {submission.files && submission.files.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-700">
+                            <span className="font-medium text-emerald-800">Attachments:</span>
+                            {submission.files.map((file) => (
+                              <button
+                                key={file.id}
+                                type="button"
+                                onClick={() => handleDownloadSubmissionFile(submission, file)}
+                                className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700 transition hover:bg-emerald-100"
+                              >
+                                <Download className="h-3.5 w-3.5" /> {file.name}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-500">No attachments were included in this submission.</p>
+                        )}
                       </div>
                       <Badge className={`${submissionStatusMeta.badgeClass} uppercase`}>{submission.status}</Badge>
                     </div>

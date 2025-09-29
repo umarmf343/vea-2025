@@ -42,7 +42,7 @@ interface AssignmentSubmissionRecord {
   studentId: string
   status: "pending" | "submitted" | "graded"
   submittedAt: string | null
-  files: { id: string; name: string }[]
+  files: { id: string; name: string; url?: string | null }[]
   comment?: string | null
   grade?: string | null
   score?: number | null
@@ -134,7 +134,7 @@ interface SaveStudyMaterialInput {
   fileUrl?: string | null
 }
 
-type AssignmentFileInput = { id?: string; name: string } | string
+type AssignmentFileInput = { id?: string; name: string; url?: string | null } | string
 
 interface CreateAssignmentSubmissionInput {
   assignmentId: string
@@ -509,7 +509,7 @@ class DatabaseManager {
       ? filesPayload
           .map((file) => {
             if (typeof file === "string") {
-              return { id: this.generateId("file"), name: file }
+              return { id: this.generateId("file"), name: file, url: null }
             }
 
             if (file && typeof file === "object" && typeof (file as Record<string, any>).name === "string") {
@@ -520,12 +520,14 @@ class DatabaseManager {
                     ? record.id
                     : this.generateId("file"),
                 name: record.name,
+                url:
+                  typeof record.url === "string" && record.url.trim().length > 0 ? (record.url as string) : null,
               }
             }
 
             return null
           })
-          .filter((file): file is { id: string; name: string } => Boolean(file))
+          .filter((file): file is { id: string; name: string; url?: string | null } => Boolean(file))
       : []
 
     const statusCandidate = (payload as Record<string, any>).status
@@ -2402,6 +2404,7 @@ class DatabaseManager {
             status: submission ? (submission.status === "submitted" ? "submitted" : submission.status) : status,
             submittedAt: submission?.submittedAt ?? null,
             submittedFile: submission?.files?.[0]?.name ?? null,
+            submittedFileUrl: submission?.files?.[0]?.url ?? null,
             submittedComment: submission?.comment ?? "",
             grade: submission?.grade ?? null,
             score: submission?.score ?? null,
@@ -2737,6 +2740,7 @@ class DatabaseManager {
       grade: gradedSubmission.grade ?? null,
       score: gradedSubmission.score ?? null,
       submittedFile: gradedSubmission.files[0]?.name ?? null,
+      submittedFileUrl: gradedSubmission.files[0]?.url ?? null,
       submittedComment: gradedSubmission.comment ?? "",
     })
 
@@ -2890,11 +2894,17 @@ class DatabaseManager {
     const existingSubmission = existingIndex >= 0 ? submissions[existingIndex] : undefined
     const timestamp = payload.submittedAt ?? new Date().toISOString()
     const normalisedFiles =
-      payload.files?.map((file) =>
-        typeof file === "string"
-          ? { id: this.generateId("file"), name: file }
-          : { id: file.id ?? this.generateId("file"), name: file.name },
-      ) ?? []
+      payload.files?.map((file) => {
+        if (typeof file === "string") {
+          return { id: this.generateId("file"), name: file, url: null }
+        }
+
+        return {
+          id: file.id ?? this.generateId("file"),
+          name: file.name,
+          url: typeof file.url === "string" && file.url.trim().length > 0 ? file.url : null,
+        }
+      }) ?? []
 
     const submissionRecord: AssignmentSubmissionRecord = {
       id: existingSubmission?.id ?? this.generateId("submission"),
@@ -2929,6 +2939,7 @@ class DatabaseManager {
       status: submissionRecord.status === "submitted" ? "submitted" : submissionRecord.status,
       submittedAt: submissionRecord.submittedAt,
       submittedFile: submissionRecord.files[0]?.name ?? null,
+      submittedFileUrl: submissionRecord.files[0]?.url ?? null,
       submittedComment: submissionRecord.comment ?? "",
       grade: submissionRecord.grade ?? null,
       score: submissionRecord.score ?? null,
@@ -5822,7 +5833,16 @@ class DatabaseManager {
   async submitAssignment(submissionData: any) {
     try {
       const files = submissionData.submittedFile
-        ? [{ id: this.generateId("file"), name: submissionData.submittedFile }]
+        ? [
+            {
+              id: this.generateId("file"),
+              name: submissionData.submittedFile,
+              url:
+                typeof submissionData.submittedFileUrl === "string" && submissionData.submittedFileUrl.trim().length > 0
+                  ? submissionData.submittedFileUrl
+                  : null,
+            },
+          ]
         : []
 
       const submissionRecord = await this.createAssignmentSubmission({
@@ -5844,6 +5864,7 @@ class DatabaseManager {
         id: submissionRecord.id,
         submittedAt: submissionRecord.submittedAt,
         submittedFile: submissionRecord.files[0]?.name ?? submissionData.submittedFile ?? null,
+        submittedFileUrl: submissionRecord.files[0]?.url ?? submissionData.submittedFileUrl ?? null,
         status: submissionRecord.status === "submitted" ? "submitted" : submissionRecord.status,
         grade: submissionRecord.grade ?? submissionData.grade ?? null,
         score: submissionRecord.score ?? submissionData.score ?? null,
