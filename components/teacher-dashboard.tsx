@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -1976,6 +1976,10 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   }, [assignments, teacher.id])
 
   const handleSaveAssignment = async (intent: "draft" | "sent") => {
+    if (isSavingAssignment) {
+      return
+    }
+
     if (
       !assignmentForm.title ||
       !assignmentForm.subject ||
@@ -2073,6 +2077,39 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     } finally {
       setIsSavingAssignment(false)
     }
+  }
+
+  const handleAssignmentSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (isSavingAssignment) {
+      return
+    }
+
+    const nativeEvent = event.nativeEvent
+    let intent: "draft" | "sent" = "draft"
+
+    if (nativeEvent && typeof (nativeEvent as SubmitEvent).submitter !== "undefined") {
+      const submitter = (nativeEvent as SubmitEvent).submitter
+
+      if (submitter instanceof HTMLElement) {
+        const rawValue =
+          submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement
+            ? submitter.value
+            : submitter.getAttribute("value") ?? ""
+
+        const fallbackIntent = submitter.getAttribute("data-intent")
+        const normalized = (rawValue || fallbackIntent || "").toLowerCase()
+
+        if (normalized === "sent" || normalized === "send") {
+          intent = "sent"
+        } else if (normalized === "draft" || normalized === "save") {
+          intent = "draft"
+        }
+      }
+    }
+
+    await handleSaveAssignment(intent)
   }
 
   const handleSendAssignment = async (assignment: TeacherAssignmentSummary) => {
@@ -3883,171 +3920,180 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         }}
       >
         <DialogContent className="max-w-2xl">
-          <DialogHeader className="space-y-1">
-            <DialogTitle>{assignmentDialogTitle}</DialogTitle>
-            <DialogDescription>{assignmentDialogDescription}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-5">
-            <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60 p-4 text-sm text-emerald-800">
-              <p className="flex items-center gap-2 font-medium">
-                <Sparkles className="h-4 w-4 text-emerald-500" /> Tailor engaging assignments
-              </p>
-              <p className="mt-1 text-emerald-700/80">
-                Add clear instructions, set a due date, and attach helpful resources to guide your learners.
-              </p>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <Label htmlFor="title">Assignment Title</Label>
-                <Input
-                  id="title"
-                  value={assignmentForm.title}
-                  onChange={(e) => setAssignmentForm((prev) => ({ ...prev, title: e.target.value }))}
-                  placeholder="Enter assignment title"
-                />
+          <form onSubmit={handleAssignmentSubmit} className="space-y-5">
+            <DialogHeader className="space-y-1">
+              <DialogTitle>{assignmentDialogTitle}</DialogTitle>
+              <DialogDescription>{assignmentDialogDescription}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-5">
+              <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60 p-4 text-sm text-emerald-800">
+                <p className="flex items-center gap-2 font-medium">
+                  <Sparkles className="h-4 w-4 text-emerald-500" /> Tailor engaging assignments
+                </p>
+                <p className="mt-1 text-emerald-700/80">
+                  Add clear instructions, set a due date, and attach helpful resources to guide your learners.
+                </p>
               </div>
-              <div>
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  value={assignmentForm.description}
-                  onChange={(e) => setAssignmentForm((prev) => ({ ...prev, description: e.target.value }))}
-                  placeholder="Share instructions, expectations, and submission tips"
-                  rows={4}
-                />
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-3">
                 <div>
-                  <Label htmlFor="subject">Subject</Label>
-                  <Select
-                    value={assignmentForm.subject}
-                    onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, subject: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select subject" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {teacher.subjects.map((subject) => (
-                        <SelectItem key={subject} value={subject}>
-                          {subject}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="class">Class</Label>
-                  <Select
-                    value={assignmentForm.classId || ""}
-                    onValueChange={(value) =>
-                      setAssignmentForm((prev) => {
-                        const match = teacher.classes.find((cls) => cls.id === value)
-                        return {
-                          ...prev,
-                          classId: value,
-                          className: match?.name ?? prev.className,
-                        }
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={assignmentForm.className || "Select class"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {teacher.classes.map((classItem) => (
-                        <SelectItem key={classItem.id} value={classItem.id}>
-                          {classItem.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <Label htmlFor="dueDate">Due Date</Label>
+                  <Label htmlFor="title">Assignment Title</Label>
                   <Input
-                    id="dueDate"
-                    type="date"
-                    value={assignmentForm.dueDate}
-                    onChange={(e) => setAssignmentForm((prev) => ({ ...prev, dueDate: e.target.value }))}
+                    id="title"
+                    value={assignmentForm.title}
+                    onChange={(e) => setAssignmentForm((prev) => ({ ...prev, title: e.target.value }))}
+                    placeholder="Enter assignment title"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="maximumScore">Maximum Score</Label>
-                  <div className="relative mt-1">
-                    <Input
-                      id="maximumScore"
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={assignmentForm.maximumScore}
-                      onChange={(e) =>
-                        setAssignmentForm((prev) => ({
-                          ...prev,
-                          maximumScore: e.target.value,
-                        }))
-                      }
-                      placeholder={`e.g. ${assignmentMaximum}`}
-                    />
-                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
-                      marks
-                    </span>
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    id="description"
+                    value={assignmentForm.description}
+                    onChange={(e) => setAssignmentForm((prev) => ({ ...prev, description: e.target.value }))}
+                    placeholder="Share instructions, expectations, and submission tips"
+                    rows={4}
+                  />
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="subject">Subject</Label>
+                    <Select
+                      value={assignmentForm.subject}
+                      onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, subject: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select subject" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {teacher.subjects.map((subject) => (
+                          <SelectItem key={subject} value={subject}>
+                            {subject}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Set how many marks this assignment contributes for your students.
-                  </p>
+                  <div>
+                    <Label htmlFor="class">Class</Label>
+                    <Select
+                      value={assignmentForm.classId || ""}
+                      onValueChange={(value) =>
+                        setAssignmentForm((prev) => {
+                          const match = teacher.classes.find((cls) => cls.id === value)
+                          return {
+                            ...prev,
+                            classId: value,
+                            className: match?.name ?? prev.className,
+                          }
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={assignmentForm.className || "Select class"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {teacher.classes.map((classItem) => (
+                          <SelectItem key={classItem.id} value={classItem.id}>
+                            {classItem.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="dueDate">Due Date</Label>
+                    <Input
+                      id="dueDate"
+                      type="date"
+                      value={assignmentForm.dueDate}
+                      onChange={(e) => setAssignmentForm((prev) => ({ ...prev, dueDate: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="maximumScore">Maximum Score</Label>
+                    <div className="relative mt-1">
+                      <Input
+                        id="maximumScore"
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={assignmentForm.maximumScore}
+                        onChange={(e) =>
+                          setAssignmentForm((prev) => ({
+                            ...prev,
+                            maximumScore: e.target.value,
+                          }))
+                        }
+                        placeholder={`e.g. ${assignmentMaximum}`}
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+                        marks
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Set how many marks this assignment contributes for your students.
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="file">Attachment (Optional)</Label>
+                  <Input
+                    id="file"
+                    type="file"
+                    onChange={(e) => setAssignmentForm((prev) => ({ ...prev, file: e.target.files?.[0] || null }))}
+                  />
+                  {isEditingAssignment && assignmentForm.resourceName && !assignmentForm.file ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Current attachment: <span className="font-medium text-slate-700">{assignmentForm.resourceName}</span>
+                    </p>
+                  ) : null}
                 </div>
               </div>
-              <div>
-                <Label htmlFor="file">Attachment (Optional)</Label>
-                <Input
-                  id="file"
-                  type="file"
-                  onChange={(e) => setAssignmentForm((prev) => ({ ...prev, file: e.target.files?.[0] || null }))}
-                />
-                {isEditingAssignment && assignmentForm.resourceName && !assignmentForm.file ? (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Current attachment: <span className="font-medium text-slate-700">{assignmentForm.resourceName}</span>
-                  </p>
-                ) : null}
+              <Separator />
+              <p className="text-xs text-muted-foreground">
+                Tip: Assignment scores contribute up to {resolvedAssignmentMaximum} marks to continuous assessment this term.
+              </p>
+            </div>
+            <DialogFooter className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setShowCreateAssignment(false)
+                  resetAssignmentForm()
+                }}
+              >
+                Cancel
+              </Button>
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                <Button
+                  type="submit"
+                  name="action"
+                  value="draft"
+                  data-intent="draft"
+                  variant="outline"
+                  disabled={isSavingAssignment}
+                  className="border-slate-300"
+                >
+                  {isSavingAssignment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  {isSavingAssignment ? "Saving..." : isEditingAssignment ? "Save Draft" : "Save as Draft"}
+                </Button>
+                <Button
+                  type="submit"
+                  name="action"
+                  value="sent"
+                  data-intent="sent"
+                  disabled={isSavingAssignment}
+                  className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+                >
+                  {isSavingAssignment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  {isSavingAssignment ? "Sending..." : isEditingAssignment ? "Update & Send" : "Send Assignment"}
+                </Button>
               </div>
-            </div>
-            <Separator />
-            <p className="text-xs text-muted-foreground">
-              Tip: Assignment scores contribute up to {resolvedAssignmentMaximum} marks to continuous assessment this term.
-            </p>
-          </div>
-          <DialogFooter className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:gap-2">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setShowCreateAssignment(false)
-                resetAssignmentForm()
-              }}
-            >
-              Cancel
-            </Button>
-            <div className="flex flex-wrap gap-2 sm:justify-end">
-              <Button
-                variant="outline"
-                onClick={() => handleSaveAssignment("draft")}
-                disabled={isSavingAssignment}
-                className="border-slate-300"
-              >
-                {isSavingAssignment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                {isSavingAssignment ? "Saving..." : isEditingAssignment ? "Save Draft" : "Save as Draft"}
-              </Button>
-              <Button
-                onClick={() => handleSaveAssignment("sent")}
-                disabled={isSavingAssignment}
-                className="bg-[#2d682d] hover:bg-[#2d682d]/90"
-              >
-                {isSavingAssignment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                {isSavingAssignment ? "Sending..." : isEditingAssignment ? "Update & Send" : "Send to Students"}
-              </Button>
-            </div>
-          </DialogFooter>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
