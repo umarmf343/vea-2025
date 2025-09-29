@@ -9,11 +9,13 @@ export async function GET(request: NextRequest) {
     const teacherId = searchParams.get("teacherId")
     const studentId = searchParams.get("studentId")
     const classId = searchParams.get("classId")
+    const assignmentId = searchParams.get("assignmentId")
 
     const assignments = await dbManager.getAssignments({
       teacherId: teacherId || undefined,
       studentId: studentId || undefined,
       classId: classId || undefined,
+      assignmentId: assignmentId || undefined,
     })
 
     return NextResponse.json({ assignments })

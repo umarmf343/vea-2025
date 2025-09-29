@@ -73,6 +73,7 @@ interface AssignmentFilters {
   teacherId?: string
   studentId?: string
   classId?: string
+  assignmentId?: string
 }
 
 interface CreateAssignmentInput {
@@ -449,6 +450,10 @@ class DatabaseManager {
 
     if (filters.classId) {
       params.set("classId", filters.classId)
+    }
+
+    if (filters.assignmentId) {
+      params.set("assignmentId", filters.assignmentId)
     }
 
     const query = params.toString()
@@ -2318,6 +2323,10 @@ class DatabaseManager {
     const filterAndDecorate = (records: AssignmentRecord[]) =>
       records
         .filter((assignment) => {
+          if (filters.assignmentId && assignment.id !== filters.assignmentId) {
+            return false
+          }
+
           if (filters.teacherId && assignment.teacherId !== filters.teacherId) {
             return false
           }
