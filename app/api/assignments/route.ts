@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
       dueDate,
       maximumScore,
       status,
+      action,
       type,
       attachmentName,
       attachmentSize,
@@ -64,6 +65,24 @@ export async function POST(request: NextRequest) {
         message: "Assignment submitted successfully",
       })
     } else {
+      const normalizedAction = typeof action === "string" ? action.trim().toLowerCase() : ""
+      const normalizedStatus = typeof status === "string" ? status.trim().toLowerCase() : ""
+      const resolvedStatus = (() => {
+        if (normalizedStatus === "draft" || normalizedStatus === "sent") {
+          return normalizedStatus
+        }
+
+        if (normalizedAction === "draft" || normalizedAction === "save") {
+          return "draft"
+        }
+
+        if (normalizedAction === "sent" || normalizedAction === "send") {
+          return "sent"
+        }
+
+        return "sent"
+      })()
+
       const newAssignment = await dbManager.createAssignment({
         title,
         description,
@@ -73,7 +92,7 @@ export async function POST(request: NextRequest) {
         teacherId,
         teacherName,
         dueDate,
-        status: typeof status === "string" ? status : "sent",
+        status: resolvedStatus,
         maximumScore,
         assignedStudentIds: Array.isArray(assignedStudentIds) ? assignedStudentIds : undefined,
         resourceName: attachmentName ?? null,
