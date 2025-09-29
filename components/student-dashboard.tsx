@@ -2302,6 +2302,27 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     document.body.removeChild(link)
   }
 
+  const handleDownloadSubmittedResource = (assignment: IdentifiedRecord) => {
+    const resourceUrl = typeof assignment.submittedFileUrl === "string" ? assignment.submittedFileUrl : ""
+    if (!resourceUrl) {
+      return
+    }
+
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return
+    }
+
+    const link = document.createElement("a")
+    link.href = resourceUrl
+    link.download =
+      typeof assignment.submittedFile === "string" && assignment.submittedFile.length > 0
+        ? assignment.submittedFile
+        : `${typeof assignment.title === "string" ? assignment.title : "assignment"}.submission`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   const formatAssignmentDate = (value: unknown) => {
     if (typeof value !== "string" || value.trim().length === 0) {
       return "--"
@@ -2332,6 +2353,14 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     if (diff === 0) return "Due today"
     return `Overdue by ${Math.abs(diff)} day${Math.abs(diff) === 1 ? "" : "s"}`
   }
+
+  const readFileAsDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "")
+      reader.onerror = () => reject(new Error("Unable to read file"))
+      reader.readAsDataURL(file)
+    })
 
   useEffect(() => {
     if (!assignments.length || !effectiveStudentId) {
@@ -2469,6 +2498,17 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     if (!selectedAssignment) return
 
     try {
+      let fileDataUrl: string | null = null
+
+      if (submissionForm.file) {
+        try {
+          fileDataUrl = await readFileAsDataUrl(submissionForm.file)
+        } catch (error) {
+          logger.error("Failed to read submission file", { error })
+          fileDataUrl = null
+        }
+      }
+
       const submissionData = {
         assignmentId: selectedAssignment.id,
         studentId: effectiveStudentId,
@@ -2476,6 +2516,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
         submittedAt: new Date().toISOString(),
         submittedFile: submissionForm.file?.name || null,
         submittedComment: submissionForm.comment,
+        submittedFileUrl: fileDataUrl,
       }
 
       // Save to database
@@ -3039,7 +3080,19 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                               <CheckCircle className="h-4 w-4 text-emerald-600" /> Submitted on {formatAssignmentDate(submittedAt)}
                             </p>
                             {typeof assignment.submittedFile === "string" && assignment.submittedFile.length > 0 ? (
-                              <p className="mt-1 text-emerald-700/80">File: {assignment.submittedFile}</p>
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-emerald-700/80">
+                                <FileText className="h-4 w-4" />
+                                <span>{assignment.submittedFile}</span>
+                                {typeof assignment.submittedFileUrl === "string" && assignment.submittedFileUrl.length > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadSubmittedResource(assignment)}
+                                    className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 transition hover:text-emerald-900"
+                                  >
+                                    <Download className="h-3.5 w-3.5" /> Download submission
+                                  </button>
+                                ) : null}
+                              </div>
                             ) : null}
                             {typeof assignment.submittedComment === "string" && assignment.submittedComment.length > 0 ? (
                               <p className="mt-1 italic text-emerald-700/80">“{assignment.submittedComment}”</p>
@@ -4148,6 +4201,43 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {selectedAssignment ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-700">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                  <span className="inline-flex items-center gap-1">
+                    <Calendar className="h-3.5 w-3.5 text-amber-500" /> Due {formatAssignmentDate(selectedAssignment.dueDate)}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Trophy className="h-3.5 w-3.5 text-purple-500" />
+                    {resolveAssignmentMaximum(selectedAssignment, defaultAssignmentMaximum)} marks
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <User className="h-3.5 w-3.5 text-emerald-500" />
+                    {typeof selectedAssignment.teacher === "string"
+                      ? selectedAssignment.teacher
+                      : typeof selectedAssignment.teacherName === "string"
+                        ? selectedAssignment.teacherName
+                        : "Subject teacher"}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm">
+                  {typeof selectedAssignment.description === "string" && selectedAssignment.description.length > 0
+                    ? selectedAssignment.description
+                    : "No description has been provided for this assignment yet."}
+                </p>
+                {typeof selectedAssignment.resourceName === "string" && selectedAssignment.resourceName.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadAssignmentResource(selectedAssignment)}
+                    className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-emerald-700 transition hover:text-emerald-900"
+                  >
+                    <Download className="h-3.5 w-3.5" /> Download attachment ({selectedAssignment.resourceName})
+                  </button>
+                ) : (
+                  <p className="mt-3 text-xs text-slate-500">No attachment was provided for this assignment.</p>
+                )}
+              </div>
+            ) : null}
             <div>
               <Label htmlFor="file">Upload File (Optional)</Label>
               <Input
