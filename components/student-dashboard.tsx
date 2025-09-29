@@ -140,6 +140,9 @@ const normalizeString = (value: unknown): string => {
 
 const normalizeKey = (value: unknown): string => normalizeString(value).toLowerCase()
 
+const normalizeClassIdentifier = (value: unknown): string =>
+  typeof value === "string" ? value.replace(/\s+/g, "").toLowerCase() : ""
+
 const sortAssignmentsByDueDate = (records: IdentifiedRecord[]): IdentifiedRecord[] => {
   const toTimestamp = (record: IdentifiedRecord) => {
     const rawDate =
@@ -747,6 +750,50 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     () => (mathRoundDuration ? Math.min((mathTimeLeft / mathRoundDuration) * 100, 100) : 0),
     [mathRoundDuration, mathTimeLeft],
   )
+
+  const filterAssignmentsForStudent = useCallback(
+    (items: IdentifiedRecord[], teacherCandidates?: Iterable<string>) => {
+      const normalizedTeacherSet = new Set(
+        Array.from(teacherCandidates ?? studentTeachers)
+          .map((teacher) =>
+            typeof teacher === "string" ? teacher.trim().toLowerCase() : "",
+          )
+          .filter((teacher): teacher is string => teacher.length > 0),
+      )
+
+      const filtered =
+        normalizedTeacherSet.size > 0
+          ? items.filter((assignment) => {
+              const teacherName =
+                typeof assignment.teacher === "string"
+                  ? assignment.teacher.trim().toLowerCase()
+                  : ""
+              if (!teacherName) {
+                return true
+              }
+
+              return normalizedTeacherSet.has(teacherName)
+            })
+          : items
+
+      return sortAssignmentsByDueDate(filtered)
+    },
+    [studentTeachers],
+  )
+
+  const refreshAssignments = useCallback(async () => {
+    if (!effectiveStudentId) {
+      return
+    }
+
+    try {
+      const assignmentsData = await dbManager.getAssignments({ studentId: effectiveStudentId })
+      const normalizedAssignments = normalizeIdentifiedCollection(assignmentsData, "assignment")
+      setAssignments(filterAssignmentsForStudent(normalizedAssignments))
+    } catch (error) {
+      logger.error("Failed to refresh assignments", { error })
+    }
+  }, [effectiveStudentId, filterAssignmentsForStudent])
 
   const handleCloseMathCelebration = useCallback(() => {
     setMathCelebration(null)
@@ -1850,18 +1897,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
         }
 
         const normalizedAssignments = normalizeIdentifiedCollection(assignmentsData, "assignment")
-        const filteredAssignments =
-          normalizedTeacherSet.size > 0
-            ? normalizedAssignments.filter((assignment) => {
-                const teacherName = typeof assignment.teacher === "string" ? assignment.teacher.trim().toLowerCase() : ""
-                if (!teacherName) {
-                  return true
-                }
-
-                return normalizedTeacherSet.has(teacherName)
-              })
-            : normalizedAssignments
-        setAssignments(filteredAssignments)
+        setAssignments(filterAssignmentsForStudent(normalizedAssignments, teacherSet))
 
         const timetableSlots = await dbManager.getTimetable(resolvedClassName)
         if (!isMounted) {
@@ -1960,22 +1996,67 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
 
     const handleAssignmentsUpdate = (payload: unknown) => {
       const record = toIdentifiedRecord(payload, "assignment")
-      if (!record || normalizeKey(record.studentId) !== normalizeKey(effectiveStudentId)) {
+      if (!record) {
         return
       }
 
-      setAssignments((prev) => {
-        const normalizedId = normalizeKey(record.id)
-        const existingIndex = prev.findIndex((assignment) => normalizeKey(assignment.id) === normalizedId)
+      const normalizedStudentId = normalizeKey(effectiveStudentId)
 
-        if (existingIndex === -1) {
-          return sortAssignmentsByDueDate([...prev, { ...record }])
-        }
+      if (isRecord(payload) && payload.deleted === true) {
+        setAssignments((prev) =>
+          prev.filter((assignment) => normalizeKey(assignment.id) !== normalizeKey(record.id)),
+        )
+        return
+      }
 
-        const updated = [...prev]
-        updated[existingIndex] = { ...updated[existingIndex], ...record }
-        return sortAssignmentsByDueDate(updated)
-      })
+      if (normalizeKey(record.studentId) === normalizedStudentId) {
+        setAssignments((prev) => {
+          const normalizedId = normalizeKey(record.id)
+          const existingIndex = prev.findIndex((assignment) => normalizeKey(assignment.id) === normalizedId)
+
+          if (existingIndex === -1) {
+            void refreshAssignments()
+            return prev
+          }
+
+          const updated = [...prev]
+          updated[existingIndex] = { ...updated[existingIndex], ...record }
+          return sortAssignmentsByDueDate(updated)
+        })
+        return
+      }
+
+      if (!isRecord(payload)) {
+        return
+      }
+
+      const assignedStudents = Array.isArray(payload.assignedStudentIds)
+        ? payload.assignedStudentIds
+            .map((studentId) => normalizeKey(studentId))
+            .filter((studentId): studentId is string => studentId.length > 0)
+        : []
+
+      const assignmentClass =
+        typeof payload.className === "string"
+          ? payload.className
+          : typeof payload.class === "string"
+            ? payload.class
+            : null
+
+      const studentClass = normalizeClassIdentifier(effectiveClassName)
+      const matchesClass =
+        assignmentClass && studentClass
+          ? normalizeClassIdentifier(assignmentClass) === studentClass
+          : false
+
+      const appliesToStudent =
+        assignedStudents.includes(normalizedStudentId) || assignedStudents.length === 0 || matchesClass
+
+      if (!appliesToStudent) {
+        return
+      }
+
+      void refreshAssignments()
     }
 
     const handleAttendanceUpdate = (payload: unknown) => {
