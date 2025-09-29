@@ -55,6 +55,11 @@ import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
 import { normalizeTimetableCollection } from "@/lib/timetable"
 import { CONTINUOUS_ASSESSMENT_MAXIMUMS } from "@/lib/grade-utils"
+import {
+  clearAssignmentReminderHistory,
+  markAssignmentReminderSent,
+  shouldSendAssignmentReminder,
+} from "@/lib/assignment-reminders"
 import { useBranding } from "@/hooks/use-branding"
 import { useSchoolCalendar } from "@/hooks/use-school-calendar"
 
@@ -750,6 +755,54 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     () => (mathRoundDuration ? Math.min((mathTimeLeft / mathRoundDuration) * 100, 100) : 0),
     [mathRoundDuration, mathTimeLeft],
   )
+
+  const studentAssignmentInsights = useMemo(() => {
+    if (!assignments.length) {
+      return {
+        total: 0,
+        submitted: 0,
+        graded: 0,
+        pending: 0,
+        completionRate: 0,
+        averageScore: null as number | null,
+      }
+    }
+
+    let submittedCount = 0
+    let gradedCount = 0
+    let scoreTotal = 0
+    let scoreEntries = 0
+
+    assignments.forEach((assignment) => {
+      const status = typeof assignment.status === "string" ? assignment.status.toLowerCase() : "sent"
+      if (status === "submitted") {
+        submittedCount += 1
+      } else if (status === "graded") {
+        gradedCount += 1
+      }
+
+      const numericScore = typeof assignment.score === "number" ? assignment.score : null
+      if (numericScore !== null) {
+        scoreTotal += numericScore
+        scoreEntries += 1
+      }
+    })
+
+    const totalAssignments = assignments.length
+    const completionRate = totalAssignments
+      ? Math.round(((submittedCount + gradedCount) / totalAssignments) * 100)
+      : 0
+    const averageScore = scoreEntries > 0 ? Math.round((scoreTotal / scoreEntries) * 100) / 100 : null
+
+    return {
+      total: totalAssignments,
+      submitted: submittedCount,
+      graded: gradedCount,
+      pending: Math.max(totalAssignments - gradedCount, 0),
+      completionRate,
+      averageScore,
+    }
+  }, [assignments])
 
   const filterAssignmentsForStudent = useCallback(
     (items: IdentifiedRecord[], teacherCandidates?: Iterable<string>) => {
@@ -2155,6 +2208,103 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     return `Overdue by ${Math.abs(diff)} day${Math.abs(diff) === 1 ? "" : "s"}`
   }
 
+  useEffect(() => {
+    if (!assignments.length || !effectiveStudentId) {
+      return
+    }
+
+    const reminderTasks = assignments.map(async (assignment) => {
+      const assignmentId = typeof assignment.id === "string" ? assignment.id : String(assignment.id)
+      const dueDate = typeof assignment.dueDate === "string" ? assignment.dueDate : ""
+
+      if (!assignmentId || !dueDate) {
+        clearAssignmentReminderHistory("student", assignmentId)
+        return
+      }
+
+      const dueTimestamp = Date.parse(dueDate)
+      if (Number.isNaN(dueTimestamp)) {
+        return
+      }
+
+      const status = typeof assignment.status === "string" ? assignment.status.toLowerCase() : "sent"
+      if (status === "submitted" || status === "graded") {
+        clearAssignmentReminderHistory("student", assignmentId)
+        return
+      }
+
+      const now = Date.now()
+      const hoursUntilDue = (dueTimestamp - now) / (1000 * 60 * 60)
+      const title =
+        typeof assignment.title === "string" && assignment.title.trim().length > 0
+          ? assignment.title.trim()
+          : "Assignment"
+      const subject = typeof assignment.subject === "string" ? assignment.subject : undefined
+      const className = typeof assignment.className === "string" ? assignment.className : undefined
+
+      const audience = [effectiveStudentId, "student"] as const
+      const formattedDueDate = (() => {
+        try {
+          return new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short" }).format(
+            new Date(dueTimestamp),
+          )
+        } catch (error) {
+          return new Date(dueTimestamp).toDateString()
+        }
+      })()
+
+      if (hoursUntilDue <= 48 && hoursUntilDue > 0) {
+        if (shouldSendAssignmentReminder("student", assignmentId, "dueSoon", { dueDate })) {
+          try {
+            await dbManager.saveNotification({
+              title: "Assignment due soon",
+              message: `"${title}" is due on ${formattedDueDate}. Finish and submit before the deadline.`,
+              type: "warning",
+              category: "task",
+              audience,
+              targetAudience: audience,
+              metadata: {
+                assignmentId,
+                dueDate,
+                studentId: effectiveStudentId,
+                subject,
+                className,
+              },
+            })
+            markAssignmentReminderSent("student", assignmentId, "dueSoon", { dueDate })
+          } catch (error) {
+            logger.error("Failed to save due-soon reminder", { error, assignmentId })
+          }
+        }
+      } else if (hoursUntilDue <= 0) {
+        if (shouldSendAssignmentReminder("student", assignmentId, "overdue", { dueDate })) {
+          try {
+            await dbManager.saveNotification({
+              title: "Assignment overdue",
+              message: `"${title}" was due on ${formattedDueDate}. Submit as soon as possible to avoid penalties.`,
+              type: "destructive",
+              category: "task",
+              audience,
+              targetAudience: audience,
+              metadata: {
+                assignmentId,
+                dueDate,
+                studentId: effectiveStudentId,
+                subject,
+                className,
+              },
+            })
+            markAssignmentReminderSent("student", assignmentId, "overdue", { dueDate })
+          } catch (error) {
+            logger.error("Failed to save overdue reminder", { error, assignmentId })
+          }
+        }
+      }
+    })
+
+    void Promise.allSettled(reminderTasks)
+  }, [assignments, effectiveStudentId])
+
   const getAssignmentStatusMeta = (status: unknown) => {
     const normalized = typeof status === "string" ? status : "sent"
 
@@ -2365,7 +2515,8 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const averageGrade =
     subjects.length > 0
       ? Math.round(subjects.reduce((sum, subject) => sum + (subject.total || 0), 0) / subjects.length)
-      : 0
+      : 0;
+
 
   return (
     <div className="space-y-6">
@@ -2661,6 +2812,49 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
             </CardHeader>
             <CardContent>
               <div className="space-y-5">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
+                    <div className="flex items-center justify-between text-sm font-medium text-emerald-700">
+                      <span>Completion rate</span>
+                      <CheckCircle className="h-4 w-4" />
+                    </div>
+                    <p className="mt-2 text-2xl font-semibold text-emerald-900">
+                      {studentAssignmentInsights.completionRate}%
+                    </p>
+                    <Progress value={studentAssignmentInsights.completionRate} className="mt-3 h-2 bg-emerald-100" />
+                    <p className="mt-2 text-xs text-emerald-700/80">
+                      {studentAssignmentInsights.submitted + studentAssignmentInsights.graded} of {studentAssignmentInsights.total}{" "}
+                      assignments submitted.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
+                    <div className="flex items-center justify-between text-sm font-medium text-amber-700">
+                      <span>Pending actions</span>
+                      <AlertCircle className="h-4 w-4" />
+                    </div>
+                    <p className="mt-2 text-2xl font-semibold text-amber-900">
+                      {studentAssignmentInsights.pending}
+                    </p>
+                    <p className="mt-2 text-xs text-amber-700/80">
+                      Assignments still awaiting submission or grading feedback.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+                    <div className="flex items-center justify-between text-sm font-medium text-blue-700">
+                      <span>Average score</span>
+                      <Trophy className="h-4 w-4" />
+                    </div>
+                    <p className="mt-2 text-2xl font-semibold text-blue-900">
+                      {studentAssignmentInsights.averageScore !== null
+                        ? `${studentAssignmentInsights.averageScore}`
+                        : "--"}
+                    </p>
+                    <p className="mt-2 text-xs text-blue-700/80">
+                      Based on graded submissions available in this term.
+                    </p>
+                  </div>
+                </div>
+
                 {assignments.map((assignment) => {
                   const statusMeta = getAssignmentStatusMeta(assignment.status)
                   const submittedAt = typeof assignment.submittedAt === "string" ? assignment.submittedAt : ""

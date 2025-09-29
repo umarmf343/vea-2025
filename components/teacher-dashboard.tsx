@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Progress } from "@/components/ui/progress"
 import {
   Dialog,
   DialogContent,
@@ -39,6 +40,7 @@ import {
   Trophy,
   CheckCircle,
   RefreshCw,
+  AlertTriangle,
 } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
@@ -90,6 +92,11 @@ import type {
   StoredStudentMarkRecord,
   StoredSubjectRecord,
 } from "@/lib/report-card-types"
+import {
+  clearAssignmentReminderHistory,
+  markAssignmentReminderSent,
+  shouldSendAssignmentReminder,
+} from "@/lib/assignment-reminders"
 
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
@@ -402,6 +409,99 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const assignmentDialogDescription = isEditingAssignment
     ? "Refresh the assignment details before you share or resend it to your class."
     : "Design a rich assignment experience for your students with attachments and clear guidance."
+
+  const assignmentInsights = useMemo(() => {
+    if (assignments.length === 0) {
+      return {
+        total: 0,
+        draftCount: 0,
+        sentCount: 0,
+        overdueCount: 0,
+        activeAssignments: 0,
+        totalCapacity: 0,
+        submissionCount: 0,
+        gradedCount: 0,
+        pendingGrading: 0,
+        submissionRate: 0,
+        gradingRate: 0,
+        averageScore: null as number | null,
+      }
+    }
+
+    let draftCount = 0
+    let sentCount = 0
+    let overdueCount = 0
+    let totalCapacity = 0
+    let submissionCount = 0
+    let gradedCount = 0
+    let pendingGrading = 0
+    let scoreSum = 0
+    let scoreEntries = 0
+
+    assignments.forEach((assignment) => {
+      const status = assignment.status
+      if (status === "draft") {
+        draftCount += 1
+      } else if (status === "sent" || status === "submitted") {
+        sentCount += 1
+      } else if (status === "overdue") {
+        overdueCount += 1
+      }
+
+      const assignedStudents = Array.isArray(assignment.assignedStudentIds)
+        ? assignment.assignedStudentIds.length
+        : 0
+      const capacity = assignedStudents || assignment.submissions.length
+      totalCapacity += capacity
+
+      assignment.submissions.forEach((submission) => {
+        if (["submitted", "graded"].includes(submission.status)) {
+          submissionCount += 1
+        }
+        if (submission.status === "graded") {
+          gradedCount += 1
+        }
+        if (submission.status === "submitted") {
+          pendingGrading += 1
+        }
+        if (typeof submission.score === "number") {
+          scoreSum += submission.score
+          scoreEntries += 1
+        }
+      })
+
+      if (status !== "draft" && status !== "graded" && status !== "overdue") {
+        const dueTimestamp = Date.parse(assignment.dueDate)
+        if (!Number.isNaN(dueTimestamp) && dueTimestamp < Date.now()) {
+          overdueCount += 1
+        }
+      }
+    })
+
+    const activeAssignments = Math.max(assignments.length - draftCount, 0)
+    const submissionRate = totalCapacity > 0
+      ? Math.round((submissionCount / totalCapacity) * 100)
+      : submissionCount > 0
+        ? 100
+        : 0
+    const gradingRate = submissionCount > 0 ? Math.round((gradedCount / submissionCount) * 100) : 0
+    const averageScore = scoreEntries > 0 ? Math.round((scoreSum / scoreEntries) * 100) / 100 : null
+
+    return {
+      total: assignments.length,
+      draftCount,
+      sentCount,
+      overdueCount,
+      activeAssignments,
+      totalCapacity,
+      submissionCount,
+      gradedCount,
+      pendingGrading,
+      submissionRate,
+      gradingRate,
+      averageScore,
+    }
+  }, [assignments])
 
   const [teacherExams, setTeacherExams] = useState<TeacherExamSummary[]>([])
   const [isExamLoading, setIsExamLoading] = useState(true)
@@ -1771,6 +1871,109 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     if (diff === 0) return "Due today"
     return `Overdue by ${Math.abs(diff)} day${Math.abs(diff) === 1 ? "" : "s"}`
   }
+
+  useEffect(() => {
+    if (!assignments.length || !teacher.id) {
+      return
+    }
+
+    const reminderTasks = assignments.map(async (assignment) => {
+      const assignmentId = assignment.id
+      const dueDate = assignment.dueDate
+
+      if (!assignmentId || !dueDate) {
+        clearAssignmentReminderHistory("teacher", assignmentId)
+        return
+      }
+
+      if (assignment.status === "draft") {
+        clearAssignmentReminderHistory("teacher", assignmentId)
+        return
+      }
+
+      const dueTimestamp = Date.parse(dueDate)
+      if (Number.isNaN(dueTimestamp)) {
+        return
+      }
+
+      const submittedCount = assignment.submissions.filter((submission) =>
+        ["submitted", "graded"].includes(submission.status),
+      ).length
+      const gradedCount = assignment.submissions.filter((submission) => submission.status === "graded").length
+      const pendingGradingCount = assignment.submissions.filter((submission) => submission.status === "submitted").length
+      const totalAssigned = Array.isArray(assignment.assignedStudentIds)
+        ? assignment.assignedStudentIds.length
+        : assignment.submissions.length
+      const missingSubmissions = Math.max(totalAssigned - submittedCount, 0)
+
+      if (pendingGradingCount === 0 && missingSubmissions === 0) {
+        clearAssignmentReminderHistory("teacher", assignmentId)
+        return
+      }
+
+      const audience = [teacher.id, "teacher"] as const
+      const title = assignment.title || "Assignment"
+      const className = assignment.className || assignment.classId || undefined
+      const subject = assignment.subject
+
+      if (pendingGradingCount > 0 && Date.now() > dueTimestamp) {
+        if (shouldSendAssignmentReminder("teacher", assignmentId, "gradingPending", { dueDate })) {
+          try {
+            await dbManager.saveNotification({
+              title: "Submissions awaiting grading",
+              message: `You have ${pendingGradingCount} submission${pendingGradingCount === 1 ? "" : "s"} to grade for "${title}".`,
+              type: "warning",
+              category: "task",
+              audience,
+              targetAudience: audience,
+              metadata: {
+                assignmentId,
+                dueDate,
+                subject,
+                className,
+                pendingGrading: pendingGradingCount,
+              },
+            })
+            markAssignmentReminderSent("teacher", assignmentId, "gradingPending", { dueDate })
+          } catch (error) {
+            logger.error("Failed to save grading reminder", { error, assignmentId })
+          }
+        }
+      } else if (pendingGradingCount === 0) {
+        clearAssignmentReminderHistory("teacher", assignmentId, { types: ["gradingPending"] })
+      }
+
+      if (missingSubmissions > 0 && Date.now() > dueTimestamp) {
+        if (shouldSendAssignmentReminder("teacher", assignmentId, "missingSubmissions", { dueDate })) {
+          try {
+            await dbManager.saveNotification({
+              title: "Students missing submissions",
+              message: `${missingSubmissions} student${missingSubmissions === 1 ? "" : "s"} have not submitted "${title}".`,
+              type: "destructive",
+              category: "task",
+              audience,
+              targetAudience: audience,
+              metadata: {
+                assignmentId,
+                dueDate,
+                subject,
+                className,
+                outstandingSubmissions: missingSubmissions,
+                gradedCount,
+              },
+            })
+            markAssignmentReminderSent("teacher", assignmentId, "missingSubmissions", { dueDate })
+          } catch (error) {
+            logger.error("Failed to save missing submission reminder", { error, assignmentId })
+          }
+        }
+      } else if (missingSubmissions === 0) {
+        clearAssignmentReminderHistory("teacher", assignmentId, { types: ["missingSubmissions"] })
+      }
+    })
+
+    void Promise.allSettled(reminderTasks)
+  }, [assignments, teacher.id])
 
   const handleSaveAssignment = async (intent: "draft" | "sent") => {
     if (
@@ -3309,7 +3512,63 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                   No assignments created yet. Click "Create Assignment" to share work with your students.
                 </div>
               ) : (
-                <div className="space-y-5">
+                <div className="space-y-6">
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4">
+                      <div className="flex items-center justify-between text-sm font-medium text-emerald-700">
+                        <span>Active assignments</span>
+                        <Sparkles className="h-4 w-4" />
+                      </div>
+                      <p className="mt-2 text-2xl font-semibold text-emerald-900">
+                        {assignmentInsights.activeAssignments}
+                      </p>
+                      <p className="mt-2 text-xs text-emerald-700/80">
+                        {assignmentInsights.draftCount} draft{assignmentInsights.draftCount === 1 ? "" : "s"} ready for later.
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+                      <div className="flex items-center justify-between text-sm font-medium text-blue-700">
+                        <span>Submission rate</span>
+                        <CheckCircle className="h-4 w-4" />
+                      </div>
+                      <p className="mt-2 text-2xl font-semibold text-blue-900">
+                        {assignmentInsights.submissionRate}%
+                      </p>
+                      <Progress value={assignmentInsights.submissionRate} className="mt-3 h-2 bg-blue-100" />
+                      <p className="mt-2 text-xs text-blue-700/80">
+                        {assignmentInsights.totalCapacity > 0
+                          ? `${assignmentInsights.submissionCount} submissions from ${assignmentInsights.totalCapacity} expected.`
+                          : assignmentInsights.submissionCount > 0
+                            ? `${assignmentInsights.submissionCount} submissions received so far.`
+                            : "Tracking submissions as they arrive."}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
+                      <div className="flex items-center justify-between text-sm font-medium text-amber-700">
+                        <span>Pending grading</span>
+                        <AlertTriangle className="h-4 w-4" />
+                      </div>
+                      <p className="mt-2 text-2xl font-semibold text-amber-900">
+                        {assignmentInsights.pendingGrading}
+                      </p>
+                      <p className="mt-2 text-xs text-amber-700/80">
+                        Awaiting marks or feedback across all submissions.
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-purple-100 bg-purple-50 p-4">
+                      <div className="flex items-center justify-between text-sm font-medium text-purple-700">
+                        <span>Average score</span>
+                        <Trophy className="h-4 w-4" />
+                      </div>
+                      <p className="mt-2 text-2xl font-semibold text-purple-900">
+                        {assignmentInsights.averageScore !== null ? assignmentInsights.averageScore : "--"}
+                      </p>
+                      <p className="mt-2 text-xs text-purple-700/80">
+                        Calculated from graded submissions so far.
+                      </p>
+                    </div>
+                  </div>
+
                   {assignments.map((assignment) => {
                     const submittedCount = assignment.submissions.filter((submission) =>
                       ["submitted", "graded"].includes(submission.status),
