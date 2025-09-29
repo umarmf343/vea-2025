@@ -40,6 +40,7 @@ import { AdminApprovalDashboard } from "@/components/admin-approval-dashboard"
 import { getCompleteReportCard } from "@/lib/sample-report-data"
 import { safeStorage } from "@/lib/safe-storage"
 import { getBrandingFromStorage } from "@/lib/branding"
+import { dbManager } from "@/lib/database-manager"
 import { cn } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { normalizeTimetableCollection } from "@/lib/timetable"
@@ -270,13 +271,8 @@ export default function HomePage() {
 
     const fetchSettings = async () => {
       try {
-        const response = await fetch("/api/system/settings")
-        if (!response.ok) {
-          throw new Error(`Settings request failed with status ${response.status}`)
-        }
-
-        const payload = (await response.json()) as { settings?: { registrationEnabled?: boolean } }
-        const enabled = Boolean(payload.settings?.registrationEnabled ?? true)
+        const settings = await dbManager.getSystemSettings()
+        const enabled = Boolean((settings as { registrationEnabled?: boolean })?.registrationEnabled ?? true)
         setRegistrationEnabled(enabled)
         safeStorage.setItem("registrationEnabled", JSON.stringify(enabled))
       } catch (error) {
@@ -296,35 +292,41 @@ export default function HomePage() {
 
     const loadRegistrationOptions = async () => {
       try {
-        const response = await fetch("/api/classes")
-        if (response.ok) {
-          const payload = (await response.json()) as { classes?: Array<{ id: string; name: string }> }
-          if (isMounted) {
-            setClassOptions(
-              Array.isArray(payload.classes)
-                ? payload.classes.map((cls) => ({ id: String(cls.id), name: String(cls.name ?? cls.id) }))
-                : [],
-            )
-          }
+        const classes = await dbManager.getAllClasses()
+        if (isMounted) {
+          const normalized = Array.isArray(classes)
+            ? classes.map((cls, index) => {
+                if (typeof cls === "string") {
+                  const trimmed = cls.trim()
+                  return { id: trimmed.length > 0 ? trimmed : `class_${index}`, name: trimmed || `Class ${index + 1}` }
+                }
+
+                const record = cls as { id?: string | number; name?: string }
+                const identifier = record.id ?? record.name ?? `class_${index}`
+                return {
+                  id: String(identifier),
+                  name: String(record.name ?? identifier),
+                }
+              })
+            : []
+          setClassOptions(normalized)
         }
       } catch (error) {
         logger.error("Unable to load registration classes", { error })
       }
 
       try {
-        const response = await fetch("/api/users?role=student")
-        if (response.ok) {
-          const payload = (await response.json()) as { users?: Array<{ id: string; name: string }> }
-          if (isMounted) {
-            setKnownStudents(
-              Array.isArray(payload.users)
-                ? payload.users.map((student) => ({
-                    id: String(student.id),
-                    name: String(student.name ?? student.id),
-                  }))
-                : [],
-            )
-          }
+        const users = await dbManager.getAllUsers()
+        if (isMounted) {
+          const students = Array.isArray(users)
+            ? users
+                .filter((user) => mapApiRoleToUi(String(user.role ?? "student")) === "student")
+                .map((student, index) => ({
+                  id: String((student as { id?: string | number; email?: string }).id ?? student.email ?? `student_${index}`),
+                  name: String((student as { name?: string; id?: string | number }).name ?? student.id ?? "Student"),
+                }))
+            : []
+          setKnownStudents(students)
         }
       } catch (error) {
         logger.error("Unable to load student directory for registration", { error })

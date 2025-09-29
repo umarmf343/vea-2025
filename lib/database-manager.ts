@@ -8,6 +8,7 @@ import type { StoredSubjectRecord } from "./report-card-types"
 const serverSideStorage = new Map<string, string>()
 
 const isBrowserEnvironment = (): boolean => typeof window !== "undefined"
+const REMOTE_ASSIGNMENTS_API_ENABLED = process.env.NEXT_PUBLIC_ENABLE_REMOTE_API === "true"
 
 const readStorageValue = (key: string): string | null => {
   if (isBrowserEnvironment()) {
@@ -434,6 +435,10 @@ class DatabaseManager {
   }
 
   private shouldUseAssignmentsApi(): boolean {
+    if (!REMOTE_ASSIGNMENTS_API_ENABLED) {
+      return false
+    }
+
     return isBrowserEnvironment() && typeof fetch === "function"
   }
 

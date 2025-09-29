@@ -1863,29 +1863,22 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
             : normalizedAssignments
         setAssignments(filteredAssignments)
 
-        const timetableResponse = await fetch(
-          `/api/timetable?className=${encodeURIComponent(resolvedClassName)}`,
-        )
+        const timetableSlots = await dbManager.getTimetable(resolvedClassName)
         if (!isMounted) {
           return
         }
 
-        if (timetableResponse.ok) {
-          const timetableJson: unknown = await timetableResponse.json()
-          const normalized = normalizeTimetableCollection(
-            (timetableJson as Record<string, unknown>)?.timetable,
-          ).map(({ id, day, time, subject, teacher, location }) => ({
+        const normalizedTimetable = normalizeTimetableCollection(timetableSlots).map(
+          ({ id, day, time, subject, teacher, location }) => ({
             id,
             day,
             time,
             subject,
             teacher,
             location,
-          }))
-          setTimetable(normalized)
-        } else {
-          setTimetable([])
-        }
+          }),
+        )
+        setTimetable(normalizedTimetable)
 
         const libraryData = await dbManager.getLibraryBooks(resolvedStudentId)
         if (!isMounted) {
