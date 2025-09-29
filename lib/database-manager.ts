@@ -2493,7 +2493,9 @@ class DatabaseManager {
           if (assignmentRecord) {
             this.syncAssignmentCache(assignmentRecord)
             this.triggerEvent("assignmentsUpdate", assignmentRecord)
-            await this.notifyAssignmentSent(assignmentRecord)
+            if (assignmentRecord.status === "sent") {
+              await this.notifyAssignmentSent(assignmentRecord)
+            }
             return assignmentRecord
           }
         } else {
@@ -2532,7 +2534,9 @@ class DatabaseManager {
     assignments.push(record)
     this.persistAssignments(assignments)
     this.triggerEvent("assignmentsUpdate", record)
-    await this.notifyAssignmentSent(record)
+    if (record.status === "sent") {
+      await this.notifyAssignmentSent(record)
+    }
     return record
   }
 
