@@ -610,25 +610,22 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
       try {
         setIsTeacherTimetableLoading(true)
-        const response = await fetch(`/api/timetable?className=${encodeURIComponent(selectedClass)}`)
-        if (!isMounted) return
+        const slots = await dbManager.getTimetable(selectedClass)
+        if (!isMounted) {
+          return
+        }
 
-        if (response.ok) {
-          const data: unknown = await response.json()
-          const normalized = normalizeTimetableCollection(
-            (data as Record<string, unknown>)?.timetable,
-          ).map(({ id, day, time, subject, teacher, location }) => ({
+        const normalized = normalizeTimetableCollection(slots).map(
+          ({ id, day, time, subject, teacher, location }) => ({
             id,
             day,
             time,
             subject,
             teacher,
             location,
-          }))
-          setTeacherTimetable(normalized)
-        } else {
-          setTeacherTimetable([])
-        }
+          }),
+        )
+        setTeacherTimetable(normalized)
       } catch (error) {
         logger.error("Failed to load teacher timetable", { error })
         if (isMounted) {
@@ -643,8 +640,24 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
     void loadTimetable()
 
+    const handleTimetableUpdate = (payload: { className?: string } | undefined) => {
+      if (!selectedClass) {
+        return
+      }
+
+      const updatedClassName =
+        typeof payload?.className === "string" ? payload.className : selectedClass
+
+      if (normalizeClassName(updatedClassName) === normalizeClassName(selectedClass)) {
+        void loadTimetable()
+      }
+    }
+
+    dbManager.on("timetableUpdated", handleTimetableUpdate)
+
     return () => {
       isMounted = false
+      dbManager.off("timetableUpdated", handleTimetableUpdate)
     }
   }, [selectedClass])
 
