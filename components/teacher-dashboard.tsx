@@ -101,13 +101,18 @@ const getBrowserRuntime = (): BrowserRuntime | null => {
   return globalThis as BrowserRuntime
 }
 
+type TeacherClassAssignment = {
+  id: string
+  name: string
+}
+
 interface TeacherDashboardProps {
   teacher: {
     id: string
     name: string
     email: string
     subjects: string[]
-    classes: string[]
+    classes: TeacherClassAssignment[]
   }
 }
 
@@ -240,6 +245,7 @@ interface TeacherAssignmentSummary {
   description: string
   subject: string
   className: string
+  classId?: string | null
   dueDate: string
   status: TeacherAssignmentStatus
   maximumScore: number | null
@@ -291,6 +297,9 @@ const ASSIGNMENT_STATUS_META: Record<
 
 export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const { toast } = useToast()
+  const firstTeacherClass = teacher.classes[0] ?? null
+  const teacherClassNames = useMemo(() => teacher.classes.map((cls) => cls.name), [teacher.classes])
+  const teacherClassIds = useMemo(() => teacher.classes.map((cls) => cls.id), [teacher.classes])
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showCreateAssignment, setShowCreateAssignment] = useState(false)
   const [assignmentDialogMode, setAssignmentDialogMode] = useState<"create" | "edit">("create")
@@ -298,7 +307,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [showSubmissions, setShowSubmissions] = useState(false)
   const [selectedAssignment, setSelectedAssignment] = useState<TeacherAssignmentSummary | null>(null)
   const [previewAssignment, setPreviewAssignment] = useState<TeacherAssignmentSummary | null>(null)
-  const [selectedClass, setSelectedClass] = useState(teacher.classes[0] ?? "")
+  const [selectedClass, setSelectedClass] = useState(() => firstTeacherClass?.name ?? "")
   const [selectedSubject, setSelectedSubject] = useState(teacher.subjects[0] ?? "")
   const [selectedTerm, setSelectedTerm] = useState("first")
   const [selectedSession, setSelectedSession] = useState("2024/2025")
@@ -363,7 +372,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     description: "",
     dueDate: "",
     subject: teacher.subjects[0] ?? "",
-    className: teacher.classes[0] ?? "",
+    classId: firstTeacherClass?.id ?? "",
+    className: firstTeacherClass?.name ?? "",
     maximumScore: String(defaultAssignmentMaximum),
     file: null as File | null,
     resourceName: "",
@@ -405,11 +415,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const subjectSummary =
     teacher.subjects.length > 0 ? teacher.subjects.join(", ") : "No subjects assigned yet"
   const classSummary =
-    teacher.classes.length > 0 ? teacher.classes.join(", ") : "No classes assigned yet"
+    teacherClassNames.length > 0 ? teacherClassNames.join(", ") : "No classes assigned yet"
 
   useEffect(() => {
-    setSelectedClass(teacher.classes[0] ?? "")
-  }, [teacher.classes])
+    setSelectedClass(teacherClassNames[0] ?? "")
+  }, [teacherClassNames])
 
   useEffect(() => {
     setSelectedSubject(teacher.subjects[0] ?? "")
@@ -419,7 +429,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     setAssignmentForm((prev) => ({
       ...prev,
       subject: prev.subject || (teacher.subjects[0] ?? ""),
-      className: prev.className || (teacher.classes[0] ?? ""),
+      classId: prev.classId || (teacher.classes[0]?.id ?? ""),
+      className: prev.className || (teacher.classes[0]?.name ?? ""),
     }))
   }, [teacher.classes, teacher.subjects])
 
@@ -475,6 +486,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           description: record.description ?? "",
           subject: record.subject,
           className: record.className ?? (record as { class?: string }).class ?? "General",
+          classId: record.classId ?? null,
           dueDate: record.dueDate,
           status: (record.status ?? "draft") as TeacherAssignmentStatus,
           maximumScore:
@@ -535,7 +547,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         const schedules = await dbManager.getExamSchedules()
         if (!isMounted) return
 
-        const normalizedClasses = new Set(teacher.classes.map((cls) => normalizeClassName(cls)))
+        const normalizedClasses = new Set(teacherClassNames.map((cls) => normalizeClassName(cls)))
         const relevantExams = schedules.filter((exam) =>
           normalizedClasses.has(normalizeClassName(exam.className)),
         )
@@ -564,7 +576,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       dbManager.off("examScheduleUpdated", handleExamUpdate)
       dbManager.off("examResultsUpdated", handleExamUpdate)
     }
-  }, [teacher.classes])
+  }, [teacherClassNames])
 
   useEffect(() => {
     let isMounted = true
@@ -1666,7 +1678,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       description: "",
       dueDate: "",
       subject: teacher.subjects[0] ?? "",
-      className: teacher.classes[0] ?? "",
+      classId: teacher.classes[0]?.id ?? "",
+      className: teacher.classes[0]?.name ?? "",
       maximumScore: String(defaultAssignmentMaximum),
       file: null,
       resourceName: "",
@@ -1686,12 +1699,16 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const handleEditAssignment = (assignment: TeacherAssignmentSummary) => {
     setAssignmentDialogMode("edit")
     setEditingAssignmentId(assignment.id)
+    const matchedClass = assignment.classId
+      ? teacher.classes.find((cls) => cls.id === assignment.classId)
+      : teacher.classes.find((cls) => normalizeClassName(cls.name) === normalizeClassName(assignment.className))
     setAssignmentForm({
       title: assignment.title,
       description: assignment.description ?? "",
       dueDate: assignment.dueDate,
       subject: assignment.subject,
-      className: assignment.className,
+      classId: matchedClass?.id ?? assignment.classId ?? "",
+      className: matchedClass?.name ?? assignment.className,
       maximumScore: assignment.maximumScore ? String(assignment.maximumScore) : String(defaultAssignmentMaximum),
       file: null,
       resourceName: assignment.resourceName ?? "",
@@ -1723,7 +1740,13 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   }
 
   const handleSaveAssignment = async (intent: "draft" | "sent") => {
-    if (!assignmentForm.title || !assignmentForm.subject || !assignmentForm.className || !assignmentForm.dueDate) {
+    if (
+      !assignmentForm.title ||
+      !assignmentForm.subject ||
+      !assignmentForm.className ||
+      !assignmentForm.dueDate ||
+      (teacher.classes.length > 0 && !assignmentForm.classId)
+    ) {
       toast({
         variant: "destructive",
         title: "Incomplete details",
@@ -1748,7 +1771,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       setIsSavingAssignment(true)
 
       const trimmedClassName = assignmentForm.className.trim()
-      const resolvedClassId = trimmedClassName.length > 0 ? trimmedClassName : null
+      const trimmedClassId = assignmentForm.classId?.trim() ?? ""
+      const resolvedClassId = trimmedClassId.length > 0 ? trimmedClassId : null
 
       let resourceUrl = assignmentForm.resourceUrl || ""
       let resourceType = assignmentForm.resourceType || ""
@@ -1789,10 +1813,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               : "Your changes have been saved successfully.",
         })
       } else {
-        await dbManager.createAssignment({
-          ...payload,
-          classId: null,
-        })
+        await dbManager.createAssignment(payload)
 
         toast({
           title: intent === "sent" ? "Assignment sent" : "Draft saved",
@@ -2291,9 +2312,9 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {teacher.classes.map((className, index) => (
-                    <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                      <span>{className}</span>
+                  {teacher.classes.map((classItem, index) => (
+                    <div key={classItem.id ?? index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                      <span>{classItem.name}</span>
                       <Badge variant="outline">{teacher.subjects[index] || "Multiple"}</Badge>
                     </div>
                   ))}
@@ -2301,15 +2322,16 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               </CardContent>
             </Card>
 
-            <ExamScheduleOverview
-              role="teacher"
-              title="Upcoming Exams"
-              description="Next scheduled assessments across your assigned classes."
-              classNames={teacher.classes}
-              className="h-full"
-              emptyState="No upcoming exams scheduled for your classes."
-              limit={4}
-            />
+              <ExamScheduleOverview
+                role="teacher"
+                title="Upcoming Exams"
+                description="Next scheduled assessments across your assigned classes."
+                classNames={teacherClassNames}
+                classIds={teacherClassIds}
+                className="h-full"
+                emptyState="No upcoming exams scheduled for your classes."
+                limit={4}
+              />
           </div>
 
           <SchoolCalendarViewer role="teacher" />
@@ -2351,9 +2373,9 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                   <div>
                     <label className="text-sm font-medium text-gray-700">Classes</label>
                     <div className="flex gap-1 mt-1">
-                      {teacher.classes.map((className, index) => (
-                        <Badge key={index} variant="outline">
-                          {className}
+                      {teacher.classes.map((classItem, index) => (
+                        <Badge key={classItem.id ?? index} variant="outline">
+                          {classItem.name}
                         </Badge>
                       ))}
                     </div>
@@ -2461,9 +2483,9 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                         <SelectValue placeholder="Select Class" />
                       </SelectTrigger>
                       <SelectContent>
-                        {teacher.classes.map((className) => (
-                          <SelectItem key={className} value={className}>
-                            {className}
+                        {teacher.classes.map((classItem) => (
+                          <SelectItem key={classItem.id} value={classItem.name}>
+                            {classItem.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -3477,7 +3499,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 teacherName={teacher.name}
                 teacherId={teacher.id}
                 availableSubjects={teacher.subjects}
-                availableClasses={teacher.classes}
+                availableClasses={teacherClassNames}
               />
             </CardContent>
           </Card>
@@ -3601,16 +3623,25 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 <div>
                   <Label htmlFor="class">Class</Label>
                   <Select
-                    value={assignmentForm.className}
-                    onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, className: value }))}
+                    value={assignmentForm.classId || ""}
+                    onValueChange={(value) =>
+                      setAssignmentForm((prev) => {
+                        const match = teacher.classes.find((cls) => cls.id === value)
+                        return {
+                          ...prev,
+                          classId: value,
+                          className: match?.name ?? prev.className,
+                        }
+                      })
+                    }
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select class" />
+                      <SelectValue placeholder={assignmentForm.className || "Select class"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {teacher.classes.map((className) => (
-                        <SelectItem key={className} value={className}>
-                          {className}
+                      {teacher.classes.map((classItem) => (
+                        <SelectItem key={classItem.id} value={classItem.id}>
+                          {classItem.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
