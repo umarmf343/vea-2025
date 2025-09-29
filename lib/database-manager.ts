@@ -394,9 +394,7 @@ class DatabaseManager {
     const raw = safeStorage.getItem("assignments")
 
     if (!raw) {
-      const seeded = this.seedAssignments()
-      safeStorage.setItem("assignments", JSON.stringify(seeded))
-      return seeded
+      return []
     }
 
     try {
@@ -425,9 +423,8 @@ class DatabaseManager {
       }))
     } catch (error) {
       console.error("Error parsing assignments from storage:", error)
-      const seeded = this.seedAssignments()
-      safeStorage.setItem("assignments", JSON.stringify(seeded))
-      return seeded
+      safeStorage.removeItem("assignments")
+      return []
     }
   }
 
@@ -1113,84 +1110,6 @@ class DatabaseManager {
 
   private persistStudyMaterials(materials: StudyMaterialRecord[]) {
     safeStorage.setItem("studyMaterials", JSON.stringify(materials))
-  }
-
-  private seedAssignments(): AssignmentRecord[] {
-    const timestamp = new Date().toISOString()
-    const dateFromNow = (days: number) => {
-      const date = new Date()
-      date.setDate(date.getDate() + days)
-      return date.toISOString().split("T")[0]
-    }
-
-    return [
-      {
-        id: this.generateId("assignment"),
-        title: "Mathematics Homework - Fractions Mastery",
-        description:
-          "Complete the exercises on page 32 covering proper, improper and mixed fractions. Ensure you show all workings.",
-        subject: "Mathematics",
-        classId: "class_jss1a",
-        className: "JSS 1A",
-        teacherId: "teacher_mathematics_default",
-        teacherName: "Mr. John Smith",
-        dueDate: dateFromNow(3),
-        status: "sent",
-        maximumScore: 20,
-        assignedStudentIds: ["student_john_doe"],
-        submissions: [],
-        resourceName: "fraction-practice.pdf",
-        resourceSize: 10240,
-        resourceType: "application/pdf",
-        resourceUrl: null,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-      {
-        id: this.generateId("assignment"),
-        title: "English Language - Reading Comprehension",
-        description:
-          "Read the comprehension passage on page 58 and answer the questions that follow. Focus on summarising the main ideas.",
-        subject: "English Language",
-        classId: "class_jss1a",
-        className: "JSS 1A",
-        teacherId: "teacher_english_default",
-        teacherName: "Mrs. Sarah Johnson",
-        dueDate: dateFromNow(5),
-        status: "sent",
-        maximumScore: 20,
-        assignedStudentIds: ["student_john_doe"],
-        submissions: [],
-        resourceName: "reading-comprehension.docx",
-        resourceSize: 20480,
-        resourceType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        resourceUrl: null,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-      {
-        id: this.generateId("assignment"),
-        title: "Physics Practical - Measurement Accuracy",
-        description:
-          "Prepare a report on the measurement practical we conducted in the laboratory. Include observations and calculations.",
-        subject: "Physics",
-        classId: "class_jss2b",
-        className: "JSS 2B",
-        teacherId: "teacher_physics_default",
-        teacherName: "Mr. Adewale Okoro",
-        dueDate: dateFromNow(4),
-        status: "sent",
-        maximumScore: 20,
-        assignedStudentIds: ["student_alice_smith"],
-        submissions: [],
-        resourceName: "physics-practical-guide.pdf",
-        resourceSize: 16384,
-        resourceType: "application/pdf",
-        resourceUrl: null,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-    ]
   }
 
   private ensureTimetable(className: string): TimetableSlot[] {
