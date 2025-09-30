@@ -2996,7 +2996,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center space-x-2">
@@ -3277,7 +3277,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             <CardContent>
               <div className="space-y-6">
                 {/* Selection Controls */}
-                <div className="grid grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   <div>
                     <Label>Class</Label>
                     <Select value={selectedClass} onValueChange={setSelectedClass}>
@@ -3336,7 +3336,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 </div>
 
                 <Tabs defaultValue="academic" className="w-full">
-                  <TabsList className="grid w-full grid-cols-4">
+                  <TabsList className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
                     <TabsTrigger value="academic">Academic Marks</TabsTrigger>
                     <TabsTrigger value="behavioral">Behavioral Assessment</TabsTrigger>
                     <TabsTrigger value="attendance">Attendance & Position</TabsTrigger>
@@ -3363,137 +3363,146 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                       </Button>
                     </div>
 
-                    <div className="border rounded-lg overflow-hidden">
-                      <div className="bg-gray-50 p-2 grid grid-cols-13 gap-2 font-medium text-xs">
-                        <div>Student Name</div>
-                        <div>1st C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1})</div>
-                        <div>2nd C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2})</div>
-                        <div>NOTE/ASSIGN ({CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment})</div>
-                        <div>
-                          C.A. TOTAL ({
-                            CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1 +
-                            CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2 +
-                            CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment
-                          })
+                    <div className="border rounded-lg">
+                      <div className="overflow-x-auto">
+                        <div className="min-w-[1200px]">
+                          <div
+                            className="grid grid-cols-[minmax(200px,1.2fr)_repeat(13,minmax(140px,1fr))] gap-3 bg-gray-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-gray-700"
+                          >
+                            <div>Student Name</div>
+                            <div>1st C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1})</div>
+                            <div>2nd C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2})</div>
+                            <div>NOTE/ASSIGN ({CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment})</div>
+                            <div>
+                              C.A. TOTAL ({
+                                CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1 +
+                                CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2 +
+                                CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment
+                              })
+                            </div>
+                            <div>EXAM ({CONTINUOUS_ASSESSMENT_MAXIMUMS.exam})</div>
+                            <div>GRAND TOTAL (100)</div>
+                            <div>Total Obtainable</div>
+                            <div>Total Obtained</div>
+                            <div>Average %</div>
+                            <div>Position</div>
+                            <div>GRADE</div>
+                            <div>Subject Remarks</div>
+                            <div className="text-center">Preview</div>
+                          </div>
+                          {marksData.map((student) => (
+                            <div
+                              key={student.studentId}
+                              className="grid grid-cols-[minmax(200px,1.2fr)_repeat(13,minmax(140px,1fr))] items-center gap-3 border-t px-4 py-3"
+                            >
+                              <div className="font-medium text-sm text-gray-700">{student.studentName}</div>
+                              <div>
+                                <Input
+                                  type="number"
+                                  max={CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1}
+                                  value={student.firstCA}
+                                  onChange={(e) =>
+                                    handleMarksUpdate(student.studentId, "firstCA", Number.parseInt(e.target.value) || 0)
+                                  }
+                                  className="h-8 w-full text-xs"
+                                  disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                />
+                              </div>
+                              <div>
+                                <Input
+                                  type="number"
+                                  max={CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2}
+                                  value={student.secondCA}
+                                  onChange={(e) =>
+                                    handleMarksUpdate(student.studentId, "secondCA", Number.parseInt(e.target.value) || 0)
+                                  }
+                                  className="h-8 w-full text-xs"
+                                  disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                />
+                              </div>
+                              <div>
+                                <Input
+                                  type="number"
+                                  max={CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment}
+                                  value={student.noteAssignment}
+                                  onChange={(e) =>
+                                    handleMarksUpdate(
+                                      student.studentId,
+                                      "noteAssignment",
+                                      Number.parseInt(e.target.value) || 0,
+                                    )
+                                  }
+                                  className="h-8 w-full text-xs"
+                                  disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                />
+                              </div>
+                              <div className="text-sm font-bold text-[#2d682d]">{student.caTotal}</div>
+                              <div>
+                                <Input
+                                  type="number"
+                                  max={CONTINUOUS_ASSESSMENT_MAXIMUMS.exam}
+                                  value={student.exam}
+                                  onChange={(e) =>
+                                    handleMarksUpdate(student.studentId, "exam", Number.parseInt(e.target.value) || 0)
+                                  }
+                                  className="h-8 w-full text-xs"
+                                  disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                />
+                              </div>
+                              <div className="text-sm font-bold text-[#b29032]">{student.grandTotal}</div>
+                              <div>
+                                <Input
+                                  type="number"
+                                  value={student.totalMarksObtainable}
+                                  onChange={(e) =>
+                                    handleMarksUpdate(
+                                      student.studentId,
+                                      "totalMarksObtainable",
+                                      Number.parseInt(e.target.value) || 100,
+                                    )
+                                  }
+                                  className="h-8 w-full text-xs"
+                                  disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                />
+                              </div>
+                              <div className="text-sm font-bold text-blue-600">{student.totalMarksObtained}</div>
+                              <div className="text-sm font-bold text-purple-600">{student.averageScore}%</div>
+                              <div className="text-sm font-bold text-orange-600">#{student.position}</div>
+                              <div>
+                                <Badge
+                                  variant={
+                                    student.grade === "A" ? "default" : student.grade === "F" ? "destructive" : "secondary"
+                                  }
+                                  className="text-xs"
+                                >
+                                  {student.grade}
+                                </Badge>
+                              </div>
+                              <div>
+                                <Input
+                                  value={student.teacherRemark}
+                                  onChange={(e) => handleMarksUpdate(student.studentId, "teacherRemark", e.target.value)}
+                                  className="h-8 w-full text-xs"
+                                  placeholder="Subject remark"
+                                  disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                />
+                              </div>
+                              <div className="flex justify-center">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 text-xs"
+                                  onClick={() => openPreviewForStudent(student)}
+                                >
+                                  Preview
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <div>EXAM ({CONTINUOUS_ASSESSMENT_MAXIMUMS.exam})</div>
-                        <div>GRAND TOTAL (100)</div>
-                        <div>Total Obtainable</div>
-                        <div>Total Obtained</div>
-                        <div>Average %</div>
-                        <div>Position</div>
-                        <div>GRADE</div>
-                        <div>Subject Remarks</div>
-                        <div className="text-center">Preview</div>
                       </div>
-                      {marksData.map((student) => (
-                        <div key={student.studentId} className="p-2 grid grid-cols-13 gap-2 items-center border-t">
-                          <div className="font-medium text-sm">{student.studentName}</div>
-                          <div>
-                            <Input
-                              type="number"
-                              max={CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1}
-                              value={student.firstCA}
-                              onChange={(e) =>
-                                handleMarksUpdate(student.studentId, "firstCA", Number.parseInt(e.target.value) || 0)
-                              }
-                              className="w-14 h-8 text-xs"
-                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
-                            />
-                          </div>
-                          <div>
-                            <Input
-                              type="number"
-                              max={CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2}
-                              value={student.secondCA}
-                              onChange={(e) =>
-                                handleMarksUpdate(student.studentId, "secondCA", Number.parseInt(e.target.value) || 0)
-                              }
-                              className="w-14 h-8 text-xs"
-                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
-                            />
-                          </div>
-                          <div>
-                            <Input
-                              type="number"
-                              max={CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment}
-                              value={student.noteAssignment}
-                              onChange={(e) =>
-                                handleMarksUpdate(
-                                  student.studentId,
-                                  "noteAssignment",
-                                  Number.parseInt(e.target.value) || 0,
-                                )
-                              }
-                              className="w-14 h-8 text-xs"
-                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
-                            />
-                          </div>
-                          <div className="font-bold text-[#2d682d] text-sm">{student.caTotal}</div>
-                          <div>
-                            <Input
-                              type="number"
-                              max={CONTINUOUS_ASSESSMENT_MAXIMUMS.exam}
-                              value={student.exam}
-                              onChange={(e) =>
-                                handleMarksUpdate(student.studentId, "exam", Number.parseInt(e.target.value) || 0)
-                              }
-                              className="w-14 h-8 text-xs"
-                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
-                            />
-                          </div>
-                          <div className="font-bold text-[#b29032] text-sm">{student.grandTotal}</div>
-                          <div>
-                            <Input
-                              type="number"
-                              value={student.totalMarksObtainable}
-                              onChange={(e) =>
-                                handleMarksUpdate(
-                                  student.studentId,
-                                  "totalMarksObtainable",
-                                  Number.parseInt(e.target.value) || 100,
-                                )
-                              }
-                              className="w-16 h-8 text-xs"
-                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
-                            />
-                          </div>
-                          <div className="font-bold text-blue-600 text-sm">{student.totalMarksObtained}</div>
-                          <div className="font-bold text-purple-600 text-sm">{student.averageScore}%</div>
-                          <div className="font-bold text-orange-600 text-sm">#{student.position}</div>
-                          <div>
-                            <Badge
-                              variant={
-                                student.grade === "A" ? "default" : student.grade === "F" ? "destructive" : "secondary"
-                              }
-                              className="text-xs"
-                            >
-                              {student.grade}
-                            </Badge>
-                          </div>
-                          <div>
-                            <Input
-                              value={student.teacherRemark}
-                              onChange={(e) => handleMarksUpdate(student.studentId, "teacherRemark", e.target.value)}
-                              className="w-24 h-8 text-xs"
-                              placeholder="Subject remark"
-                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
-                            />
-                          </div>
-                          <div className="flex justify-center">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-8 text-xs"
-                              onClick={() => openPreviewForStudent(student)}
-                            >
-                              Preview
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
                     </div>
-                    <div className="grid grid-cols-4 gap-4 mt-4">
+                    <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                       <Card>
                         <CardContent className="p-4">
                           <div className="text-sm font-medium text-gray-600">Class Average</div>
