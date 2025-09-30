@@ -12,6 +12,21 @@ const handle = app.getRequestHandler()
 app.prepare().then(() => {
   createServer(async (req, res) => {
     try {
+      // Chrome based browsers request this file when the devtools
+      // protocol is enabled. In environments where the file does not
+      // exist Next.js attempts to locate it which ends up triggering a
+      // large gzip extraction inside webpack. That extraction can
+      // allocate massive buffers and eventually crash the dev server.
+      // We short circuit the request and return a 404 immediately so the
+      // process never attempts to unzip anything.
+      if (
+        req.url?.startsWith("/.well-known/appspecific/com.chrome.devtools.json")
+      ) {
+        res.statusCode = 404
+        res.end("Not Found")
+        return
+      }
+
       const parsedUrl = parse(req.url, true)
       await handle(req, res, parsedUrl)
     } catch (err) {
