@@ -113,6 +113,12 @@ type TeacherClassAssignment = {
   name: string
 }
 
+type AssignmentStudentInfo = {
+  id: string
+  name: string | null
+  className: string | null
+}
+
 interface TeacherDashboardProps {
   teacher: {
     id: string
@@ -316,6 +322,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [showSubmissions, setShowSubmissions] = useState(false)
   const [selectedAssignment, setSelectedAssignment] = useState<TeacherAssignmentSummary | null>(null)
   const [previewAssignment, setPreviewAssignment] = useState<TeacherAssignmentSummary | null>(null)
+  const [assignmentRoster, setAssignmentRoster] = useState<Record<string, AssignmentStudentInfo>>({})
   const [selectedClass, setSelectedClass] = useState(() => firstTeacherClass?.name ?? "")
   const [selectedSubject, setSelectedSubject] = useState(teacher.subjects[0] ?? "")
   const [selectedTerm, setSelectedTerm] = useState("first")
@@ -537,11 +544,14 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }))
   }, [teacher.classes, teacher.subjects])
 
-  const mockStudents = [
-    { id: "student_john_doe", name: "John Doe", class: "JSS 1A", subjects: ["Mathematics", "English"] },
-    { id: "student_alice_smith", name: "Alice Smith", class: "JSS 1A", subjects: ["Mathematics"] },
-    { id: "student_mike_johnson", name: "Mike Johnson", class: "JSS 2B", subjects: ["English"] },
-  ]
+  const mockStudents = useMemo(
+    () => [
+      { id: "student_john_doe", name: "John Doe", class: "JSS 1A", subjects: ["Mathematics", "English"] },
+      { id: "student_alice_smith", name: "Alice Smith", class: "JSS 1A", subjects: ["Mathematics"] },
+      { id: "student_mike_johnson", name: "Mike Johnson", class: "JSS 2B", subjects: ["English"] },
+    ],
+    [],
+  )
 
   const formatExamDate = (value: string) => {
     try {
@@ -628,6 +638,188 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       }
     },
     [],
+  )
+
+  const resolveAssignmentRoster = useCallback(
+    async (assignment: TeacherAssignmentSummary) => {
+      const roster = new Map<string, AssignmentStudentInfo>()
+
+      const addStudent = (student: AssignmentStudentInfo) => {
+        if (!student.id) {
+          return
+        }
+
+        const existing = roster.get(student.id)
+        roster.set(student.id, {
+          id: student.id,
+          name: student.name ?? existing?.name ?? null,
+          className: student.className ?? existing?.className ?? assignment.className ?? null,
+        })
+      }
+
+      const assignedIds = new Set(
+        assignment.assignedStudentIds
+          .filter((id) => typeof id === "string" && id.trim().length > 0)
+          .map((id) => id.trim()),
+      )
+
+      const classLabel = assignment.className ?? assignment.classId ?? ""
+
+      if (classLabel) {
+        try {
+          const students = await dbManager.getStudentsByClass(classLabel)
+          students.forEach((student: any) => {
+            const id = typeof student?.id === "string" ? student.id : String(student?.id ?? "")
+            if (!id) {
+              return
+            }
+
+            if (assignedIds.size === 0 || assignedIds.has(id)) {
+              addStudent({
+                id,
+                name:
+                  typeof student?.name === "string"
+                    ? student.name
+                    : typeof student?.fullName === "string"
+                      ? student.fullName
+                      : null,
+                className:
+                  typeof student?.class === "string"
+                    ? student.class
+                    : typeof student?.className === "string"
+                      ? student.className
+                      : assignment.className ?? null,
+              })
+            }
+          })
+        } catch (error) {
+          logger.error("Unable to load class roster for assignment", { error })
+        }
+      }
+
+      if (assignedIds.size > 0) {
+        const missingAssigned = Array.from(assignedIds).filter((id) => !roster.has(id))
+        if (missingAssigned.length > 0) {
+          try {
+            const users = await dbManager.getAllUsers()
+            missingAssigned.forEach((studentId) => {
+              const match = users.find((user: any) => {
+                const candidateId = typeof user?.id === "string" ? user.id : String(user?.id ?? "")
+                return candidateId.trim() === studentId
+              })
+
+              if (match) {
+                addStudent({
+                  id: studentId,
+                  name:
+                    typeof match?.name === "string"
+                      ? match.name
+                      : typeof match?.fullName === "string"
+                        ? match.fullName
+                        : null,
+                  className:
+                    typeof match?.className === "string"
+                      ? match.className
+                      : typeof match?.class === "string"
+                        ? match.class
+                        : assignment.className ?? null,
+                })
+              }
+            })
+          } catch (error) {
+            logger.error("Unable to resolve assigned students for roster", { error })
+          }
+        }
+      }
+
+      if (roster.size === 0) {
+        mockStudents
+          .filter((student) => {
+            if (!classLabel) {
+              return true
+            }
+            return normalizeClassName(student.class) === normalizeClassName(classLabel)
+          })
+          .forEach((student) => {
+            if (assignedIds.size === 0 || assignedIds.has(student.id)) {
+              addStudent({ id: student.id, name: student.name, className: student.class })
+            }
+          })
+      }
+
+      assignment.submissions.forEach((submission) => {
+        if (!roster.has(submission.studentId)) {
+          addStudent({ id: submission.studentId, name: null, className: assignment.className ?? null })
+        }
+      })
+
+      return Object.fromEntries(roster.entries())
+    },
+    [mockStudents],
+  )
+
+  const combinedSubmissionRecords = useMemo(() => {
+    if (!selectedAssignment) {
+      return [] as Array<{ student: AssignmentStudentInfo; submission: AssignmentSubmissionRecord }>
+    }
+
+    const submissionMap = new Map(
+      selectedAssignment.submissions.map((submission) => [submission.studentId, submission] as const),
+    )
+
+    const combined = new Map<string, { student: AssignmentStudentInfo; submission: AssignmentSubmissionRecord }>()
+    const createPlaceholder = (studentId: string): AssignmentSubmissionRecord => ({
+      id: `pending-${studentId}`,
+      studentId,
+      status: "pending",
+      submittedAt: null,
+      files: [],
+      comment: null,
+      grade: null,
+      score: null,
+    })
+
+    Object.values(assignmentRoster).forEach((student) => {
+      const submission = submissionMap.get(student.id) ?? createPlaceholder(student.id)
+      combined.set(student.id, { student, submission })
+    })
+
+    selectedAssignment.submissions.forEach((submission) => {
+      const current = combined.get(submission.studentId)
+      if (current) {
+        combined.set(submission.studentId, { student: current.student, submission })
+      } else {
+        combined.set(submission.studentId, {
+          student: {
+            id: submission.studentId,
+            name: null,
+            className: selectedAssignment.className ?? null,
+          },
+          submission,
+        })
+      }
+    })
+
+    return Array.from(combined.values()).sort((a, b) => {
+      const nameA = a.student.name ?? a.student.id
+      const nameB = b.student.name ?? b.student.id
+      return nameA.localeCompare(nameB, undefined, { sensitivity: "base" })
+    })
+  }, [assignmentRoster, selectedAssignment])
+
+  const pendingSubmissionRecords = useMemo(
+    () => combinedSubmissionRecords.filter((entry) => entry.submission.status === "pending"),
+    [combinedSubmissionRecords],
+  )
+
+  const receivedSubmissionRecords = useMemo(
+    () => combinedSubmissionRecords.filter((entry) => entry.submission.status !== "pending"),
+    [combinedSubmissionRecords],
+  )
+
+  const gradedSubmissionCount = useMemo(
+    () => receivedSubmissionRecords.filter((entry) => entry.submission.status === "graded").length,
+    [receivedSubmissionRecords],
   )
 
   const loadAssignments = useCallback(async () => {
@@ -2204,8 +2396,12 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     setGradingDrafts(buildInitialGradingDrafts(assignment.submissions))
     setShowSubmissions(true)
     setIsLoadingSubmissions(true)
+    setAssignmentRoster({})
 
     try {
+      const initialRoster = await resolveAssignmentRoster(assignment)
+      setAssignmentRoster(initialRoster)
+
       const records = await dbManager.getAssignments({
         teacherId: teacher.id,
         assignmentId: assignment.id,
@@ -2215,14 +2411,10 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
       if (latest) {
         const normalised = normaliseAssignmentRecord(latest)
-        setSelectedAssignment((prev) => {
-          if (!prev || prev.id !== assignment.id) {
-            return prev
-          }
-
-          setGradingDrafts(buildInitialGradingDrafts(normalised.submissions))
-          return normalised
-        })
+        setSelectedAssignment(normalised)
+        setGradingDrafts(buildInitialGradingDrafts(normalised.submissions))
+        const updatedRoster = await resolveAssignmentRoster(normalised)
+        setAssignmentRoster(updatedRoster)
       }
     } catch (error) {
       logger.error("Failed to load assignment submissions", { error })
@@ -2235,6 +2427,266 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       setIsLoadingSubmissions(false)
     }
   }
+
+  const applyAssignmentScoreToMarksRecord = (
+    studentId: string,
+    score: number | null,
+  ): MarksRecord | null => {
+    if (score === null) {
+      const existing = marksData.find((entry) => entry.studentId === studentId)
+      return existing ?? null
+    }
+
+    let updatedRecord: MarksRecord | null = null
+
+    setMarksData((prev) => {
+      const updated = prev.map((student) => {
+        if (student.studentId !== studentId) {
+          return student
+        }
+
+        const normalizedScores = normalizeAssessmentScores({
+          ca1: student.firstCA,
+          ca2: student.secondCA,
+          assignment: score,
+          exam: student.exam,
+        })
+
+        const caTotal = calculateContinuousAssessmentTotal(
+          normalizedScores.ca1,
+          normalizedScores.ca2,
+          normalizedScores.assignment,
+        )
+        const grandTotal = calculateGrandTotal(
+          normalizedScores.ca1,
+          normalizedScores.ca2,
+          normalizedScores.assignment,
+          normalizedScores.exam,
+        )
+
+        const recalculated: MarksRecord = {
+          ...student,
+          firstCA: normalizedScores.ca1,
+          secondCA: normalizedScores.ca2,
+          noteAssignment: normalizedScores.assignment,
+          exam: normalizedScores.exam,
+          caTotal,
+          grandTotal,
+          totalMarksObtained: grandTotal,
+          grade: calculateGrade(grandTotal),
+        }
+
+        updatedRecord = recalculated
+        return recalculated
+      })
+
+      return calculatePositionsAndAverages(updated)
+    })
+
+    return updatedRecord
+  }
+
+  const syncAssignmentScoreToReportCard = useCallback(
+    ({
+      studentId,
+      studentName,
+      className,
+      subject,
+      score,
+      grade,
+      maximumScore,
+      marksRecord,
+    }: {
+      studentId: string
+      studentName?: string | null
+      className?: string | null
+      subject: string
+      score: number
+      grade: string | null
+      maximumScore: number
+      marksRecord?: MarksRecord | null
+    }) => {
+      try {
+        const store = readStudentMarksStore()
+        const timestamp = new Date().toISOString()
+        const normalizedTerm = normalizedTermLabel
+        const key = `${studentId}-${normalizedTerm}-${selectedSession}`
+        const previousRecord = store[key] ?? null
+
+        const subjects = { ...(previousRecord?.subjects ?? {}) }
+        const baseline = subjects[subject] ?? {
+          subject,
+          className: className ?? previousRecord?.className ?? selectedClass ?? "",
+          ca1: previousRecord?.subjects?.[subject]?.ca1 ?? 0,
+          ca2: previousRecord?.subjects?.[subject]?.ca2 ?? 0,
+          assignment: previousRecord?.subjects?.[subject]?.assignment ?? 0,
+          caTotal: previousRecord?.subjects?.[subject]?.caTotal ?? 0,
+          exam: previousRecord?.subjects?.[subject]?.exam ?? 0,
+          total: previousRecord?.subjects?.[subject]?.total ?? 0,
+          grade: previousRecord?.subjects?.[subject]?.grade ?? "",
+          remark: previousRecord?.subjects?.[subject]?.remark ?? "",
+          position: previousRecord?.subjects?.[subject]?.position ?? null,
+          totalObtainable: previousRecord?.subjects?.[subject]?.totalObtainable ?? 100,
+          totalObtained:
+            previousRecord?.subjects?.[subject]?.totalObtained ??
+            previousRecord?.subjects?.[subject]?.total ??
+            0,
+          averageScore: previousRecord?.subjects?.[subject]?.averageScore,
+          teacherId: previousRecord?.subjects?.[subject]?.teacherId,
+          teacherName: previousRecord?.subjects?.[subject]?.teacherName,
+          updatedAt: previousRecord?.subjects?.[subject]?.updatedAt,
+        }
+
+        const caTotal = calculateContinuousAssessmentTotal(baseline.ca1, baseline.ca2, score)
+        const total = calculateGrandTotal(baseline.ca1, baseline.ca2, score, baseline.exam)
+        const resolvedGrade =
+          grade ?? (maximumScore > 0 ? deriveGradeFromScore((score / maximumScore) * 100) : baseline.grade)
+
+        const updatedSubject: StoredSubjectRecord = {
+          ...baseline,
+          subject,
+          className: className ?? baseline.className,
+          assignment: score,
+          caTotal,
+          total,
+          grade: resolvedGrade,
+          totalObtained: total,
+          teacherId: teacher.id,
+          teacherName: teacher.name,
+          updatedAt: timestamp,
+        }
+
+        subjects[subject] = updatedSubject
+
+        const aggregatedSubjects = Object.values(subjects)
+        const totalMarksObtainable = aggregatedSubjects.reduce(
+          (sum, subjectRecord) => sum + (subjectRecord.totalObtainable ?? 100),
+          0,
+        )
+        const totalMarksObtained = aggregatedSubjects.reduce(
+          (sum, subjectRecord) => sum + (subjectRecord.total ?? 0),
+          0,
+        )
+        const overallAverage =
+          totalMarksObtainable > 0
+            ? Number(((totalMarksObtained / totalMarksObtainable) * 100).toFixed(2))
+            : undefined
+
+        const mergedRecord: StoredStudentMarkRecord = {
+          studentId,
+          studentName:
+            studentName ??
+            marksRecord?.studentName ??
+            previousRecord?.studentName ??
+            `Student ${studentId}`,
+          className: className ?? previousRecord?.className ?? selectedClass ?? "",
+          term: normalizedTerm,
+          session: selectedSession,
+          subjects,
+          lastUpdated: timestamp,
+          status: additionalData.studentStatus[studentId] ?? previousRecord?.status,
+          numberInClass: additionalData.termInfo.numberInClass || previousRecord?.numberInClass,
+          overallAverage: overallAverage ?? previousRecord?.overallAverage,
+          overallPosition:
+            additionalData.classPositions[studentId] ?? previousRecord?.overallPosition ?? null,
+        }
+
+        store[key] = mergedRecord
+
+        let reportCards: ReportCardRecord[] = []
+        try {
+          const rawReportCards = safeStorage.getItem("reportCards")
+          if (rawReportCards) {
+            const parsed = JSON.parse(rawReportCards)
+            if (Array.isArray(parsed)) {
+              reportCards = parsed as ReportCardRecord[]
+            }
+          }
+        } catch (parseError) {
+          logger.warn("Unable to parse stored report cards", parseError)
+        }
+
+        const subjectRecords: ReportCardSubjectRecord[] = Object.values(subjects).map((subjectRecord) => ({
+          name: subjectRecord.subject,
+          ca1: subjectRecord.ca1,
+          ca2: subjectRecord.ca2,
+          assignment: subjectRecord.assignment,
+          exam: subjectRecord.exam,
+          total: subjectRecord.total,
+          grade: subjectRecord.grade,
+          remark: subjectRecord.remark,
+          position: subjectRecord.position ?? null,
+        }))
+
+        const existingIndex = reportCards.findIndex(
+          (record) =>
+            record.studentId === studentId &&
+            record.term === normalizedTerm &&
+            record.session === selectedSession,
+        )
+
+        const existingRecord = existingIndex >= 0 ? reportCards[existingIndex] : null
+        const reportCardId =
+          existingRecord?.id ?? `report_${studentId}_${normalizedTerm}_${selectedSession}`
+        const headTeacherRemark = existingRecord?.headTeacherRemark ?? null
+        const classTeacherRemark =
+          additionalData.classTeacherRemarks[studentId] ??
+          marksRecord?.teacherRemark ??
+          existingRecord?.classTeacherRemark ??
+          ""
+
+        const aggregatedRaw = buildRawReportCardFromStoredRecord(mergedRecord)
+
+        const metadata =
+          existingRecord && typeof existingRecord.metadata === "object" && existingRecord.metadata !== null
+            ? { ...(existingRecord.metadata as Record<string, unknown>) }
+            : {}
+
+        if (aggregatedRaw) {
+          metadata.enhancedReportCard = aggregatedRaw
+        }
+
+        const updatedReportCard: ReportCardRecord = {
+          id: reportCardId,
+          studentId,
+          studentName: mergedRecord.studentName,
+          className: mergedRecord.className,
+          term: normalizedTerm,
+          session: selectedSession,
+          subjects: subjectRecords,
+          classTeacherRemark,
+          headTeacherRemark,
+          metadata,
+          createdAt: existingRecord?.createdAt ?? timestamp,
+          updatedAt: timestamp,
+        }
+
+        if (existingIndex >= 0) {
+          reportCards[existingIndex] = updatedReportCard
+        } else {
+          reportCards.push(updatedReportCard)
+        }
+
+        safeStorage.setItem(STUDENT_MARKS_STORAGE_KEY, JSON.stringify(store))
+        safeStorage.setItem("reportCards", JSON.stringify(reportCards))
+        dbManager.triggerEvent(STUDENT_MARKS_STORAGE_KEY, store)
+        dbManager.triggerEvent("reportCardUpdated", updatedReportCard)
+      } catch (error) {
+        logger.error("Failed to sync assignment grade to report card", { error })
+      }
+    },
+    [
+      additionalData.classPositions,
+      additionalData.classTeacherRemarks,
+      additionalData.studentStatus,
+      additionalData.termInfo.numberInClass,
+      normalizedTermLabel,
+      selectedClass,
+      selectedSession,
+      teacher.id,
+      teacher.name,
+    ],
+  )
 
   const handleGradeSubmission = async (submission: AssignmentSubmissionRecord) => {
     if (!selectedAssignment) return
@@ -2295,6 +2747,24 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           comment: trimmedComment,
         },
       }))
+
+      if (normalizedScore !== null) {
+        const updatedMarksRecord = applyAssignmentScoreToMarksRecord(
+          submission.studentId,
+          normalizedScore,
+        )
+        const rosterEntry = assignmentRoster[submission.studentId]
+        syncAssignmentScoreToReportCard({
+          studentId: submission.studentId,
+          studentName: rosterEntry?.name ?? updatedMarksRecord?.studentName ?? submission.studentId,
+          className: rosterEntry?.className ?? selectedAssignment.className ?? null,
+          subject: selectedAssignment.subject,
+          score: normalizedScore,
+          grade,
+          maximumScore: assignmentMaxScore,
+          marksRecord: updatedMarksRecord ?? undefined,
+        })
+      }
 
       toast({
         title: "Score saved",
@@ -4246,6 +4716,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             setSelectedAssignment(null)
             setGradingDrafts({})
             setIsLoadingSubmissions(false)
+            setAssignmentRoster({})
           }
         }}
       >
@@ -4289,17 +4760,31 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 ) : (
                   <p className="mt-3 text-xs text-slate-500">No assignment attachment to download.</p>
                 )}
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                  <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                    {receivedSubmissionRecords.length} submitted
+                  </Badge>
+                  <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+                    {pendingSubmissionRecords.length} not submitted
+                  </Badge>
+                  <Badge variant="outline" className="border-purple-200 bg-purple-50 text-purple-700">
+                    {gradedSubmissionCount} graded
+                  </Badge>
+                </div>
               </div>
             ) : null}
             {isLoadingSubmissions ? (
               <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading submissions...
               </div>
-            ) : selectedAssignment?.submissions && selectedAssignment.submissions.length > 0 ? (
-              selectedAssignment.submissions.map((submission) => {
-                const assignmentMaxScore = selectedAssignment.maximumScore ?? assignmentMaximum
+            ) : receivedSubmissionRecords.length > 0 ? (
+              receivedSubmissionRecords.map(({ student, submission }) => {
+                const assignmentMaxScore = selectedAssignment?.maximumScore ?? assignmentMaximum
                 const draft = gradingDrafts[submission.id] ?? { score: "", comment: "" }
-                const submissionStatusMeta = submission.status === "graded" ? ASSIGNMENT_STATUS_META.graded : ASSIGNMENT_STATUS_META.sent
+                const submissionStatusMeta =
+                  submission.status === "graded"
+                    ? ASSIGNMENT_STATUS_META.graded
+                    : ASSIGNMENT_STATUS_META.submitted
 
                 return (
                   <div
@@ -4309,7 +4794,13 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div className="space-y-2">
                         <div>
-                          <h3 className="font-medium text-slate-800">Student ID: {submission.studentId}</h3>
+                          <h3 className="font-medium text-slate-800">
+                            {student.name ?? `Student ${submission.studentId}`}
+                          </h3>
+                          <p className="text-xs text-slate-500">
+                            {submission.studentId}
+                            {student.className ? ` • ${student.className}` : ""}
+                          </p>
                           <p className="text-xs text-slate-500">
                             Submitted {submission.submittedAt ? formatExamDate(submission.submittedAt) : "—"}
                           </p>
@@ -4332,7 +4823,9 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                           <p className="text-xs text-slate-500">No attachments were included in this submission.</p>
                         )}
                       </div>
-                      <Badge className={`${submissionStatusMeta.badgeClass} uppercase`}>{submission.status}</Badge>
+                      <Badge className={`${submissionStatusMeta.badgeClass} uppercase`}>
+                        {submission.status}
+                      </Badge>
                     </div>
                     <div className="grid gap-4 rounded-lg bg-slate-50 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                       <div className="space-y-2">
@@ -4412,6 +4905,34 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 No submissions have been received for this assignment yet.
               </div>
             )}
+            {pendingSubmissionRecords.length > 0 ? (
+              <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/40 p-4">
+                <h4 className="text-sm font-semibold text-amber-700">
+                  Awaiting submissions ({pendingSubmissionRecords.length})
+                </h4>
+                <ul className="mt-3 space-y-2">
+                  {pendingSubmissionRecords.map(({ student }) => (
+                    <li
+                      key={student.id}
+                      className="flex items-center justify-between rounded-lg border border-amber-100 bg-white px-3 py-2 text-sm text-amber-800"
+                    >
+                      <div>
+                        <p className="font-medium text-amber-900">
+                          {student.name ?? `Student ${student.id}`}
+                        </p>
+                        <p className="text-xs text-amber-700/80">
+                          {student.id}
+                          {student.className ? ` • ${student.className}` : ""}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="border-amber-300 bg-amber-100 text-amber-700">
+                        Not submitted
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button
