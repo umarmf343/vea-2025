@@ -3336,7 +3336,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 </div>
 
                 <Tabs defaultValue="academic" className="w-full">
-                  <TabsList className="flex h-auto w-full flex-col gap-3 bg-transparent p-0 sm:grid sm:grid-cols-2 sm:gap-2 sm:bg-muted sm:p-[3px] xl:grid-cols-4">
+                  <TabsList className="flex w-full flex-col gap-3 bg-transparent p-0 sm:grid sm:grid-cols-2 sm:gap-2 sm:bg-muted sm:p-[3px] xl:grid-cols-4">
                     <TabsTrigger
                       value="academic"
                       className="h-auto w-full justify-start whitespace-normal rounded-md px-4 py-3 text-left text-sm leading-snug sm:h-[calc(100%-1px)]"
