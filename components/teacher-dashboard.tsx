@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -3383,40 +3384,65 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                       </Button>
                     </div>
 
-                    <div className="border rounded-lg">
-                      <div className="overflow-x-auto">
-                        <div className="min-w-[1200px]">
-                          <div
-                            className="grid grid-cols-[minmax(200px,1.2fr)_repeat(13,minmax(140px,1fr))] gap-3 bg-gray-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-gray-700"
-                          >
-                            <div>Student Name</div>
-                            <div>1st C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1})</div>
-                            <div>2nd C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2})</div>
-                            <div>NOTE/ASSIGN ({CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment})</div>
-                            <div>
-                              C.A. TOTAL ({
+                    <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+                      <Table className="min-w-[1100px] text-xs">
+                        <TableHeader className="bg-muted/60">
+                          <TableRow className="divide-x divide-gray-200">
+                            <TableHead className="w-56 text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              Student Name
+                            </TableHead>
+                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              1st C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1})
+                            </TableHead>
+                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              2nd C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2})
+                            </TableHead>
+                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              Note/Assign ({CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment})
+                            </TableHead>
+                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              C.A. Total ({
                                 CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1 +
                                 CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2 +
                                 CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment
                               })
-                            </div>
-                            <div>EXAM ({CONTINUOUS_ASSESSMENT_MAXIMUMS.exam})</div>
-                            <div>GRAND TOTAL (100)</div>
-                            <div>Total Obtainable</div>
-                            <div>Total Obtained</div>
-                            <div>Average %</div>
-                            <div>Position</div>
-                            <div>GRADE</div>
-                            <div>Subject Remarks</div>
-                            <div className="text-center">Preview</div>
-                          </div>
+                            </TableHead>
+                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              Exam ({CONTINUOUS_ASSESSMENT_MAXIMUMS.exam})
+                            </TableHead>
+                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              Grand Total (100)
+                            </TableHead>
+                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              Total Obtainable
+                            </TableHead>
+                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              Total Obtained
+                            </TableHead>
+                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              Average %
+                            </TableHead>
+                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              Position
+                            </TableHead>
+                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              Grade
+                            </TableHead>
+                            <TableHead className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              Subject Remarks
+                            </TableHead>
+                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                              Preview
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
                           {marksData.map((student) => (
-                            <div
-                              key={student.studentId}
-                              className="grid grid-cols-[minmax(200px,1.2fr)_repeat(13,minmax(140px,1fr))] items-center gap-3 border-t px-4 py-3"
-                            >
-                              <div className="font-medium text-sm text-gray-700">{student.studentName}</div>
-                              <div>
+                            <TableRow key={student.studentId} className="divide-x divide-gray-100">
+                              <TableCell className="font-medium text-gray-800">
+                                {student.studentName}
+                              </TableCell>
+                              <TableCell>
                                 <Input
                                   type="number"
                                   max={CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1}
@@ -3424,11 +3450,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                   onChange={(e) =>
                                     handleMarksUpdate(student.studentId, "firstCA", Number.parseInt(e.target.value) || 0)
                                   }
-                                  className="h-8 w-full text-xs"
+                                  className="h-9 w-full text-xs"
                                   disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                                 />
-                              </div>
-                              <div>
+                              </TableCell>
+                              <TableCell>
                                 <Input
                                   type="number"
                                   max={CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2}
@@ -3436,11 +3462,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                   onChange={(e) =>
                                     handleMarksUpdate(student.studentId, "secondCA", Number.parseInt(e.target.value) || 0)
                                   }
-                                  className="h-8 w-full text-xs"
+                                  className="h-9 w-full text-xs"
                                   disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                                 />
-                              </div>
-                              <div>
+                              </TableCell>
+                              <TableCell>
                                 <Input
                                   type="number"
                                   max={CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment}
@@ -3452,12 +3478,14 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                       Number.parseInt(e.target.value) || 0,
                                     )
                                   }
-                                  className="h-8 w-full text-xs"
+                                  className="h-9 w-full text-xs"
                                   disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                                 />
-                              </div>
-                              <div className="text-sm font-bold text-[#2d682d]">{student.caTotal}</div>
-                              <div>
+                              </TableCell>
+                              <TableCell className="text-center font-semibold text-[#2d682d]">
+                                {student.caTotal}
+                              </TableCell>
+                              <TableCell>
                                 <Input
                                   type="number"
                                   max={CONTINUOUS_ASSESSMENT_MAXIMUMS.exam}
@@ -3465,12 +3493,14 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                   onChange={(e) =>
                                     handleMarksUpdate(student.studentId, "exam", Number.parseInt(e.target.value) || 0)
                                   }
-                                  className="h-8 w-full text-xs"
+                                  className="h-9 w-full text-xs"
                                   disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                                 />
-                              </div>
-                              <div className="text-sm font-bold text-[#b29032]">{student.grandTotal}</div>
-                              <div>
+                              </TableCell>
+                              <TableCell className="text-center font-semibold text-[#b29032]">
+                                {student.grandTotal}
+                              </TableCell>
+                              <TableCell>
                                 <Input
                                   type="number"
                                   value={student.totalMarksObtainable}
@@ -3481,14 +3511,20 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                       Number.parseInt(e.target.value) || 100,
                                     )
                                   }
-                                  className="h-8 w-full text-xs"
+                                  className="h-9 w-full text-xs"
                                   disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                                 />
-                              </div>
-                              <div className="text-sm font-bold text-blue-600">{student.totalMarksObtained}</div>
-                              <div className="text-sm font-bold text-purple-600">{student.averageScore}%</div>
-                              <div className="text-sm font-bold text-orange-600">#{student.position}</div>
-                              <div>
+                              </TableCell>
+                              <TableCell className="text-center font-semibold text-blue-600">
+                                {student.totalMarksObtained}
+                              </TableCell>
+                              <TableCell className="text-center font-semibold text-purple-600">
+                                {student.averageScore}%
+                              </TableCell>
+                              <TableCell className="text-center font-semibold text-orange-600">
+                                #{student.position}
+                              </TableCell>
+                              <TableCell className="text-center">
                                 <Badge
                                   variant={
                                     student.grade === "A" ? "default" : student.grade === "F" ? "destructive" : "secondary"
@@ -3497,17 +3533,17 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                 >
                                   {student.grade}
                                 </Badge>
-                              </div>
-                              <div>
+                              </TableCell>
+                              <TableCell className="min-w-[180px]">
                                 <Input
                                   value={student.teacherRemark}
                                   onChange={(e) => handleMarksUpdate(student.studentId, "teacherRemark", e.target.value)}
-                                  className="h-8 w-full text-xs"
+                                  className="h-9 w-full text-xs"
                                   placeholder="Subject remark"
                                   disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
                                 />
-                              </div>
-                              <div className="flex justify-center">
+                              </TableCell>
+                              <TableCell className="text-center">
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -3516,11 +3552,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                 >
                                   Preview
                                 </Button>
-                              </div>
-                            </div>
+                              </TableCell>
+                            </TableRow>
                           ))}
-                        </div>
-                      </div>
+                        </TableBody>
+                      </Table>
                     </div>
                     <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                       <Card>
