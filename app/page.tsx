@@ -4,6 +4,7 @@ import type React from "react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -52,6 +53,7 @@ import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
 import { TimetableWeeklyView, type TimetableWeeklyViewSlot } from "@/components/timetable-weekly-view"
 import { TutorialLink } from "@/components/tutorial-link"
 import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   grantReportCardAccess,
   normalizeTermLabel,
@@ -97,6 +99,43 @@ interface User {
   className?: string | null
   subjects?: string[]
   metadata?: Record<string, unknown> | null
+}
+
+interface ParentStudentProfile {
+  id: string
+  name: string
+  class: string
+  section: string
+  admissionNumber: string
+  dateOfBirth: string
+  address: string
+  phone: string
+  email: string
+  status: "active" | "inactive"
+  avatar?: string | null
+}
+
+interface ParentAcademicSummaryState {
+  subjects: Array<{
+    name: string
+    score: number
+    grade: string
+    position: number | null
+    totalStudents: number
+  }>
+  overallAverage: number
+  overallGrade: string
+  classPosition: number
+  totalStudents: number
+}
+
+interface ParentAttendanceSummaryState {
+  totalDays: number
+  presentDays: number
+  absentDays: number
+  lateArrivals: number
+  attendancePercentage: number
+  recentAttendance: Array<{ date: string; status: "present" | "absent" | "late" }>
 }
 
 const mapApiRoleToUi = (role: string): UserRole => {
@@ -1427,6 +1466,11 @@ function ParentDashboard({ user }: { user: User }) {
   )
   const [parentTimetable, setParentTimetable] = useState<TimetableWeeklyViewSlot[]>([])
   const [isParentTimetableLoading, setIsParentTimetableLoading] = useState(false)
+  const [studentData, setStudentData] = useState<ParentStudentProfile | null>(null)
+  const [academicData, setAcademicData] = useState<ParentAcademicSummaryState | null>(null)
+  const [attendanceData, setAttendanceData] = useState<ParentAttendanceSummaryState | null>(null)
+  const [isSnapshotLoading, setIsSnapshotLoading] = useState(false)
+  const [snapshotError, setSnapshotError] = useState<string | null>(null)
 
   const linkedStudentId =
     typeof user.metadata?.linkedStudentId === "string"
@@ -1436,36 +1480,88 @@ function ParentDashboard({ user }: { user: User }) {
         ? String((user.metadata as { studentIds?: string[] })?.studentIds?.[0])
         : "1"
 
-  const studentData = {
-    id: linkedStudentId,
-    name: "John Doe",
-    class: "JSS 2A",
-    section: "A",
-    admissionNumber: "VEA2025001",
-    dateOfBirth: "2008-05-15",
-    address: "123 Main Street, Lagos, Nigeria",
-    phone: "+234 801 234 5678",
-    email: "john.doe@student.vea.edu.ng",
-    status: "active" as const,
-  }
+  const activeStudentId = studentData?.id ?? linkedStudentId
 
   const studentFirstName = useMemo(() => {
-    const [first] = studentData.name.split(" ")
-    return first || "the student"
-  }, [studentData.name])
+    const [first] = (studentData?.name ?? "").split(" ")
+    return first && first.trim().length > 0 ? first : "the student"
+  }, [studentData?.name])
+
+  const loadParentSnapshot = useCallback(async () => {
+    if (!linkedStudentId) {
+      setStudentData(null)
+      setAcademicData(null)
+      setAttendanceData(null)
+      return
+    }
+
+    setIsSnapshotLoading(true)
+    setSnapshotError(null)
+
+    try {
+      const params = new URLSearchParams({ studentId: linkedStudentId })
+      if (academicPeriod.term) {
+        params.set("term", academicPeriod.term)
+      }
+      if (academicPeriod.session) {
+        params.set("session", academicPeriod.session)
+      }
+
+      const response = await fetch(`/api/parents/dashboard?${params.toString()}`, { cache: "no-store" })
+
+      if (!response.ok) {
+        let errorMessage = `Failed to load dashboard snapshot (status ${response.status})`
+        try {
+          const payload = await response.json()
+          if (typeof payload?.error === "string") {
+            errorMessage = payload.error
+          }
+        } catch (error) {
+          logger.warn("Unable to parse dashboard snapshot error response", { error })
+        }
+        throw new Error(errorMessage)
+      }
+
+      const payload = (await response.json()) as {
+        snapshot: {
+          student: ParentStudentProfile
+          academic: ParentAcademicSummaryState
+          attendance: ParentAttendanceSummaryState
+        }
+      }
+
+      setStudentData(payload.snapshot.student)
+      setAcademicData(payload.snapshot.academic)
+      setAttendanceData(payload.snapshot.attendance)
+    } catch (error) {
+      logger.error("Unable to load parent dashboard snapshot", { error })
+      setSnapshotError(error instanceof Error ? error.message : "Unable to load dashboard data")
+    } finally {
+      setIsSnapshotLoading(false)
+    }
+  }, [academicPeriod.session, academicPeriod.term, linkedStudentId])
+
+  useEffect(() => {
+    void loadParentSnapshot()
+  }, [loadParentSnapshot])
 
   const setAccessFromRecords = useCallback(
     (records: ReportCardAccessRecord[], term?: string, session?: string) => {
       const activeTerm = term ?? academicPeriod.term
       const activeSession = session ?? academicPeriod.session
+      if (!activeStudentId) {
+        setHasAccess(false)
+        setAdminGrantedAccess(false)
+        return
+      }
       const matchingRecord = records
         .filter((record) => record.term === activeTerm && record.session === activeSession)
-        .find((record) => record.parentId === user.id && record.studentId === studentData.id)
+        .find((record) => record.parentId === user.id && record.studentId === activeStudentId)
 
       setHasAccess(Boolean(matchingRecord))
       setAdminGrantedAccess(matchingRecord?.grantedBy === "manual")
     },
-    [academicPeriod.session, academicPeriod.term, studentData.id, user.id],
+    [academicPeriod.session, academicPeriod.term, activeStudentId, user.id],
   )
 
   useEffect(() => {
@@ -1524,7 +1620,7 @@ function ParentDashboard({ user }: { user: User }) {
       }
 
       let studentClassId: string | null = null
-      let studentClassName: string | null = studentData.class ?? null
+      let studentClassName: string | null = studentData?.class ?? null
 
       if (linkedStudentId) {
         try {
@@ -1633,14 +1729,15 @@ function ParentDashboard({ user }: { user: User }) {
     return () => {
       isMounted = false
     }
-  }, [fallbackMessagingDirectory, linkedStudentId, studentData.class, user.id])
+  }, [fallbackMessagingDirectory, linkedStudentId, studentData, user.id])
 
   useEffect(() => {
     let isMounted = true
 
     const loadTimetable = async () => {
       try {
-        if (!studentData.class) {
+        const className = studentData?.class
+        if (!className) {
           if (isMounted) {
             setParentTimetable([])
           }
@@ -1651,7 +1748,7 @@ function ParentDashboard({ user }: { user: User }) {
           setIsParentTimetableLoading(true)
         }
 
-        const response = await fetch(`/api/timetable?className=${encodeURIComponent(studentData.class)}`)
+        const response = await fetch(`/api/timetable?className=${encodeURIComponent(className)}`)
         if (!isMounted) {
           return
         }
@@ -1689,7 +1786,7 @@ function ParentDashboard({ user }: { user: User }) {
     return () => {
       isMounted = false
     }
-  }, [studentData.class])
+  }, [studentData?.class])
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -1730,9 +1827,15 @@ function ParentDashboard({ user }: { user: User }) {
     if (paymentSuccess === "true" && paymentDataRaw) {
       try {
         const paymentData = JSON.parse(paymentDataRaw) as { metadata?: Record<string, unknown> }
-        const studentId = String(paymentData.metadata?.student_id ?? studentData.id)
+        const studentId = String(
+          paymentData.metadata?.student_id ?? activeStudentId ?? linkedStudentId ?? "",
+        )
         const term = normalizeTermLabel((paymentData.metadata?.term as string | undefined) ?? academicPeriod.term)
         const session = (paymentData.metadata?.session as string | undefined) ?? academicPeriod.session
+
+        if (!studentId) {
+          throw new Error("Missing student identifier for payment confirmation")
+        }
 
         const updated = grantReportCardAccess({
           parentId: user.id,
@@ -1751,7 +1854,7 @@ function ParentDashboard({ user }: { user: User }) {
       const records = syncReportCardAccess(academicPeriod.term, academicPeriod.session)
       setAccessFromRecords(records)
     }
-  }, [academicPeriod.session, academicPeriod.term, setAccessFromRecords, studentData.id, user.id])
+  }, [academicPeriod.session, academicPeriod.term, activeStudentId, linkedStudentId, setAccessFromRecords, user.id])
 
   useEffect(() => {
     const globalScope = typeof globalThis === "undefined" ? undefined : (globalThis as Window)
@@ -1776,9 +1879,13 @@ function ParentDashboard({ user }: { user: User }) {
   }, [setAccessFromRecords])
 
   const handlePaymentSuccess = () => {
+    if (!activeStudentId) {
+      return
+    }
+
     const updated = grantReportCardAccess({
       parentId: user.id,
-      studentId: studentData.id,
+      studentId: activeStudentId,
       term: academicPeriod.term,
       session: academicPeriod.session,
       grantedBy: "payment",
@@ -1787,44 +1894,14 @@ function ParentDashboard({ user }: { user: User }) {
     setShowPaymentModal(false)
   }
 
-  const academicData = {
-    subjects: [
-      { name: "Mathematics", score: 85, grade: "A", position: 3, totalStudents: 45 },
-      { name: "English Language", score: 78, grade: "B+", position: 8, totalStudents: 45 },
-      { name: "Physics", score: 92, grade: "A+", position: 1, totalStudents: 45 },
-      { name: "Chemistry", score: 80, grade: "B+", position: 5, totalStudents: 45 },
-      { name: "Biology", score: 88, grade: "A", position: 2, totalStudents: 45 },
-    ],
-    overallAverage: 84.6,
-    overallGrade: "A",
-    classPosition: 4,
-    totalStudents: 45,
-  }
-
-  const attendanceData = {
-    totalDays: 120,
-    presentDays: 115,
-    absentDays: 3,
-    lateArrivals: 2,
-    attendancePercentage: 95.8,
-    recentAttendance: [
-      { date: "2025-01-08", status: "present" as const },
-      { date: "2025-01-07", status: "present" as const },
-      { date: "2025-01-06", status: "late" as const },
-      { date: "2025-01-05", status: "present" as const },
-      { date: "2025-01-04", status: "absent" as const },
-    ],
-  }
-
   const resolveApprovalStatus = useCallback(() => {
     try {
       const approvedReports = JSON.parse(safeStorage.getItem("approvedReports") || "[]") as string[]
       const releasedCumulative = JSON.parse(
         safeStorage.getItem("releasedCumulativeReports") || "[]",
       ) as string[]
-      const approvalKeys = [studentData.id, linkedStudentId, "1"].filter(
-        (value, index, array) => value && array.indexOf(value) === index,
-      )
+      const approvalKeys = [activeStudentId, linkedStudentId, "1"]
+        .filter((value, index, array): value is string => typeof value === "string" && value.length > 0 && array.indexOf(value) === index)
 
       return {
         isApproved: approvalKeys.some((key) => approvedReports.includes(key)),
@@ -1834,9 +1911,17 @@ function ParentDashboard({ user }: { user: User }) {
       logger.error("Unable to resolve report approval state", { error })
       return { isApproved: false, hasCumulative: false }
     }
-  }, [linkedStudentId, studentData.id])
+  }, [activeStudentId, linkedStudentId])
 
   const handleViewReportCard = async () => {
+    if (!activeStudentId || !studentData) {
+      setAccessNotice({
+        title: "Student information unavailable",
+        description: "We couldn't determine which student record to open. Please refresh and try again.",
+      })
+      return
+    }
+
     try {
       const { isApproved } = resolveApprovalStatus()
 
@@ -1870,35 +1955,36 @@ function ParentDashboard({ user }: { user: User }) {
       const brandingInfo = getBrandingFromStorage()
 
       const augmentReportData = (data: RawReportCardData): RawReportCardData => {
+        const fallbackTotalStudents = academicData?.totalStudents ?? 0
         const summary = data.summary
-          ? { ...data.summary, numberOfStudents: data.summary.numberOfStudents ?? academicData.totalStudents }
+          ? { ...data.summary, numberOfStudents: data.summary.numberOfStudents ?? fallbackTotalStudents }
           : {
               totalMarksObtainable: data.totalObtainable ?? 0,
               totalMarksObtained: data.totalObtained ?? 0,
               averageScore: data.average ?? 0,
               position: data.position,
-              numberOfStudents: academicData.totalStudents,
+              numberOfStudents: fallbackTotalStudents,
             }
 
-        const classTeacherRemark = data.remarks?.classTeacher ?? data.classTeacherRemarks ?? ""
-        const headTeacherRemark =
-          data.remarks?.headTeacher ??
-          data.branding?.defaultRemark ??
-          brandingInfo.defaultRemark ??
-          "She is improving in her studies."
+        const classTeacherRemark = data.classTeacherRemark ?? data.formTeacherRemark ?? data.remark ?? ""
+        const headTeacherRemark = data.headTeacherRemark ?? data.principalRemark ?? brandingInfo.defaultRemark
+
+        const attendanceSummary =
+          data.attendance ?? {
+            present: attendanceData?.presentDays ?? 0,
+            absent:
+              attendanceData?.absentDays ??
+              Math.max((attendanceData?.totalDays ?? 0) - (attendanceData?.presentDays ?? 0), 0),
+            total: attendanceData?.totalDays ?? 0,
+          }
 
         return {
           ...data,
           summary,
-          attendance:
-            data.attendance ?? {
-              present: attendanceData.presentDays,
-              absent: attendanceData.absentDays,
-              total: attendanceData.totalDays,
-            },
+          attendance: attendanceSummary,
           remarks: {
             classTeacher: classTeacherRemark,
-            headTeacher: headTeacherRemark,
+            headTeacher: headTeacherRemark ?? "",
           },
           branding: {
             logo: data.branding?.logo ?? brandingInfo.logoUrl ?? null,
@@ -1911,10 +1997,16 @@ function ParentDashboard({ user }: { user: User }) {
         }
       }
 
-      const numericId = Number.parseInt(studentData.id, 10)
+      const numericId = Number.parseInt(activeStudentId, 10)
       const completeData = Number.isNaN(numericId)
         ? null
-        : (getCompleteReportCard(numericId, "JSS 1A", "Mathematics", "first", "2024/2025") as RawReportCardData | null)
+        : (getCompleteReportCard(
+            numericId,
+            studentData.class ?? "JSS 1A",
+            "Mathematics",
+            normalizeTermLabel(academicPeriod.term ?? "First Term").toLowerCase(),
+            academicPeriod.session,
+          ) as RawReportCardData | null)
 
       if (completeData) {
         setReportCardData(augmentReportData(completeData))
@@ -1923,8 +2015,10 @@ function ParentDashboard({ user }: { user: User }) {
       }
 
       const fetchedData =
-        getStudentReportCardData(studentData.id, "First Term", "2024/2025") ??
-        (studentData.id !== "1" ? getStudentReportCardData("1", "First Term", "2024/2025") : null)
+        getStudentReportCardData(activeStudentId, academicPeriod.term, academicPeriod.session) ??
+        (activeStudentId !== "1"
+          ? getStudentReportCardData("1", academicPeriod.term, academicPeriod.session)
+          : null)
 
       if (fetchedData && fetchedData.subjects && fetchedData.subjects.length > 0) {
         setReportCardData(augmentReportData(fetchedData))
@@ -2008,7 +2102,14 @@ function ParentDashboard({ user }: { user: User }) {
         )}
       </Card>
 
-      {showReportCard ? (
+      {snapshotError && !isSnapshotLoading ? (
+        <Alert variant="destructive">
+          <AlertTitle>Unable to load live dashboard data</AlertTitle>
+          <AlertDescription>{snapshotError}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {showReportCard && studentData ? (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-semibold text-blue-900">Student Report Card</h3>
@@ -2027,18 +2128,51 @@ function ParentDashboard({ user }: { user: User }) {
       ) : (
         <>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <StudentProfileCard student={studentData} />
+            {isSnapshotLoading ? (
+              <Skeleton className="h-[260px] w-full" />
+            ) : studentData ? (
+              <StudentProfileCard student={studentData} />
+            ) : (
+              <Card className="border-red-200 bg-red-50">
+                <CardHeader>
+                  <CardTitle className="text-red-700">Student profile unavailable</CardTitle>
+                  <CardDescription>Refresh the page or contact the administrator for assistance.</CardDescription>
+                </CardHeader>
+              </Card>
+            )}
 
-            <AcademicProgress
-              subjects={academicData.subjects}
-              overallAverage={academicData.overallAverage}
-              overallGrade={academicData.overallGrade}
-              classPosition={academicData.classPosition}
-              totalStudents={academicData.totalStudents}
-              hasAccess={hasAccess || false}
-            />
+            {isSnapshotLoading ? (
+              <Skeleton className="h-[320px] w-full" />
+            ) : academicData ? (
+              <AcademicProgress
+                subjects={academicData.subjects}
+                overallAverage={academicData.overallAverage}
+                overallGrade={academicData.overallGrade}
+                classPosition={academicData.classPosition}
+                totalStudents={academicData.totalStudents}
+                hasAccess={hasAccess || false}
+              />
+            ) : (
+              <Card className="border-yellow-200 bg-yellow-50">
+                <CardHeader>
+                  <CardTitle className="text-yellow-700">Academic progress unavailable</CardTitle>
+                  <CardDescription>We couldn't load live result summaries. Please try again shortly.</CardDescription>
+                </CardHeader>
+              </Card>
+            )}
 
-            <AttendanceTracker attendance={attendanceData} hasAccess={hasAccess || false} />
+            {isSnapshotLoading ? (
+              <Skeleton className="h-[320px] w-full" />
+            ) : attendanceData ? (
+              <AttendanceTracker attendance={attendanceData} hasAccess={hasAccess || false} />
+            ) : (
+              <Card className="border-yellow-200 bg-yellow-50">
+                <CardHeader>
+                  <CardTitle className="text-yellow-700">Attendance record unavailable</CardTitle>
+                  <CardDescription>Attendance logs will appear here once the system reconnects.</CardDescription>
+                </CardHeader>
+              </Card>
+            )}
 
             <Card className="border-blue-200 lg:col-span-2">
               <CardHeader>
@@ -2083,53 +2217,67 @@ function ParentDashboard({ user }: { user: User }) {
                 >
                   View Report Card
                 </Button>
-                <CumulativeReportTrigger
-                  hasAccess={hasAccess || false}
-                  studentId={studentData.id}
-                  className={studentData.class}
-                  isReleased={approvalStatus.hasCumulative}
-                >
-                  <Button
-                    className={cn(
-                      "w-full bg-[#b29032] hover:bg-[#b29032]/90 text-white",
-                      !hasAccess && "opacity-80",
-                    )}
-                    onClick={(event) => {
-                      if (hasAccess) {
-                        return
-                      }
-
-                      event.preventDefault()
-                      event.stopPropagation()
-
-                      const { isApproved, hasCumulative } = resolveApprovalStatus()
-                      setAccessNotice(
-                        isApproved
-                          ? hasCumulative
-                            ? {
-                                title: "Unlock with payment",
-                                description:
-                                  "Please complete the school fee payment to view the cumulative performance summary.",
-                                showPayment: true,
-                              }
-                            : {
-                                title: "Cumulative report unavailable",
-                                description:
-                                  "The cumulative performance summary hasn't been shared to your dashboard yet. Please reach out to the school for an update.",
-                              }
-                          : {
-                              title: "Cumulative report locked",
-                              description:
-                                "Complete the report card release process to unlock the cumulative performance summary for this student.",
-                              showPayment: true,
-                            },
-                      )
-                    }}
-                    aria-disabled={!hasAccess}
+                {studentData ? (
+                  <CumulativeReportTrigger
+                    hasAccess={hasAccess || false}
+                    studentId={studentData.id}
+                    className={studentData.class}
+                    isReleased={approvalStatus.hasCumulative}
+                    onUnavailable={(message) =>
+                      setAccessNotice({
+                        title: "Cumulative report unavailable",
+                        description:
+                          message ??
+                          "The cumulative performance summary hasn't been shared to your dashboard yet. Please reach out to the school for an update.",
+                      })
+                    }
                   >
+                    <Button
+                      className={cn(
+                        "w-full bg-[#b29032] hover:bg-[#b29032]/90 text-white",
+                        !hasAccess && "opacity-80",
+                      )}
+                      onClick={(event) => {
+                        if (hasAccess) {
+                          return
+                        }
+
+                        event.preventDefault()
+                        event.stopPropagation()
+
+                        const { isApproved, hasCumulative } = resolveApprovalStatus()
+                        setAccessNotice(
+                          isApproved
+                            ? hasCumulative
+                              ? {
+                                  title: "Unlock with payment",
+                                  description:
+                                    "Please complete the school fee payment to view the cumulative performance summary.",
+                                  showPayment: true,
+                                }
+                              : {
+                                  title: "Cumulative report unavailable",
+                                  description:
+                                    "The cumulative performance summary hasn't been shared to your dashboard yet. Please reach out to the school for an update.",
+                                }
+                            : {
+                                title: "Cumulative report locked",
+                                description:
+                                  "Complete the report card release process to unlock the cumulative performance summary for this student.",
+                                showPayment: true,
+                              },
+                        )
+                      }}
+                      aria-disabled={!hasAccess}
+                    >
+                      View Cumulative Report
+                    </Button>
+                  </CumulativeReportTrigger>
+                ) : (
+                  <Button className="w-full bg-[#b29032] text-white" variant="outline" disabled>
                     View Cumulative Report
                   </Button>
-                </CumulativeReportTrigger>
+                )}
                 <Button className="w-full bg-transparent" variant="outline">
                   View Payment History
                 </Button>
@@ -2144,7 +2292,7 @@ function ParentDashboard({ user }: { user: User }) {
 
             <ExamScheduleOverview
               role="parent"
-              classNames={[studentData.class]}
+              classNames={studentData ? [studentData.class] : undefined}
               description="Upcoming exams relevant to your child"
             />
 
@@ -2152,7 +2300,11 @@ function ParentDashboard({ user }: { user: User }) {
         </div>
 
         <div className="mt-8">
-          <NotificationCenter userRole="parent" userId={user.id} studentIds={[studentData.id]} />
+          <NotificationCenter
+            userRole="parent"
+            userId={user.id}
+            studentIds={studentData ? [studentData.id] : []}
+          />
         </div>
 
         <div className="mt-8">
@@ -2206,8 +2358,8 @@ function ParentDashboard({ user }: { user: User }) {
         isOpen={showPaymentModal}
         onClose={() => setShowPaymentModal(false)}
         onPaymentSuccess={handlePaymentSuccess}
-        studentName={studentData.name}
-        studentId={studentData.id}
+        studentName={studentData?.name ?? ""}
+        studentId={activeStudentId ?? ""}
         amount={50000}
         parentName={user.name}
         parentEmail={user.email}

@@ -8,6 +8,7 @@ import mysql, {
 } from "mysql2/promise"
 import { safeStorage } from "./safe-storage"
 import { logger } from "./logger"
+import { deriveGradeFromScore } from "./grade-utils"
 
 interface CollectionRecord {
   id: string
@@ -71,6 +72,13 @@ export interface StudentRecord extends CollectionRecord {
   attendance: { present: number; total: number }
   grades: { subject: string; ca1: number; ca2: number; exam: number; total: number; grade: string }[]
   photoUrl?: string | null
+}
+
+export interface AttendanceLogRecord extends CollectionRecord {
+  studentId: string
+  date: string
+  status: "present" | "absent" | "late"
+  recordedBy?: string | null
 }
 
 export interface GradeRecord extends CollectionRecord {
@@ -426,6 +434,7 @@ const STORAGE_KEYS = {
   STUDENTS: "vea_students",
   GRADES: "vea_grades",
   MARKS: "vea_marks",
+  ATTENDANCE_LOGS: "vea_attendance_logs",
   PAYMENTS: "vea_payment_initializations",
   FEE_STRUCTURE: "vea_fee_structure",
   FEE_COMMUNICATIONS: "vea_fee_structure_communications",
@@ -1703,6 +1712,16 @@ export async function listStudentRecords(): Promise<StudentRecord[]> {
   return deepClone(students)
 }
 
+export async function getStudentRecordById(id: string): Promise<StudentRecord | null> {
+  if (!id) {
+    return null
+  }
+
+  const students = ensureCollection<StudentRecord>(STORAGE_KEYS.STUDENTS, createDefaultStudents)
+  const record = students.find((student) => student.id === id)
+  return record ? deepClone(record) : null
+}
+
 export async function createStudentRecord(payload: CreateStudentPayload): Promise<StudentRecord> {
   const students = ensureCollection<StudentRecord>(STORAGE_KEYS.STUDENTS, createDefaultStudents)
 
@@ -2151,6 +2170,289 @@ export async function getStudentMarks(
   })
 
   return deepClone(filtered)
+}
+
+export async function listAllStudentMarks(): Promise<StudentMarksRecord[]> {
+  const marks = ensureCollection<StudentMarksRecord>(STORAGE_KEYS.MARKS, defaultEmptyCollection)
+  return deepClone(marks)
+}
+
+type AttendanceStatus = AttendanceLogRecord["status"]
+
+function sortAttendanceLogs(logs: AttendanceLogRecord[]): AttendanceLogRecord[] {
+  return [...logs].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt))
+}
+
+async function ensureAttendanceHistory(student: StudentRecord): Promise<AttendanceLogRecord[]> {
+  const logs = ensureCollection<AttendanceLogRecord>(STORAGE_KEYS.ATTENDANCE_LOGS, defaultEmptyCollection)
+  const existing = logs.filter((log) => log.studentId === student.id)
+
+  if (existing.length > 0) {
+    return sortAttendanceLogs(existing)
+  }
+
+  const totalDays = Number(student.attendance?.total ?? 0)
+  const presentDays = Number(student.attendance?.present ?? 0)
+
+  if (!Number.isFinite(totalDays) || totalDays <= 0) {
+    return []
+  }
+
+  const entriesToGenerate = Math.max(1, Math.min(totalDays, 30))
+  const presentTarget = Math.max(
+    0,
+    Math.min(entriesToGenerate, Math.round((presentDays / Math.max(totalDays, 1)) * entriesToGenerate)),
+  )
+  const lateTarget = Math.min(presentTarget, Math.max(Math.round(entriesToGenerate * 0.1), presentTarget > 0 ? 1 : 0))
+  const regularPresentTarget = Math.max(presentTarget - lateTarget, 0)
+  const absentTarget = Math.max(entriesToGenerate - presentTarget, 0)
+
+  const pool: AttendanceStatus[] = []
+  for (let index = 0; index < regularPresentTarget; index += 1) {
+    pool.push("present")
+  }
+  for (let index = 0; index < lateTarget; index += 1) {
+    pool.push("late")
+  }
+  for (let index = 0; index < absentTarget; index += 1) {
+    pool.push("absent")
+  }
+
+  while (pool.length < entriesToGenerate) {
+    pool.push("present")
+  }
+
+  const distributed: AttendanceStatus[] = []
+  let cursor = 0
+  const step = 3
+  const poolCopy = [...pool]
+  while (poolCopy.length > 0) {
+    const index = poolCopy.length === 1 ? 0 : cursor % poolCopy.length
+    distributed.push(poolCopy.splice(index, 1)[0])
+    cursor += step
+  }
+
+  const generated: AttendanceLogRecord[] = distributed.map((status, index) => {
+    const date = new Date()
+    date.setDate(date.getDate() - index)
+    const isoDate = date.toISOString()
+    return {
+      id: generateId("attendance"),
+      studentId: student.id,
+      date: isoDate.split("T")[0],
+      status,
+      recordedBy: null,
+      createdAt: isoDate,
+      updatedAt: isoDate,
+    }
+  })
+
+  const combined = [...logs, ...generated]
+  persistCollection(STORAGE_KEYS.ATTENDANCE_LOGS, combined)
+  return sortAttendanceLogs(generated)
+}
+
+export interface ParentDashboardAcademicSubjectSummary {
+  name: string
+  score: number
+  grade: string
+  position: number | null
+  totalStudents: number
+}
+
+export interface ParentDashboardAcademicSummary {
+  subjects: ParentDashboardAcademicSubjectSummary[]
+  overallAverage: number
+  overallGrade: string
+  classPosition: number
+  totalStudents: number
+}
+
+export interface ParentDashboardAttendanceSummary {
+  totalDays: number
+  presentDays: number
+  absentDays: number
+  lateArrivals: number
+  attendancePercentage: number
+  recentAttendance: Array<{ date: string; status: AttendanceStatus }>
+}
+
+export interface ParentDashboardSnapshot {
+  student: {
+    id: string
+    name: string
+    class: string
+    section: string
+    admissionNumber: string
+    dateOfBirth: string
+    address: string
+    phone: string
+    email: string
+    status: "active" | "inactive"
+    avatar?: string | null
+  }
+  academic: ParentDashboardAcademicSummary
+  attendance: ParentDashboardAttendanceSummary
+}
+
+interface DashboardSnapshotOptions {
+  term?: string | null
+  session?: string | null
+}
+
+export async function getParentDashboardSnapshot(
+  studentId: string,
+  options: DashboardSnapshotOptions = {},
+): Promise<ParentDashboardSnapshot | null> {
+  const student = await getStudentRecordById(studentId)
+  if (!student) {
+    return null
+  }
+
+  const systemSettings = await getSystemSettingsRecord()
+  const resolvedTerm = options.term && options.term.trim().length > 0 ? options.term : systemSettings.currentTerm
+  const resolvedSession =
+    options.session && options.session.trim().length > 0
+      ? options.session
+      : systemSettings.academicYear ?? String(new Date().getFullYear())
+
+  let marks = await getStudentMarks(studentId, resolvedTerm, resolvedSession)
+  if (marks.length === 0) {
+    marks = await getStudentMarks(studentId)
+  }
+
+  const classStudents = (await listStudentRecords()).filter((record) => {
+    if (!student.class || !record.class) {
+      return false
+    }
+    return record.class.trim().toLowerCase() === student.class.trim().toLowerCase()
+  })
+
+  const marksByStudent = new Map<string, StudentMarksRecord[]>()
+  marksByStudent.set(studentId, marks)
+
+  await Promise.all(
+    classStudents
+      .map((record) => record.id)
+      .filter((id) => id !== studentId)
+      .map(async (id) => {
+        const peerMarks = await getStudentMarks(id, resolvedTerm, resolvedSession)
+        if (peerMarks.length > 0) {
+          marksByStudent.set(id, peerMarks)
+          return
+        }
+        const fallback = await getStudentMarks(id)
+        marksByStudent.set(id, fallback)
+      }),
+  )
+
+  const subjectSummaries: ParentDashboardAcademicSubjectSummary[] = marks.map((mark) => {
+    const subjectScores: Array<{ studentId: string; score: number }> = []
+
+    for (const [peerId, records] of marksByStudent.entries()) {
+      const matching = records.find((entry) => entry.subject === mark.subject)
+      if (!matching) {
+        continue
+      }
+
+      const peerScore = Number.isFinite(matching.percentage)
+        ? Number(matching.percentage)
+        : Number(matching.grandTotal ?? 0)
+      subjectScores.push({ studentId: peerId, score: peerScore })
+    }
+
+    subjectScores.sort((a, b) => b.score - a.score)
+    const rankIndex = subjectScores.findIndex((entry) => entry.studentId === studentId)
+    const subjectScore = Number.isFinite(mark.percentage)
+      ? Number(mark.percentage)
+      : Number(mark.grandTotal ?? 0)
+    const normalizedScore = Number.isFinite(subjectScore) ? Number(subjectScore.toFixed(1)) : 0
+    const grade = mark.grade ?? deriveGradeFromScore(normalizedScore)
+
+    return {
+      name: mark.subject,
+      score: normalizedScore,
+      grade,
+      position: rankIndex === -1 ? null : rankIndex + 1,
+      totalStudents: subjectScores.length || Math.max(classStudents.length, 1),
+    }
+  })
+
+  const overallAverage =
+    subjectSummaries.length > 0
+      ? Number(
+          (
+            subjectSummaries.reduce((total, subject) => total + subject.score, 0) / subjectSummaries.length
+          ).toFixed(1),
+        )
+      : 0
+  const overallGrade = deriveGradeFromScore(overallAverage)
+
+  const classAverages = Array.from(marksByStudent.entries()).map(([peerId, records]) => {
+    if (!records || records.length === 0) {
+      return { studentId: peerId, average: 0 }
+    }
+
+    const average =
+      records.reduce((total, record) => {
+        const value = Number.isFinite(record.percentage)
+          ? Number(record.percentage)
+          : Number(record.grandTotal ?? 0)
+        return total + (Number.isFinite(value) ? value : 0)
+      }, 0) / records.length
+
+    return { studentId: peerId, average: Number(Number.isFinite(average) ? average.toFixed(1) : 0) }
+  })
+
+  classAverages.sort((a, b) => b.average - a.average)
+  const classPositionIndex = classAverages.findIndex((entry) => entry.studentId === studentId)
+  const totalStudents = Math.max(classStudents.length || classAverages.length || 1, 1)
+  const classPosition = classPositionIndex === -1 ? totalStudents : classPositionIndex + 1
+
+  const attendanceLogs = await ensureAttendanceHistory(student)
+  const sortedAttendance = sortAttendanceLogs(attendanceLogs)
+  const recentAttendance = sortedAttendance
+    .slice(-10)
+    .reverse()
+    .map((entry) => ({ date: entry.date, status: entry.status }))
+
+  const presentDays = Number(student.attendance?.present ?? 0)
+  const totalDays = Number(student.attendance?.total ?? 0)
+  const absentDays = Math.max(totalDays - presentDays, 0)
+  const attendancePercentage =
+    totalDays > 0 ? Number(((presentDays / totalDays) * 100).toFixed(1)) : 0
+  const lateArrivals = attendanceLogs.filter((entry) => entry.status === "late").length
+
+  return {
+    student: {
+      id: student.id,
+      name: student.name,
+      class: student.class,
+      section: student.section,
+      admissionNumber: student.admissionNumber,
+      dateOfBirth: student.dateOfBirth,
+      address: student.address,
+      phone: student.phone,
+      email: student.email,
+      status: student.status,
+      avatar: student.photoUrl ?? null,
+    },
+    academic: {
+      subjects: subjectSummaries,
+      overallAverage,
+      overallGrade,
+      classPosition,
+      totalStudents,
+    },
+    attendance: {
+      totalDays,
+      presentDays,
+      absentDays,
+      lateArrivals,
+      attendancePercentage,
+      recentAttendance,
+    },
+  }
 }
 
 // Payment helpers
