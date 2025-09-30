@@ -4,6 +4,7 @@ import {
   createStudentRecord,
   deleteStudentRecord,
   listStudentRecords,
+  getStudentRecordById,
   updateStudentRecord,
 } from "@/lib/database"
 import { sanitizeInput } from "@/lib/security"
@@ -27,8 +28,14 @@ function normalizePaymentStatus(status: unknown): "paid" | "pending" | "overdue"
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
+    const studentId = searchParams.get("id")
     const classFilter = searchParams.get("class")
     const statusFilter = searchParams.get("status")
+
+    if (studentId) {
+      const record = await getStudentRecordById(studentId)
+      return NextResponse.json({ students: record ? [record] : [] })
+    }
 
     let students = await listStudentRecords()
 

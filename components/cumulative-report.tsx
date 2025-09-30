@@ -333,6 +333,7 @@ interface CumulativeReportTriggerProps {
   className: string
   session?: string
   isReleased?: boolean
+  onUnavailable?: (reason?: string) => void
 }
 
 export function CumulativeReportTrigger({
@@ -342,6 +343,7 @@ export function CumulativeReportTrigger({
   className,
   session,
   isReleased,
+  onUnavailable,
 }: CumulativeReportTriggerProps) {
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
@@ -396,10 +398,14 @@ export function CumulativeReportTrigger({
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (nextOpen && isReleased === false) {
-      toast({
-        title: "Cumulative summary not published",
-        description: "The administrator hasn't released the cumulative report yet. Please check back later.",
-      })
+      if (onUnavailable) {
+        onUnavailable("The administrator hasn't released the cumulative report yet. Please check back later.")
+      } else {
+        toast({
+          title: "Cumulative summary not published",
+          description: "The administrator hasn't released the cumulative report yet. Please check back later.",
+        })
+      }
       return
     }
     setOpen(nextOpen)
