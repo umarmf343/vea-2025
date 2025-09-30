@@ -3336,16 +3336,36 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 </div>
 
                 <Tabs defaultValue="academic" className="w-full">
-                  <TabsList className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                    <TabsTrigger value="academic">Academic Marks</TabsTrigger>
-                    <TabsTrigger value="behavioral">Behavioral Assessment</TabsTrigger>
-                    <TabsTrigger value="attendance">Attendance & Position</TabsTrigger>
-                    <TabsTrigger value="remarks">Class Teacher Remarks</TabsTrigger>
+                  <TabsList className="flex w-full flex-col gap-3 bg-transparent p-0 sm:grid sm:grid-cols-2 sm:gap-2 sm:bg-muted sm:p-[3px] xl:grid-cols-4">
+                    <TabsTrigger
+                      value="academic"
+                      className="h-auto w-full justify-start whitespace-normal rounded-md px-4 py-3 text-left text-sm leading-snug sm:h-[calc(100%-1px)]"
+                    >
+                      Academic Marks
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="behavioral"
+                      className="h-auto w-full justify-start whitespace-normal rounded-md px-4 py-3 text-left text-sm leading-snug sm:h-[calc(100%-1px)]"
+                    >
+                      Behavioral Assessment
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="attendance"
+                      className="h-auto w-full justify-start whitespace-normal rounded-md px-4 py-3 text-left text-sm leading-snug sm:h-[calc(100%-1px)]"
+                    >
+                      Attendance &amp; Position
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="remarks"
+                      className="h-auto w-full justify-start whitespace-normal rounded-md px-4 py-3 text-left text-sm leading-snug sm:h-[calc(100%-1px)]"
+                    >
+                      Class Teacher Remarks
+                    </TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="academic" className="space-y-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs leading-relaxed text-gray-500">
                         Grade Management weighting: 1st CA {CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1}, 2nd CA {CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2},
                         note/assignment {CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment}, exam {CONTINUOUS_ASSESSMENT_MAXIMUMS.exam}.
                       </p>
