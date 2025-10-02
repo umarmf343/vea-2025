@@ -2231,6 +2231,12 @@ function ParentDashboard({ user }: { user: User }) {
                           "The cumulative performance summary hasn't been shared to your dashboard yet. Please reach out to the school for an update.",
                       })
                     }
+                    onAvailable={(message) =>
+                      setAccessNotice({
+                        title: "Cumulative report ready",
+                        description: message,
+                      })
+                    }
                   >
                     <Button
                       className={cn(
