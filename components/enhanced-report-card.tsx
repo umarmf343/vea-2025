@@ -794,7 +794,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl py-6 print:w-[210mm] print:max-w-none print:py-0">
+    <div className="mx-auto w-full max-w-[210mm] px-4 py-6 print:w-[210mm] print:max-w-none print:px-0 print:py-0">
       <div className="mb-4 flex justify-end gap-2 px-2 print:hidden">
         <Button
           onClick={handlePrint}
@@ -818,8 +818,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         ref={containerRef}
         className="report-card-print-area border-[3px] border-[#2d5016] bg-white text-[13px] leading-tight text-slate-800 shadow-xl print:shadow-none"
       >
-        <div className="bg-white">
-          <div className="m-3 flex flex-col items-center gap-4 border-2 border-[#2d5016] bg-[#e8f5e8] px-4 py-4 md:flex-row md:items-start">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col items-center gap-4 border-2 border-[#2d5016] bg-[#e8f5e8] px-4 py-4 md:flex-row md:items-start">
             <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-[#2d5016] bg-[#2d5016] text-center text-[10px] font-semibold uppercase leading-tight text-white">
               {reportCardData.branding.logo ? (
                 <img
@@ -883,7 +883,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             </div>
           </div>
 
-          <div className="mx-3 border border-[#2d5016] text-[12px]">
+          <div className="border border-[#2d5016] text-[12px]">
             {infoRows.map((row, rowIndex) => (
               <div
                 key={`info-row-${rowIndex}`}
@@ -906,7 +906,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             ))}
           </div>
 
-          <div className="mx-3 mt-3 grid gap-3 text-white sm:grid-cols-2">
+          <div className="grid gap-3 text-white sm:grid-cols-2">
             {summaryBoxes.map((box) => (
               <div
                 key={box.label}
@@ -918,7 +918,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             ))}
           </div>
 
-          <div className="mx-3 mt-3 overflow-x-auto">
+          <div className="overflow-x-auto">
             <table className="w-full border border-[#2d5016] text-[12px] text-slate-800">
               <thead>
                 <tr className="bg-[#f0f0f0] text-[#2d5016]">
@@ -1016,11 +1016,11 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             </table>
           </div>
 
-          <div className="mx-3 mt-3 bg-[#d4a574] py-2 text-center text-[14px] font-bold uppercase tracking-wide text-white">
+          <div className="bg-[#d4a574] py-2 text-center text-[14px] font-bold uppercase tracking-wide text-white">
             Remarks, Affective and Psychomotor Domains
           </div>
 
-          <div className="mx-3 -mt-[1px] border border-[#2d5016]">
+          <div className="-mt-[1px] border border-[#2d5016]">
             <div className="flex flex-col lg:flex-row">
               <div className="flex flex-1 flex-col">
                 {commentEntries.map((entry, index) => (
@@ -1124,7 +1124,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             </div>
           </div>
 
-          <div className="mx-3 -mt-[1px] border border-[#2d5016] border-t-0 px-3 py-2 text-[10px] text-gray-600">
+          <div className="-mt-[1px] border border-[#2d5016] border-t-0 px-3 py-2 text-[10px] text-gray-600">
             <p className="font-semibold text-[#2d5016]">Grading</p>
             <p>
               75 - 100 A (Excellent) | 60 - 74 B (V.Good) | 50 - 59 C (Good) | 40 - 49 D (Pass) | 0 - 39 F (Poor)
