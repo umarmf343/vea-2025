@@ -334,6 +334,7 @@ interface CumulativeReportTriggerProps {
   session?: string
   isReleased?: boolean
   onUnavailable?: (reason?: string) => void
+  onAvailable?: (message: string) => void
 }
 
 export function CumulativeReportTrigger({
@@ -344,6 +345,7 @@ export function CumulativeReportTrigger({
   session,
   isReleased,
   onUnavailable,
+  onAvailable,
 }: CumulativeReportTriggerProps) {
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
@@ -369,8 +371,33 @@ export function CumulativeReportTrigger({
 
       if (!report) {
         setData(null)
+
+        const unavailableMessage =
+          "No cumulative report is available for this student yet. Please check back later."
+
+        if (onUnavailable) {
+          onUnavailable(unavailableMessage)
+        } else {
+          toast({
+            title: "Cumulative report unavailable",
+            description: unavailableMessage,
+          })
+        }
+
+        return
+      }
+
+      setData({ ...report, className })
+
+      const availableMessage = "The cumulative performance summary is available for viewing."
+
+      if (onAvailable) {
+        onAvailable(availableMessage)
       } else {
-        setData({ ...report, className })
+        toast({
+          title: "Cumulative report ready",
+          description: availableMessage,
+        })
       }
     } catch (err) {
       console.error("Failed to fetch cumulative report", err)
@@ -383,7 +410,7 @@ export function CumulativeReportTrigger({
     } finally {
       setIsLoading(false)
     }
-  }, [studentId, session, className, toast])
+  }, [studentId, session, className, toast, onUnavailable, onAvailable])
 
   useEffect(() => {
     if (!open) {
