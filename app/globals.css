@@ -316,7 +316,31 @@
   @apply border-blue-200 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 rounded-lg px-4 py-3 transition-all duration-200;
 }
 
+/* Report card layout */
+.report-card-print-area {
+  width: min(100%, 210mm);
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 12mm;
+  box-sizing: border-box;
+  background-color: white;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .report-card-print-area {
+    padding: 10mm 6mm;
+  }
+}
+
 /* Print styles for report cards */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
 @media print {
   body * {
     visibility: hidden;
@@ -328,15 +352,13 @@
   }
 
   .report-card-print-area {
-    position: fixed;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
+    position: static;
+    transform: none;
     margin: 0 !important;
-    background-color: white !important;
-    padding: 0 !important;
-    width: auto !important;
-    max-width: 210mm !important;
+    padding: 12mm !important;
+    width: 210mm !important;
+    min-height: 297mm !important;
+    box-sizing: border-box !important;
   }
 
   .print\:hidden {
