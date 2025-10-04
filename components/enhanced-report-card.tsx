@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Download, PrinterIcon as Print } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -8,7 +8,6 @@ import { useBranding } from "@/hooks/use-branding"
 import { useToast } from "@/hooks/use-toast"
 import {
   AFFECTIVE_TRAITS,
-  BEHAVIORAL_RATING_COLUMNS,
   PSYCHOMOTOR_SKILLS,
   normalizeBehavioralRating,
 } from "@/lib/report-card-constants"
@@ -245,6 +244,14 @@ const PRIMARY_PSYCHOMOTOR_SKILLS = [
   { key: "handwriting", label: "Handwriting" },
 ] as const
 
+const DOMAIN_COLUMNS = [
+  { key: "excel", label: "Excel." },
+  { key: "vgood", label: "V.Good" },
+  { key: "good", label: "Good" },
+  { key: "fair", label: "Poor" },
+  { key: "poor", label: "V.Poor" },
+] as const
+
 const normalizeSubjects = (subjects: Array<Record<string, unknown>> | undefined): SubjectScore[] => {
   if (!Array.isArray(subjects)) {
     return []
@@ -456,17 +463,9 @@ const normalizeReportCard = (
   }
 }
 
-const getBehavioralMark = (ratings: Record<string, string>, traitKey: string, target: string) => {
+const isBehavioralRatingMatch = (ratings: Record<string, string>, traitKey: string, target: string) => {
   const rating = normalizeBehavioralRating(ratings[traitKey])
-  if (!rating) {
-    return ""
-  }
-
-  if (rating === target) {
-    return "●"
-  }
-
-  return ""
+  return rating === target
 }
 
 export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
@@ -521,8 +520,6 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     }
   }, [data, branding])
 
-  const domainColumns = useMemo(() => [...BEHAVIORAL_RATING_COLUMNS], [])
-
   const affectiveTraits = useMemo(() => {
     if (!reportCardData) {
       return [] as Array<{ key: string; label: string }>
@@ -575,133 +572,84 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     return traits
   }, [reportCardData])
 
-  const infoRows = useMemo(() => {
-    if (!reportCardData) {
-      return [] as Array<
-        Array<{
-          label: string
-          value: string
-        }>
-      >
+  const formatScoreValue = (value: number | undefined) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return "—"
     }
 
-    const { student, attendance, termInfo } = reportCardData
+    const rounded = Math.round(value * 10) / 10
+    if (Number.isInteger(rounded)) {
+      return `${rounded}`
+    }
+
+    return rounded.toFixed(1)
+  }
+
+  const formatTotalValue = (value: number | undefined) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return "—"
+    }
+
+    const rounded = Math.round(value * 10) / 10
+    const formatter = new Intl.NumberFormat(undefined, {
+      minimumFractionDigits: Number.isInteger(rounded) ? 0 : 1,
+      maximumFractionDigits: Number.isInteger(rounded) ? 0 : 1,
+    })
+
+    return formatter.format(rounded)
+  }
+
+  const formatAverageValue = (value: number | undefined) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return "—"
+    }
+
+    return `${(Math.round(value * 10) / 10).toFixed(1)}%`
+  }
+
+  const studentInfoRows = useMemo(() => {
+    if (!reportCardData) {
+      return [] as Array<Array<{ label: string; value: string }>>
+    }
+
+    const { student, summary } = reportCardData
 
     return [
       [
-        { label: "Student Name", value: student.name },
-        { label: "Admission No", value: student.admissionNumber },
-        { label: "Class", value: student.class },
-        { label: "Term", value: student.term },
+        { label: "NAME OF STUDENT:", value: student.name || "—" },
+        { label: "ADMISSION NUMBER:", value: student.admissionNumber || "—" },
+        { label: "CLASS:", value: student.class || "—" },
       ],
       [
-        { label: "Session", value: student.session },
-        { label: "Position", value: student.positionLabel || "—" },
         {
-          label: "No. in Class",
+          label: "NUMBER IN CLASS:",
           value: student.numberInClass ? String(student.numberInClass) : "—",
         },
-        { label: "Status", value: student.statusLabel || "—" },
-      ],
-      [
+        { label: "TERM:", value: student.term || "—" },
+        { label: "SESSION:", value: student.session || "—" },
         {
-          label: "Date of Birth",
-          value: formatDateDisplay(student.dateOfBirth) ?? "—",
-        },
-        {
-          label: "Age",
-          value: student.age ? `${student.age} yrs` : "—",
-        },
-        { label: "Gender", value: student.gender ?? "—" },
-        {
-          label: "Attendance",
-          value: `${attendance.present} / ${attendance.total} (${attendance.percentage}%)`,
+          label: "GRADE:",
+          value: summary.grade ? summary.grade.toUpperCase() : "—",
         },
       ],
       [
         {
-          label: "Vacation Ends",
-          value: formatDateDisplay(termInfo.vacationEnds) ?? "—",
+          label: "TOTAL MARKS OBTAINABLE:",
+          value: formatTotalValue(summary.totalMarksObtainable),
         },
         {
-          label: "Next Term Begins",
-          value: formatDateDisplay(termInfo.nextTermBegins) ?? "—",
+          label: "TOTAL MARKS OBTAINED",
+          value: formatTotalValue(summary.totalMarksObtained),
         },
         {
-          label: "Next Term Fees",
-          value: termInfo.nextTermFees ?? "—",
+          label: "AVERAGE:",
+          value: formatAverageValue(summary.averageScore),
         },
         {
-          label: "Outstanding Fees",
-          value: termInfo.feesBalance ?? "—",
+          label: "POSITION:",
+          value: summary.positionLabel || "—",
         },
       ],
-    ]
-  }, [reportCardData])
-
-  const summaryBoxes = useMemo(() => {
-    if (!reportCardData) {
-      return [] as Array<{ label: string; value: string }>
-    }
-
-    const { summary } = reportCardData
-
-    return [
-      {
-        label: "Total Obtainable",
-        value: summary.totalMarksObtainable.toLocaleString(),
-      },
-      {
-        label: "Total Obtained",
-        value: summary.totalMarksObtained.toLocaleString(),
-      },
-      {
-        label: "Average Score",
-        value: `${summary.averageScore.toFixed(2)}%`,
-      },
-      {
-        label: "Position",
-        value:
-          summary.positionLabel && summary.positionLabel.trim().length > 0
-            ? summary.positionLabel
-            : "—",
-      },
-      {
-        label: "Class Average",
-        value:
-          typeof summary.classAverage === "number"
-            ? `${summary.classAverage.toFixed(2)}%`
-            : "—",
-      },
-      {
-        label: "Class Size",
-        value: summary.numberOfStudents ? String(summary.numberOfStudents) : "—",
-      },
-    ]
-  }, [reportCardData])
-
-  const commentEntries = useMemo(() => {
-    if (!reportCardData) {
-      return [] as Array<{ label: string; value: string }>
-    }
-
-    return [
-      {
-        label: "Class Teacher's Remarks",
-        value: reportCardData.remarks.classTeacher || "________________",
-      },
-      {
-        label: "Head Teacher's Comment",
-        value: reportCardData.remarks.headTeacher || "________________",
-      },
-      {
-        label: "Vacation Ends",
-        value: formatDateDisplay(reportCardData.termInfo.vacationEnds) ?? "________________",
-      },
-      {
-        label: "Resumption Date",
-        value: formatDateDisplay(reportCardData.termInfo.nextTermBegins) ?? "________________",
-      },
     ]
   }, [reportCardData])
 
@@ -750,7 +698,16 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         backgroundColor: "#ffffff",
         pixelRatio: 2,
         cacheBust: true,
-        filter: (element) => !element?.classList?.contains("print:hidden"),
+        filter: (element) => {
+          if (!element?.classList) {
+            return true
+          }
+
+          return (
+            !element.classList.contains("print:hidden") &&
+            !element.classList.contains("no-export")
+          )
+        },
       })
 
       const doc =
@@ -793,12 +750,23 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     )
   }
 
+  const classTeacherRemark =
+    reportCardData.remarks.classTeacher?.trim().length
+      ? reportCardData.remarks.classTeacher
+      : "________________"
+  const headTeacherRemark =
+    reportCardData.remarks.headTeacher?.trim().length
+      ? reportCardData.remarks.headTeacher
+      : "________________"
+  const vacationDate = formatDateDisplay(reportCardData.termInfo.vacationEnds) ?? "________________"
+  const resumptionDate = formatDateDisplay(reportCardData.termInfo.nextTermBegins) ?? "________________"
+
   return (
-    <div className="mx-auto w-full max-w-[210mm] px-4 py-6 print:w-[210mm] print:max-w-none print:px-0 print:py-0">
-      <div className="mb-4 flex justify-end gap-2 px-2 print:hidden">
+    <div className="victory-report-card-wrapper">
+      <div className="victory-report-card-actions no-export">
         <Button
           onClick={handlePrint}
-          className="bg-[#2d5016] px-3 text-xs font-medium text-white shadow-md hover:bg-[#244012]"
+          className="bg-[#2e7d32] px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-[#256028]"
         >
           <Print className="mr-2 h-4 w-4" />
           Print
@@ -806,7 +774,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         <Button
           onClick={handleDownload}
           variant="outline"
-          className="border-[#2d5016] px-3 text-xs font-medium text-[#2d5016] hover:bg-[#2d5016] hover:text-white"
+          className="border-[#2e7d32] px-4 py-2 text-sm font-medium text-[#2e7d32] hover:bg-[#2e7d32] hover:text-white"
           disabled={isDownloading}
         >
           <Download className="mr-2 h-4 w-4" />
@@ -814,324 +782,575 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         </Button>
       </div>
 
-      <div
-        ref={containerRef}
-        className="report-card-print-area border-[3px] border-[#2d5016] bg-white text-[13px] leading-tight text-slate-800 shadow-xl print:shadow-none"
-      >
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col items-center gap-4 border-2 border-[#2d5016] bg-[#e8f5e8] px-4 py-4 md:flex-row md:items-start">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-[#2d5016] bg-[#2d5016] text-center text-[10px] font-semibold uppercase leading-tight text-white">
+      <div className="victory-report-card">
+        <div className="report-container" ref={containerRef}>
+          <div className="header-wrapper">
+            <div className="logo">
               {reportCardData.branding.logo ? (
-                <img
-                  src={reportCardData.branding.logo}
-                  alt={`${reportCardData.branding.schoolName} logo`}
-                  className="h-16 w-16 rounded-full object-cover"
-                />
+                <img src={reportCardData.branding.logo} alt="School logo" />
               ) : (
-                <span>
-                  School
-                  <br />
-                  Logo
-                </span>
+                <span>SCHOOL LOGO</span>
               )}
             </div>
-            <div className="flex-1 text-center md:text-left">
-              <h1 className="text-2xl font-bold uppercase tracking-wide text-[#2d5016]">
-                {reportCardData.branding.schoolName}
-              </h1>
+            <div className="school-info">
+              <p className="school-name">{reportCardData.branding.schoolName}</p>
               {reportCardData.branding.address ? (
-                <p className="text-sm font-medium text-slate-700">{reportCardData.branding.address}</p>
+                <p className="school-address">{reportCardData.branding.address}</p>
               ) : null}
               {(reportCardData.branding.educationZone || reportCardData.branding.councilArea) && (
-                <p className="text-xs font-semibold uppercase tracking-wide text-[#2d5016]/80">
-                  {reportCardData.branding.educationZone}
-                  {reportCardData.branding.educationZone && reportCardData.branding.councilArea ? " • " : ""}
-                  {reportCardData.branding.councilArea}
+                <p className="school-address">
+                  {[reportCardData.branding.educationZone, reportCardData.branding.councilArea]
+                    .filter(Boolean)
+                    .join(", ")}
                 </p>
               )}
               {(reportCardData.branding.contactPhone || reportCardData.branding.contactEmail) && (
-                <div className="mt-1 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-xs text-slate-600 md:justify-start">
-                  {reportCardData.branding.contactPhone ? (
-                    <span>
-                      <span className="font-semibold text-[#2d5016]">Tel:</span> {reportCardData.branding.contactPhone}
-                    </span>
-                  ) : null}
-                  {reportCardData.branding.contactEmail ? (
-                    <span>
-                      <span className="font-semibold text-[#2d5016]">Email:</span> {reportCardData.branding.contactEmail}
-                    </span>
-                  ) : null}
-                </div>
+                <p className="school-address">
+                  {[reportCardData.branding.contactPhone, reportCardData.branding.contactEmail]
+                    .filter(Boolean)
+                    .join(" • ")}
+                </p>
               )}
-              <p className="mt-3 text-base font-semibold uppercase tracking-wide text-[#2d5016]">
-                Terminal Report Sheet
-              </p>
-              {reportCardData.branding.defaultRemark ? (
-                <p className="mt-1 text-sm italic text-[#2d5016]/80">{reportCardData.branding.defaultRemark}</p>
-              ) : null}
             </div>
-            <div className="flex h-24 w-20 items-center justify-center border border-[#2d5016] bg-[#f5f5f5]">
+            <div className="photo-placeholder">
               {studentPhoto ? (
-                <img
-                  src={studentPhoto}
-                  alt={`${reportCardData.student.name} passport`}
-                  className="h-full w-full object-cover"
-                />
+                <img src={studentPhoto} alt={`${reportCardData.student.name} passport`} />
               ) : (
-                <span className="text-[11px] font-medium text-slate-500">Photo</span>
+                <span>PHOTO</span>
               )}
             </div>
           </div>
 
-          <div className="border border-[#2d5016] text-[12px]">
-            {infoRows.map((row, rowIndex) => (
+          <div className="report-title">TERMINAL REPORT SHEET</div>
+
+          <div className="student-info">
+            {studentInfoRows.map((row, rowIndex) => (
               <div
-                key={`info-row-${rowIndex}`}
-                className={`flex flex-wrap ${rowIndex !== infoRows.length - 1 ? "border-b border-[#2d5016]" : ""}`}
+                key={`student-row-${rowIndex}`}
+                className={`student-row ${rowIndex === studentInfoRows.length - 1 ? "last" : ""}`}
               >
                 {row.map((cell) => (
-                  <div
-                    key={cell.label}
-                    className={`w-full px-3 py-2 sm:flex sm:items-center ${row.length === 4 ? "sm:w-1/4" : "sm:w-1/3"}`}
-                  >
-                    <span className="text-[12px] font-semibold uppercase tracking-wide text-[#2d5016]">
-                      {cell.label}
-                    </span>
-                    <span className="mt-1 block text-[12px] font-semibold text-[#2d5016] sm:ml-2 sm:mt-0">
-                      {cell.value || "—"}
-                    </span>
-                  </div>
+                  <Fragment key={`${rowIndex}-${cell.label}`}>
+                    <div className="info-label">{cell.label}</div>
+                    <div className="info-value">{cell.value}</div>
+                  </Fragment>
                 ))}
               </div>
             ))}
           </div>
 
-          <div className="grid gap-3 text-white sm:grid-cols-2">
-            {summaryBoxes.map((box) => (
-              <div
-                key={box.label}
-                className="rounded-md border border-[#2d5016] bg-gradient-to-br from-[#2d5016] to-[#6fa233] px-4 py-3 text-center shadow-sm"
-              >
-                <p className="text-[12px] font-semibold uppercase tracking-wide">{box.label}</p>
-                <p className="mt-2 text-lg font-bold">{box.value}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full border border-[#2d5016] text-[12px] text-slate-800">
-              <thead>
-                <tr className="bg-[#f0f0f0] text-[#2d5016]">
-                  <th className="border border-[#2d5016] px-2 py-2 text-left font-semibold uppercase">Subject</th>
-                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
-                    1st C.A
-                    <br />
-                    10
-                  </th>
-                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
-                    2nd C.A
-                    <br />
-                    10
-                  </th>
-                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
-                    Note/
-                    <br />
-                    Assign
-                    <br />
-                    20
-                  </th>
-                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
-                    Total
-                    <br />
-                    40
-                  </th>
-                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
-                    Exam
-                    <br />
-                    60
-                  </th>
-                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
-                    Total
-                    <br />
-                    100
-                  </th>
-                  <th className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase">
-                    Subject
-                    <br />
-                    Position
-                  </th>
-                  <th className="border border-[#2d5016] px-2 py-2 text-left font-semibold uppercase">
-                    Teacher&apos;s
-                    <br />
-                    Remarks
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {reportCardData.subjects.length > 0 ? (
-                  reportCardData.subjects.map((subject, index) => (
-                    <tr key={`${subject.name}-${index}`} className={index % 2 === 0 ? "bg-white" : "bg-[#f9f9f9]"}>
-                      <td className="border border-[#2d5016] px-3 py-2 font-semibold uppercase text-[#2d5016]">
-                        {subject.name}
-                      </td>
-                      <td className="border border-[#2d5016] px-2 py-2 text-center">{subject.ca1}</td>
-                      <td className="border border-[#2d5016] px-2 py-2 text-center">{subject.ca2}</td>
-                      <td className="border border-[#2d5016] px-2 py-2 text-center">{subject.assignment}</td>
-                      <td className="border border-[#2d5016] px-2 py-2 text-center font-semibold text-[#2d5016]">
-                        {subject.caTotal}
-                      </td>
-                      <td className="border border-[#2d5016] px-2 py-2 text-center">{subject.exam}</td>
-                      <td className="border border-[#2d5016] px-2 py-2 text-center font-semibold text-[#2d5016]">
-                        {subject.total}
-                      </td>
-                      <td className="border border-[#2d5016] px-2 py-2 text-center font-semibold text-[#2d5016]">
-                        {subject.position ?? "—"}
-                      </td>
-                      <td className="border border-[#2d5016] px-2 py-2 text-left text-[11px] text-slate-700">
-                        {subject.remarks || "—"}
-                      </td>
+          <table className="grades-table">
+            <thead>
+              <tr>
+                <th>Subject</th>
+                <th>
+                  1<sup>st</sup>
+                  <br />
+                  C.A
+                  <br />
+                  10
+                </th>
+                <th>
+                  2<sup>nd</sup>
+                  <br />
+                  C.A
+                  <br />
+                  10
+                </th>
+                <th>NOTE/<br />ASSIGNMENT (20)</th>
+                <th>TOTAL<br />40</th>
+                <th>EXAM<br />60</th>
+                <th>TOTAL<br />100</th>
+                <th>Subject<br />Position</th>
+                <th>Teacher&apos;s<br />Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reportCardData.subjects.length > 0 ? (
+                <>
+                  {reportCardData.subjects.map((subject, index) => (
+                    <tr key={`${subject.name}-${index}`}>
+                      <td className="subject-name">{subject.name}</td>
+                      <td>{formatScoreValue(subject.ca1)}</td>
+                      <td>{formatScoreValue(subject.ca2)}</td>
+                      <td>{formatScoreValue(subject.assignment)}</td>
+                      <td>{formatScoreValue(subject.caTotal)}</td>
+                      <td>{formatScoreValue(subject.exam)}</td>
+                      <td>{formatScoreValue(subject.total)}</td>
+                      <td>{subject.position ?? ""}</td>
+                      <td>{subject.remarks || ""}</td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={9} className="border border-[#2d5016] px-3 py-4 text-center text-sm text-slate-600">
-                      No subject scores have been recorded for this student.
-                    </td>
+                  ))}
+                  <tr className="total-row">
+                    <td className="total-label">TOTAL</td>
+                    <td>{formatTotalValue(totalsRow?.ca1)}</td>
+                    <td>{formatTotalValue(totalsRow?.ca2)}</td>
+                    <td>{formatTotalValue(totalsRow?.assignment)}</td>
+                    <td>{formatTotalValue(totalsRow?.caTotal)}</td>
+                    <td>{formatTotalValue(totalsRow?.exam)}</td>
+                    <td>{formatTotalValue(totalsRow?.total)}</td>
+                    <td></td>
+                    <td></td>
                   </tr>
-                )}
-              </tbody>
-              <tfoot>
-                <tr className="bg-[#f0f0f0] font-semibold text-[#2d5016]">
-                  <td className="border border-[#2d5016] px-3 py-2 text-left uppercase">Total</td>
-                  <td className="border border-[#2d5016] px-2 py-2 text-center">{totalsRow?.ca1 ?? "—"}</td>
-                  <td className="border border-[#2d5016] px-2 py-2 text-center">{totalsRow?.ca2 ?? "—"}</td>
-                  <td className="border border-[#2d5016] px-2 py-2 text-center">{totalsRow?.assignment ?? "—"}</td>
-                  <td className="border border-[#2d5016] px-2 py-2 text-center">{totalsRow?.caTotal ?? "—"}</td>
-                  <td className="border border-[#2d5016] px-2 py-2 text-center">{totalsRow?.exam ?? "—"}</td>
-                  <td className="border border-[#2d5016] px-2 py-2 text-center">{totalsRow?.total ?? "—"}</td>
-                  <td className="border border-[#2d5016] px-2 py-2 text-center">—</td>
-                  <td className="border border-[#2d5016] px-2 py-2">&nbsp;</td>
+                </>
+              ) : (
+                <tr>
+                  <td colSpan={9}>No subject scores have been recorded for this student.</td>
                 </tr>
-              </tfoot>
-            </table>
-          </div>
+              )}
+            </tbody>
+          </table>
 
-          <div className="bg-[#d4a574] py-2 text-center text-[14px] font-bold uppercase tracking-wide text-white">
-            Remarks, Affective and Psychomotor Domains
-          </div>
-
-          <div className="-mt-[1px] border border-[#2d5016]">
-            <div className="flex flex-col lg:flex-row">
-              <div className="flex flex-1 flex-col">
-                {commentEntries.map((entry, index) => (
-                  <div
-                    key={entry.label}
-                    className={`px-4 py-3 ${index !== commentEntries.length - 1 ? "border-b border-[#2d5016]" : ""}`}
-                  >
-                    <p className="text-[13px] font-bold uppercase tracking-wide text-[#2d5016]">{entry.label}</p>
-                    <p className="mt-1 text-[13px] font-semibold text-[#2d5016]">{entry.value}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="flex flex-1 flex-col border-t border-[#2d5016] lg:border-t-0 lg:border-l">
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-[11px] text-slate-800">
-                    <thead>
-                      <tr className="bg-[#f0f0f0] text-[#2d5016]">
-                        <th className="border border-[#2d5016] px-3 py-2 text-left font-semibold uppercase">
-                          Affective Domain
-                        </th>
-                        {domainColumns.map((column) => (
-                          <th
-                            key={`affective-header-${column.key}`}
-                            className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase"
-                          >
-                            {column.label}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {affectiveTraits.map((trait, index) => (
-                        <tr key={trait.key} className={index % 2 === 0 ? "bg-white" : "bg-[#f9f9f9]"}>
-                          <td className="border border-[#2d5016] px-3 py-2 font-semibold text-[#2d5016]">{trait.label}</td>
-                          {domainColumns.map((column) => (
-                            <td
-                              key={`${trait.key}-${column.key}`}
-                              className="border border-[#2d5016] px-2 py-2 text-center text-[#2d5016]"
-                            >
-                              {getBehavioralMark(reportCardData.affectiveDomain, trait.key, column.key)}
+          <div className="remark-section">
+            <div className="teacher-remarks">
+              <strong>Class Teacher Remarks:</strong>
+              <br />
+              {classTeacherRemark}
+              <hr />
+              <em>{headTeacherRemark}</em>
+            </div>
+            <div className="domain-block">
+              <strong>AFFECTIVE DOMAIN</strong>
+              <table className="af-domain-table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    {DOMAIN_COLUMNS.map((column) => (
+                      <th key={`affective-header-${column.key}`}>{column.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {affectiveTraits.length > 0 ? (
+                    affectiveTraits.map((trait) => (
+                      <tr key={trait.key}>
+                        <td>{trait.label}</td>
+                        {DOMAIN_COLUMNS.map((column) => {
+                          const match = isBehavioralRatingMatch(
+                            reportCardData.affectiveDomain,
+                            trait.key,
+                            column.key,
+                          )
+                          return (
+                            <td key={`${trait.key}-${column.key}`} className={match ? "tick" : ""}>
+                              {match ? "✓" : ""}
                             </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="overflow-x-auto border-t border-[#2d5016]">
-                  <table className="w-full border-collapse text-[11px] text-slate-800">
-                    <thead>
-                      <tr className="bg-[#f0f0f0] text-[#2d5016]">
-                        <th className="border border-[#2d5016] px-3 py-2 text-left font-semibold uppercase">
-                          Psychomotor Domain
-                        </th>
-                        {domainColumns.map((column) => (
-                          <th
-                            key={`psychomotor-header-${column.key}`}
-                            className="border border-[#2d5016] px-2 py-2 text-center font-semibold uppercase"
-                          >
-                            {column.label}
-                          </th>
-                        ))}
+                          )
+                        })}
                       </tr>
-                    </thead>
-                    <tbody>
-                      {psychomotorSkills.map((skill, index) => (
-                        <tr key={skill.key} className={index % 2 === 0 ? "bg-white" : "bg-[#f9f9f9]"}>
-                          <td className="border border-[#2d5016] px-3 py-2 font-semibold text-[#2d5016]">{skill.label}</td>
-                          {domainColumns.map((column) => (
-                            <td
-                              key={`${skill.key}-${column.key}`}
-                              className="border border-[#2d5016] px-2 py-2 text-center text-[#2d5016]"
-                            >
-                              {getBehavioralMark(reportCardData.psychomotorDomain, skill.key, column.key)}
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={DOMAIN_COLUMNS.length + 1}>No affective records available.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+              <strong>PSYCHOMOTOR DOMAIN</strong>
+              <table className="af-domain-table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    {DOMAIN_COLUMNS.map((column) => (
+                      <th key={`psychomotor-header-${column.key}`}>{column.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {psychomotorSkills.length > 0 ? (
+                    psychomotorSkills.map((skill) => (
+                      <tr key={skill.key}>
+                        <td>{skill.label}</td>
+                        {DOMAIN_COLUMNS.map((column) => {
+                          const match = isBehavioralRatingMatch(
+                            reportCardData.psychomotorDomain,
+                            skill.key,
+                            column.key,
+                          )
+                          return (
+                            <td key={`${skill.key}-${column.key}`} className={match ? "tick" : ""}>
+                              {match ? "✓" : ""}
                             </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="border-t border-[#2d5016] px-4 py-3 text-[12px] text-[#2d5016]">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-semibold">Teacher&apos;s Signature:</span>
-                    <span className="min-w-[140px] border-b border-dashed border-[#2d5016]">&nbsp;</span>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <span className="font-semibold">Headmaster&apos;s Signature:</span>
-                    {reportCardData.branding.signature ? (
-                      <img
-                        src={reportCardData.branding.signature}
-                        alt={`${reportCardData.branding.headmasterName} signature`}
-                        className="h-10 w-36 object-contain"
-                      />
-                    ) : (
-                      <span className="min-w-[140px] border-b border-dashed border-[#2d5016]">&nbsp;</span>
-                    )}
-                  </div>
-                </div>
-              </div>
+                          )
+                        })}
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={DOMAIN_COLUMNS.length + 1}>No psychomotor records available.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
-          <div className="-mt-[1px] border border-[#2d5016] border-t-0 px-3 py-2 text-[10px] text-gray-600">
-            <p className="font-semibold text-[#2d5016]">Grading</p>
-            <p>
-              75 - 100 A (Excellent) | 60 - 74 B (V.Good) | 50 - 59 C (Good) | 40 - 49 D (Pass) | 0 - 39 F (Poor)
-            </p>
+          <div className="vacation-box">
+            <div>
+              <strong>Vacation Date:</strong> {vacationDate}
+            </div>
+            <div>
+              <strong>Resumption Date:</strong> {resumptionDate}
+            </div>
+          </div>
+
+          <div className="signatures-box">
+            <span>
+              Teacher&apos;s Signature:
+              <div className="signature-line" />
+            </span>
+            <span>
+              Headmaster&apos;s Signature:
+              <div className="signature-line" />
+            </span>
+          </div>
+
+          <div className="grading-key-container">
+            <div className="grading-key">
+              GRADING:
+              {" "}
+              75–100 A (Excellent) |
+              {" "}
+              60–74 B (V.Good) |
+              {" "}
+              50–59 C (Good) |
+              {" "}
+              40–49 D (Fair) |
+              {" "}
+              30–39 E (Poor) |
+              {" "}
+              0–29 F (FAIL)
+            </div>
           </div>
         </div>
       </div>
+
+      <style jsx global>{`
+        .victory-report-card-wrapper {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 24px 16px;
+          background-color: transparent;
+        }
+
+        .victory-report-card-actions {
+          width: 100%;
+          max-width: 980px;
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .victory-report-card {
+          width: 100%;
+          display: flex;
+          justify-content: center;
+        }
+
+        .victory-report-card .report-container {
+          width: 980px;
+          margin: 0 auto;
+          border: 3px solid #2e7d32;
+          background-color: #fff;
+          color: #333;
+          font-family: "Times New Roman", serif;
+        }
+
+        .victory-report-card .report-container * {
+          box-sizing: border-box;
+        }
+
+        .header-wrapper {
+          display: flex;
+          align-items: center;
+          border-bottom: 3px solid #2e7d32;
+          padding: 10px 15px;
+          background-color: #fff;
+        }
+
+        .logo {
+          width: 120px;
+          height: 120px;
+          border: 2px solid #2e7d32;
+          background-color: #f9f9f9;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 10px;
+          color: #999;
+          margin-right: 15px;
+        }
+
+        .logo img {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+        }
+
+        .school-info {
+          flex-grow: 1;
+          background-color: #e0e0e0;
+          border: 2px solid #2e7d32;
+          border-radius: 6px;
+          padding: 8px 12px;
+          text-align: center;
+        }
+
+        .school-name {
+          font-size: 32px;
+          font-weight: bold;
+          color: #2e7d32;
+          margin: 0 0 4px 0;
+          line-height: 1.1;
+        }
+
+        .school-address {
+          font-size: 14px;
+          color: #333;
+          margin: 0;
+          line-height: 1.3;
+        }
+
+        .school-info .school-address + .school-address {
+          margin-top: 4px;
+        }
+
+        .photo-placeholder {
+          width: 100px;
+          height: 120px;
+          border: 2px solid #2e7d32;
+          background-color: #f5f5f5;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-left: 15px;
+          font-size: 10px;
+          color: #999;
+        }
+
+        .photo-placeholder img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .report-title {
+          text-align: center;
+          font-size: 18px;
+          font-weight: bold;
+          color: #2e7d32;
+          padding: 8px 0;
+          margin: 0;
+          border-top: 1px solid #2e7d32;
+          border-bottom: 1px solid #2e7d32;
+        }
+
+        .student-info {
+          border: 2px solid #2e7d32;
+          margin: 10px 15px;
+          font-size: 14px;
+        }
+
+        .student-row {
+          display: flex;
+          flex-wrap: wrap;
+          border-bottom: 1px solid #2e7d32;
+        }
+
+        .student-row.last {
+          border-bottom: none;
+        }
+
+        .info-label {
+          font-weight: bold;
+          color: #2e7d32;
+          padding: 6px 8px;
+          border-right: 1px solid #2e7d32;
+          width: 20%;
+          background-color: #fafafa;
+        }
+
+        .info-value {
+          padding: 6px 8px;
+          width: 80%;
+          font-size: 16px;
+          font-weight: bold;
+          background-color: #fff;
+        }
+
+        .grades-table {
+          width: calc(100% - 30px);
+          margin: 10px 15px 30px;
+          border-collapse: collapse;
+          font-size: 14px;
+          table-layout: fixed;
+        }
+
+        .grades-table th,
+        .grades-table td {
+          border: 1px solid #2e7d32;
+          padding: 6px 4px;
+          text-align: center;
+          vertical-align: middle;
+          font-size: 13px;
+          line-height: 1.3;
+        }
+
+        .grades-table th {
+          background-color: #2e7d32;
+          color: #fff;
+          font-weight: bold;
+        }
+
+        .grades-table td {
+          background-color: #fff;
+        }
+
+        .subject-name {
+          text-align: left !important;
+          padding-left: 8px;
+          font-weight: bold;
+          color: #2e7d32;
+        }
+
+        .total-row {
+          font-weight: bold;
+          background-color: #f9f9f9;
+        }
+
+        .total-label {
+          text-align: left !important;
+          padding-left: 8px;
+        }
+
+        .remark-section {
+          margin-top: 1em;
+          display: flex;
+          gap: 20px;
+          flex-wrap: wrap;
+          padding: 0 15px 10px;
+        }
+
+        .teacher-remarks,
+        .domain-block {
+          border: 1.5px solid #27613d;
+          background: #fafdff;
+          border-radius: 4px;
+          padding: 12px 16px;
+          font-size: 1em;
+          flex: 1 1 220px;
+        }
+
+        .domain-block {
+          flex: 1 1 180px;
+        }
+
+        .vacation-box,
+        .signatures-box {
+          display: flex;
+          gap: 36px;
+          margin-top: 8px;
+          font-size: 1em;
+          align-items: center;
+          padding: 0 15px 10px;
+        }
+
+        .signature-line {
+          border-bottom: 1px dotted #27613d;
+          width: 110px;
+          height: 2px;
+          margin-top: 12px;
+          display: inline-block;
+        }
+
+        .signatures-box span {
+          display: flex;
+          flex-direction: column;
+          font-weight: 600;
+          color: #27613d;
+        }
+
+        .af-domain-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 6px;
+        }
+
+        .af-domain-table th,
+        .af-domain-table td {
+          padding: 4px;
+          text-align: center;
+          font-size: 0.95em;
+          border: 1px solid #b2c7b9;
+        }
+
+        .af-domain-table th {
+          background: #fbd54a;
+          color: #27613d;
+        }
+
+        .af-domain-table td {
+          background: #fafdff;
+        }
+
+        .af-domain-table td:first-child {
+          text-align: left;
+          font-weight: 600;
+          color: #27613d;
+        }
+
+        .af-domain-table .tick {
+          color: #05762b;
+          font-size: 1.2em;
+          font-weight: bold;
+        }
+
+        hr {
+          border: 0;
+          border-top: 1px solid #27613d;
+          margin: 8px 0;
+        }
+
+        .grading-key-container {
+          padding: 0 15px 15px;
+          text-align: center;
+          font-size: 13px;
+          color: #27613d;
+          font-weight: bold;
+        }
+
+        .grading-key {
+          display: inline-block;
+          background: #f9f9f9;
+          border: 1px solid #27613d;
+          padding: 6px 12px;
+          border-radius: 4px;
+          margin-top: 5px;
+        }
+
+        @media print {
+          .victory-report-card-wrapper {
+            padding: 0;
+          }
+
+          .victory-report-card-actions {
+            display: none !important;
+          }
+
+          .victory-report-card {
+            width: 100%;
+          }
+
+          .victory-report-card .report-container {
+            width: 100%;
+            max-width: none;
+            border-width: 3px;
+          }
+        }
+      `}</style>
     </div>
   )
 }
