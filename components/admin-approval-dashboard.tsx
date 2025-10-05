@@ -1006,7 +1006,7 @@ export function AdminApprovalDashboard() {
               <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Preparing preview…
             </div>
           ) : previewData ? (
-            <div className="max-h-[70vh] overflow-y-auto rounded-lg border bg-white p-2 shadow-sm">
+            <div className="max-h-[70vh] overflow-y-auto">
               <EnhancedReportCard data={previewData} />
             </div>
           ) : (

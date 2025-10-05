@@ -112,7 +112,11 @@ export function ReportCardViewer({
       </div>
 
       {/* Report Card Display */}
-      {reportCardData ? <EnhancedReportCard data={reportCardData} /> : null}
+      {reportCardData ? (
+        <div className="w-full overflow-x-auto">
+          <EnhancedReportCard data={reportCardData} />
+        </div>
+      ) : null}
     </div>
   )
 }
