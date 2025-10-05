@@ -386,6 +386,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [workflowRecords, setWorkflowRecords] = useState<ReportCardWorkflowRecord[]>([])
   const [isSubmittingForApproval, setIsSubmittingForApproval] = useState(false)
   const [isSavingDraft, setIsSavingDraft] = useState(false)
+  const [isSavingAcademicRecords, setIsSavingAcademicRecords] = useState(false)
   const [isCancellingSubmission, setIsCancellingSubmission] = useState(false)
   const [additionalData, setAdditionalData] = useState(() => ({
     affectiveDomain: {
@@ -3007,6 +3008,47 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
   }
 
+  const handleSaveAcademicRecords = async () => {
+    try {
+      if (!selectedClass || !selectedSubject) {
+        toast({
+          variant: "destructive",
+          title: "Selection required",
+          description: "Choose both a class and subject before saving academic entries.",
+        })
+        return
+      }
+
+      if (!marksData.length) {
+        toast({
+          variant: "destructive",
+          title: "No marks recorded",
+          description: "Add student scores before saving academic entries.",
+        })
+        return
+      }
+
+      setIsSavingAcademicRecords(true)
+      await Promise.resolve(persistAcademicMarksToStorage())
+
+      toast({
+        title: "Academic entries saved",
+        description: "Marks and subject remarks have been stored for the selected students.",
+      })
+
+      loadAdditionalData()
+    } catch (error) {
+      logger.error("Error saving academic entries", { error })
+      toast({
+        variant: "destructive",
+        title: "Failed to save academic entries",
+        description: "Please try again or contact the administrator if the issue persists.",
+      })
+    } finally {
+      setIsSavingAcademicRecords(false)
+    }
+  }
+
   const handleSaveBehavioralAssessment = async () => {
     try {
       if (!selectedClass || !selectedSubject) {
@@ -3589,18 +3631,37 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                         Grade Management weighting: 1st CA {CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1}, 2nd CA {CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2},
                         note/assignment {CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment}, exam {CONTINUOUS_ASSESSMENT_MAXIMUMS.exam}.
                       </p>
-                      <Button
-                        className="bg-[#2d682d] hover:bg-[#245224] text-white"
-                        onClick={handleSyncAcademicMarks}
-                        disabled={isSyncingGrades}
-                      >
-                        {isSyncingGrades ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Save className="mr-2 h-4 w-4" />
-                        )}
-                        Sync to Exam Management
-                      </Button>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <Button
+                          variant="outline"
+                          className="border-[#2d682d] text-[#2d682d] hover:bg-[#2d682d]/10"
+                          onClick={handleSaveAcademicRecords}
+                          disabled={
+                            isSavingAcademicRecords ||
+                            currentStatus.status === "pending" ||
+                            currentStatus.status === "approved"
+                          }
+                        >
+                          {isSavingAcademicRecords ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Save className="mr-2 h-4 w-4" />
+                          )}
+                          Save Academic Entries
+                        </Button>
+                        <Button
+                          className="bg-[#2d682d] hover:bg-[#245224] text-white"
+                          onClick={handleSyncAcademicMarks}
+                          disabled={isSyncingGrades}
+                        >
+                          {isSyncingGrades ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Save className="mr-2 h-4 w-4" />
+                          )}
+                          Sync to Exam Management
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="rounded-xl border border-gray-200 bg-white shadow-sm">

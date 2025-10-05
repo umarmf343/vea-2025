@@ -754,10 +754,13 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     reportCardData.remarks.classTeacher?.trim().length
       ? reportCardData.remarks.classTeacher
       : "________________"
+  const defaultHeadRemark = reportCardData.branding?.defaultRemark?.trim() ?? ""
   const headTeacherRemark =
     reportCardData.remarks.headTeacher?.trim().length
       ? reportCardData.remarks.headTeacher
-      : "________________"
+      : defaultHeadRemark.length > 0
+        ? defaultHeadRemark
+        : "________________"
   const vacationDate = formatDateDisplay(reportCardData.termInfo.vacationEnds) ?? "________________"
   const resumptionDate = formatDateDisplay(reportCardData.termInfo.nextTermBegins) ?? "________________"
 
@@ -907,6 +910,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
               <br />
               {classTeacherRemark}
               <hr />
+              <strong>Head Master&apos;s Remark:</strong>
+              <br />
               <em>{headTeacherRemark}</em>
             </div>
             <div className="domain-block">
