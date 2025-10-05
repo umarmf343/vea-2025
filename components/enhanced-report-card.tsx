@@ -14,6 +14,7 @@ import {
 import type { RawReportCardData } from "@/lib/report-card-types"
 import { deriveGradeFromScore } from "@/lib/grade-utils"
 import { getHtmlToImage } from "@/lib/html-to-image-loader"
+import { getJsPdf } from "@/lib/jspdf-loader"
 import { safeStorage } from "@/lib/safe-storage"
 
 interface SubjectScore {
@@ -476,6 +477,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   )
   const [studentPhoto, setStudentPhoto] = useState<string>("")
   const [isDownloading, setIsDownloading] = useState(false)
+  const [isPrinting, setIsPrinting] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -626,145 +628,133 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     )
   }, [reportCardData])
 
-  const handlePrint = useCallback(() => {
-    const browserWindow = resolveBrowserWindow()
+  const preparePdfDocument = useCallback(async () => {
     const target = containerRef.current
+    if (!target || !reportCardData) {
+      return null
+    }
 
-    if (!browserWindow || !target) {
+    const { toPng } = await getHtmlToImage()
+    const dataUrl = await toPng(target, {
+      backgroundColor: "#ffffff",
+      pixelRatio: 2,
+      cacheBust: true,
+      filter: (element) => {
+        if (!element?.classList) {
+          return true
+        }
+
+        return (
+          !element.classList.contains("print:hidden") &&
+          !element.classList.contains("no-export")
+        )
+      },
+    })
+
+    const dimensions = target.getBoundingClientRect()
+    const orientation = dimensions.width >= dimensions.height ? "landscape" : "portrait"
+    const { jsPDF } = await getJsPdf()
+    const pdf = new jsPDF({
+      orientation,
+      unit: "px",
+      format: [dimensions.width, dimensions.height],
+    })
+
+    const pdfWidth = pdf.internal.pageSize.getWidth()
+    const pdfHeight = pdf.internal.pageSize.getHeight()
+    const imageProps = pdf.getImageProperties(dataUrl)
+    const imageRatio = imageProps.width / imageProps.height
+
+    let renderWidth = pdfWidth
+    let renderHeight = renderWidth / imageRatio
+
+    if (renderHeight > pdfHeight) {
+      renderHeight = pdfHeight
+      renderWidth = renderHeight * imageRatio
+    }
+
+    const offsetX = (pdfWidth - renderWidth) / 2
+    const offsetY = (pdfHeight - renderHeight) / 2
+
+    pdf.addImage(dataUrl, "PNG", offsetX, offsetY, renderWidth, renderHeight, undefined, "FAST")
+
+    return pdf
+  }, [reportCardData])
+
+  const handlePrint = useCallback(async () => {
+    if (isPrinting) {
       return
     }
 
-    const printWindow = browserWindow.open("", "_blank", "noopener,noreferrer,width=900,height=1200")
-    if (!printWindow) {
-      if (typeof browserWindow.print === "function") {
-        browserWindow.print()
+    try {
+      setIsPrinting(true)
+      const pdf = await preparePdfDocument()
+      if (!pdf) {
+        return
       }
-      return
+
+      const pdfOutput = pdf.output("blob")
+      if (!(pdfOutput instanceof Blob)) {
+        throw new Error("Unable to generate PDF blob")
+      }
+
+      const browserWindow = resolveBrowserWindow()
+      if (!browserWindow) {
+        throw new Error("Browser window context is not available")
+      }
+
+      const blobUrl = browserWindow.URL.createObjectURL(pdfOutput)
+      const openedWindow = browserWindow.open(blobUrl, "_blank", "noopener,noreferrer")
+
+      if (!openedWindow) {
+        browserWindow.location.href = blobUrl
+      } else {
+        openedWindow.focus()
+      }
+
+      browserWindow.setTimeout(() => {
+        browserWindow.URL.revokeObjectURL(blobUrl)
+      }, 60000)
+    } catch (error) {
+      console.error("Failed to prepare report card PDF", error)
+      toast({
+        title: "Print failed",
+        description: "Unable to prepare the report card PDF. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsPrinting(false)
     }
-
-    const sourceDocument = browserWindow.document
-    const collectedStyles = Array.from(
-      sourceDocument.querySelectorAll<HTMLLinkElement | HTMLStyleElement>("link[rel='stylesheet'], style"),
-    )
-      .map((node) => node.outerHTML)
-      .join("\n")
-
-    const printableHtml = `<!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>${reportCardData?.student.name ?? "Report Card"} – Report Card</title>
-          ${collectedStyles}
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 10mm;
-            }
-
-            body {
-              margin: 0;
-              padding: 0;
-              background: #ffffff;
-            }
-
-            .victory-report-card-wrapper {
-              padding: 0 !important;
-            }
-
-            .victory-report-card {
-              width: 100% !important;
-              display: flex;
-              justify-content: center;
-            }
-
-            .victory-report-card .report-container {
-              margin: 0 auto !important;
-              width: 100% !important;
-              max-width: 980px;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="victory-report-card-wrapper">
-            <div class="victory-report-card">
-              ${target.outerHTML}
-            </div>
-          </div>
-        </body>
-      </html>`
-
-    printWindow.document.open()
-    printWindow.document.write(printableHtml)
-    printWindow.document.close()
-
-    const handlePrintLoad = () => {
-      printWindow.focus()
-      printWindow.print()
-      printWindow.close()
-    }
-
-    if (printWindow.document.readyState === "complete") {
-      handlePrintLoad()
-    } else {
-      printWindow.addEventListener("load", handlePrintLoad, { once: true })
-    }
-  }, [reportCardData?.student.name])
+  }, [isPrinting, preparePdfDocument, toast])
 
   const handleDownload = useCallback(async () => {
     if (isDownloading) {
       return
     }
 
-    const target = containerRef.current
-    if (!target || !reportCardData) {
-      return
-    }
-
     try {
       setIsDownloading(true)
-      const { toPng } = await getHtmlToImage()
-      const dataUrl = await toPng(target, {
-        backgroundColor: "#ffffff",
-        pixelRatio: 2,
-        cacheBust: true,
-        filter: (element) => {
-          if (!element?.classList) {
-            return true
-          }
-
-          return (
-            !element.classList.contains("print:hidden") &&
-            !element.classList.contains("no-export")
-          )
-        },
-      })
-
-      const doc =
-        typeof globalThis === "undefined" || !("document" in globalThis)
-          ? null
-          : (globalThis as Window & typeof globalThis).document
-      if (!doc) {
-        throw new Error("Document context is not available")
+      const pdf = await preparePdfDocument()
+      if (!pdf || !reportCardData) {
+        return
       }
 
-      const link = doc.createElement("a")
       const filename = sanitizeFileName(
         `${reportCardData.student.name}-${reportCardData.student.term}-${reportCardData.student.session}`,
       )
-      link.download = `${filename}.png`
-      link.href = dataUrl
-      link.click()
+
+      pdf.save(`${filename}.pdf`)
     } catch (error) {
-      console.error("Failed to export report card as image", error)
+      console.error("Failed to export report card as PDF", error)
       toast({
         title: "Download failed",
-        description: "Unable to prepare the report card image. Please try again.",
+        description: "Unable to prepare the report card PDF. Please try again.",
         variant: "destructive",
       })
     } finally {
       setIsDownloading(false)
     }
-  }, [isDownloading, reportCardData, toast])
+  }, [isDownloading, preparePdfDocument, reportCardData, toast])
 
   if (!reportCardData) {
     return (
@@ -831,9 +821,10 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         <Button
           onClick={handlePrint}
           className="bg-[#2e7d32] px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-[#256028]"
+          disabled={isPrinting}
         >
           <Print className="mr-2 h-4 w-4" />
-          Print
+          {isPrinting ? "Preparing..." : "Print"}
         </Button>
         <Button
           onClick={handleDownload}
