@@ -1017,6 +1017,18 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const defaultMarksTemplateRef = useRef<MarksRecord[]>(
     DEFAULT_MARKS_DATA.map((record) => ({ ...record })),
   )
+  const suppressMarksRefreshRef = useRef(false)
+
+  const emitMarksStoreUpdate = useCallback(
+    (payload: unknown) => {
+      suppressMarksRefreshRef.current = true
+      dbManager.triggerEvent(STUDENT_MARKS_STORAGE_KEY, payload)
+      setTimeout(() => {
+        suppressMarksRefreshRef.current = false
+      }, 0)
+    },
+    [],
+  )
 
   const calculatePositionsAndAverages = useCallback((data: MarksRecord[]) => {
     // Sort by grand total descending to determine positions
@@ -1378,7 +1390,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       })
 
       safeStorage.setItem(STUDENT_MARKS_STORAGE_KEY, JSON.stringify(updatedStore))
-      dbManager.triggerEvent(STUDENT_MARKS_STORAGE_KEY, updatedStore)
+      emitMarksStoreUpdate(updatedStore)
       safeStorage.setItem("reportCards", JSON.stringify(reportCards))
     } catch (error) {
       logger.error("Failed to persist academic marks", { error })
@@ -1389,6 +1401,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     additionalData.studentStatus,
     additionalData.termInfo.numberInClass,
     buildStudentPreview,
+    emitMarksStoreUpdate,
     marksData,
     normalizedTermLabel,
     selectedClass,
@@ -1975,11 +1988,17 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
 
     const handleMarksUpdate = () => {
+      if (suppressMarksRefreshRef.current) {
+        return
+      }
       refreshMarksForSelection()
     }
 
     const handleStorage = (event: StorageEvent) => {
       if (event.key === STUDENT_MARKS_STORAGE_KEY) {
+        if (suppressMarksRefreshRef.current) {
+          return
+        }
         refreshMarksForSelection()
       }
     }
@@ -2870,7 +2889,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
         safeStorage.setItem(STUDENT_MARKS_STORAGE_KEY, JSON.stringify(store))
         safeStorage.setItem("reportCards", JSON.stringify(reportCards))
-        dbManager.triggerEvent(STUDENT_MARKS_STORAGE_KEY, store)
+        emitMarksStoreUpdate(store)
         dbManager.triggerEvent("reportCardUpdated", updatedReportCard)
       } catch (error) {
         logger.error("Failed to sync assignment grade to report card", { error })
@@ -2880,6 +2899,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       additionalData.classTeacherRemarks,
       additionalData.studentStatus,
       additionalData.termInfo.numberInClass,
+      emitMarksStoreUpdate,
       normalizedTermLabel,
       selectedClass,
       selectedSession,
