@@ -104,7 +104,7 @@ import {
 
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
-const CLASS_TEACHER_REMARK_OPTIONS = ["Excellent", "V. Good", "Good", "Poor"] as const
+const SUBJECT_REMARK_OPTIONS = ["Excellent", "V. Good", "Good", "Poor"] as const
 
 const getBrowserRuntime = (): BrowserRuntime | null => {
   if (typeof globalThis === "undefined") {
@@ -166,13 +166,6 @@ type TermInfoState = {
   nextTermFees: string
   feesBalance: string
 }
-
-const STUDENT_STATUS_OPTIONS = [
-  { value: "promoted", label: "Promoted" },
-  { value: "promoted-on-trial", label: "Promoted on Trial" },
-  { value: "repeat", label: "Repeat Class" },
-  { value: "withdrawn", label: "Withdrawn" },
-] as const
 
 const createEmptyTermInfo = (): TermInfoState => ({
   numberInClass: "",
@@ -344,11 +337,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [isSavingDraft, setIsSavingDraft] = useState(false)
   const [isCancellingSubmission, setIsCancellingSubmission] = useState(false)
   const [additionalData, setAdditionalData] = useState(() => ({
-    classPositions: {
-      student_john_doe: 1,
-      student_alice_smith: 2,
-      student_mike_johnson: 3,
-    } as Record<string, number>,
     affectiveDomain: {
       student_john_doe: {
         neatness: "Excellent",
@@ -1270,7 +1258,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           total: student.grandTotal,
           grade: student.grade,
           remark: student.teacherRemark,
-          position: additionalData.classPositions[student.studentId] ?? student.position ?? null,
+          position: student.position ?? previousRecord?.subjects?.[selectedSubject]?.position ?? null,
           totalObtainable: student.totalMarksObtainable,
           totalObtained: student.totalMarksObtained,
           averageScore: student.averageScore,
@@ -1314,8 +1302,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           status: additionalData.studentStatus[student.studentId] ?? previousRecord?.status,
           numberInClass: additionalData.termInfo.numberInClass || previousRecord?.numberInClass,
           overallAverage: overallAverage ?? previousRecord?.overallAverage,
-          overallPosition:
-            additionalData.classPositions[student.studentId] ?? previousRecord?.overallPosition ?? null,
+          overallPosition: student.position ?? previousRecord?.overallPosition ?? null,
         }
 
         updatedStore[studentKey] = mergedRecord
@@ -1389,7 +1376,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       logger.error("Failed to persist academic marks", { error })
     }
   }, [
-    additionalData.classPositions,
     additionalData.classTeacherRemarks,
     additionalData.attendance,
     additionalData.studentStatus,
@@ -1732,7 +1718,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     const remarksStore = parseStorageRecord("classTeacherRemarks")
 
     const nextState = {
-      classPositions: {} as Record<string, number>,
       affectiveDomain: {} as BehavioralDomainState,
       psychomotorDomain: {} as BehavioralDomainState,
       classTeacherRemarks: {} as Record<string, string>,
@@ -1785,7 +1770,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
       const attendanceRecord = attendanceStore[studentKey] as
         | {
-            position?: number | string | null
             attendance?: { present?: number; absent?: number; total?: number }
             status?: string
             termInfo?: Partial<TermInfoState>
@@ -1793,16 +1777,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         | undefined
 
       if (attendanceRecord) {
-        const positionValue = attendanceRecord.position
-        if (typeof positionValue === "number" && Number.isFinite(positionValue)) {
-          nextState.classPositions[student.studentId] = positionValue
-        } else if (typeof positionValue === "string" && positionValue.trim().length > 0) {
-          const parsedPosition = Number.parseInt(positionValue, 10)
-          if (!Number.isNaN(parsedPosition)) {
-            nextState.classPositions[student.studentId] = parsedPosition
-          }
-        }
-
         if (attendanceRecord.attendance && typeof attendanceRecord.attendance === "object") {
           const { present = 0, absent = 0, total = 0 } = attendanceRecord.attendance
           nextState.attendance[student.studentId] = {
@@ -1839,7 +1813,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
     setAdditionalData((prev) => ({
       ...prev,
-      classPositions: nextState.classPositions,
       affectiveDomain: nextState.affectiveDomain,
       psychomotorDomain: nextState.psychomotorDomain,
       classTeacherRemarks: nextState.classTeacherRemarks,
@@ -2645,8 +2618,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           status: additionalData.studentStatus[studentId] ?? previousRecord?.status,
           numberInClass: additionalData.termInfo.numberInClass || previousRecord?.numberInClass,
           overallAverage: overallAverage ?? previousRecord?.overallAverage,
-          overallPosition:
-            additionalData.classPositions[studentId] ?? previousRecord?.overallPosition ?? null,
+          overallPosition: previousRecord?.overallPosition ?? null,
         }
 
         store[key] = mergedRecord
@@ -2734,7 +2706,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       }
     },
     [
-      additionalData.classPositions,
       additionalData.classTeacherRemarks,
       additionalData.studentStatus,
       additionalData.termInfo.numberInClass,
@@ -2914,7 +2885,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
   }
 
-  const handleSaveAttendancePosition = async () => {
+  const handleSaveAttendanceRecords = async () => {
     try {
       if (!selectedClass || !selectedSubject) {
         toast({
@@ -2958,7 +2929,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           subject: selectedSubject,
           term: termLabel,
           session: selectedSession,
-          position: additionalData.classPositions[student.studentId] ?? null,
+          position: student.position ?? null,
           attendance: { present, absent, total },
           status: additionalData.studentStatus[student.studentId] ?? "promoted",
           termInfo: normalizedTermInfo,
@@ -2973,7 +2944,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
       toast({
         title: "Attendance saved",
-        description: "Attendance, status, and class summaries have been updated for the selected students.",
+        description: "Attendance records have been updated for the selected students.",
       })
       loadAdditionalData()
     } catch (error) {
@@ -3591,14 +3562,32 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                                   {student.grade}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="min-w-[180px]">
-                                <Input
+                              <TableCell className="min-w-[200px]">
+                                <RadioGroup
                                   value={student.teacherRemark}
-                                  onChange={(e) => handleMarksUpdate(student.studentId, "teacherRemark", e.target.value)}
-                                  className="h-9 w-full text-xs"
-                                  placeholder="Subject remark"
-                                  disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
-                                />
+                                  onValueChange={(value) => handleMarksUpdate(student.studentId, "teacherRemark", value)}
+                                  className="flex flex-wrap gap-2"
+                                >
+                                  {SUBJECT_REMARK_OPTIONS.map((option) => {
+                                    const optionId = `${student.studentId}-subject-remark-${option
+                                      .toLowerCase()
+                                      .replace(/[^a-z0-9]+/g, "-")}`
+                                    const isDisabled =
+                                      currentStatus.status === "pending" || currentStatus.status === "approved"
+
+                                    return (
+                                      <div
+                                        key={option}
+                                        className="flex items-center gap-1.5 rounded-md border border-muted bg-muted/20 px-2.5 py-1.5"
+                                      >
+                                        <RadioGroupItem value={option} id={optionId} disabled={isDisabled} />
+                                        <Label htmlFor={optionId} className="cursor-pointer text-xs font-medium">
+                                          {option}
+                                        </Label>
+                                      </div>
+                                    )
+                                  })}
+                                </RadioGroup>
                               </TableCell>
                               <TableCell className="text-center">
                                 <Button
@@ -3833,70 +3822,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                   </TabsContent>
 
                   <TabsContent value="attendance" className="space-y-4">
-                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm">Position & Status</CardTitle>
-                          <CardDescription className="text-xs">
-                            Track promotion status alongside class positions.
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          {marksData.map((student) => (
-                            <div key={student.studentId} className="mb-4 rounded-lg border p-3">
-                              <p className="font-medium text-sm mb-2">{student.studentName}</p>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div>
-                                  <Label className="text-xs">Position</Label>
-                                  <Input
-                                    type="number"
-                                    min="1"
-                                    value={additionalData.classPositions[student.studentId] || ""}
-                                    onChange={(e) =>
-                                      setAdditionalData((prev) => ({
-                                        ...prev,
-                                        classPositions: {
-                                          ...prev.classPositions,
-                                          [student.studentId]: Number.parseInt(e.target.value, 10) || 0,
-                                        },
-                                      }))
-                                    }
-                                    className="h-8 text-xs"
-                                    placeholder="1"
-                                  />
-                                </div>
-                                <div>
-                                  <Label className="text-xs">Status</Label>
-                                  <Select
-                                    value={additionalData.studentStatus[student.studentId] || ""}
-                                    onValueChange={(value) =>
-                                      setAdditionalData((prev) => ({
-                                        ...prev,
-                                        studentStatus: {
-                                          ...prev.studentStatus,
-                                          [student.studentId]: value,
-                                        },
-                                      }))
-                                    }
-                                  >
-                                    <SelectTrigger className="h-8">
-                                      <SelectValue placeholder="Select status" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {STUDENT_STATUS_OPTIONS.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                          {option.label}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </CardContent>
-                      </Card>
-
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                       <Card>
                         <CardHeader>
                           <CardTitle className="text-sm">Attendance Record</CardTitle>
@@ -4012,100 +3938,14 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                         </CardContent>
                       </Card>
 
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm">Term Summary & Fees</CardTitle>
-                          <CardDescription className="text-xs">
-                            Shared information that appears on every report card for this class.
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3">
-                            <div>
-                              <Label className="text-xs">Number in Class</Label>
-                              <Input
-                                type="number"
-                                min="0"
-                                value={additionalData.termInfo.numberInClass}
-                                onChange={(e) =>
-                                  setAdditionalData((prev) => ({
-                                    ...prev,
-                                    termInfo: { ...prev.termInfo, numberInClass: e.target.value },
-                                  }))
-                                }
-                                className="h-8 text-xs"
-                                placeholder="e.g. 25"
-                              />
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div>
-                                <Label className="text-xs">Vacation Date</Label>
-                                <Input
-                                  type="date"
-                                  value={additionalData.termInfo.vacationEnds}
-                                  onChange={(e) =>
-                                    setAdditionalData((prev) => ({
-                                      ...prev,
-                                      termInfo: { ...prev.termInfo, vacationEnds: e.target.value },
-                                    }))
-                                  }
-                                  className="h-8 text-xs"
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-xs">Next Term Begins</Label>
-                                <Input
-                                  type="date"
-                                  value={additionalData.termInfo.nextTermBegins}
-                                  onChange={(e) =>
-                                    setAdditionalData((prev) => ({
-                                      ...prev,
-                                      termInfo: { ...prev.termInfo, nextTermBegins: e.target.value },
-                                    }))
-                                  }
-                                  className="h-8 text-xs"
-                                />
-                              </div>
-                            </div>
-                            <div>
-                              <Label className="text-xs">Next Term Fees</Label>
-                              <Input
-                                value={additionalData.termInfo.nextTermFees}
-                                onChange={(e) =>
-                                  setAdditionalData((prev) => ({
-                                    ...prev,
-                                    termInfo: { ...prev.termInfo, nextTermFees: e.target.value },
-                                  }))
-                                }
-                                className="h-8 text-xs"
-                                placeholder="e.g. ₦45,000"
-                              />
-                            </div>
-                            <div>
-                              <Label className="text-xs">Outstanding Fees</Label>
-                              <Input
-                                value={additionalData.termInfo.feesBalance}
-                                onChange={(e) =>
-                                  setAdditionalData((prev) => ({
-                                    ...prev,
-                                    termInfo: { ...prev.termInfo, feesBalance: e.target.value },
-                                  }))
-                                }
-                                className="h-8 text-xs"
-                                placeholder="Optional"
-                              />
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
                     </div>
                     <div className="flex justify-end">
                       <Button
-                        onClick={handleSaveAttendancePosition}
+                        onClick={handleSaveAttendanceRecords}
                         className="bg-[#2d682d] hover:bg-[#1f4a1f] text-white"
                       >
                         <Save className="w-4 h-4 mr-2" />
-                        Save Attendance & Summary
+                        Save Attendance Records
                       </Button>
                     </div>
                   </TabsContent>
@@ -4115,43 +3955,33 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                       <CardHeader>
                         <CardTitle className="text-sm">Class Teacher General Remarks</CardTitle>
                         <CardDescription>
-                          Select a single overall rating for each student. The chosen rating will appear on their
+                          Share a brief written comment for each student. The text you enter will appear on their
                           report card.
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
                         {marksData.map((student) => (
                           <div key={student.studentId} className="mb-4 rounded-lg border p-3">
-                            <Label className="text-sm font-medium">{student.studentName}</Label>
-                            <RadioGroup
+                            <Label className="text-sm font-medium" htmlFor={`${student.studentId}-class-remark`}>
+                              {student.studentName}
+                            </Label>
+                            <Textarea
+                              id={`${student.studentId}-class-remark`}
                               value={additionalData.classTeacherRemarks[student.studentId] || ""}
-                              onValueChange={(value) =>
+                              onChange={(e) =>
                                 setAdditionalData((prev) => ({
                                   ...prev,
                                   classTeacherRemarks: {
                                     ...prev.classTeacherRemarks,
-                                    [student.studentId]: value,
+                                    [student.studentId]: e.target.value,
                                   },
                                 }))
                               }
-                              className="mt-3 grid gap-2 sm:grid-cols-2"
-                            >
-                              {CLASS_TEACHER_REMARK_OPTIONS.map((option) => {
-                                const optionId = `${student.studentId}-remark-${option.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
-
-                                return (
-                                  <div
-                                    key={option}
-                                    className="flex items-center gap-2 rounded-md border border-muted bg-muted/20 px-3 py-2"
-                                  >
-                                    <RadioGroupItem value={option} id={optionId} />
-                                    <Label htmlFor={optionId} className="text-sm font-medium">
-                                      {option}
-                                    </Label>
-                                  </div>
-                                )
-                              })}
-                            </RadioGroup>
+                              rows={2}
+                              className="mt-3 text-sm"
+                              placeholder="Enter a short remark"
+                              disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                            />
                           </div>
                         ))}
                       </CardContent>
