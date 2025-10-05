@@ -14,7 +14,7 @@ const ScrollArea = React.forwardRef<HTMLDivElement, ScrollAreaProps>(
       <div
         ref={ref}
         data-slot="scroll-area"
-        className={cn('relative overflow-hidden', className)}
+        className={cn('relative', className)}
         {...props}
       >
         <div
