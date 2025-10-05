@@ -34,6 +34,377 @@ import { mapReportCardRecordToRaw } from "@/lib/report-card-transformers"
 import type { RawReportCardData } from "@/lib/report-card-types"
 import type { ReportCardRecord } from "@/lib/database"
 
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case "&":
+        return "&amp;"
+      case "<":
+        return "&lt;"
+      case ">":
+        return "&gt;"
+      case '"':
+        return "&quot;"
+      case "'":
+        return "&#39;"
+      default:
+        return character
+    }
+  })
+
+const sanitizeFileName = (value: string) => {
+  const trimmed = value.trim().toLowerCase()
+  const sanitized = trimmed.replace(/[^a-z0-9\-_.]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "")
+  return sanitized.length > 0 ? sanitized : "report-card"
+}
+
+const formatScoreValue = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toString()
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value
+  }
+  return "—"
+}
+
+const buildReportCardHtml = (data: RawReportCardData) => {
+  const subjects = Array.isArray(data.subjects) ? (data.subjects as Array<Record<string, unknown>>) : []
+  const subjectRows = subjects
+    .map((subjectEntry, index) => {
+      const subject = subjectEntry as Record<string, unknown>
+      const subjectName =
+        typeof subject.subject === "string"
+          ? subject.subject
+          : typeof subject.name === "string"
+            ? subject.name
+            : `Subject ${index + 1}`
+      const ca1 = formatScoreValue(subject["ca1"])
+      const ca2 = formatScoreValue(subject["ca2"])
+      const assignment = formatScoreValue(subject["assignment"])
+      const caTotal = formatScoreValue(subject["caTotal"] ?? subject["ca_total"])
+      const exam = formatScoreValue(subject["exam"])
+      const total = formatScoreValue(subject["total"])
+      const grade = formatScoreValue(subject["grade"])
+      const remark =
+        typeof subject["remark"] === "string" && subject["remark"].trim().length > 0
+          ? (subject["remark"] as string)
+          : typeof subject["comment"] === "string"
+            ? (subject["comment"] as string)
+            : "—"
+
+      return `
+        <tr>
+          <td>${escapeHtml(subjectName)}</td>
+          <td>${escapeHtml(ca1)}</td>
+          <td>${escapeHtml(ca2)}</td>
+          <td>${escapeHtml(assignment)}</td>
+          <td>${escapeHtml(caTotal)}</td>
+          <td>${escapeHtml(exam)}</td>
+          <td>${escapeHtml(total)}</td>
+          <td>${escapeHtml(grade)}</td>
+          <td>${escapeHtml(remark)}</td>
+        </tr>
+      `
+    })
+    .join("")
+
+  const affectiveEntries = data.affectiveDomain ? Object.entries(data.affectiveDomain) : []
+  const affectiveRows = affectiveEntries
+    .map(([trait, value]) => `
+        <tr>
+          <td>${escapeHtml(trait)}</td>
+          <td>${escapeHtml(typeof value === "string" ? value : "—")}</td>
+        </tr>
+      `)
+    .join("")
+
+  const psychomotorEntries = data.psychomotorDomain ? Object.entries(data.psychomotorDomain) : []
+  const psychomotorRows = psychomotorEntries
+    .map(([skill, value]) => `
+        <tr>
+          <td>${escapeHtml(skill)}</td>
+          <td>${escapeHtml(typeof value === "string" ? value : "—")}</td>
+        </tr>
+      `)
+    .join("")
+
+  const formatMetadata = (value: unknown) => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value.toString()
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value
+    }
+    return "—"
+  }
+
+  const summary = data.summary ?? {}
+
+  return `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charSet="utf-8" />
+      <title>Report Card - ${escapeHtml(data.student.name)}</title>
+      <style>
+        body {
+          font-family: Arial, Helvetica, sans-serif;
+          margin: 40px;
+          background: #f5f5f5;
+          color: #1f2937;
+        }
+        h1, h2, h3 {
+          margin: 0;
+          color: #1b4332;
+        }
+        h1 {
+          font-size: 28px;
+          margin-bottom: 4px;
+        }
+        .card-container {
+          background: #ffffff;
+          border-radius: 12px;
+          border: 1px solid #d1d5db;
+          padding: 32px;
+          box-shadow: 0 10px 25px rgba(31, 41, 55, 0.08);
+        }
+        .school-name {
+          font-size: 20px;
+          font-weight: 600;
+        }
+        .muted {
+          color: #4b5563;
+          font-size: 14px;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 16px;
+          font-size: 14px;
+        }
+        table thead {
+          background: #1b4332;
+          color: #ffffff;
+        }
+        table th,
+        table td {
+          border: 1px solid #d1d5db;
+          padding: 8px 10px;
+          text-align: left;
+        }
+        .section {
+          margin-top: 32px;
+        }
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          gap: 16px;
+          margin-top: 12px;
+        }
+        .grid-item {
+          background: #f9fafb;
+          border-radius: 8px;
+          padding: 12px 16px;
+          border: 1px solid #e5e7eb;
+        }
+        .grid-item strong {
+          display: block;
+          font-size: 13px;
+          color: #1f2937;
+          margin-bottom: 4px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .grid-item span {
+          font-size: 15px;
+          color: #111827;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card-container">
+        <header>
+          <div class="school-name">${escapeHtml(data.branding?.schoolName ?? "Victory Educational Academy")}</div>
+          ${data.branding?.address ? `<div class="muted">${escapeHtml(data.branding.address)}</div>` : ""}
+          ${(data.branding?.contactPhone || data.branding?.contactEmail)
+            ? `<div class="muted">${escapeHtml(
+                [data.branding?.contactPhone, data.branding?.contactEmail]
+                  .filter((entry) => entry && entry.trim().length > 0)
+                  .join(" • "),
+              )}</div>`
+            : ""}
+        </header>
+
+        <section class="section">
+          <h2>Student Information</h2>
+          <div class="grid">
+            <div class="grid-item">
+              <strong>Name</strong>
+              <span>${escapeHtml(data.student.name)}</span>
+            </div>
+            <div class="grid-item">
+              <strong>Admission Number</strong>
+              <span>${escapeHtml(data.student.admissionNumber ?? "—")}</span>
+            </div>
+            <div class="grid-item">
+              <strong>Class</strong>
+              <span>${escapeHtml(data.student.class ?? "—")}</span>
+            </div>
+            <div class="grid-item">
+              <strong>Term</strong>
+              <span>${escapeHtml(data.student.term)}</span>
+            </div>
+            <div class="grid-item">
+              <strong>Session</strong>
+              <span>${escapeHtml(data.student.session)}</span>
+            </div>
+            <div class="grid-item">
+              <strong>Position</strong>
+              <span>${escapeHtml(formatMetadata(data.summary?.position ?? data.position))}</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>Subject Performance</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Subject</th>
+                <th>CA1</th>
+                <th>CA2</th>
+                <th>Assignment</th>
+                <th>CA Total</th>
+                <th>Exam</th>
+                <th>Total</th>
+                <th>Grade</th>
+                <th>Remark</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${subjectRows || '<tr><td colspan="9">No subject records available.</td></tr>'}
+            </tbody>
+          </table>
+        </section>
+
+        <section class="section">
+          <h2>Academic Summary</h2>
+          <div class="grid">
+            <div class="grid-item">
+              <strong>Total Obtained</strong>
+              <span>${escapeHtml(
+                formatMetadata(summary.totalMarksObtained ?? data.totalObtained ?? "—"),
+              )}</span>
+            </div>
+            <div class="grid-item">
+              <strong>Total Obtainable</strong>
+              <span>${escapeHtml(
+                formatMetadata(summary.totalMarksObtainable ?? data.totalObtainable ?? "—"),
+              )}</span>
+            </div>
+            <div class="grid-item">
+              <strong>Average Score</strong>
+              <span>${escapeHtml(
+                formatMetadata(summary.averageScore ?? data.average ?? "—"),
+              )}</span>
+            </div>
+            <div class="grid-item">
+              <strong>Class Average</strong>
+              <span>${escapeHtml(formatMetadata(summary.classAverage ?? "—"))}</span>
+            </div>
+            <div class="grid-item">
+              <strong>Highest Score</strong>
+              <span>${escapeHtml(formatMetadata(summary.highestScore ?? "—"))}</span>
+            </div>
+            <div class="grid-item">
+              <strong>Lowest Score</strong>
+              <span>${escapeHtml(formatMetadata(summary.lowestScore ?? "—"))}</span>
+            </div>
+          </div>
+        </section>
+
+        ${(affectiveRows || psychomotorRows)
+          ? `<section class="section">
+              <h2>Personal Development</h2>
+              ${affectiveRows
+                ? `<div class="grid">
+                    <div class="grid-item" style="grid-column: span 2;">
+                      <strong>Affective Traits</strong>
+                      <table>
+                        <tbody>${affectiveRows}</tbody>
+                      </table>
+                    </div>
+                  </div>`
+                : ""}
+              ${psychomotorRows
+                ? `<div class="grid" style="margin-top: 12px;">
+                    <div class="grid-item" style="grid-column: span 2;">
+                      <strong>Psychomotor Skills</strong>
+                      <table>
+                        <tbody>${psychomotorRows}</tbody>
+                      </table>
+                    </div>
+                  </div>`
+                : ""}
+            </section>`
+          : ""}
+
+        ${(data.attendance && (data.attendance.present || data.attendance.absent || data.attendance.total))
+          ? `<section class="section">
+              <h2>Attendance</h2>
+              <div class="grid">
+                <div class="grid-item">
+                  <strong>Days Present</strong>
+                  <span>${escapeHtml(formatMetadata(data.attendance?.present ?? "—"))}</span>
+                </div>
+                <div class="grid-item">
+                  <strong>Days Absent</strong>
+                  <span>${escapeHtml(formatMetadata(data.attendance?.absent ?? "—"))}</span>
+                </div>
+                <div class="grid-item">
+                  <strong>Total Days</strong>
+                  <span>${escapeHtml(formatMetadata(data.attendance?.total ?? "—"))}</span>
+                </div>
+              </div>
+            </section>`
+          : ""}
+
+        ${(data.remarks?.classTeacher || data.remarks?.headTeacher)
+          ? `<section class="section">
+              <h2>Remarks</h2>
+              <div class="grid">
+                <div class="grid-item">
+                  <strong>Class Teacher</strong>
+                  <span>${escapeHtml(data.remarks?.classTeacher ?? data.classTeacherRemarks ?? "—")}</span>
+                </div>
+                <div class="grid-item">
+                  <strong>Head Teacher</strong>
+                  <span>${escapeHtml(data.remarks?.headTeacher ?? "—")}</span>
+                </div>
+              </div>
+            </section>`
+          : ""}
+
+        ${(data.termInfo?.nextTermBegins || data.termInfo?.vacationEnds)
+          ? `<section class="section">
+              <h2>Term Schedule</h2>
+              <div class="grid">
+                <div class="grid-item">
+                  <strong>Vacation Ends</strong>
+                  <span>${escapeHtml(formatMetadata(data.termInfo?.vacationEnds ?? "—"))}</span>
+                </div>
+                <div class="grid-item">
+                  <strong>Next Term Begins</strong>
+                  <span>${escapeHtml(formatMetadata(data.termInfo?.nextTermBegins ?? "—"))}</span>
+                </div>
+              </div>
+            </section>`
+          : ""}
+      </div>
+    </body>
+  </html>`
+}
+
 interface ParentAccountRecord {
   id: string
   name: string
@@ -113,6 +484,7 @@ export function AdminApprovalDashboard() {
   const [previewMessage, setPreviewMessage] = useState<string | null>(null)
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null)
   const isPreviewLoading = previewLoadingId !== null
+  const [downloadingRecordId, setDownloadingRecordId] = useState<string | null>(null)
   const [parentAccounts, setParentAccounts] = useState<ParentAccountRecord[]>([])
   const [studentDirectory, setStudentDirectory] = useState<Map<string, StudentDirectoryRecord>>(new Map())
   const [publishDialogOpen, setPublishDialogOpen] = useState(false)
@@ -131,6 +503,41 @@ export function AdminApprovalDashboard() {
     setPreviewLoadingId(null)
   }, [])
 
+  const resolveReportCardData = useCallback((record: ReportCardWorkflowRecord): RawReportCardData | null => {
+    const stored = safeStorage.getItem("reportCards")
+    if (!stored) {
+      return null
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(stored)
+    } catch (error) {
+      throw new Error("Stored report card data is corrupted. Ask the teacher to sync again.")
+    }
+
+    if (!Array.isArray(parsed)) {
+      return null
+    }
+
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== "object") {
+        continue
+      }
+
+      const candidate = entry as ReportCardRecord
+      if (
+        candidate.studentId === record.studentId &&
+        candidate.term === record.term &&
+        candidate.session === record.session
+      ) {
+        return mapReportCardRecordToRaw(candidate)
+      }
+    }
+
+    return null
+  }, [])
+
   const handlePreview = useCallback(
     (record: ReportCardWorkflowRecord) => {
       setPreviewRecord(record)
@@ -140,28 +547,12 @@ export function AdminApprovalDashboard() {
       setPreviewMessage(null)
 
       try {
-        const stored = safeStorage.getItem("reportCards")
-        if (!stored) {
+        const data = resolveReportCardData(record)
+        if (!data) {
           setPreviewMessage("No report card data found for this student yet.")
           return
         }
-
-        const parsed = JSON.parse(stored) as ReportCardRecord[]
-        if (!Array.isArray(parsed)) {
-          setPreviewMessage("No report card data found for this student yet.")
-          return
-        }
-
-        const match = parsed.find(
-          (entry) => entry.studentId === record.studentId && entry.term === record.term && entry.session === record.session,
-        )
-
-        if (!match) {
-          setPreviewMessage("No report card data found for this student yet.")
-          return
-        }
-
-        setPreviewData(mapReportCardRecordToRaw(match))
+        setPreviewData(data)
       } catch (error) {
         console.error("Failed to load report card preview", error)
         setPreviewMessage("Failed to load report card preview. Please try again.")
@@ -169,7 +560,7 @@ export function AdminApprovalDashboard() {
         setPreviewLoadingId(null)
       }
     },
-    [],
+    [resolveReportCardData],
   )
 
   const loadRecords = useCallback(() => {
@@ -676,12 +1067,57 @@ export function AdminApprovalDashboard() {
 
   const handleDownload = useCallback(
     (record: ReportCardWorkflowRecord) => {
-      toast({
-        title: "Preparing report",
-        description: `Generating report card for ${record.studentName}.`,
-      })
+      setDownloadingRecordId(record.id)
+
+      try {
+        const data = resolveReportCardData(record)
+        if (!data) {
+          toast({
+            variant: "destructive",
+            title: "Report card unavailable",
+            description: "No report card data is stored for this student yet.",
+          })
+          return
+        }
+
+        const globalScope =
+          typeof globalThis === "undefined" ? null : (globalThis as typeof globalThis & { document?: Document | undefined })
+        const doc = globalScope?.document ?? null
+        if (!doc) {
+          throw new Error("Document context is not available in this environment.")
+        }
+
+        const filename = `${sanitizeFileName(
+          `${data.student.name}-${data.student.term}-${data.student.session}`,
+        )}.html`
+        const html = buildReportCardHtml(data)
+        const blob = new Blob([html], { type: "text/html;charset=utf-8" })
+        const url = URL.createObjectURL(blob)
+        const link = doc.createElement("a")
+        link.href = url
+        link.download = filename
+        doc.body.appendChild(link)
+        link.click()
+        doc.body.removeChild(link)
+        URL.revokeObjectURL(url)
+
+        toast({
+          title: "Download ready",
+          description: `${data.student.name}'s report card has been saved to your device.`,
+        })
+      } catch (error) {
+        console.error("Failed to download report card", error)
+        toast({
+          variant: "destructive",
+          title: "Download failed",
+          description:
+            error instanceof Error ? error.message : "Unable to prepare the report card file. Please try again.",
+        })
+      } finally {
+        setDownloadingRecordId(null)
+      }
     },
-    [toast],
+    [resolveReportCardData, toast],
   )
 
   const handleOpenRevoke = useCallback((record: ReportCardWorkflowRecord) => {
@@ -895,9 +1331,14 @@ export function AdminApprovalDashboard() {
                       variant="outline"
                       size="sm"
                       className="flex items-center gap-2"
+                      disabled={downloadingRecordId === record.id}
                     >
-                      <Download className="h-4 w-4" />
-                      Download
+                      {downloadingRecordId === record.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      {downloadingRecordId === record.id ? "Preparing..." : "Download"}
                     </Button>
                     {record.status === "pending" && (
                       <>
@@ -992,8 +1433,8 @@ export function AdminApprovalDashboard() {
       </div>
 
       <Dialog open={previewDialogOpen} onOpenChange={(open) => (open ? setPreviewDialogOpen(true) : closePreviewDialog())}>
-        <DialogContent className="max-w-6xl">
-          <DialogHeader>
+        <DialogContent className="flex h-screen w-screen max-w-[100vw] flex-col overflow-hidden p-0 sm:rounded-none">
+          <DialogHeader className="border-b border-slate-200 px-6 py-4">
             <DialogTitle>Report Card Preview</DialogTitle>
             <DialogDescription>
               {previewRecord
@@ -1001,26 +1442,26 @@ export function AdminApprovalDashboard() {
                 : "Select a report card to preview the final layout before approval."}
             </DialogDescription>
           </DialogHeader>
-          {isPreviewLoading ? (
-            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Preparing preview…
-            </div>
-          ) : previewData ? (
-            <div className="max-h-[70vh] overflow-y-auto">
+          <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+            {isPreviewLoading ? (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Preparing preview…
+              </div>
+            ) : previewData ? (
               <EnhancedReportCard data={previewData} />
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {previewMessage ?? "No report card data is available for this student yet."}
-            </p>
-          )}
-      <DialogFooter>
-        <Button variant="outline" onClick={closePreviewDialog}>
-          Close
-        </Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {previewMessage ?? "No report card data is available for this student yet."}
+              </p>
+            )}
+          </div>
+          <DialogFooter className="border-t border-slate-200 px-6 py-4">
+            <Button variant="outline" onClick={closePreviewDialog}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={publishDialogOpen} onOpenChange={(open) => (open ? setPublishDialogOpen(true) : closePublishDialog())}>
         <DialogContent className="max-w-xl">

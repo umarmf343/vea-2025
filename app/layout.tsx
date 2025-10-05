@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next"
 import { Inter, Playfair_Display } from "next/font/google"
 import "./globals.css"
 import { ErrorBoundary } from "@/components/error-boundary"
+import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -43,6 +44,7 @@ export default function RootLayout({
       <body className="antialiased font-sans bg-gray-50 text-gray-900">
         <ErrorBoundary>
           <div className="min-h-screen">{children}</div>
+          <Toaster />
         </ErrorBoundary>
       </body>
     </html>
