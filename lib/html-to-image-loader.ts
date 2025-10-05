@@ -1,8 +1,4 @@
-// Utility for loading the html-to-image library from a CDN at runtime.
-// This avoids a hard dependency on the npm package while keeping the feature working.
-
-const HTML_TO_IMAGE_CDN_URL =
-  "https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/es/index.js"
+// Utility for loading the html-to-image library at runtime without impacting SSR.
 
 type DownloadFilter = (element: Element | null) => boolean
 
@@ -30,14 +26,19 @@ async function loadModule(): Promise<HtmlToImageModule> {
     throw new Error("html-to-image can only be loaded in the browser")
   }
 
-  const loadedModule = await import(
-    /* webpackIgnore: true */ HTML_TO_IMAGE_CDN_URL,
-  )
-  if (typeof loadedModule?.toPng !== "function") {
+  const loadedModule = await import("html-to-image")
+  const candidateModule =
+    typeof loadedModule?.toPng === "function"
+      ? loadedModule
+      : typeof loadedModule?.default?.toPng === "function"
+        ? (loadedModule.default as HtmlToImageModule)
+        : null
+
+  if (!candidateModule) {
     throw new Error("html-to-image module failed to load")
   }
 
-  return loadedModule as HtmlToImageModule
+  return candidateModule as HtmlToImageModule
 }
 
 export async function getHtmlToImage(): Promise<HtmlToImageModule> {
