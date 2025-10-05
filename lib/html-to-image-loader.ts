@@ -1,16 +1,11 @@
 // Utility for loading the html-to-image library at runtime without impacting SSR.
 
-type DownloadFilter = (element: Element | null) => boolean
+import type { Options } from "./vendor/html-to-image/types"
 
 export interface HtmlToImageModule {
   toPng: (
     node: HTMLElement,
-    options?: {
-      backgroundColor?: string
-      cacheBust?: boolean
-      filter?: DownloadFilter
-      pixelRatio?: number
-    },
+    options?: Options,
   ) => Promise<string>
 }
 
@@ -26,7 +21,7 @@ async function loadModule(): Promise<HtmlToImageModule> {
     throw new Error("html-to-image can only be loaded in the browser")
   }
 
-  const loadedModule = await import("html-to-image")
+  const loadedModule = await import("./vendor/html-to-image")
   const candidateModule =
     typeof loadedModule?.toPng === "function"
       ? loadedModule
