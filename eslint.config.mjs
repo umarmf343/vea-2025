@@ -10,6 +10,9 @@ const compat = new FlatCompat({
 });
 
 export default [
+  {
+    ignores: ['lib/vendor/**'],
+  },
   ...compat.config({
     extends: ['next/core-web-vitals', 'plugin:@typescript-eslint/recommended'],
     plugins: ['@typescript-eslint', 'react-hooks'],
