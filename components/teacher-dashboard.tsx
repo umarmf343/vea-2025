@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
@@ -102,6 +103,8 @@ import {
 } from "@/lib/assignment-reminders"
 
 type BrowserRuntime = typeof globalThis & Partial<Window>
+
+const CLASS_TEACHER_REMARK_OPTIONS = ["Excellent", "V. Good", "Good", "Poor"] as const
 
 const getBrowserRuntime = (): BrowserRuntime | null => {
   if (typeof globalThis === "undefined") {
@@ -364,9 +367,9 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       },
     } as BehavioralDomainState,
     classTeacherRemarks: {
-      student_john_doe: "John maintains an outstanding academic record and inspires his peers.",
-      student_alice_smith: "Alice participates actively and continues to grow with confidence.",
-      student_mike_johnson: "Mike is improving steadily; encourage more practice at home.",
+      student_john_doe: "Excellent",
+      student_alice_smith: "V. Good",
+      student_mike_johnson: "Good",
     } as Record<string, string>,
     attendance: {
       student_john_doe: { present: 58, absent: 2, total: 60 },
@@ -4111,27 +4114,44 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                     <Card>
                       <CardHeader>
                         <CardTitle className="text-sm">Class Teacher General Remarks</CardTitle>
-                        <CardDescription>Overall comments about each student's performance</CardDescription>
+                        <CardDescription>
+                          Select a single overall rating for each student. The chosen rating will appear on their
+                          report card.
+                        </CardDescription>
                       </CardHeader>
                       <CardContent>
                         {marksData.map((student) => (
-                          <div key={student.studentId} className="mb-4 p-3 border rounded-lg">
+                          <div key={student.studentId} className="mb-4 rounded-lg border p-3">
                             <Label className="text-sm font-medium">{student.studentName}</Label>
-                            <Textarea
+                            <RadioGroup
                               value={additionalData.classTeacherRemarks[student.studentId] || ""}
-                              onChange={(e) =>
+                              onValueChange={(value) =>
                                 setAdditionalData((prev) => ({
                                   ...prev,
                                   classTeacherRemarks: {
                                     ...prev.classTeacherRemarks,
-                                    [student.studentId]: e.target.value,
+                                    [student.studentId]: value,
                                   },
                                 }))
                               }
-                              placeholder="Enter overall class teacher remarks for this student..."
-                              className="mt-2"
-                              rows={2}
-                            />
+                              className="mt-3 grid gap-2 sm:grid-cols-2"
+                            >
+                              {CLASS_TEACHER_REMARK_OPTIONS.map((option) => {
+                                const optionId = `${student.studentId}-remark-${option.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+
+                                return (
+                                  <div
+                                    key={option}
+                                    className="flex items-center gap-2 rounded-md border border-muted bg-muted/20 px-3 py-2"
+                                  >
+                                    <RadioGroupItem value={option} id={optionId} />
+                                    <Label htmlFor={optionId} className="text-sm font-medium">
+                                      {option}
+                                    </Label>
+                                  </div>
+                                )
+                              })}
+                            </RadioGroup>
                           </div>
                         ))}
                       </CardContent>
