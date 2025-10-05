@@ -628,12 +628,87 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
   const handlePrint = useCallback(() => {
     const browserWindow = resolveBrowserWindow()
-    if (!browserWindow || typeof browserWindow.print !== "function") {
+    const target = containerRef.current
+
+    if (!browserWindow || !target) {
       return
     }
 
-    browserWindow.print()
-  }, [])
+    const printWindow = browserWindow.open("", "_blank", "noopener,noreferrer,width=900,height=1200")
+    if (!printWindow) {
+      if (typeof browserWindow.print === "function") {
+        browserWindow.print()
+      }
+      return
+    }
+
+    const sourceDocument = browserWindow.document
+    const collectedStyles = Array.from(
+      sourceDocument.querySelectorAll<HTMLLinkElement | HTMLStyleElement>("link[rel='stylesheet'], style"),
+    )
+      .map((node) => node.outerHTML)
+      .join("\n")
+
+    const printableHtml = `<!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${reportCardData?.student.name ?? "Report Card"} – Report Card</title>
+          ${collectedStyles}
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 10mm;
+            }
+
+            body {
+              margin: 0;
+              padding: 0;
+              background: #ffffff;
+            }
+
+            .victory-report-card-wrapper {
+              padding: 0 !important;
+            }
+
+            .victory-report-card {
+              width: 100% !important;
+              display: flex;
+              justify-content: center;
+            }
+
+            .victory-report-card .report-container {
+              margin: 0 auto !important;
+              width: 100% !important;
+              max-width: 980px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="victory-report-card-wrapper">
+            <div class="victory-report-card">
+              ${target.outerHTML}
+            </div>
+          </div>
+        </body>
+      </html>`
+
+    printWindow.document.open()
+    printWindow.document.write(printableHtml)
+    printWindow.document.close()
+
+    const handlePrintLoad = () => {
+      printWindow.focus()
+      printWindow.print()
+      printWindow.close()
+    }
+
+    if (printWindow.document.readyState === "complete") {
+      handlePrintLoad()
+    } else {
+      printWindow.addEventListener("load", handlePrintLoad, { once: true })
+    }
+  }, [reportCardData?.student.name])
 
   const handleDownload = useCallback(async () => {
     if (isDownloading) {
@@ -906,16 +981,56 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           </table>
 
           <div className="remark-section">
-            <div className="teacher-remarks">
-              <strong>Class Teacher Remarks:</strong>
-              <br />
-              {classTeacherRemark}
-              <hr />
-              <strong>Head Master&apos;s Remark:</strong>
-              <br />
-              <em>{headTeacherRemark}</em>
+            <div className="remarks-column">
+              <div className="teacher-remarks">
+                <strong>Class Teacher Remarks:</strong>
+                <br />
+                {classTeacherRemark}
+                <hr />
+                <strong>Head Master&apos;s Remark:</strong>
+                <br />
+                <em>{headTeacherRemark}</em>
+              </div>
+              <div className="domain-block psychomotor-block">
+                <strong>PSYCHOMOTOR DOMAIN</strong>
+                <table className="af-domain-table">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      {DOMAIN_COLUMNS.map((column) => (
+                        <th key={`psychomotor-header-${column.key}`}>{column.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {psychomotorSkills.length > 0 ? (
+                      psychomotorSkills.map((skill) => (
+                        <tr key={skill.key}>
+                          <td>{skill.label}</td>
+                          {DOMAIN_COLUMNS.map((column) => {
+                            const match = isBehavioralRatingMatch(
+                              reportCardData.psychomotorDomain,
+                              skill.key,
+                              column.key,
+                            )
+                            return (
+                              <td key={`${skill.key}-${column.key}`} className={match ? "tick" : ""}>
+                                {match ? "✓" : ""}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={DOMAIN_COLUMNS.length + 1}>No psychomotor records available.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <div className="domain-block">
+            <div className="domain-block affective-block">
               <strong>AFFECTIVE DOMAIN</strong>
               <table className="af-domain-table">
                 <thead>
@@ -948,42 +1063,6 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                   ) : (
                     <tr>
                       <td colSpan={DOMAIN_COLUMNS.length + 1}>No affective records available.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-              <strong>PSYCHOMOTOR DOMAIN</strong>
-              <table className="af-domain-table">
-                <thead>
-                  <tr>
-                    <th></th>
-                    {DOMAIN_COLUMNS.map((column) => (
-                      <th key={`psychomotor-header-${column.key}`}>{column.label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {psychomotorSkills.length > 0 ? (
-                    psychomotorSkills.map((skill) => (
-                      <tr key={skill.key}>
-                        <td>{skill.label}</td>
-                        {DOMAIN_COLUMNS.map((column) => {
-                          const match = isBehavioralRatingMatch(
-                            reportCardData.psychomotorDomain,
-                            skill.key,
-                            column.key,
-                          )
-                          return (
-                            <td key={`${skill.key}-${column.key}`} className={match ? "tick" : ""}>
-                              {match ? "✓" : ""}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={DOMAIN_COLUMNS.length + 1}>No psychomotor records available.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1057,7 +1136,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         }
 
         .victory-report-card .report-container {
-          width: 980px;
+          width: min(960px, 100%);
           margin: 0 auto;
           border: 3px solid #2e7d32;
           background-color: #fff;
@@ -1235,11 +1314,19 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         }
 
         .remark-section {
-          margin-top: 1em;
+          margin-top: 12px;
           display: flex;
-          gap: 20px;
+          gap: 16px;
           flex-wrap: wrap;
-          padding: 0 15px 10px;
+          align-items: stretch;
+          padding: 0 15px 8px;
+        }
+
+        .remarks-column {
+          display: flex;
+          flex: 1 1 260px;
+          flex-direction: column;
+          gap: 12px;
         }
 
         .teacher-remarks,
@@ -1249,21 +1336,26 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           border-radius: 4px;
           padding: 12px 16px;
           font-size: 1em;
-          flex: 1 1 220px;
+          flex: 1 1 auto;
         }
 
-        .domain-block {
-          flex: 1 1 180px;
+        .psychomotor-block {
+          padding-bottom: 16px;
+        }
+
+        .affective-block {
+          flex: 1 1 320px;
+          min-width: 280px;
         }
 
         .vacation-box,
         .signatures-box {
           display: flex;
-          gap: 36px;
-          margin-top: 8px;
+          gap: 24px;
+          margin-top: 6px;
           font-size: 1em;
           align-items: center;
-          padding: 0 15px 10px;
+          padding: 0 15px 8px;
         }
 
         .signature-line {
@@ -1323,7 +1415,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         }
 
         .grading-key-container {
-          padding: 0 15px 15px;
+          padding: 0 15px 12px;
           text-align: center;
           font-size: 13px;
           color: #27613d;
@@ -1353,7 +1445,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           }
 
           .victory-report-card .report-container {
-            width: 100%;
+            width: 190mm !important;
             max-width: none;
             border-width: 3px;
           }
