@@ -279,11 +279,11 @@ export function ReportCard({ data, isOpen, onClose }: ReportCardProps) {
         onClose()
       }
     }}>
-      <DialogContent className="max-w-6xl">
-        <DialogHeader>
+      <DialogContent className="flex h-screen w-screen max-w-[100vw] flex-col overflow-hidden p-0 sm:rounded-none">
+        <DialogHeader className="border-b border-slate-200 px-6 py-4">
           <DialogTitle className="text-base font-semibold text-slate-800">Academic Report Card</DialogTitle>
         </DialogHeader>
-        <div className="max-h-[70vh] overflow-y-auto">
+        <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
           <EnhancedReportCard data={data} />
         </div>
       </DialogContent>
