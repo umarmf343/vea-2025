@@ -33,418 +33,14 @@ import { EnhancedReportCard } from "@/components/enhanced-report-card"
 import { mapReportCardRecordToRaw } from "@/lib/report-card-transformers"
 import type { RawReportCardData } from "@/lib/report-card-types"
 import type { ReportCardRecord } from "@/lib/database"
-
-const escapeHtml = (value: string) =>
-  value.replace(/[&<>"']/g, (character) => {
-    switch (character) {
-      case "&":
-        return "&amp;"
-      case "<":
-        return "&lt;"
-      case ">":
-        return "&gt;"
-      case '"':
-        return "&quot;"
-      case "'":
-        return "&#39;"
-      default:
-        return character
-    }
-  })
+import { buildReportCardHtml } from "@/lib/report-card-html"
+import { ReportCardPreviewOverlay } from "@/components/report-card-preview-overlay"
 
 const sanitizeFileName = (value: string) => {
   const trimmed = value.trim().toLowerCase()
   const sanitized = trimmed.replace(/[^a-z0-9\-_.]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "")
   return sanitized.length > 0 ? sanitized : "report-card"
 }
-
-const formatScoreValue = (value: unknown) => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value.toString()
-  }
-  if (typeof value === "string" && value.trim().length > 0) {
-    return value
-  }
-  return "—"
-}
-
-const buildReportCardHtml = (data: RawReportCardData) => {
-  const subjects = Array.isArray(data.subjects) ? (data.subjects as Array<Record<string, unknown>>) : []
-  const subjectRows = subjects
-    .map((subjectEntry, index) => {
-      const subject = subjectEntry as Record<string, unknown>
-      const subjectName =
-        typeof subject.subject === "string"
-          ? subject.subject
-          : typeof subject.name === "string"
-            ? subject.name
-            : `Subject ${index + 1}`
-      const ca1 = formatScoreValue(subject["ca1"])
-      const ca2 = formatScoreValue(subject["ca2"])
-      const assignment = formatScoreValue(subject["assignment"])
-      const caTotal = formatScoreValue(subject["caTotal"] ?? subject["ca_total"])
-      const exam = formatScoreValue(subject["exam"])
-      const total = formatScoreValue(subject["total"])
-      const grade = formatScoreValue(subject["grade"])
-      const remark =
-        typeof subject["remark"] === "string" && subject["remark"].trim().length > 0
-          ? (subject["remark"] as string)
-          : typeof subject["comment"] === "string"
-            ? (subject["comment"] as string)
-            : "—"
-
-      return `
-        <tr>
-          <td>${escapeHtml(subjectName)}</td>
-          <td>${escapeHtml(ca1)}</td>
-          <td>${escapeHtml(ca2)}</td>
-          <td>${escapeHtml(assignment)}</td>
-          <td>${escapeHtml(caTotal)}</td>
-          <td>${escapeHtml(exam)}</td>
-          <td>${escapeHtml(total)}</td>
-          <td>${escapeHtml(grade)}</td>
-          <td>${escapeHtml(remark)}</td>
-        </tr>
-      `
-    })
-    .join("")
-
-  const affectiveEntries = data.affectiveDomain ? Object.entries(data.affectiveDomain) : []
-  const affectiveRows = affectiveEntries
-    .map(([trait, value]) => `
-        <tr>
-          <td>${escapeHtml(trait)}</td>
-          <td>${escapeHtml(typeof value === "string" ? value : "—")}</td>
-        </tr>
-      `)
-    .join("")
-
-  const psychomotorEntries = data.psychomotorDomain ? Object.entries(data.psychomotorDomain) : []
-  const psychomotorRows = psychomotorEntries
-    .map(([skill, value]) => `
-        <tr>
-          <td>${escapeHtml(skill)}</td>
-          <td>${escapeHtml(typeof value === "string" ? value : "—")}</td>
-        </tr>
-      `)
-    .join("")
-
-  const formatMetadata = (value: unknown) => {
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return value.toString()
-    }
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value
-    }
-    return "—"
-  }
-
-  const summary = data.summary ?? {}
-
-  return `<!DOCTYPE html>
-  <html lang="en">
-    <head>
-      <meta charSet="utf-8" />
-      <title>Report Card - ${escapeHtml(data.student.name)}</title>
-      <style>
-        body {
-          font-family: Arial, Helvetica, sans-serif;
-          margin: 40px;
-          background: #f5f5f5;
-          color: #1f2937;
-        }
-        h1, h2, h3 {
-          margin: 0;
-          color: #1b4332;
-        }
-        h1 {
-          font-size: 28px;
-          margin-bottom: 4px;
-        }
-        .card-container {
-          background: #ffffff;
-          border-radius: 12px;
-          border: 1px solid #d1d5db;
-          padding: 32px;
-          box-shadow: 0 10px 25px rgba(31, 41, 55, 0.08);
-        }
-        .school-name {
-          font-size: 20px;
-          font-weight: 600;
-        }
-        .muted {
-          color: #4b5563;
-          font-size: 14px;
-        }
-        table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-top: 16px;
-          font-size: 14px;
-        }
-        table thead {
-          background: #1b4332;
-          color: #ffffff;
-        }
-        table th,
-        table td {
-          border: 1px solid #d1d5db;
-          padding: 8px 10px;
-          text-align: left;
-        }
-        .section {
-          margin-top: 32px;
-        }
-        .grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-          gap: 16px;
-          margin-top: 12px;
-        }
-        .grid-item {
-          background: #f9fafb;
-          border-radius: 8px;
-          padding: 12px 16px;
-          border: 1px solid #e5e7eb;
-        }
-        .grid-item strong {
-          display: block;
-          font-size: 13px;
-          color: #1f2937;
-          margin-bottom: 4px;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-        }
-        .grid-item span {
-          font-size: 15px;
-          color: #111827;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="card-container">
-        <header>
-          <div class="school-name">${escapeHtml(data.branding?.schoolName ?? "Victory Educational Academy")}</div>
-          ${data.branding?.address ? `<div class="muted">${escapeHtml(data.branding.address)}</div>` : ""}
-          ${(data.branding?.contactPhone || data.branding?.contactEmail)
-            ? `<div class="muted">${escapeHtml(
-                [data.branding?.contactPhone, data.branding?.contactEmail]
-                  .filter((entry) => entry && entry.trim().length > 0)
-                  .join(" • "),
-              )}</div>`
-            : ""}
-        </header>
-
-        <section class="section">
-          <h2>Student Information</h2>
-          <div class="grid">
-            <div class="grid-item">
-              <strong>Name</strong>
-              <span>${escapeHtml(data.student.name)}</span>
-            </div>
-            <div class="grid-item">
-              <strong>Admission Number</strong>
-              <span>${escapeHtml(data.student.admissionNumber ?? "—")}</span>
-            </div>
-            <div class="grid-item">
-              <strong>Class</strong>
-              <span>${escapeHtml(data.student.class ?? "—")}</span>
-            </div>
-            <div class="grid-item">
-              <strong>Term</strong>
-              <span>${escapeHtml(data.student.term)}</span>
-            </div>
-            <div class="grid-item">
-              <strong>Session</strong>
-              <span>${escapeHtml(data.student.session)}</span>
-            </div>
-            <div class="grid-item">
-              <strong>Position</strong>
-              <span>${escapeHtml(formatMetadata(data.summary?.position ?? data.position))}</span>
-            </div>
-          </div>
-        </section>
-
-        <section class="section">
-          <h2>Subject Performance</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Subject</th>
-                <th>CA1</th>
-                <th>CA2</th>
-                <th>Assignment</th>
-                <th>CA Total</th>
-                <th>Exam</th>
-                <th>Total</th>
-                <th>Grade</th>
-                <th>Remark</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${subjectRows || '<tr><td colspan="9">No subject records available.</td></tr>'}
-            </tbody>
-          </table>
-        </section>
-
-        <section class="section">
-          <h2>Academic Summary</h2>
-          <div class="grid">
-            <div class="grid-item">
-              <strong>Total Obtained</strong>
-              <span>${escapeHtml(
-                formatMetadata(summary.totalMarksObtained ?? data.totalObtained ?? "—"),
-              )}</span>
-            </div>
-            <div class="grid-item">
-              <strong>Total Obtainable</strong>
-              <span>${escapeHtml(
-                formatMetadata(summary.totalMarksObtainable ?? data.totalObtainable ?? "—"),
-              )}</span>
-            </div>
-            <div class="grid-item">
-              <strong>Average Score</strong>
-              <span>${escapeHtml(
-                formatMetadata(summary.averageScore ?? data.average ?? "—"),
-              )}</span>
-            </div>
-            <div class="grid-item">
-              <strong>Class Average</strong>
-              <span>${escapeHtml(formatMetadata(summary.classAverage ?? "—"))}</span>
-            </div>
-            <div class="grid-item">
-              <strong>Highest Score</strong>
-              <span>${escapeHtml(formatMetadata(summary.highestScore ?? "—"))}</span>
-            </div>
-            <div class="grid-item">
-              <strong>Lowest Score</strong>
-              <span>${escapeHtml(formatMetadata(summary.lowestScore ?? "—"))}</span>
-            </div>
-          </div>
-        </section>
-
-        ${(affectiveRows || psychomotorRows)
-          ? `<section class="section">
-              <h2>Personal Development</h2>
-              ${affectiveRows
-                ? `<div class="grid">
-                    <div class="grid-item" style="grid-column: span 2;">
-                      <strong>Affective Traits</strong>
-                      <table>
-                        <tbody>${affectiveRows}</tbody>
-                      </table>
-                    </div>
-                  </div>`
-                : ""}
-              ${psychomotorRows
-                ? `<div class="grid" style="margin-top: 12px;">
-                    <div class="grid-item" style="grid-column: span 2;">
-                      <strong>Psychomotor Skills</strong>
-                      <table>
-                        <tbody>${psychomotorRows}</tbody>
-                      </table>
-                    </div>
-                  </div>`
-                : ""}
-            </section>`
-          : ""}
-
-        ${(data.attendance && (data.attendance.present || data.attendance.absent || data.attendance.total))
-          ? `<section class="section">
-              <h2>Attendance</h2>
-              <div class="grid">
-                <div class="grid-item">
-                  <strong>Days Present</strong>
-                  <span>${escapeHtml(formatMetadata(data.attendance?.present ?? "—"))}</span>
-                </div>
-                <div class="grid-item">
-                  <strong>Days Absent</strong>
-                  <span>${escapeHtml(formatMetadata(data.attendance?.absent ?? "—"))}</span>
-                </div>
-                <div class="grid-item">
-                  <strong>Total Days</strong>
-                  <span>${escapeHtml(formatMetadata(data.attendance?.total ?? "—"))}</span>
-                </div>
-              </div>
-            </section>`
-          : ""}
-
-        ${(data.remarks?.classTeacher || data.remarks?.headTeacher)
-          ? `<section class="section">
-              <h2>Remarks</h2>
-              <div class="grid">
-                <div class="grid-item">
-                  <strong>Class Teacher</strong>
-                  <span>${escapeHtml(data.remarks?.classTeacher ?? data.classTeacherRemarks ?? "—")}</span>
-                </div>
-                <div class="grid-item">
-                  <strong>Head Teacher</strong>
-                  <span>${escapeHtml(data.remarks?.headTeacher ?? "—")}</span>
-                </div>
-              </div>
-            </section>`
-          : ""}
-
-        ${(data.termInfo?.nextTermBegins || data.termInfo?.vacationEnds)
-          ? `<section class="section">
-              <h2>Term Schedule</h2>
-              <div class="grid">
-                <div class="grid-item">
-                  <strong>Vacation Ends</strong>
-                  <span>${escapeHtml(formatMetadata(data.termInfo?.vacationEnds ?? "—"))}</span>
-                </div>
-                <div class="grid-item">
-                  <strong>Next Term Begins</strong>
-                  <span>${escapeHtml(formatMetadata(data.termInfo?.nextTermBegins ?? "—"))}</span>
-                </div>
-              </div>
-            </section>`
-          : ""}
-      </div>
-    </body>
-  </html>`
-}
-
-interface ParentAccountRecord {
-  id: string
-  name: string
-  email?: string | null
-  phone?: string | null
-  studentIds: string[]
-}
-
-interface StudentDirectoryRecord {
-  id: string
-  name: string
-  parentName?: string | null
-  parentEmail?: string | null
-  guardianPhone?: string | null
-  className?: string | null
-}
-
-interface ParentRecipientOption {
-  id: string
-  parentId: string
-  name: string
-  email?: string | null
-  phone?: string | null
-  source: "account" | "record"
-}
-
-const fetchJson = async <T,>(input: RequestInfo, init?: RequestInit): Promise<T> => {
-  const response = await fetch(input, init)
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`)
-  }
-  return (await response.json()) as T
-}
-
-const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "all", label: "All Statuses" },
-  { value: "pending", label: "Pending Approval" },
-  { value: "approved", label: "Published" },
-  { value: "revoked", label: "Needs Revision" },
-]
 
 const STATUS_STYLES: Record<ReportCardWorkflowRecord["status"], { label: string; className: string }> = {
   draft: { label: "Draft", className: "bg-gray-100 text-gray-800" },
@@ -1432,36 +1028,46 @@ export function AdminApprovalDashboard() {
         )}
       </div>
 
-      <Dialog open={previewDialogOpen} onOpenChange={(open) => (open ? setPreviewDialogOpen(true) : closePreviewDialog())}>
-        <DialogContent className="flex h-screen w-screen max-w-[100vw] flex-col overflow-hidden p-0 sm:rounded-none">
-          <DialogHeader className="border-b border-slate-200 px-6 py-4">
-            <DialogTitle>Report Card Preview</DialogTitle>
-            <DialogDescription>
-              {previewRecord
-                ? `${previewRecord.studentName} • ${previewRecord.className} • ${previewRecord.term} (${previewRecord.session})`
-                : "Select a report card to preview the final layout before approval."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-            {isPreviewLoading ? (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Preparing preview…
-              </div>
-            ) : previewData ? (
-              <EnhancedReportCard data={previewData} />
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {previewMessage ?? "No report card data is available for this student yet."}
-              </p>
-            )}
-          </div>
-          <DialogFooter className="border-t border-slate-200 px-6 py-4">
-            <Button variant="outline" onClick={closePreviewDialog}>
-              Close
+      <ReportCardPreviewOverlay
+        isOpen={previewDialogOpen}
+        onClose={closePreviewDialog}
+        title="Report Card Preview"
+        description={
+          previewRecord
+            ? `${previewRecord.studentName} • ${previewRecord.className} • ${previewRecord.term} (${previewRecord.session})`
+            : "Select a report card to preview the final layout before approval."
+        }
+        actions={
+          previewRecord ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex items-center gap-2"
+              onClick={() => handleDownload(previewRecord)}
+              disabled={downloadingRecordId === previewRecord.id}
+            >
+              {downloadingRecordId === previewRecord.id ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              {downloadingRecordId === previewRecord.id ? "Preparing…" : "Download"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          ) : null
+        }
+      >
+        {isPreviewLoading ? (
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Preparing preview…
+          </div>
+        ) : previewData ? (
+          <EnhancedReportCard data={previewData} />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {previewMessage ?? "No report card data is available for this student yet."}
+          </p>
+        )}
+      </ReportCardPreviewOverlay>
 
       <Dialog open={publishDialogOpen} onOpenChange={(open) => (open ? setPublishDialogOpen(true) : closePublishDialog())}>
         <DialogContent className="max-w-xl">

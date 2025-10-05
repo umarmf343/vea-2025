@@ -45,6 +45,7 @@ import { dbManager } from "@/lib/database-manager"
 import { cn } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { normalizeTimetableCollection } from "@/lib/timetable"
+import { deriveGradeFromScore } from "@/lib/grade-utils"
 import { toast } from "@/hooks/use-toast"
 import type { Viewport } from "next"
 import Image from "next/image"
@@ -1487,11 +1488,173 @@ function ParentDashboard({ user }: { user: User }) {
     return first && first.trim().length > 0 ? first : "the student"
   }, [studentData?.name])
 
+  const buildFallbackSnapshot = useCallback(() => {
+    if (!linkedStudentId) {
+      return null
+    }
+
+    const currentTerm = academicPeriod.term ?? "First Term"
+    const currentSession = academicPeriod.session ?? "2024/2025"
+
+    const fallbackReport =
+      getStudentReportCardData(linkedStudentId, currentTerm, currentSession) ??
+      getStudentReportCardData(linkedStudentId, currentTerm, "2024/2025") ??
+      getStudentReportCardData(linkedStudentId, "First Term", currentSession) ??
+      getStudentReportCardData(linkedStudentId, "First Term", "2024/2025")
+
+    if (!fallbackReport) {
+      return null
+    }
+
+    const toNumber = (value: unknown, fallback = 0): number => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value
+      }
+      if (typeof value === "string" && value.trim().length > 0) {
+        const parsed = Number.parseFloat(value)
+        return Number.isNaN(parsed) ? fallback : parsed
+      }
+      return fallback
+    }
+
+    const toPositiveInteger = (value: unknown, fallback = 0): number => {
+      const parsed = toNumber(value, fallback)
+      return parsed > 0 ? Math.round(parsed) : fallback
+    }
+
+    const parseRank = (value: unknown): number | null => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return Math.round(value)
+      }
+      if (typeof value === "string" && value.trim().length > 0) {
+        const match = value.match(/\d+/)
+        if (match) {
+          const parsed = Number.parseInt(match[0] ?? "", 10)
+          return Number.isNaN(parsed) ? null : parsed
+        }
+      }
+      return null
+    }
+
+    const studentSource = fallbackReport.student ?? {}
+    const className = studentSource.class ?? studentData?.class ?? "JSS 1"
+    const section = studentData?.section ?? className
+    const fallbackAdmission = studentData?.admissionNumber ?? `VEA/${linkedStudentId}`
+
+    const studentProfile: ParentStudentProfile = {
+      id: String(studentSource.id ?? linkedStudentId),
+      name: studentSource.name ?? studentData?.name ?? user.name,
+      class: className,
+      section,
+      admissionNumber: studentSource.admissionNumber ?? fallbackAdmission,
+      dateOfBirth: studentSource.dateOfBirth ?? studentData?.dateOfBirth ?? "",
+      address: studentData?.address ?? "Address not provided",
+      phone: studentData?.phone ?? "",
+      email: studentData?.email ?? user.email ?? "",
+      status: "active",
+      avatar: (studentSource as { photo?: string | null })?.photo ?? studentData?.avatar ?? null,
+    }
+
+    const summary = fallbackReport.summary ?? {}
+    const overallAverage = toNumber(summary.averageScore ?? fallbackReport.average, 0)
+    const overallGrade =
+      typeof summary.grade === "string" && summary.grade.trim().length > 0
+        ? summary.grade
+        : deriveGradeFromScore(overallAverage)
+    const totalStudents = Math.max(toPositiveInteger(summary.numberOfStudents, 25), 1)
+    const classPosition = Math.min(
+      parseRank(summary.position ?? fallbackReport.position) ?? 1,
+      totalStudents,
+    )
+
+    const rawSubjects = Array.isArray(fallbackReport.subjects)
+      ? (fallbackReport.subjects as Array<Record<string, unknown>>)
+      : []
+
+    const subjectSummaries = rawSubjects.map((entry, index) => {
+      const subjectName =
+        typeof entry.subject === "string"
+          ? entry.subject
+          : typeof entry.name === "string"
+            ? entry.name
+            : `Subject ${index + 1}`
+      const rawScore = toNumber(
+        entry.total ?? entry.score ?? entry.percentage ?? entry.averageScore ?? 0,
+        0,
+      )
+      const score = Number(rawScore.toFixed(1))
+      const grade =
+        typeof entry.grade === "string" && entry.grade.trim().length > 0
+          ? entry.grade
+          : deriveGradeFromScore(score)
+      const position = parseRank(entry.position)
+
+      return {
+        name: subjectName,
+        score,
+        grade,
+        position,
+        totalStudents,
+      }
+    })
+
+    const attendanceSource = fallbackReport.attendance ?? {}
+    const presentDays = toPositiveInteger(attendanceSource.present, 0)
+    const recordedTotal = toPositiveInteger(attendanceSource.total, presentDays)
+    const recordedAbsent = toPositiveInteger(attendanceSource.absent, 0)
+    const totalDays = recordedTotal > 0 ? recordedTotal : presentDays + recordedAbsent
+    const absentDays = Math.min(totalDays, Math.max(recordedAbsent, totalDays - presentDays))
+    const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0
+
+    const recentAttendanceCount = Math.max(1, Math.min(5, totalDays || presentDays || 1))
+    const recentAttendance = Array.from({ length: recentAttendanceCount }).map((_, offset) => {
+      const date = new Date()
+      date.setDate(date.getDate() - (recentAttendanceCount - 1 - offset))
+      const status: "present" | "absent" | "late" =
+        offset < absentDays ? "absent" : "present"
+      return { date: date.toISOString().slice(0, 10), status }
+    })
+
+    const academicSummary: ParentAcademicSummaryState = {
+      subjects: subjectSummaries.length > 0
+        ? subjectSummaries
+        : [
+            {
+              name: "Overall Performance",
+              score: overallAverage,
+              grade: overallGrade,
+              position: classPosition,
+              totalStudents,
+            },
+          ],
+      overallAverage,
+      overallGrade,
+      classPosition: classPosition,
+      totalStudents,
+    }
+
+    const attendanceSummary: ParentAttendanceSummaryState = {
+      totalDays,
+      presentDays,
+      absentDays,
+      lateArrivals: 0,
+      attendancePercentage,
+      recentAttendance,
+    }
+
+    return {
+      student: studentProfile,
+      academic: academicSummary,
+      attendance: attendanceSummary,
+    }
+  }, [academicPeriod.session, academicPeriod.term, linkedStudentId, studentData, user.email, user.name])
+
   const loadParentSnapshot = useCallback(async () => {
     if (!linkedStudentId) {
       setStudentData(null)
       setAcademicData(null)
       setAttendanceData(null)
+      setIsSnapshotLoading(false)
       return
     }
 
@@ -1535,11 +1698,20 @@ function ParentDashboard({ user }: { user: User }) {
       setAttendanceData(payload.snapshot.attendance)
     } catch (error) {
       logger.error("Unable to load parent dashboard snapshot", { error })
-      setSnapshotError(error instanceof Error ? error.message : "Unable to load dashboard data")
+      const fallback = buildFallbackSnapshot()
+      if (fallback) {
+        setStudentData(fallback.student)
+        setAcademicData(fallback.academic)
+        setAttendanceData(fallback.attendance)
+        const baseMessage = error instanceof Error ? error.message : "Unable to load dashboard data"
+        setSnapshotError(`${baseMessage}. Displaying cached data.`)
+      } else {
+        setSnapshotError(error instanceof Error ? error.message : "Unable to load dashboard data")
+      }
     } finally {
       setIsSnapshotLoading(false)
     }
-  }, [academicPeriod.session, academicPeriod.term, linkedStudentId])
+  }, [academicPeriod.session, academicPeriod.term, buildFallbackSnapshot, linkedStudentId])
 
   useEffect(() => {
     void loadParentSnapshot()

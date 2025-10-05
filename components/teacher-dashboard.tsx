@@ -50,6 +50,7 @@ import { InternalMessaging } from "@/components/internal-messaging"
 import { TutorialLink } from "@/components/tutorial-link"
 import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
 import { EnhancedReportCard } from "@/components/enhanced-report-card"
+import { ReportCardPreviewOverlay } from "@/components/report-card-preview-overlay"
 import {
   CONTINUOUS_ASSESSMENT_MAXIMUMS,
   calculateContinuousAssessmentTotal,
@@ -72,6 +73,7 @@ import {
   readStudentMarksStore,
 } from "@/lib/report-card-data"
 import { mapReportCardRecordToRaw } from "@/lib/report-card-transformers"
+import { buildReportCardHtml } from "@/lib/report-card-html"
 import {
   REPORT_CARD_WORKFLOW_EVENT,
   getWorkflowRecords,
@@ -107,6 +109,12 @@ const getBrowserRuntime = (): BrowserRuntime | null => {
   }
 
   return globalThis as BrowserRuntime
+}
+
+const sanitizeFileName = (value: string) => {
+  const trimmed = value.trim().toLowerCase()
+  const sanitized = trimmed.replace(/[^a-z0-9\-_.]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "")
+  return sanitized.length > 0 ? sanitized : "report-card"
 }
 
 type TeacherClassAssignment = {
@@ -381,6 +389,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
   const [previewStudentId, setPreviewStudentId] = useState<string | null>(null)
   const [previewData, setPreviewData] = useState<RawReportCardData | null>(null)
+  const [isPreviewDownloading, setIsPreviewDownloading] = useState(false)
 
   const defaultAssignmentMaximum = CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment ?? 20
 
@@ -1429,6 +1438,13 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     [normalizedTermLabel, selectedSession],
   )
 
+  const closePreviewDialog = useCallback(() => {
+    setPreviewDialogOpen(false)
+    setPreviewStudentId(null)
+    setPreviewData(null)
+    setIsPreviewDownloading(false)
+  }, [])
+
   const openPreviewForStudent = useCallback(
     (student: MarksRecord) => {
       if (!selectedClass || !selectedSubject) {
@@ -1475,6 +1491,44 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       toast,
     ],
   )
+
+  const handlePreviewDownload = useCallback(() => {
+    if (!previewData) {
+      toast({
+        title: "Preview unavailable",
+        description: "Generate a report card preview before attempting to download.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      setIsPreviewDownloading(true)
+      const html = buildReportCardHtml(previewData)
+      const blob = new Blob([html], { type: "text/html" })
+      const studentName = previewData.student.name ?? "student"
+      const termLabel = mapTermKeyToLabel(selectedTerm)
+      const filename = `${sanitizeFileName(studentName)}-${sanitizeFileName(termLabel)}-${sanitizeFileName(selectedSession)}.html`
+
+      const link = document.createElement("a")
+      const downloadUrl = URL.createObjectURL(blob)
+      link.href = downloadUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(downloadUrl)
+    } catch (error) {
+      logger.error("Failed to download report card preview", { error })
+      toast({
+        title: "Download failed",
+        description: "We couldn't generate the report card file. Please try again shortly.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsPreviewDownloading(false)
+    }
+  }, [previewData, selectedSession, selectedTerm, toast])
 
   const generateCumulativeSummaries = useCallback(
     async (options: { silent?: boolean } = {}) => {
@@ -4439,48 +4493,40 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
         </TabsContent>
       </Tabs>
 
-      <Dialog
-        open={previewDialogOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPreviewDialogOpen(false)
-            setPreviewStudentId(null)
-            setPreviewData(null)
-          }
-        }}
-      >
-        <DialogContent className="flex h-screen w-screen max-w-[100vw] flex-col overflow-hidden p-0 sm:rounded-none">
-          <DialogHeader className="border-b border-slate-200 px-6 py-4">
-            <DialogTitle>Report Card Preview</DialogTitle>
-            <DialogDescription>
-              {previewStudentId
-                ? `${marksData.find((s) => s.studentId === previewStudentId)?.studentName ?? "Student"} • ${selectedClass} • ${
-                    mapTermKeyToLabel(selectedTerm)
-                  } (${selectedSession})`
-                : "Select a student to preview their report card."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-            {previewData ? (
-              <EnhancedReportCard data={previewData} />
-            ) : (
-              <p className="text-sm text-muted-foreground">No preview data available yet.</p>
-            )}
-          </div>
-          <DialogFooter className="border-t border-slate-200 px-6 py-4">
+      <ReportCardPreviewOverlay
+        isOpen={previewDialogOpen}
+        onClose={closePreviewDialog}
+        title="Report Card Preview"
+        description={
+          previewStudentId
+            ? `${marksData.find((s) => s.studentId === previewStudentId)?.studentName ?? "Student"} • ${selectedClass} • ${mapTermKeyToLabel(selectedTerm)} (${selectedSession})`
+            : "Select a student to preview their report card."
+        }
+        actions={
+          previewData ? (
             <Button
+              size="sm"
               variant="outline"
-              onClick={() => {
-                setPreviewDialogOpen(false)
-                setPreviewStudentId(null)
-                setPreviewData(null)
-              }}
+              className="flex items-center gap-2"
+              onClick={handlePreviewDownload}
+              disabled={isPreviewDownloading}
             >
-              Close
+              {isPreviewDownloading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              {isPreviewDownloading ? "Preparing…" : "Download"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          ) : null
+        }
+      >
+        {previewData ? (
+          <EnhancedReportCard data={previewData} />
+        ) : (
+          <p className="text-sm text-muted-foreground">No preview data available yet.</p>
+        )}
+      </ReportCardPreviewOverlay>
 
       {/* Create Assignment Dialog */}
       <Dialog
