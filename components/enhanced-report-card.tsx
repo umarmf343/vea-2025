@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Download, PrinterIcon as Print } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -607,52 +607,6 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     return `${(Math.round(value * 10) / 10).toFixed(1)}%`
   }
 
-  const studentInfoRows = useMemo(() => {
-    if (!reportCardData) {
-      return [] as Array<Array<{ label: string; value: string }>>
-    }
-
-    const { student, summary } = reportCardData
-
-    return [
-      [
-        { label: "NAME OF STUDENT:", value: student.name || "—" },
-        { label: "ADMISSION NUMBER:", value: student.admissionNumber || "—" },
-        { label: "CLASS:", value: student.class || "—" },
-      ],
-      [
-        {
-          label: "NUMBER IN CLASS:",
-          value: student.numberInClass ? String(student.numberInClass) : "—",
-        },
-        { label: "TERM:", value: student.term || "—" },
-        { label: "SESSION:", value: student.session || "—" },
-        {
-          label: "GRADE:",
-          value: summary.grade ? summary.grade.toUpperCase() : "—",
-        },
-      ],
-      [
-        {
-          label: "TOTAL MARKS OBTAINABLE:",
-          value: formatTotalValue(summary.totalMarksObtainable),
-        },
-        {
-          label: "TOTAL MARKS OBTAINED",
-          value: formatTotalValue(summary.totalMarksObtained),
-        },
-        {
-          label: "AVERAGE:",
-          value: formatAverageValue(summary.averageScore),
-        },
-        {
-          label: "POSITION:",
-          value: summary.positionLabel || "—",
-        },
-      ],
-    ]
-  }, [reportCardData])
-
   const totalsRow = useMemo(() => {
     if (!reportCardData || reportCardData.subjects.length === 0) {
       return null
@@ -750,6 +704,38 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     )
   }
 
+  const { student, summary, termInfo } = reportCardData
+  const resolveDisplayValue = (value: unknown) => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value)
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim()
+      if (trimmed.length > 0) {
+        return trimmed
+      }
+    }
+
+    return "—"
+  }
+
+  const numberInClass = resolveDisplayValue(
+    student.numberInClass ?? termInfo?.numberInClass ?? "—",
+  )
+  const termLabel = resolveDisplayValue(student.term)
+  const sessionLabel = resolveDisplayValue(student.session)
+  const admissionNumber = resolveDisplayValue(student.admissionNumber)
+  const studentName = resolveDisplayValue(student.name)
+  const classLabel = resolveDisplayValue(student.class)
+  const gradeLabel = resolveDisplayValue(
+    summary.grade ? summary.grade.toUpperCase() : undefined,
+  )
+  const totalMarksObtainable = formatTotalValue(summary.totalMarksObtainable)
+  const totalMarksObtained = formatTotalValue(summary.totalMarksObtained)
+  const averageScore = formatAverageValue(summary.averageScore)
+  const positionLabel = resolveDisplayValue(summary.positionLabel)
+
   const classTeacherRemark =
     reportCardData.remarks.classTeacher?.trim().length
       ? reportCardData.remarks.classTeacher
@@ -827,19 +813,34 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           <div className="report-title">TERMINAL REPORT SHEET</div>
 
           <div className="student-info">
-            {studentInfoRows.map((row, rowIndex) => (
-              <div
-                key={`student-row-${rowIndex}`}
-                className={`student-row ${rowIndex === studentInfoRows.length - 1 ? "last" : ""}`}
-              >
-                {row.map((cell) => (
-                  <Fragment key={`${rowIndex}-${cell.label}`}>
-                    <div className="info-label">{cell.label}</div>
-                    <div className="info-value">{cell.value}</div>
-                  </Fragment>
-                ))}
-              </div>
-            ))}
+            <div className="student-row">
+              <div className="info-label">NAME OF STUDENT:</div>
+              <div className="info-value">{studentName}</div>
+              <div className="info-label">ADMISSION NUMBER:</div>
+              <div className="info-value">{admissionNumber}</div>
+              <div className="info-label">CLASS:</div>
+              <div className="info-value">{classLabel}</div>
+            </div>
+            <div className="student-row">
+              <div className="info-label">NUMBER IN CLASS:</div>
+              <div className="info-value">{numberInClass}</div>
+              <div className="info-label">TERM:</div>
+              <div className="info-value">{termLabel}</div>
+              <div className="info-label">SESSION:</div>
+              <div className="info-value">{sessionLabel}</div>
+              <div className="info-label">GRADE:</div>
+              <div className="info-value">{gradeLabel}</div>
+            </div>
+            <div className="student-row">
+              <div className="info-label">TOTAL MARKS OBTAINABLE:</div>
+              <div className="info-value">{totalMarksObtainable}</div>
+              <div className="info-label">TOTAL MARKS OBTAINED</div>
+              <div className="info-value">{totalMarksObtained}</div>
+              <div className="info-label">AVERAGE:</div>
+              <div className="info-value">{averageScore}</div>
+              <div className="info-label">POSITION:</div>
+              <div className="info-value">{positionLabel}</div>
+            </div>
           </div>
 
           <table className="grades-table">
@@ -1062,6 +1063,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           background-color: #fff;
           color: #333;
           font-family: "Times New Roman", serif;
+          padding: 0;
         }
 
         .victory-report-card .report-container * {
@@ -1155,17 +1157,17 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
         .student-info {
           border: 2px solid #2e7d32;
+          padding: 0;
           margin: 10px 15px;
           font-size: 14px;
         }
 
         .student-row {
           display: flex;
-          flex-wrap: wrap;
           border-bottom: 1px solid #2e7d32;
         }
 
-        .student-row.last {
+        .student-row:last-of-type {
           border-bottom: none;
         }
 
@@ -1175,6 +1177,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           padding: 6px 8px;
           border-right: 1px solid #2e7d32;
           width: 20%;
+          font-size: 14px;
           background-color: #fafafa;
         }
 
