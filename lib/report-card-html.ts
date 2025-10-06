@@ -216,6 +216,30 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           justify-content: space-between;
           align-items: center;
         }
+        .holistic-grid {
+          gap: 12px;
+        }
+        .holistic-grid > div {
+          min-width: 0;
+        }
+        .holistic-grid table {
+          width: 100%;
+          max-width: 100%;
+          table-layout: fixed;
+          margin: 12px 0 0;
+          box-sizing: border-box;
+        }
+        .holistic-grid th,
+        .holistic-grid td {
+          padding: 8px;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+          text-align: center;
+        }
+        .holistic-grid th:first-child,
+        .holistic-grid td:first-child {
+          text-align: left;
+        }
       </style>
     </head>
     <body>
@@ -328,7 +352,7 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
 
       <section class="section">
         <h2>Holistic Development</h2>
-        <div class="grid">
+        <div class="grid holistic-grid">
           <div>
             <h3>Affective Domain</h3>
             <table>
