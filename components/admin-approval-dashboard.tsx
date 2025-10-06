@@ -36,6 +36,14 @@ import type { ReportCardRecord } from "@/lib/database"
 import { buildReportCardHtml } from "@/lib/report-card-html"
 import { ReportCardPreviewOverlay } from "@/components/report-card-preview-overlay"
 
+const fetchJson = async <T,>(input: RequestInfo | URL, init?: RequestInit): Promise<T> => {
+  const response = await fetch(input, init)
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`)
+  }
+  return (await response.json()) as T
+}
+
 const sanitizeFileName = (value: string) => {
   const trimmed = value.trim().toLowerCase()
   const sanitized = trimmed.replace(/[^a-z0-9\-_.]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "")
