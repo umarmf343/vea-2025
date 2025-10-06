@@ -49,6 +49,16 @@ const STATUS_STYLES: Record<ReportCardWorkflowRecord["status"], { label: string;
   revoked: { label: "Needs Revision", className: "bg-red-100 text-red-800" },
 }
 
+type StatusFilterValue = ReportCardWorkflowRecord["status"] | "all"
+
+const STATUS_FILTER_OPTIONS: { value: StatusFilterValue; label: string }[] = [
+  { value: "all", label: "All Statuses" },
+  { value: "pending", label: STATUS_STYLES.pending.label },
+  { value: "approved", label: STATUS_STYLES.approved.label },
+  { value: "revoked", label: STATUS_STYLES.revoked.label },
+  { value: "draft", label: STATUS_STYLES.draft.label },
+]
+
 const ADMIN_METADATA = { id: "admin-panel", name: "Administrator" }
 
 const formatDate = (value?: string) => {
@@ -66,7 +76,7 @@ const formatDate = (value?: string) => {
 export function AdminApprovalDashboard() {
   const { toast } = useToast()
   const [records, setRecords] = useState<ReportCardWorkflowRecord[]>([])
-  const [filterStatus, setFilterStatus] = useState<string>("pending")
+  const [filterStatus, setFilterStatus] = useState<StatusFilterValue>("pending")
   const [filterClass, setFilterClass] = useState<string>("all")
   const [revokeMessage, setRevokeMessage] = useState("")
   const [selectedRecord, setSelectedRecord] = useState<ReportCardWorkflowRecord | null>(null)
@@ -613,6 +623,10 @@ export function AdminApprovalDashboard() {
     return Array.from(classes).sort()
   }, [actionableRecords])
 
+  const handleFilterStatusChange = useCallback((value: string) => {
+    setFilterStatus(value as StatusFilterValue)
+  }, [])
+
   const filteredRecords = useMemo(() => {
     let scoped = actionableRecords
 
@@ -830,7 +844,7 @@ export function AdminApprovalDashboard() {
           <div className="flex flex-col gap-4 md:flex-row">
             <div className="flex-1">
               <Label htmlFor="status-filter">Filter by Status</Label>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <Select value={filterStatus} onValueChange={handleFilterStatusChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
