@@ -556,14 +556,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }))
   }, [teacher.classes, teacher.subjects])
 
-  useEffect(() => {
-    if (!isAddStudentDialogOpen) {
-      return
-    }
-
-    void loadRosterCandidates()
-  }, [isAddStudentDialogOpen, loadRosterCandidates])
-
   const mockStudents = useMemo(
     () => [
       { id: "student_john_doe", name: "John Doe", class: "JSS 1A", subjects: ["Mathematics", "English"] },
@@ -1063,6 +1055,14 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     setSelectedRosterIds([])
     setIsRosterLoading(false)
   }, [marksData, mockStudents, normalizeClassName, selectedClass])
+
+  useEffect(() => {
+    if (!isAddStudentDialogOpen) {
+      return
+    }
+
+    void loadRosterCandidates()
+  }, [isAddStudentDialogOpen, loadRosterCandidates])
 
   const handleOpenAddStudentDialog = useCallback(() => {
     if (!selectedClass || !selectedSubject) {
