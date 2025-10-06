@@ -60,10 +60,11 @@ const readRecords = (): ReportCardAccessRecord[] => {
           typeof candidate.session === "string" &&
           (candidate.grantedBy === "manual" || candidate.grantedBy === "payment")
         ) {
+          const normalizedTerm = normalizeTermLabel(candidate.term)
           return {
             parentId: candidate.parentId,
             studentId: candidate.studentId,
-            term: candidate.term,
+            term: normalizedTerm,
             session: candidate.session,
             grantedBy: candidate.grantedBy,
             grantedAt:
@@ -99,15 +100,16 @@ const writeRecords = (records: ReportCardAccessRecord[]) => {
   emitUpdate(records)
 }
 
+const filterRecordsForPeriod = (records: ReportCardAccessRecord[], term: string, session: string) => {
+  const normalizedTerm = normalizeTermLabel(term)
+  return records.filter(
+    (entry) => entry.term === normalizedTerm && entry.session === session,
+  )
+}
+
 export const syncReportCardAccess = (term: string, session: string): ReportCardAccessRecord[] => {
   const records = readRecords()
-  const filtered = records.filter((record) => record.term === term && record.session === session)
-
-  if (filtered.length !== records.length) {
-    writeRecords(filtered)
-  }
-
-  return filtered
+  return filterRecordsForPeriod(records, term, session)
 }
 
 export const grantReportCardAccess = (record: {
@@ -121,16 +123,22 @@ export const grantReportCardAccess = (record: {
     return syncReportCardAccess(record.term, record.session)
   }
 
-  const current = syncReportCardAccess(record.term, record.session)
-  const key = recordKey(record)
-  const withoutExisting = current.filter((entry) => recordKey(entry) !== key)
-  const updated: ReportCardAccessRecord[] = [
-    ...withoutExisting,
-    { ...record, grantedAt: new Date().toISOString() },
-  ]
+  const normalizedTerm = normalizeTermLabel(record.term)
+  const currentRecords = readRecords()
+  const key = recordKey({ ...record, term: normalizedTerm })
+  const withoutExisting = currentRecords.filter((entry) => recordKey(entry) !== key)
+  const updatedRecord: ReportCardAccessRecord = {
+    parentId: record.parentId,
+    studentId: record.studentId,
+    term: normalizedTerm,
+    session: record.session,
+    grantedBy: record.grantedBy,
+    grantedAt: new Date().toISOString(),
+  }
+  const updated = [...withoutExisting, updatedRecord]
 
   writeRecords(updated)
-  return updated
+  return filterRecordsForPeriod(updated, record.term, record.session)
 }
 
 export const revokeReportCardAccess = (record: {
@@ -139,15 +147,16 @@ export const revokeReportCardAccess = (record: {
   term: string
   session: string
 }): ReportCardAccessRecord[] => {
-  const current = syncReportCardAccess(record.term, record.session)
-  const key = recordKey(record)
-  const updated = current.filter((entry) => recordKey(entry) !== key)
+  const normalizedTerm = normalizeTermLabel(record.term)
+  const currentRecords = readRecords()
+  const key = recordKey({ ...record, term: normalizedTerm })
+  const updated = currentRecords.filter((entry) => recordKey(entry) !== key)
 
-  if (updated.length !== current.length) {
+  if (updated.length !== currentRecords.length) {
     writeRecords(updated)
   }
 
-  return updated
+  return filterRecordsForPeriod(updated, record.term, record.session)
 }
 
 export const hasReportCardAccess = (record: {
@@ -156,9 +165,14 @@ export const hasReportCardAccess = (record: {
   term: string
   session: string
 }): { granted: boolean; record?: ReportCardAccessRecord } => {
-  const records = syncReportCardAccess(record.term, record.session)
+  const normalizedTerm = normalizeTermLabel(record.term)
+  const records = readRecords()
   const match = records.find(
-    (entry) => entry.parentId === record.parentId && entry.studentId === record.studentId,
+    (entry) =>
+      entry.parentId === record.parentId &&
+      entry.studentId === record.studentId &&
+      entry.term === normalizedTerm &&
+      entry.session === record.session,
   )
 
   return { granted: Boolean(match), record: match }
