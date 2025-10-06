@@ -179,58 +179,6 @@ const createEmptyTermInfo = (): TermInfoState => ({
   feesBalance: "",
 })
 
-type SampleSubjectTemplate = Omit<StoredSubjectRecord, "className" | "teacherId" | "teacherName" | "updatedAt">
-
-const SAMPLE_SUPPLEMENTARY_SUBJECTS: Record<string, SampleSubjectTemplate[]> = {
-  student_john_doe: [
-    {
-      subject: "English Language",
-      ca1: 18,
-      ca2: 19,
-      assignment: 19,
-      caTotal: 56,
-      exam: 38,
-      total: 94,
-      grade: "A",
-      remark: "Exceptional communication skills and articulate presentations.",
-      position: 1,
-      totalObtainable: 100,
-      totalObtained: 94,
-      averageScore: 94,
-    },
-    {
-      subject: "Basic Science",
-      ca1: 17,
-      ca2: 18,
-      assignment: 18,
-      caTotal: 53,
-      exam: 34,
-      total: 87,
-      grade: "A",
-      remark: "Applies scientific concepts confidently in practical sessions.",
-      position: 2,
-      totalObtainable: 100,
-      totalObtained: 87,
-      averageScore: 87,
-    },
-    {
-      subject: "Civic Education",
-      ca1: 16,
-      ca2: 17,
-      assignment: 18,
-      caTotal: 51,
-      exam: 35,
-      total: 86,
-      grade: "A",
-      remark: "Demonstrates leadership and collaborates with empathy.",
-      position: 1,
-      totalObtainable: 100,
-      totalObtained: 86,
-      averageScore: 86,
-    },
-  ],
-}
-
 interface MarksRecord {
   studentId: string
   studentName: string
@@ -1478,19 +1426,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           teacherName: teacher.name,
           updatedAt: timestamp,
         }
-
-        const sampleSubjects = SAMPLE_SUPPLEMENTARY_SUBJECTS[student.studentId] ?? []
-        sampleSubjects.forEach((sample) => {
-          if (!subjects[sample.subject]) {
-            subjects[sample.subject] = {
-              ...sample,
-              className: selectedClass,
-              teacherId: teacher.id,
-              teacherName: teacher.name,
-              updatedAt: timestamp,
-            }
-          }
-        })
 
         const aggregatedSubjects = Object.values(subjects)
         const totalMarksObtainable = aggregatedSubjects.reduce(
@@ -4893,6 +4828,43 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
               report card.
             </DialogDescription>
           </DialogHeader>
+          <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-900">
+            <p className="text-sm font-semibold text-emerald-800">Current selection</p>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              <div>
+                <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                  Class
+                </span>
+                <span className="text-sm font-medium text-emerald-900">
+                  {selectedClass || "Not selected"}
+                </span>
+              </div>
+              <div>
+                <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                  Subject
+                </span>
+                <span className="text-sm font-medium text-emerald-900">
+                  {selectedSubject || "Not selected"}
+                </span>
+              </div>
+              <div>
+                <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                  Term
+                </span>
+                <span className="text-sm font-medium text-emerald-900">
+                  {mapTermKeyToLabel(selectedTerm) || "Not selected"}
+                </span>
+              </div>
+              <div>
+                <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                  Session
+                </span>
+                <span className="text-sm font-medium text-emerald-900">
+                  {selectedSession || "Not selected"}
+                </span>
+              </div>
+            </div>
+          </div>
           <div className="space-y-4">
             {rosterNotice && (
               <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
