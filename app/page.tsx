@@ -38,7 +38,6 @@ import { AutomaticPromotionSystem } from "@/components/automatic-promotion-syste
 import { getStudentReportCardData } from "@/lib/report-card-data"
 import { InternalMessaging, type MessagingParticipant } from "@/components/internal-messaging"
 import { AdminApprovalDashboard } from "@/components/admin-approval-dashboard"
-import { getCompleteReportCard } from "@/lib/sample-report-data"
 import { safeStorage } from "@/lib/safe-storage"
 import { getBrandingFromStorage } from "@/lib/branding"
 import { dbManager } from "@/lib/database-manager"
@@ -2167,23 +2166,6 @@ function ParentDashboard({ user }: { user: User }) {
             defaultRemark: data.branding?.defaultRemark ?? brandingInfo.defaultRemark,
           },
         }
-      }
-
-      const numericId = Number.parseInt(activeStudentId, 10)
-      const completeData = Number.isNaN(numericId)
-        ? null
-        : (getCompleteReportCard(
-            numericId,
-            studentData.class ?? "JSS 1A",
-            "Mathematics",
-            normalizeTermLabel(academicPeriod.term ?? "First Term").toLowerCase(),
-            academicPeriod.session,
-          ) as RawReportCardData | null)
-
-      if (completeData) {
-        setReportCardData(augmentReportData(completeData))
-        setShowReportCard(true)
-        return
       }
 
       const fetchedData =
