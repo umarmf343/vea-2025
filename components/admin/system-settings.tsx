@@ -298,10 +298,6 @@ export function SystemSettings() {
         </Card>
 
         <Card className="border-[#b29032]/20">
-          <CardHeader>
-            <CardTitle className="text-[#2d682d]">School Information</CardTitle>
-            <CardDescription>Branding details displayed across the portal</CardDescription>
-          </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="school-name">School Name</Label>
