@@ -563,7 +563,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
   }
 
-  const normalizeClassName = (value: string) => value.replace(/\s+/g, "").toLowerCase()
+  const normalizeClassName = useCallback((value: string) => value.replace(/\s+/g, "").toLowerCase(), [])
 
   const buildInitialGradingDrafts = (submissions: AssignmentSubmissionRecord[]) =>
     submissions.reduce(
