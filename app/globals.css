@@ -347,7 +347,9 @@
   }
 
   .report-card-print-area,
-  .report-card-print-area * {
+  .report-card-print-area *,
+  .victory-report-card-wrapper,
+  .victory-report-card-wrapper * {
     visibility: visible;
   }
 
@@ -359,6 +361,13 @@
     width: calc(210mm - 24mm) !important;
     min-height: 297mm !important;
     box-sizing: border-box !important;
+  }
+
+  .victory-report-card-wrapper {
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 auto !important;
   }
 
   .print\:hidden {
