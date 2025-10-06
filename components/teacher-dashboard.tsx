@@ -12,7 +12,6 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
-import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Dialog,
@@ -104,7 +103,6 @@ import {
   markAssignmentReminderSent,
   shouldSendAssignmentReminder,
 } from "@/lib/assignment-reminders"
-import type { CheckedState } from "@radix-ui/react-checkbox"
 
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
@@ -476,8 +474,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [isAddStudentDialogOpen, setIsAddStudentDialogOpen] = useState(false)
   const [isRosterLoading, setIsRosterLoading] = useState(false)
   const [rosterCandidates, setRosterCandidates] = useState<AssignmentStudentInfo[]>([])
-  const [selectedRosterIds, setSelectedRosterIds] = useState<string[]>([])
-  const [manualStudent, setManualStudent] = useState({ id: "", name: "" })
+  const [selectedRosterId, setSelectedRosterId] = useState<string | null>(null)
   const [rosterNotice, setRosterNotice] = useState<string | null>(null)
 
   const normalizedTermLabel = useMemo(() => mapTermKeyToLabel(selectedTerm), [selectedTerm])
@@ -967,7 +964,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     } catch (error) {
       logger.warn("Unable to load class roster for grade entry", { error })
       setRosterNotice(
-        "We couldn't load the class roster from the database. You can still add students manually.",
+        "We couldn't load the class roster from the database. Please refresh or try again shortly.",
       )
     }
 
@@ -996,11 +993,11 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
 
     if (candidateMap.size === 0) {
-      setRosterNotice("No available students for this class. Use the manual entry form below.")
+      setRosterNotice("No available students for this class.")
     }
 
     setRosterCandidates(Array.from(candidateMap.values()))
-    setSelectedRosterIds([])
+    setSelectedRosterId(null)
     setIsRosterLoading(false)
   }, [marksData, mockStudents, normalizeClassName, selectedClass])
 
@@ -1027,22 +1024,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   const handleCloseAddStudentDialog = useCallback(() => {
     setIsAddStudentDialogOpen(false)
-    setSelectedRosterIds([])
-    setManualStudent({ id: "", name: "" })
+    setSelectedRosterId(null)
     setRosterNotice(null)
-  }, [])
-
-  const handleRosterSelectionChange = useCallback((studentId: string, checked: CheckedState) => {
-    const isChecked = checked === true || checked === "indeterminate"
-    setSelectedRosterIds((prev) => {
-      if (isChecked) {
-        if (prev.includes(studentId)) {
-          return prev
-        }
-        return [...prev, studentId]
-      }
-      return prev.filter((id) => id !== studentId)
-    })
   }, [])
 
   const emitMarksStoreUpdate = useCallback(
@@ -1080,63 +1063,76 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const calculateGrade = (total: number) => deriveGradeFromScore(total)
 
   const handleConfirmAddStudents = useCallback(() => {
-    const selectedEntries = rosterCandidates.filter((candidate) =>
-      selectedRosterIds.includes(candidate.id),
-    )
-
-    const trimmedName = manualStudent.name.trim()
-    const trimmedId = manualStudent.id.trim()
-    if (trimmedName.length > 0) {
-      selectedEntries.push({
-        id: trimmedId.length > 0 ? trimmedId : `manual_${Date.now()}`,
-        name: trimmedName,
-        className: selectedClass ?? null,
-      })
-    }
-
-    const existingIds = new Set(marksData.map((student) => String(student.studentId)))
-    const additions = new Map<string, AssignmentStudentInfo>()
-
-    selectedEntries.forEach((entry) => {
-      const normalizedId = (entry.id ?? "").trim()
-      if (!normalizedId || existingIds.has(normalizedId)) {
-        return
-      }
-
-      additions.set(normalizedId, {
-        id: normalizedId,
-        name: entry.name ?? null,
-        className: entry.className ?? selectedClass ?? null,
-      })
-    })
-
-    if (additions.size === 0) {
+    if (!selectedRosterId) {
       toast({
         variant: "destructive",
-        title: "No new students selected",
-        description: "Select students who are not already on this grade sheet or add a manual entry.",
+        title: "Select a student",
+        description: "Choose a learner from the class list to continue.",
       })
       return
     }
 
-    const newRecords: MarksRecord[] = Array.from(additions.values()).map((entry) => ({
-      studentId: entry.id,
-      studentName: entry.name ?? `Student ${entry.id}`,
-      firstCA: 0,
-      secondCA: 0,
-      noteAssignment: 0,
-      caTotal: 0,
-      exam: 0,
-      grandTotal: 0,
-      totalMarksObtainable: 100,
-      totalMarksObtained: 0,
-      averageScore: 0,
-      position: 0,
-      grade: deriveGradeFromScore(0),
-      teacherRemark: "",
-    }))
+    const candidate = rosterCandidates.find((entry) => entry.id === selectedRosterId)
+    if (!candidate) {
+      toast({
+        variant: "destructive",
+        title: "Student unavailable",
+        description: "The selected learner could not be found. Please refresh and try again.",
+      })
+      return
+    }
 
-    setMarksData((prev) => calculatePositionsAndAverages([...prev, ...newRecords]))
+    if (marksData.some((student) => String(student.studentId) === String(candidate.id))) {
+      toast({
+        title: "Already added",
+        description: "This learner is already on the grade sheet and ready for editing.",
+      })
+      handleCloseAddStudentDialog()
+      return
+    }
+
+    const storedRecord = selectedSubject
+      ? getStoredStudentMarksRecord(String(candidate.id), normalizedTermLabel, selectedSession)
+      : null
+    const storedSubject =
+      storedRecord && selectedSubject ? storedRecord.subjects?.[selectedSubject] : null
+
+    const initialFirstCA = storedSubject?.ca1 ?? 0
+    const initialSecondCA = storedSubject?.ca2 ?? 0
+    const initialAssignment = storedSubject?.assignment ?? 0
+    const initialExam = storedSubject?.exam ?? 0
+    const caTotal =
+      storedSubject?.caTotal ??
+      calculateContinuousAssessmentTotal(initialFirstCA, initialSecondCA, initialAssignment)
+    const grandTotal = storedSubject?.total ??
+      calculateGrandTotal(initialFirstCA, initialSecondCA, initialAssignment, initialExam)
+    const totalObtainable = storedSubject?.totalObtainable ?? 100
+    const totalObtained = storedSubject?.totalObtained ?? grandTotal
+    const averageScore =
+      typeof storedSubject?.averageScore === "number" && totalObtainable > 0
+        ? Math.round((totalObtained / totalObtainable) * 100)
+        : totalObtainable > 0
+          ? Math.round((grandTotal / totalObtainable) * 100)
+          : 0
+
+    const newRecord: MarksRecord = {
+      studentId: candidate.id,
+      studentName: candidate.name ?? `Student ${candidate.id}`,
+      firstCA: initialFirstCA,
+      secondCA: initialSecondCA,
+      noteAssignment: initialAssignment,
+      caTotal,
+      exam: initialExam,
+      grandTotal,
+      totalMarksObtainable: totalObtainable,
+      totalMarksObtained: totalObtained,
+      averageScore,
+      position: typeof storedSubject?.position === "number" ? storedSubject.position : 0,
+      grade: storedSubject?.grade ?? deriveGradeFromScore(grandTotal),
+      teacherRemark: storedSubject?.remark ?? "",
+    }
+
+    setMarksData((prev) => calculatePositionsAndAverages([...prev, newRecord]))
 
     setAdditionalData((prev) => {
       const nextAffective = { ...prev.affectiveDomain }
@@ -1145,23 +1141,21 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       const nextAttendance = { ...prev.attendance }
       const nextStatus = { ...prev.studentStatus }
 
-      newRecords.forEach((record) => {
-        if (!nextAffective[record.studentId]) {
-          nextAffective[record.studentId] = {}
-        }
-        if (!nextPsychomotor[record.studentId]) {
-          nextPsychomotor[record.studentId] = {}
-        }
-        if (typeof nextRemarks[record.studentId] === "undefined") {
-          nextRemarks[record.studentId] = ""
-        }
-        if (!nextAttendance[record.studentId]) {
-          nextAttendance[record.studentId] = { present: 0, absent: 0, total: 0 }
-        }
-        if (!nextStatus[record.studentId]) {
-          nextStatus[record.studentId] = "promoted"
-        }
-      })
+      if (!nextAffective[newRecord.studentId]) {
+        nextAffective[newRecord.studentId] = {}
+      }
+      if (!nextPsychomotor[newRecord.studentId]) {
+        nextPsychomotor[newRecord.studentId] = {}
+      }
+      if (typeof nextRemarks[newRecord.studentId] === "undefined") {
+        nextRemarks[newRecord.studentId] = ""
+      }
+      if (!nextAttendance[newRecord.studentId]) {
+        nextAttendance[newRecord.studentId] = { present: 0, absent: 0, total: 0 }
+      }
+      if (!nextStatus[newRecord.studentId]) {
+        nextStatus[newRecord.studentId] = storedRecord?.status ?? "promoted"
+      }
 
       return {
         ...prev,
@@ -1173,23 +1167,24 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       }
     })
 
-    setRosterCandidates((prev) => prev.filter((entry) => !additions.has(entry.id)))
+    setRosterCandidates((prev) => prev.filter((entry) => entry.id !== candidate.id))
 
     toast({
-      title: `${newRecords.length} student${newRecords.length === 1 ? "" : "s"} added`,
-      description: "Enter their scores and remarks, then save when you are done.",
+      title: `${candidate.name ?? `Student ${candidate.id}`} added`,
+      description: "Update their scores and remarks, then save when you are done.",
     })
 
     handleCloseAddStudentDialog()
   }, [
     calculatePositionsAndAverages,
     handleCloseAddStudentDialog,
-    manualStudent.id,
-    manualStudent.name,
     marksData,
+    normalizedTermLabel,
     rosterCandidates,
-    selectedClass,
-    selectedRosterIds,
+    selectedRosterId,
+    selectedSession,
+    selectedSubject,
+    setAdditionalData,
     toast,
   ])
 
@@ -4824,8 +4819,8 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
           <DialogHeader>
             <DialogTitle>Add students to the grade sheet</DialogTitle>
             <DialogDescription>
-              Select learners from the class roster or add a manual entry so their results appear on the
-              report card.
+              Select a learner from the class roster so their results appear on the report card and can be
+              updated.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-900">
@@ -4874,38 +4869,6 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
             )}
             <div className="space-y-2">
               <Label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Manual entry
-              </Label>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label htmlFor="manual-student-name">Student name</Label>
-                  <Input
-                    id="manual-student-name"
-                    value={manualStudent.name}
-                    onChange={(event) =>
-                      setManualStudent((prev) => ({ ...prev, name: event.target.value }))
-                    }
-                    placeholder="e.g. John Doe"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="manual-student-id">Student ID (optional)</Label>
-                  <Input
-                    id="manual-student-id"
-                    value={manualStudent.id}
-                    onChange={(event) =>
-                      setManualStudent((prev) => ({ ...prev, id: event.target.value }))
-                    }
-                    placeholder="e.g. STUD123"
-                  />
-                </div>
-              </div>
-              <p className="text-[11px] text-gray-500">
-                Leave the ID blank to generate one automatically for manual entries.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                 Class roster
               </Label>
               {isRosterLoading ? (
@@ -4914,25 +4877,25 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 </div>
               ) : rosterCandidates.length === 0 ? (
                 <div className="rounded-md border border-dashed border-gray-200 p-3 text-sm text-gray-600">
-                  No students available. Use the manual entry form above.
+                  No students available for this class.
                 </div>
               ) : (
                 <ScrollArea className="h-56 rounded-md border border-gray-200">
-                  <div className="divide-y divide-gray-100">
+                  <RadioGroup
+                    value={selectedRosterId ?? ""}
+                    onValueChange={(value) => setSelectedRosterId(value)}
+                    className="divide-y divide-gray-100"
+                  >
                     {rosterCandidates.map((candidate) => {
-                      const isSelected = selectedRosterIds.includes(candidate.id)
                       const displayName = candidate.name ?? `Student ${candidate.id}`
+                      const inputId = `roster-${candidate.id}`
                       return (
                         <label
                           key={candidate.id}
                           className="flex cursor-pointer items-start gap-3 p-3 hover:bg-emerald-50/50"
+                          htmlFor={inputId}
                         >
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={(checked) =>
-                              handleRosterSelectionChange(candidate.id, checked)
-                            }
-                          />
+                          <RadioGroupItem value={candidate.id} id={inputId} />
                           <div className="space-y-1">
                             <p className="text-sm font-medium text-gray-900">{displayName}</p>
                             <p className="text-xs text-gray-500">
@@ -4943,10 +4906,10 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                         </label>
                       )
                     })}
-                  </div>
+                  </RadioGroup>
                 </ScrollArea>
               )}
-              <p className="text-[11px] text-gray-500">Selected: {selectedRosterIds.length}</p>
+              <p className="text-[11px] text-gray-500">Selected: {selectedRosterId ? 1 : 0}</p>
             </div>
           </div>
           <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
