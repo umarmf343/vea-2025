@@ -1496,7 +1496,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         @media print {
           @page {
             size: auto;
-            margin: 0;
+            margin: 10mm;
           }
 
           body {
@@ -1589,12 +1589,25 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           }
 
           .remark-section {
-            gap: 10px;
+            gap: 8mm;
+            padding: 0 8mm 6mm;
           }
 
           .teacher-remarks,
           .domain-block {
             font-size: 9.5pt;
+            max-width: 100%;
+          }
+
+          .remarks-column {
+            flex: 1 1 48%;
+            min-width: 0;
+          }
+
+          .psychomotor-block,
+          .affective-block {
+            min-width: 0;
+            flex: 1 1 48%;
           }
 
           .vacation-box,
@@ -1605,6 +1618,15 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
           .grading-key-container {
             font-size: 9pt;
+          }
+
+          .af-domain-table {
+            table-layout: fixed;
+          }
+
+          .af-domain-table th,
+          .af-domain-table td {
+            word-break: break-word;
           }
 
           .logo {
