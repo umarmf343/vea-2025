@@ -53,7 +53,7 @@ describe("Report card access controller", () => {
     globalThis.removeEventListener(REPORT_CARD_ACCESS_EVENT, listener as EventListener)
   })
 
-  it("revokes prior term access automatically when a new term sync occurs", () => {
+  it("retains previous term access when syncing a different academic period", () => {
     grantReportCardAccess({
       parentId,
       studentId,
@@ -62,11 +62,48 @@ describe("Report card access controller", () => {
       grantedBy: "payment",
     })
 
-    const filtered = syncReportCardAccess(secondTerm, session)
-    expect(filtered).toHaveLength(0)
+    grantReportCardAccess({
+      parentId,
+      studentId,
+      session,
+      term: secondTerm,
+      grantedBy: "manual",
+    })
+
+    const firstTermAccess = hasReportCardAccess({ parentId, studentId, session, term: firstTerm })
+    expect(firstTermAccess.granted).toBe(true)
+    expect(firstTermAccess.record?.term).toBe(firstTerm)
+
+    const secondTermRecords = syncReportCardAccess(secondTerm, session)
+    expect(secondTermRecords).toHaveLength(1)
+    expect(secondTermRecords[0]).toMatchObject({ grantedBy: "manual" })
 
     const priorAccess = hasReportCardAccess({ parentId, studentId, session, term: firstTerm })
-    expect(priorAccess.granted).toBe(false)
+    expect(priorAccess.granted).toBe(true)
+  })
+
+  it("only revokes the targeted term while keeping other grants intact", () => {
+    grantReportCardAccess({
+      parentId,
+      studentId,
+      session,
+      term: firstTerm,
+      grantedBy: "payment",
+    })
+
+    grantReportCardAccess({
+      parentId,
+      studentId,
+      session,
+      term: secondTerm,
+      grantedBy: "manual",
+    })
+
+    const remaining = revokeReportCardAccess({ parentId, studentId, session, term: secondTerm })
+    expect(remaining).toHaveLength(0)
+
+    const firstTermAccess = hasReportCardAccess({ parentId, studentId, session, term: firstTerm })
+    expect(firstTermAccess.granted).toBe(true)
   })
 
   it("allows super admin manual overrides to replace automated access", () => {
