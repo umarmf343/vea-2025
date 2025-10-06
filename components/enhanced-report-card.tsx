@@ -663,20 +663,28 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     const pdfWidth = pdf.internal.pageSize.getWidth()
     const pdfHeight = pdf.internal.pageSize.getHeight()
     const imageProps = pdf.getImageProperties(dataUrl)
-    const imageRatio = imageProps.width / imageProps.height
 
-    let renderWidth = pdfWidth
-    let renderHeight = renderWidth / imageRatio
+    const imageWidth = imageProps.width
+    const imageHeight = imageProps.height
+    const widthScale = pdfWidth / imageWidth
+    const heightScale = pdfHeight / imageHeight
+    const renderScale = Math.min(widthScale, heightScale)
 
-    if (renderHeight > pdfHeight) {
-      renderHeight = pdfHeight
-      renderWidth = renderHeight * imageRatio
-    }
+    const renderWidth = imageWidth * renderScale
+    const renderHeight = imageHeight * renderScale
+    const offsetX = Math.max((pdfWidth - renderWidth) / 2, 0)
+    const offsetY = Math.max((pdfHeight - renderHeight) / 2, 0)
 
-    const offsetX = (pdfWidth - renderWidth) / 2
-    const offsetY = (pdfHeight - renderHeight) / 2
-
-    pdf.addImage(dataUrl, "PNG", offsetX, offsetY, renderWidth, renderHeight, undefined, "FAST")
+    pdf.addImage(
+      dataUrl,
+      "PNG",
+      offsetX,
+      offsetY,
+      renderWidth,
+      renderHeight,
+      undefined,
+      "FAST",
+    )
 
     return pdf
   }, [reportCardData])
