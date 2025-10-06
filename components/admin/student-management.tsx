@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { AlertCircle, Edit, Loader2, Plus, Trash2, UserRound } from "lucide-react"
 import { dbManager } from "@/lib/database-manager"
+import { safeStorage } from "@/lib/safe-storage"
 
 interface StudentRecord {
   id: string
@@ -77,6 +78,20 @@ export function StudentManagement() {
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null)
   const [availableClasses, setAvailableClasses] = useState<string[]>([])
 
+  const syncStudentCaches = useCallback((records: StudentRecord[]) => {
+    try {
+      safeStorage.setItem("students", JSON.stringify(records))
+    } catch (storageError) {
+      console.error("Unable to persist student cache", storageError)
+    }
+
+    try {
+      dbManager.triggerEvent("studentsRefreshed", records)
+    } catch (eventError) {
+      console.error("Unable to broadcast student refresh event", eventError)
+    }
+  }, [])
+
   const loadStudents = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -89,13 +104,14 @@ export function StudentManagement() {
 
       const data = (await response.json()) as { students: StudentRecord[] }
       setStudents(data.students)
+      syncStudentCaches(data.students)
     } catch (err) {
       console.error(err)
       setError(err instanceof Error ? err.message : "Unable to fetch students")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [syncStudentCaches])
 
   const loadClasses = useCallback(async () => {
     try {
@@ -192,7 +208,11 @@ export function StudentManagement() {
         }
 
         const data = (await response.json()) as { student: StudentRecord }
-        setStudents((previous) => previous.map((item) => (item.id === data.student.id ? data.student : item)))
+        setStudents((previous) => {
+          const updated = previous.map((item) => (item.id === data.student.id ? data.student : item))
+          syncStudentCaches(updated)
+          return updated
+        })
       } else {
         const response = await fetch("/api/students", {
           method: "POST",
@@ -206,7 +226,11 @@ export function StudentManagement() {
         }
 
         const data = (await response.json()) as { student: StudentRecord }
-        setStudents((previous) => [...previous, data.student])
+        setStudents((previous) => {
+          const updated = [...previous, data.student]
+          syncStudentCaches(updated)
+          return updated
+        })
       }
 
       setEditingStudent(null)
@@ -225,7 +249,11 @@ export function StudentManagement() {
         throw new Error(data.error ?? "Failed to delete student")
       }
 
-      setStudents((previous) => previous.filter((student) => student.id !== studentId))
+      setStudents((previous) => {
+        const updated = previous.filter((student) => student.id !== studentId)
+        syncStudentCaches(updated)
+        return updated
+      })
     } catch (err) {
       console.error(err)
       setError(err instanceof Error ? err.message : "Unable to delete student")
