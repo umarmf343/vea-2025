@@ -316,6 +316,8 @@ const DOMAIN_COLUMNS = [
   { key: "poor", label: "V.Poor" },
 ] as const
 
+const AFFECTIVE_DOMAIN_COLUMNS = DOMAIN_COLUMNS.filter((column) => column.key !== "poor")
+
 const normalizeSubjects = (subjects: Array<Record<string, unknown>> | undefined): SubjectScore[] => {
   if (!Array.isArray(subjects)) {
     return []
@@ -1092,7 +1094,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                 <thead>
                   <tr>
                     <th></th>
-                    {DOMAIN_COLUMNS.map((column) => (
+                    {AFFECTIVE_DOMAIN_COLUMNS.map((column) => (
                       <th key={`affective-header-${column.key}`}>{column.label}</th>
                     ))}
                   </tr>
@@ -1102,7 +1104,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                     affectiveTraits.map((trait) => (
                       <tr key={trait.key}>
                         <td>{trait.label}</td>
-                        {DOMAIN_COLUMNS.map((column) => {
+                        {AFFECTIVE_DOMAIN_COLUMNS.map((column) => {
                           const match = isBehavioralRatingMatch(
                             reportCardData.affectiveDomain,
                             trait.key,
@@ -1118,7 +1120,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={DOMAIN_COLUMNS.length + 1}>No affective records available.</td>
+                      <td colSpan={AFFECTIVE_DOMAIN_COLUMNS.length + 1}>No affective records available.</td>
                     </tr>
                   )}
                 </tbody>
