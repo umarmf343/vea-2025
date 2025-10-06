@@ -184,11 +184,13 @@ const isWithinPeriod = (timestamp: Date, period: NormalisedPeriodKey, now: Date)
 
 const formatMonthLabel = (date: Date): { key: string; label: string; order: number } => {
   const year = date.getFullYear()
-  const month = date.getMonth()
+  const monthIndex = date.getMonth() + 1
+  const monthKey = String(monthIndex).padStart(2, "0")
+
   return {
-    key: `${year}-${month + 1}`.padStart(7, "0"),
+    key: `${year}-${monthKey}`,
     label: date.toLocaleDateString(undefined, { month: "short", year: "numeric" }),
-    order: year * 12 + month,
+    order: year * 12 + (monthIndex - 1),
   }
 }
 
@@ -522,7 +524,8 @@ export const calculateFinancialAnalytics = (payments: AnalyticsPayment[]): Finan
     defaulters: buildDefaulters(payments),
   }
 
-  (Object.keys(PERIOD_CONFIG) as NormalisedPeriodKey[]).forEach((key) => {
+  const periodKeys = Object.keys(PERIOD_CONFIG) as NormalisedPeriodKey[]
+  periodKeys.forEach((key) => {
     const filtered = filterPaymentsByPeriod(payments, key, now)
     snapshot.periods[key] = {
       summary: calculateSummary(filtered),
