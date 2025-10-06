@@ -7,17 +7,40 @@ import {
   BRANDING_STORAGE_KEY,
   type BrandingInfo,
   getBrandingFromStorage,
+  getFallbackBranding,
   parseBranding,
 } from "@/lib/branding"
 
 const BRANDING_EVENT_KEY = "brandingUpdated"
 
+const areBrandingsEqual = (a: BrandingInfo, b: BrandingInfo): boolean => {
+  return (
+    a.schoolName === b.schoolName &&
+    a.schoolAddress === b.schoolAddress &&
+    a.educationZone === b.educationZone &&
+    a.councilArea === b.councilArea &&
+    a.contactPhone === b.contactPhone &&
+    a.contactEmail === b.contactEmail &&
+    a.headmasterName === b.headmasterName &&
+    a.defaultRemark === b.defaultRemark &&
+    a.logoUrl === b.logoUrl &&
+    a.signatureUrl === b.signatureUrl &&
+    a.updatedAt === b.updatedAt
+  )
+}
+
 export const useBranding = (): BrandingInfo => {
-  const [branding, setBranding] = useState<BrandingInfo>(() => getBrandingFromStorage())
+  const [branding, setBranding] = useState<BrandingInfo>(() => getFallbackBranding())
 
   useEffect(() => {
     const updateBrandingState = (value: unknown) => {
-      setBranding(parseBranding(value ?? getBrandingFromStorage()))
+      setBranding((currentBranding) => {
+        const nextBranding = parseBranding(value ?? getBrandingFromStorage())
+        if (areBrandingsEqual(currentBranding, nextBranding)) {
+          return currentBranding
+        }
+        return nextBranding
+      })
     }
 
     const handleStorageEvent = (event: StorageEvent) => {
@@ -31,6 +54,8 @@ export const useBranding = (): BrandingInfo => {
     }
 
     dbManager.on(BRANDING_EVENT_KEY, updateBrandingState)
+
+    updateBrandingState(getBrandingFromStorage())
 
     if (typeof window !== "undefined") {
       window.addEventListener("storage", handleStorageEvent)
