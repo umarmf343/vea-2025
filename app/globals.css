@@ -354,9 +354,9 @@
   .report-card-print-area {
     position: static;
     transform: none;
-    margin: 0 !important;
+    margin: 0 auto !important;
     padding: 12mm !important;
-    width: 210mm !important;
+    width: calc(210mm - 24mm) !important;
     min-height: 297mm !important;
     box-sizing: border-box !important;
   }
