@@ -1,4 +1,6 @@
 import { randomBytes as nodeRandomBytes, randomUUID as nodeRandomUUID } from "node:crypto"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import bcrypt from "bcryptjs"
 import mysql, {
   type Pool,
@@ -449,6 +451,30 @@ const STORAGE_KEYS = {
 } as const
 
 const serverCollections = new Map<string, unknown[]>()
+const DATA_DIRECTORY = join(process.cwd(), ".vea-data")
+
+let hasEnsuredDataDirectory = false
+
+function ensureDataDirectoryExists(): void {
+  if (hasEnsuredDataDirectory) {
+    return
+  }
+
+  try {
+    if (!existsSync(DATA_DIRECTORY)) {
+      mkdirSync(DATA_DIRECTORY, { recursive: true })
+    }
+    hasEnsuredDataDirectory = true
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      logger.warn("Unable to prepare local data directory", { error })
+    }
+  }
+}
+
+function getCollectionFilePath(key: string): string {
+  return join(DATA_DIRECTORY, `${key}.json`)
+}
 
 function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value))
@@ -461,7 +487,26 @@ function isServer(): boolean {
 function readCollection<T>(key: string): T[] | undefined {
   if (isServer()) {
     const data = serverCollections.get(key)
-    return data ? deepClone(data) : undefined
+    if (data) {
+      return deepClone(data)
+    }
+
+    try {
+      ensureDataDirectoryExists()
+      const filePath = getCollectionFilePath(key)
+      if (existsSync(filePath)) {
+        const contents = readFileSync(filePath, "utf8")
+        if (contents.trim().length > 0) {
+          const parsed = JSON.parse(contents) as T[]
+          serverCollections.set(key, deepClone(parsed))
+          return deepClone(parsed)
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to restore persisted data for ${key}`, { error })
+    }
+
+    return undefined
   }
 
   const stored = safeStorage.getItem(key)
@@ -482,6 +527,14 @@ function persistCollection<T>(key: string, data: T[]): void {
 
   if (isServer()) {
     serverCollections.set(key, cloned)
+
+    try {
+      ensureDataDirectoryExists()
+      const filePath = getCollectionFilePath(key)
+      writeFileSync(filePath, JSON.stringify(cloned, null, 2), "utf8")
+    } catch (error) {
+      logger.error(`Failed to persist ${key} to local data directory`, { error })
+    }
   }
 
   try {
