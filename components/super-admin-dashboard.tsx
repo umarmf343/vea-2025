@@ -71,7 +71,7 @@ import {
   Plus,
   RefreshCw,
   Save,
-  Shield,
+  Loader2,
   Trash2,
   TrendingUp,
   Users,
@@ -170,6 +170,11 @@ interface SystemSettingsState {
   currentTerm: string
   registrationEnabled: boolean
   reportCardDeadline: string
+}
+
+interface SaveActionOptions {
+  silent?: boolean
+  propagateError?: boolean
 }
 
 type PaymentStatus = "pending" | "completed" | "failed"
@@ -619,6 +624,7 @@ export default function SuperAdminDashboard() {
 
   const [systemSettings, setSystemSettings] = useState<SystemSettingsState>(DEFAULT_SETTINGS)
   const [isSavingSettings, setIsSavingSettings] = useState(false)
+  const [isSavingAllEntries, setIsSavingAllEntries] = useState(false)
 
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null)
 
@@ -902,76 +908,93 @@ export default function SuperAdminDashboard() {
     }
   }, [refreshAll, toast])
 
-  const handleSaveBranding = useCallback(async () => {
-    setIsSavingBranding(true)
-    const compressWhitespace = (value: string) => value.replace(/\s+/g, " ").trim()
-    const resolveMediaValue = (value?: string | null, fallback?: string | null) => {
-      if (typeof value === "string") {
-        const trimmed = value.trim()
-        if (trimmed.length > 0) {
-          return trimmed
+  const handleSaveBranding = useCallback(
+    async (options?: SaveActionOptions) => {
+      const silent = options?.silent ?? false
+      const propagateError = options?.propagateError ?? false
+      setIsSavingBranding(true)
+      const compressWhitespace = (value: string) => value.replace(/\s+/g, " ").trim()
+      const resolveMediaValue = (value?: string | null, fallback?: string | null) => {
+        if (typeof value === "string") {
+          const trimmed = value.trim()
+          if (trimmed.length > 0) {
+            return trimmed
+          }
         }
-      }
 
-      if (typeof fallback === "string") {
-        const trimmed = fallback.trim()
-        if (trimmed.length > 0) {
-          return trimmed
+        if (typeof fallback === "string") {
+          const trimmed = fallback.trim()
+          if (trimmed.length > 0) {
+            return trimmed
+          }
         }
+
+        return null
       }
 
-      return null
-    }
+      try {
+        const normalizedFields = {
+          schoolName: compressWhitespace(branding.schoolName),
+          schoolAddress: compressWhitespace(branding.schoolAddress),
+          educationZone: compressWhitespace(branding.educationZone),
+          councilArea: compressWhitespace(branding.councilArea),
+          contactPhone: branding.contactPhone.trim(),
+          contactEmail: branding.contactEmail.trim(),
+          headmasterName: compressWhitespace(branding.headmasterName),
+          defaultRemark: branding.defaultRemark.trim(),
+        }
 
-    try {
-      const normalizedFields = {
-        schoolName: compressWhitespace(branding.schoolName),
-        schoolAddress: compressWhitespace(branding.schoolAddress),
-        educationZone: compressWhitespace(branding.educationZone),
-        councilArea: compressWhitespace(branding.councilArea),
-        contactPhone: branding.contactPhone.trim(),
-        contactEmail: branding.contactEmail.trim(),
-        headmasterName: compressWhitespace(branding.headmasterName),
-        defaultRemark: branding.defaultRemark.trim(),
+        const payload = {
+          ...normalizedFields,
+          logoUrl: resolveMediaValue(brandingUploads.logoUrl, branding.logoUrl),
+          signatureUrl: resolveMediaValue(brandingUploads.signatureUrl, branding.signatureUrl),
+        }
+
+        const response = await fetchJson<{ branding: BrandingRecord; message?: string }>("/api/system/branding", {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        })
+
+        await dbManager.saveBranding({ ...payload })
+
+        const mapped = mapBranding(response.branding)
+        setBranding(mapped)
+        const updatedTimestamp = mapped.updatedAt ?? new Date().toISOString()
+
+        setBrandingUploads((previous) => ({
+          ...previous,
+          logoUrl: mapped.logoUrl ?? "",
+          signatureUrl: mapped.signatureUrl ?? "",
+          logoUploadedAt: mapped.logoUrl ? updatedTimestamp : previous.logoUploadedAt,
+          signatureUploadedAt: mapped.signatureUrl ? updatedTimestamp : previous.signatureUploadedAt,
+        }))
+
+        if (!silent) {
+          const successTitle = response.message ?? "Branding updated"
+          toast({
+            title: successTitle,
+            description: "Your school's identity has been refreshed across every connected portal.",
+          })
+        }
+
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to update branding"
+        if (!silent) {
+          toast({ title: "Update failed", description: message, variant: "destructive" })
+        }
+
+        if (propagateError) {
+          throw error instanceof Error ? error : new Error(message)
+        }
+
+        return false
+      } finally {
+        setIsSavingBranding(false)
       }
-
-      const payload = {
-        ...normalizedFields,
-        logoUrl: resolveMediaValue(brandingUploads.logoUrl, branding.logoUrl),
-        signatureUrl: resolveMediaValue(brandingUploads.signatureUrl, branding.signatureUrl),
-      }
-
-      const response = await fetchJson<{ branding: BrandingRecord; message?: string }>("/api/system/branding", {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      })
-
-      await dbManager.saveBranding({ ...payload })
-
-      const mapped = mapBranding(response.branding)
-      setBranding(mapped)
-      const updatedTimestamp = mapped.updatedAt ?? new Date().toISOString()
-
-      setBrandingUploads((previous) => ({
-        ...previous,
-        logoUrl: mapped.logoUrl ?? "",
-        signatureUrl: mapped.signatureUrl ?? "",
-        logoUploadedAt: mapped.logoUrl ? updatedTimestamp : previous.logoUploadedAt,
-        signatureUploadedAt: mapped.signatureUrl ? updatedTimestamp : previous.signatureUploadedAt,
-      }))
-
-      const successTitle = response.message ?? "Branding updated"
-      toast({
-        title: successTitle,
-        description: "Your school's identity has been refreshed across every connected portal.",
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to update branding"
-      toast({ title: "Update failed", description: message, variant: "destructive" })
-    } finally {
-      setIsSavingBranding(false)
-    }
-  }, [branding, brandingUploads, toast])
+    },
+    [branding, brandingUploads, toast],
+  )
 
   const handleBrandingFile = useCallback((file: File, key: "logo" | "signature") => {
     const reader = new FileReader()
@@ -1002,22 +1025,68 @@ export default function SuperAdminDashboard() {
     reader.readAsDataURL(file)
   }, [])
 
-  const handleSaveSettings = useCallback(async () => {
-    setIsSavingSettings(true)
-    try {
-      await fetchJson("/api/system/settings", {
-        method: "PUT",
-        body: JSON.stringify(systemSettings),
-      })
-      toast({ title: "System settings saved" })
-      await refreshSystemSettings()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save system settings"
-      toast({ title: "Save failed", description: message, variant: "destructive" })
-    } finally {
-      setIsSavingSettings(false)
+  const handleSaveSettings = useCallback(
+    async (options?: SaveActionOptions) => {
+      const silent = options?.silent ?? false
+      const propagateError = options?.propagateError ?? false
+      setIsSavingSettings(true)
+      try {
+        await fetchJson("/api/system/settings", {
+          method: "PUT",
+          body: JSON.stringify(systemSettings),
+        })
+        if (!silent) {
+          toast({ title: "System settings saved" })
+        }
+        await refreshSystemSettings()
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to save system settings"
+        if (!silent) {
+          toast({ title: "Save failed", description: message, variant: "destructive" })
+        }
+
+        if (propagateError) {
+          throw error instanceof Error ? error : new Error(message)
+        }
+
+        return false
+      } finally {
+        setIsSavingSettings(false)
+      }
+    },
+    [refreshSystemSettings, systemSettings, toast],
+  )
+
+  const handleSaveAllEntries = useCallback(async () => {
+    if (isSavingAllEntries || isSavingBranding || isSavingSettings) {
+      return
     }
-  }, [refreshSystemSettings, systemSettings, toast])
+
+    setIsSavingAllEntries(true)
+    try {
+      await handleSaveBranding({ silent: true, propagateError: true })
+      await handleSaveSettings({ silent: true, propagateError: true })
+      await refreshAll()
+      toast({
+        title: "All entries saved",
+        description: "Every dashboard update is now synchronised across devices.",
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save all entries"
+      toast({ title: "Save unsuccessful", description: message, variant: "destructive" })
+    } finally {
+      setIsSavingAllEntries(false)
+    }
+  }, [
+    handleSaveBranding,
+    handleSaveSettings,
+    isSavingAllEntries,
+    isSavingBranding,
+    isSavingSettings,
+    refreshAll,
+    toast,
+  ])
 
   const handleAddClassSubject = useCallback(() => {
     setClassForm((previous) => {
@@ -1182,10 +1251,18 @@ export default function SuperAdminDashboard() {
               <RefreshCw className={cn("mr-2 h-4 w-4", isRefreshing && "animate-spin")} />
               Refresh Data
             </Button>
-            <Button className="bg-[#b29032] hover:bg-[#9a7c2a]" onClick={() => setActiveTab("system")}>
-              <Shield className="mr-2 h-4 w-4" />
-            Admin Tools
-          </Button>
+            <Button
+              className="bg-[#b29032] hover:bg-[#9a7c2a]"
+              onClick={handleSaveAllEntries}
+              disabled={isSavingAllEntries || isSavingBranding || isSavingSettings}
+            >
+              {isSavingAllEntries ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              {isSavingAllEntries ? "Saving..." : "Save All Entries"}
+            </Button>
         </div>
       </div>
 
