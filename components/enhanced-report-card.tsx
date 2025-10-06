@@ -100,6 +100,9 @@ const STORAGE_KEYS_TO_WATCH = [
   "studentPhotos",
 ]
 
+const PX_PER_MM = 96 / 25.4
+const convertPxToMm = (value: number) => value / PX_PER_MM
+
 const sanitizeFileName = (value: string) => {
   const cleaned = value
     .toLowerCase()
@@ -652,26 +655,42 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     })
 
     const dimensions = target.getBoundingClientRect()
+    if (dimensions.width <= 0 || dimensions.height <= 0) {
+      return null
+    }
+
     const orientation = dimensions.width >= dimensions.height ? "landscape" : "portrait"
     const { jsPDF } = await getJsPdf()
     const pdf = new jsPDF({
       orientation,
-      unit: "px",
-      format: [dimensions.width, dimensions.height],
+      unit: "mm",
+      format: "a4",
     })
 
     const pdfWidth = pdf.internal.pageSize.getWidth()
     const pdfHeight = pdf.internal.pageSize.getHeight()
+    const marginMm = 8
+    const usableWidth = Math.max(pdfWidth - marginMm * 2, 0)
+    const usableHeight = Math.max(pdfHeight - marginMm * 2, 0)
+    if (usableWidth <= 0 || usableHeight <= 0) {
+      return null
+    }
     const imageProps = pdf.getImageProperties(dataUrl)
 
     const imageWidth = imageProps.width
     const imageHeight = imageProps.height
-    const widthScale = pdfWidth / imageWidth
-    const heightScale = pdfHeight / imageHeight
-    const renderScale = Math.min(widthScale, heightScale)
+    const imageWidthMm = convertPxToMm(imageWidth)
+    const imageHeightMm = convertPxToMm(imageHeight)
+    if (imageWidthMm <= 0 || imageHeightMm <= 0) {
+      return null
+    }
 
-    const renderWidth = imageWidth * renderScale
-    const renderHeight = imageHeight * renderScale
+    const widthScale = usableWidth / imageWidthMm
+    const heightScale = usableHeight / imageHeightMm
+    const renderScale = Math.min(widthScale, heightScale, 1)
+
+    const renderWidth = imageWidthMm * renderScale
+    const renderHeight = imageHeightMm * renderScale
     const offsetX = Math.max((pdfWidth - renderWidth) / 2, 0)
     const offsetY = Math.max((pdfHeight - renderHeight) / 2, 0)
 
