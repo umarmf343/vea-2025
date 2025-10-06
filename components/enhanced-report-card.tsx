@@ -1238,7 +1238,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         .photo-placeholder img {
           width: 100%;
           height: 100%;
-          object-fit: cover;
+          object-fit: contain;
+          padding: 6px;
         }
 
         .report-title {
@@ -1450,6 +1451,15 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         }
 
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 12mm 10mm;
+          }
+
+          body {
+            margin: 0;
+          }
+
           .victory-report-card-wrapper {
             padding: 0;
           }
@@ -1460,11 +1470,13 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
           .victory-report-card {
             width: 100%;
+            justify-content: center;
           }
 
           .victory-report-card .report-container {
-            width: 190mm !important;
-            max-width: none;
+            width: 100% !important;
+            max-width: 186mm;
+            margin: 0 auto !important;
             border-width: 3px;
           }
         }
