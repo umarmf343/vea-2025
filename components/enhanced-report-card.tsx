@@ -112,6 +112,80 @@ const sanitizeFileName = (value: string) => {
   return cleaned.length > 0 ? cleaned : "report-card"
 }
 
+const removeNonPrintableNodes = (root: HTMLElement) => {
+  const elements = root.querySelectorAll<HTMLElement>("*")
+  elements.forEach((element) => {
+    const classNames = Array.from(element.classList)
+    if (classNames.includes("no-export") || classNames.includes("print:hidden")) {
+      element.remove()
+    }
+  })
+}
+
+const createPrintableClone = (element: HTMLElement) => {
+  const doc = element.ownerDocument ?? document
+  const referenceRect = element.getBoundingClientRect()
+  const width = Math.max(Math.round(referenceRect.width), 0)
+  const height = Math.max(Math.round(referenceRect.height), 0)
+
+  const wrapper = doc.createElement("div")
+  wrapper.style.position = "fixed"
+  wrapper.style.top = "0"
+  wrapper.style.left = "0"
+  wrapper.style.pointerEvents = "none"
+  wrapper.style.opacity = "0"
+  wrapper.style.zIndex = "-1"
+  wrapper.style.background = "transparent"
+  if (width > 0) {
+    wrapper.style.width = `${width}px`
+  }
+  if (height > 0) {
+    wrapper.style.height = `${height}px`
+  }
+
+  const clone = element.cloneNode(true) as HTMLElement
+  removeNonPrintableNodes(clone)
+
+  const defaultView = element.ownerDocument?.defaultView
+  const computedStyle = defaultView?.getComputedStyle(element)
+
+  clone.style.margin = "0"
+  clone.style.boxSizing = "border-box"
+  clone.style.width = width > 0 ? `${width}px` : element.style.width
+  clone.style.maxWidth = "none"
+  clone.style.height = "auto"
+  clone.style.backgroundColor = computedStyle?.backgroundColor ?? "#ffffff"
+  if (computedStyle?.border) {
+    clone.style.border = computedStyle.border
+  }
+
+  const host = doc.createElement("div")
+  host.className = "victory-report-card victory-report-card--export"
+  host.style.position = "relative"
+  host.style.display = "block"
+  host.style.margin = "0"
+  host.style.padding = "0"
+  host.style.width = width > 0 ? `${width}px` : "auto"
+  host.style.maxWidth = "none"
+  host.style.background = "transparent"
+  host.appendChild(clone)
+
+  wrapper.appendChild(host)
+  doc.body.appendChild(wrapper)
+
+  const measuredRect = clone.getBoundingClientRect()
+  const measuredWidth = Math.max(Math.round(measuredRect.width), width)
+  const measuredHeight = Math.max(Math.round(measuredRect.height), height)
+
+  const cleanup = () => {
+    if (wrapper.parentNode) {
+      wrapper.parentNode.removeChild(wrapper)
+    }
+  }
+
+  return { clone, cleanup, width: measuredWidth, height: measuredHeight }
+}
+
 const parseJsonRecord = (value: string | null) => {
   if (!value) {
     return {}
@@ -637,75 +711,53 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
       return null
     }
 
-    const { toPng } = await getHtmlToImage()
-    const dataUrl = await toPng(target, {
-      backgroundColor: "#ffffff",
-      pixelRatio: 2,
-      cacheBust: true,
-      filter: (element) => {
-        if (!element?.classList) {
-          return true
-        }
-
-        return (
-          !element.classList.contains("print:hidden") &&
-          !element.classList.contains("no-export")
-        )
-      },
-    })
-
-    const dimensions = target.getBoundingClientRect()
-    if (dimensions.width <= 0 || dimensions.height <= 0) {
+    const { clone, cleanup, width, height } = createPrintableClone(target)
+    if (width <= 0 || height <= 0) {
+      cleanup()
       return null
     }
 
-    const orientation = dimensions.width >= dimensions.height ? "landscape" : "portrait"
-    const { jsPDF } = await getJsPdf()
-    const pdf = new jsPDF({
-      orientation,
-      unit: "mm",
-      format: "a4",
-    })
+    try {
+      const { toPng } = await getHtmlToImage()
+      const dataUrl = await toPng(clone, {
+        backgroundColor: "#ffffff",
+        pixelRatio: 2,
+        cacheBust: true,
+        canvasWidth: width,
+        canvasHeight: height,
+        filter: (element) => {
+          const candidate = element as HTMLElement
+          if (!candidate?.classList) {
+            return true
+          }
 
-    const pdfWidth = pdf.internal.pageSize.getWidth()
-    const pdfHeight = pdf.internal.pageSize.getHeight()
-    const marginMm = 8
-    const usableWidth = Math.max(pdfWidth - marginMm * 2, 0)
-    const usableHeight = Math.max(pdfHeight - marginMm * 2, 0)
-    if (usableWidth <= 0 || usableHeight <= 0) {
-      return null
+          return (
+            !candidate.classList.contains("print:hidden") &&
+            !candidate.classList.contains("no-export")
+          )
+        },
+      })
+
+      const widthMm = Number.parseFloat(convertPxToMm(width).toFixed(2))
+      const heightMm = Number.parseFloat(convertPxToMm(height).toFixed(2))
+      if (!Number.isFinite(widthMm) || !Number.isFinite(heightMm) || widthMm <= 0 || heightMm <= 0) {
+        return null
+      }
+
+      const orientation = width >= height ? "landscape" : "portrait"
+      const { jsPDF } = await getJsPdf()
+      const pdf = new jsPDF({
+        orientation,
+        unit: "mm",
+        format: [widthMm, heightMm],
+      })
+
+      pdf.addImage(dataUrl, "PNG", 0, 0, widthMm, heightMm, undefined, "FAST")
+
+      return pdf
+    } finally {
+      cleanup()
     }
-    const imageProps = pdf.getImageProperties(dataUrl)
-
-    const imageWidth = imageProps.width
-    const imageHeight = imageProps.height
-    const imageWidthMm = convertPxToMm(imageWidth)
-    const imageHeightMm = convertPxToMm(imageHeight)
-    if (imageWidthMm <= 0 || imageHeightMm <= 0) {
-      return null
-    }
-
-    const widthScale = usableWidth / imageWidthMm
-    const heightScale = usableHeight / imageHeightMm
-    const renderScale = Math.min(widthScale, heightScale, 1)
-
-    const renderWidth = imageWidthMm * renderScale
-    const renderHeight = imageHeightMm * renderScale
-    const offsetX = Math.max((pdfWidth - renderWidth) / 2, 0)
-    const offsetY = Math.max((pdfHeight - renderHeight) / 2, 0)
-
-    pdf.addImage(
-      dataUrl,
-      "PNG",
-      offsetX,
-      offsetY,
-      renderWidth,
-      renderHeight,
-      undefined,
-      "FAST",
-    )
-
-    return pdf
   }, [reportCardData])
 
   const handlePrint = useCallback(async () => {
@@ -1457,8 +1509,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
         @media print {
           @page {
-            size: A4 portrait;
-            margin: 10mm 12mm;
+            size: auto;
+            margin: 0;
           }
 
           body {
@@ -1480,16 +1532,17 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           .victory-report-card {
             width: 100%;
             justify-content: center;
+            position: static;
           }
 
           .victory-report-card .report-container {
-            width: 100% !important;
-            max-width: calc(210mm - 24mm);
+            width: auto !important;
+            max-width: none;
             margin: 0 auto !important;
-            padding: 8mm 10mm;
+            padding: 0 !important;
             border-width: 3px;
             box-sizing: border-box;
-            overflow: hidden;
+            overflow: visible;
           }
 
           .victory-report-card .report-container,
