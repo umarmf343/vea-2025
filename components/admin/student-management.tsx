@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { AlertCircle, Edit, Loader2, Plus, Trash2, UserRound } from "lucide-react"
+import { dbManager } from "@/lib/database-manager"
 
 interface StudentRecord {
   id: string
@@ -74,6 +75,7 @@ export function StudentManagement() {
   const [error, setError] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null)
+  const [availableClasses, setAvailableClasses] = useState<string[]>([])
 
   const loadStudents = useCallback(async () => {
     setLoading(true)
@@ -95,9 +97,80 @@ export function StudentManagement() {
     }
   }, [])
 
+  const loadClasses = useCallback(async () => {
+    try {
+      const response = await fetch("/api/classes")
+      if (!response.ok) {
+        throw new Error("Unable to load classes")
+      }
+
+      const data = (await response.json()) as { classes: Array<{ name?: string } | string> }
+      const normalized = Array.from(
+        new Set(
+          data.classes
+            .map((classEntry) => {
+              if (typeof classEntry === "string") {
+                return classEntry
+              }
+              return typeof classEntry?.name === "string" ? classEntry.name : ""
+            })
+            .filter((name): name is string => Boolean(name && name.trim())),
+        ),
+      )
+
+      setAvailableClasses(normalized)
+      setError((previous) =>
+        previous && previous.toLowerCase().includes("class") ? null : previous,
+      )
+    } catch (err) {
+      console.error(err)
+      setError(err instanceof Error ? err.message : "Unable to load classes")
+    }
+  }, [])
+
   useEffect(() => {
     void loadStudents()
   }, [loadStudents])
+
+  useEffect(() => {
+    void loadClasses()
+
+    const handleClassesRefresh = (payload?: unknown) => {
+      if (Array.isArray(payload)) {
+        const normalized = Array.from(
+          new Set(
+            payload
+              .map((classEntry: any) => {
+                if (typeof classEntry === "string") {
+                  return classEntry
+                }
+
+                if (classEntry && typeof classEntry.name === "string") {
+                  return classEntry.name
+                }
+
+                if (classEntry && typeof classEntry.label === "string") {
+                  return classEntry.label
+                }
+
+                return ""
+              })
+              .filter((name): name is string => Boolean(name && name.trim())),
+          ),
+        )
+
+        setAvailableClasses(normalized)
+      } else {
+        void loadClasses()
+      }
+    }
+
+    dbManager.on("classesRefreshed", handleClassesRefresh)
+
+    return () => {
+      dbManager.off("classesRefreshed", handleClassesRefresh)
+    }
+  }, [loadClasses])
 
   const handleSaveStudent = async (student: StudentRecord) => {
     try {
@@ -159,8 +232,18 @@ export function StudentManagement() {
     }
   }
 
+  const classOptions = useMemo(() => {
+    const unique = new Set(availableClasses)
+    students.forEach((student) => {
+      if (student.class) {
+        unique.add(student.class)
+      }
+    })
+    return Array.from(unique)
+  }, [availableClasses, students])
+
   const openCreateDialog = () => {
-    setEditingStudent({ ...INITIAL_STUDENT })
+    setEditingStudent({ ...INITIAL_STUDENT, class: classOptions[0] ?? "" })
     setIsDialogOpen(true)
   }
 
@@ -168,11 +251,6 @@ export function StudentManagement() {
     setEditingStudent({ ...student })
     setIsDialogOpen(true)
   }
-
-  const classes = useMemo(() => {
-    const unique = new Set(students.map((student) => student.class))
-    return Array.from(unique)
-  }, [students])
 
   if (loading) {
     return (
@@ -203,7 +281,15 @@ export function StudentManagement() {
           <div className="mx-6 mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             <AlertCircle className="h-4 w-4" />
             <span>{error}</span>
-            <Button variant="ghost" size="sm" onClick={() => void loadStudents()} className="ml-auto">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                void loadStudents()
+                void loadClasses()
+              }}
+              className="ml-auto"
+            >
               Reload
             </Button>
           </div>
@@ -306,7 +392,7 @@ export function StudentManagement() {
               </div>
               <div>
                 <Label htmlFor="student-class">Class</Label>
-                {classes.length > 0 ? (
+                {classOptions.length > 0 ? (
                   <Select
                     value={editingStudent.class}
                     onValueChange={(value) => setEditingStudent({ ...editingStudent, class: value })}
@@ -315,7 +401,7 @@ export function StudentManagement() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {classes.map((className) => (
+                      {classOptions.map((className) => (
                         <SelectItem key={className} value={className}>
                           {className}
                         </SelectItem>
