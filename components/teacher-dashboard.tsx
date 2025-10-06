@@ -244,57 +244,6 @@ interface MarksRecord {
   teacherRemark: string
 }
 
-const DEFAULT_MARKS_DATA: MarksRecord[] = [
-  {
-    studentId: "student_john_doe",
-    studentName: "John Doe",
-    firstCA: 19,
-    secondCA: 18,
-    noteAssignment: 19,
-    caTotal: 56,
-    exam: 36,
-    grandTotal: 92,
-    totalMarksObtainable: 100,
-    totalMarksObtained: 92,
-    averageScore: 92,
-    position: 1,
-    grade: "A",
-    teacherRemark: "Excellent performance",
-  },
-  {
-    studentId: "student_alice_smith",
-    studentName: "Alice Smith",
-    firstCA: 17,
-    secondCA: 16,
-    noteAssignment: 17,
-    caTotal: 50,
-    exam: 32,
-    grandTotal: 82,
-    totalMarksObtainable: 100,
-    totalMarksObtained: 82,
-    averageScore: 82,
-    position: 2,
-    grade: "B",
-    teacherRemark: "Strong understanding of concepts",
-  },
-  {
-    studentId: "student_mike_johnson",
-    studentName: "Mike Johnson",
-    firstCA: 14,
-    secondCA: 13,
-    noteAssignment: 15,
-    caTotal: 42,
-    exam: 28,
-    grandTotal: 70,
-    totalMarksObtainable: 100,
-    totalMarksObtained: 70,
-    averageScore: 70,
-    position: 3,
-    grade: "C",
-    teacherRemark: "Showing steady improvement",
-  },
-]
-
 type TeacherAssignmentStatus = "draft" | "sent" | "submitted" | "graded" | "overdue"
 
 interface AssignmentSubmissionRecord {
@@ -1012,12 +961,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
   }, [selectedClass])
 
-  const [marksData, setMarksData] = useState<MarksRecord[]>(() =>
-    DEFAULT_MARKS_DATA.map((record) => ({ ...record })),
-  )
-  const defaultMarksTemplateRef = useRef<MarksRecord[]>(
-    DEFAULT_MARKS_DATA.map((record) => ({ ...record })),
-  )
+  const [marksData, setMarksData] = useState<MarksRecord[]>([])
   const suppressMarksRefreshRef = useRef(false)
 
   const emitMarksStoreUpdate = useCallback(
@@ -1721,131 +1665,199 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       return
     }
 
-    if (!selectedClass || !selectedSubject) {
-      setMarksData(
-        defaultMarksTemplateRef.current.length > 0
-          ? calculatePositionsAndAverages(
-              defaultMarksTemplateRef.current.map((record) => ({ ...record })),
-            )
-          : [],
-      )
-      return
-    }
-
-    try {
-      const store = readStudentMarksStore()
-      const normalizedClass = normalizeClassName(selectedClass)
-      const nextRecords: MarksRecord[] = []
-
-      Object.values(store).forEach((record) => {
-        if (!record) {
-          return
-        }
-
-        if (normalizeClassName(record.className ?? "") !== normalizedClass) {
-          return
-        }
-
-        if (record.term !== normalizedTermLabel) {
-          return
-        }
-
-        if (record.session !== selectedSession) {
-          return
-        }
-
-        const subjects = record.subjects ?? {}
-        const subjectRecord =
-          subjects[selectedSubject] ??
-          Object.values(subjects).find(
-            (entry) =>
-              typeof entry.subject === "string" &&
-              entry.subject.toLowerCase() === selectedSubject.toLowerCase(),
-          )
-
-        if (!subjectRecord) {
-          return
-        }
-
-        const normalizedScores = normalizeAssessmentScores({
-          ca1: subjectRecord.ca1 ?? 0,
-          ca2: subjectRecord.ca2 ?? 0,
-          assignment: subjectRecord.assignment ?? 0,
-          exam: subjectRecord.exam ?? 0,
-        })
-
-        const caTotal = calculateContinuousAssessmentTotal(
-          normalizedScores.ca1,
-          normalizedScores.ca2,
-          normalizedScores.assignment,
-        )
-        const grandTotal = calculateGrandTotal(
-          normalizedScores.ca1,
-          normalizedScores.ca2,
-          normalizedScores.assignment,
-          normalizedScores.exam,
-        )
-
-        const totalMarksObtainable =
-          typeof subjectRecord.totalObtainable === "number" && Number.isFinite(subjectRecord.totalObtainable)
-            ? subjectRecord.totalObtainable
-            : 100
-        const totalMarksObtained =
-          typeof subjectRecord.totalObtained === "number" && Number.isFinite(subjectRecord.totalObtained)
-            ? subjectRecord.totalObtained
-            : grandTotal
-
-        const teacherRemark =
-          typeof subjectRecord.remark === "string" ? subjectRecord.remark : ""
-
-        nextRecords.push({
-          studentId: record.studentId,
-          studentName:
-            typeof record.studentName === "string" && record.studentName.trim().length > 0
-              ? record.studentName
-              : `Student ${record.studentId}`,
-          firstCA: normalizedScores.ca1,
-          secondCA: normalizedScores.ca2,
-          noteAssignment: normalizedScores.assignment,
-          caTotal,
-          exam: normalizedScores.exam,
-          grandTotal,
-          totalMarksObtainable,
-          totalMarksObtained,
-          averageScore:
-            totalMarksObtainable > 0
-              ? Math.round((totalMarksObtained / totalMarksObtainable) * 100)
-              : 0,
-          position:
-            typeof subjectRecord.position === "number" && Number.isFinite(subjectRecord.position)
-              ? subjectRecord.position
-              : 0,
-          grade:
-            typeof subjectRecord.grade === "string" && subjectRecord.grade.trim().length > 0
-              ? subjectRecord.grade.trim().toUpperCase()
-              : deriveGradeFromScore(grandTotal),
-          teacherRemark,
-        })
-      })
-
-      if (nextRecords.length > 0) {
-        setMarksData(calculatePositionsAndAverages(nextRecords))
+    void (async () => {
+      if (!selectedClass || !selectedSubject) {
+        setMarksData([])
         return
       }
 
-      setMarksData(
-        defaultMarksTemplateRef.current.length > 0
-          ? calculatePositionsAndAverages(
-              defaultMarksTemplateRef.current.map((record) => ({ ...record })),
+      try {
+        const normalizedClass = normalizeClassName(selectedClass)
+        const normalizedSubject = selectedSubject.toLowerCase()
+        const liveRecords: MarksRecord[] = []
+
+        try {
+          const matchingExams = await dbManager.getExamSchedules({
+            className: selectedClass,
+            term: normalizedTermLabel,
+            session: selectedSession,
+          })
+          const targetExam = matchingExams.find(
+            (exam) => (exam.subject ?? "").toLowerCase() === normalizedSubject,
+          )
+
+          if (targetExam) {
+            const examResults = await dbManager.getExamResults(targetExam.id)
+            examResults
+              .filter(
+                (result) => normalizeClassName(result.className ?? "") === normalizedClass,
+              )
+              .forEach((result) => {
+                const normalizedScores = normalizeAssessmentScores({
+                  ca1: result.ca1 ?? 0,
+                  ca2: result.ca2 ?? 0,
+                  assignment: result.assignment ?? 0,
+                  exam: result.exam ?? 0,
+                })
+
+                const caTotal = calculateContinuousAssessmentTotal(
+                  normalizedScores.ca1,
+                  normalizedScores.ca2,
+                  normalizedScores.assignment,
+                )
+                const grandTotal = calculateGrandTotal(
+                  normalizedScores.ca1,
+                  normalizedScores.ca2,
+                  normalizedScores.assignment,
+                  normalizedScores.exam,
+                )
+
+                liveRecords.push({
+                  studentId: result.studentId,
+                  studentName:
+                    typeof result.studentName === "string" && result.studentName.trim().length > 0
+                      ? result.studentName
+                      : `Student ${result.studentId}`,
+                  firstCA: normalizedScores.ca1,
+                  secondCA: normalizedScores.ca2,
+                  noteAssignment: normalizedScores.assignment,
+                  caTotal,
+                  exam: normalizedScores.exam,
+                  grandTotal,
+                  totalMarksObtainable: 100,
+                  totalMarksObtained: grandTotal,
+                  averageScore: 0,
+                  position:
+                    typeof result.position === "number" && Number.isFinite(result.position)
+                      ? result.position
+                      : 0,
+                  grade:
+                    typeof result.grade === "string" && result.grade.trim().length > 0
+                      ? result.grade.trim().toUpperCase()
+                      : deriveGradeFromScore(grandTotal),
+                  teacherRemark:
+                    typeof result.remarks === "string" ? result.remarks : "",
+                })
+              })
+          }
+        } catch (examError) {
+          logger.warn("Unable to load live exam results for teacher selection", {
+            error: examError,
+          })
+        }
+
+        let nextRecords = liveRecords
+
+        if (nextRecords.length === 0) {
+          const store = readStudentMarksStore()
+          const storedRecords: MarksRecord[] = []
+
+          Object.values(store).forEach((record) => {
+            if (!record) {
+              return
+            }
+
+            if (normalizeClassName(record.className ?? "") !== normalizedClass) {
+              return
+            }
+
+            if (record.term !== normalizedTermLabel) {
+              return
+            }
+
+            if (record.session !== selectedSession) {
+              return
+            }
+
+            const subjects = record.subjects ?? {}
+            const subjectRecord =
+              subjects[selectedSubject] ??
+              Object.values(subjects).find(
+                (entry) =>
+                  typeof entry.subject === "string" &&
+                  entry.subject.toLowerCase() === normalizedSubject,
+              )
+
+            if (!subjectRecord) {
+              return
+            }
+
+            const normalizedScores = normalizeAssessmentScores({
+              ca1: subjectRecord.ca1 ?? 0,
+              ca2: subjectRecord.ca2 ?? 0,
+              assignment: subjectRecord.assignment ?? 0,
+              exam: subjectRecord.exam ?? 0,
+            })
+
+            const caTotal = calculateContinuousAssessmentTotal(
+              normalizedScores.ca1,
+              normalizedScores.ca2,
+              normalizedScores.assignment,
             )
-          : [],
-      )
-    } catch (error) {
-      logger.warn("Failed to refresh marks for selection", { error })
-    }
+            const grandTotal = calculateGrandTotal(
+              normalizedScores.ca1,
+              normalizedScores.ca2,
+              normalizedScores.assignment,
+              normalizedScores.exam,
+            )
+
+            const totalMarksObtainable =
+              typeof subjectRecord.totalObtainable === "number" &&
+              Number.isFinite(subjectRecord.totalObtainable)
+                ? subjectRecord.totalObtainable
+                : 100
+            const totalMarksObtained =
+              typeof subjectRecord.totalObtained === "number" &&
+              Number.isFinite(subjectRecord.totalObtained)
+                ? subjectRecord.totalObtained
+                : grandTotal
+
+            const teacherRemark =
+              typeof subjectRecord.remark === "string" ? subjectRecord.remark : ""
+
+            storedRecords.push({
+              studentId: record.studentId,
+              studentName:
+                typeof record.studentName === "string" && record.studentName.trim().length > 0
+                  ? record.studentName
+                  : `Student ${record.studentId}`,
+              firstCA: normalizedScores.ca1,
+              secondCA: normalizedScores.ca2,
+              noteAssignment: normalizedScores.assignment,
+              caTotal,
+              exam: normalizedScores.exam,
+              grandTotal,
+              totalMarksObtainable,
+              totalMarksObtained,
+              averageScore:
+                totalMarksObtainable > 0
+                  ? Math.round((totalMarksObtained / totalMarksObtainable) * 100)
+                  : 0,
+              position:
+                typeof subjectRecord.position === "number" && Number.isFinite(subjectRecord.position)
+                  ? subjectRecord.position
+                  : 0,
+              grade:
+                typeof subjectRecord.grade === "string" && subjectRecord.grade.trim().length > 0
+                  ? subjectRecord.grade.trim().toUpperCase()
+                  : deriveGradeFromScore(grandTotal),
+              teacherRemark,
+            })
+          })
+
+          nextRecords = storedRecords
+        }
+
+        setMarksData(nextRecords.length > 0 ? calculatePositionsAndAverages(nextRecords) : [])
+      } catch (error) {
+        logger.warn("Failed to refresh marks for selection", { error })
+        setMarksData([])
+      }
+    })()
   }, [
     calculatePositionsAndAverages,
     normalizedTermLabel,
+    normalizeClassName,
     selectedClass,
     selectedSession,
     selectedSubject,
@@ -1981,6 +1993,18 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
 
   useEffect(() => {
     refreshMarksForSelection()
+  }, [refreshMarksForSelection])
+
+  useEffect(() => {
+    const handleExamResultsUpdate = () => {
+      refreshMarksForSelection()
+    }
+
+    dbManager.on("examResultsUpdated", handleExamResultsUpdate)
+
+    return () => {
+      dbManager.off("examResultsUpdated", handleExamResultsUpdate)
+    }
   }, [refreshMarksForSelection])
 
   useEffect(() => {
