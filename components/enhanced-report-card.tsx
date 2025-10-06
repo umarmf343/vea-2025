@@ -1155,12 +1155,15 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
         .victory-report-card .report-container {
           width: min(960px, 100%);
+          max-width: 210mm;
           margin: 0 auto;
           border: 3px solid #2e7d32;
           background-color: #fff;
           color: #333;
           font-family: "Times New Roman", serif;
           padding: 0;
+          box-sizing: border-box;
+          overflow-x: hidden;
         }
 
         .victory-report-card .report-container * {
@@ -1303,6 +1306,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           vertical-align: middle;
           font-size: 13px;
           line-height: 1.3;
+          word-break: break-word;
+          overflow-wrap: anywhere;
         }
 
         .grades-table th {
@@ -1453,11 +1458,15 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         @media print {
           @page {
             size: A4 portrait;
-            margin: 12mm 10mm;
+            margin: 10mm 12mm;
           }
 
           body {
             margin: 0;
+            background: #fff !important;
+            color: #000;
+            font-size: 10pt;
+            line-height: 1.2;
           }
 
           .victory-report-card-wrapper {
@@ -1475,9 +1484,104 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
           .victory-report-card .report-container {
             width: 100% !important;
-            max-width: 186mm;
+            max-width: calc(210mm - 24mm);
             margin: 0 auto !important;
+            padding: 8mm 10mm;
             border-width: 3px;
+            box-sizing: border-box;
+            overflow: hidden;
+          }
+
+          .victory-report-card .report-container,
+          .victory-report-card .report-container * {
+            box-sizing: border-box !important;
+          }
+
+          .header-wrapper,
+          .student-info,
+          .grades-table,
+          .remark-section,
+          .vacation-box,
+          .signatures-box,
+          .grading-key-container {
+            page-break-inside: avoid;
+          }
+
+          .grades-table {
+            width: 100% !important;
+            margin: 8mm 0 6mm;
+            font-size: 11px;
+          }
+
+          .grades-table th,
+          .grades-table td {
+            font-size: 9.5pt;
+            padding: 4px 3px;
+          }
+
+          .grades-table th:nth-child(1),
+          .grades-table td:nth-child(1) {
+            width: 18%;
+          }
+
+          .grades-table th:nth-child(2),
+          .grades-table td:nth-child(2),
+          .grades-table th:nth-child(3),
+          .grades-table td:nth-child(3),
+          .grades-table th:nth-child(4),
+          .grades-table td:nth-child(4),
+          .grades-table th:nth-child(5),
+          .grades-table td:nth-child(5),
+          .grades-table th:nth-child(6),
+          .grades-table td:nth-child(6),
+          .grades-table th:nth-child(7),
+          .grades-table td:nth-child(7) {
+            width: 10%;
+          }
+
+          .grades-table th:nth-child(8),
+          .grades-table td:nth-child(8) {
+            width: 8%;
+          }
+
+          .grades-table th:nth-child(9),
+          .grades-table td:nth-child(9) {
+            width: 14%;
+          }
+
+          .remark-section {
+            gap: 10px;
+          }
+
+          .teacher-remarks,
+          .domain-block {
+            font-size: 9.5pt;
+          }
+
+          .vacation-box,
+          .signatures-box {
+            gap: 12px;
+            font-size: 9.5pt;
+          }
+
+          .grading-key-container {
+            font-size: 9pt;
+          }
+
+          .logo {
+            width: 32mm;
+            height: 38mm;
+            margin-right: 8mm;
+          }
+
+          .photo-placeholder {
+            width: 28mm;
+            height: 38mm;
+            margin-left: 8mm;
+          }
+
+          .school-name {
+            font-size: 20pt;
           }
         }
       `}</style>
