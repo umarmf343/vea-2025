@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo, useRef, type FormEvent } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -29,12 +29,7 @@ import { TimetableWeeklyView, type TimetableWeeklyViewSlot } from "@/components/
 import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
 import { normalizeTimetableCollection } from "@/lib/timetable"
-import { CONTINUOUS_ASSESSMENT_MAXIMUMS } from "@/lib/grade-utils"
-import {
-  clearAssignmentReminderHistory,
-  markAssignmentReminderSent,
-  shouldSendAssignmentReminder,
-} from "@/lib/assignment-reminders"
+import { CONTINUOUS_ASSESSMENT_MAXIMUMS, deriveGradeFromScore } from "@/lib/grade-utils"
 import { useBranding } from "@/hooks/use-branding"
 import { useSchoolCalendar } from "@/hooks/use-school-calendar"
 
@@ -118,10 +113,35 @@ const normalizeString = (value: unknown): string => {
   return ""
 }
 
-const normalizeKey = (value: unknown): string => normalizeString(value).toLowerCase()
-
 const normalizeClassIdentifier = (value: unknown): string =>
   typeof value === "string" ? value.replace(/\s+/g, "").toLowerCase() : ""
+
+const clampPercentage = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+
+  if (value < 0) {
+    return 0
+  }
+
+  if (value > 100) {
+    return 100
+  }
+
+  return Math.round(value)
+}
+
+const haveSameStringMembers = (current: string[], next: string[]): boolean => {
+  if (current.length !== next.length) {
+    return false
+  }
+
+  const normalizedCurrent = [...current].map((value) => value.toLowerCase()).sort()
+  const normalizedNext = [...next].map((value) => value.toLowerCase()).sort()
+
+  return normalizedCurrent.every((value, index) => value === normalizedNext[index])
+}
 
 const sortAssignmentsByDueDate = (records: IdentifiedRecord[]): IdentifiedRecord[] => {
   const toTimestamp = (record: IdentifiedRecord) => {
@@ -165,54 +185,10 @@ const extractRecordId = (record: Record<string, unknown>): string | null => {
   return null
 }
 
-const findMatchingStudentRecord = (
-  records: unknown,
-  student: StudentDashboardProps["student"],
-): Record<string, unknown> | null => {
-  if (!Array.isArray(records)) {
-    return null
-  }
-
-  const targetId = normalizeKey(student.id)
-  const targetAdmission = normalizeKey(student.admissionNumber)
-  const targetEmail = normalizeKey(student.email)
-  const targetName = normalizeKey(student.name)
-
-  for (const candidate of records) {
-    if (!isRecord(candidate)) {
-      continue
-    }
-
-    const candidateId = extractRecordId(candidate)
-    if (candidateId && normalizeKey(candidateId) === targetId) {
-      return candidate
-    }
-
-    const candidateAdmission = normalizeKey(candidate.admissionNumber ?? candidate.admission_number)
-    if (targetAdmission && candidateAdmission === targetAdmission) {
-      return candidate
-    }
-
-    const candidateEmail = normalizeKey(candidate.email)
-    if (targetEmail && candidateEmail === targetEmail) {
-      return candidate
-    }
-
-    const candidateName = normalizeKey(candidate.name)
-    if (targetName && candidateName === targetName) {
-      return candidate
-    }
-  }
-
-  return null
-}
-
 const toNumber = (value: unknown): number => {
   const numeric = Number(value ?? 0)
   return Number.isFinite(numeric) ? numeric : 0
 }
-
-const normalizeSubjectName = (value: unknown): string => normalizeKey(value)
 
 const collectTeacherTokens = (value: unknown): string[] => {
   if (typeof value !== "string") {
@@ -319,6 +295,54 @@ const getRecordValue = (record: Record<string, unknown> | null | undefined, key:
   return record[key]
 }
 
+const resolveStudentProfile = (
+  profile: unknown,
+  fallback: StudentDashboardProps["student"],
+): StudentDashboardProps["student"] => {
+  if (!isRecord(profile)) {
+    return { ...fallback }
+  }
+
+  const record = profile as Record<string, unknown>
+  const resolvedId = extractRecordId(record) ?? fallback.id
+  const resolvedName =
+    normalizeString(record.name) ||
+    normalizeString(record.fullName) ||
+    normalizeString(record.full_name) ||
+    fallback.name
+  const resolvedEmail =
+    normalizeString(record.email) ||
+    normalizeString(record.emailAddress) ||
+    normalizeString(record.email_address) ||
+    fallback.email
+  const resolvedClass =
+    normalizeString(record.class) ||
+    normalizeString(record.className) ||
+    normalizeString(record.class_name) ||
+    normalizeString(record.classId) ||
+    normalizeString(record.class_id) ||
+    normalizeString(record.level) ||
+    normalizeString(record.grade) ||
+    fallback.class
+  const resolvedAdmission =
+    normalizeString(record.admissionNumber) ||
+    normalizeString(record.admission_number) ||
+    normalizeString(record.admissionNo) ||
+    normalizeString(record.admission_no) ||
+    normalizeString(record.studentId) ||
+    normalizeString(record.student_id) ||
+    fallback.admissionNumber
+
+  return {
+    id: resolvedId,
+    name: normalizeString(resolvedName || fallback.name) || fallback.name,
+    email: normalizeString(resolvedEmail || fallback.email) || fallback.email,
+    class: normalizeString(resolvedClass || fallback.class) || fallback.class,
+    admissionNumber:
+      normalizeString(resolvedAdmission || fallback.admissionNumber) || fallback.admissionNumber,
+  }
+}
+
 interface StudentDashboardProps {
   student: {
     id: string
@@ -334,6 +358,13 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const resolvedSchoolName = branding.schoolName
   const calendar = useSchoolCalendar()
   const router = useRouter()
+  const {
+    id: initialStudentId,
+    name: initialStudentName,
+    email: initialStudentEmail,
+    class: initialStudentClass,
+    admissionNumber: initialStudentAdmissionNumber,
+  } = student
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const [selectedAssignment, setSelectedAssignment] = useState<IdentifiedRecord | null>(null)
@@ -342,8 +373,8 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     comment: "",
   })
 
-  const [effectiveStudentId, setEffectiveStudentId] = useState(student.id)
-  const [effectiveClassName, setEffectiveClassName] = useState(student.class)
+  const [effectiveStudentId, setEffectiveStudentId] = useState(initialStudentId)
+  const [effectiveClassName, setEffectiveClassName] = useState(initialStudentClass)
   const [studentTeachers, setStudentTeachers] = useState<string[]>([])
   const [subjects, setSubjects] = useState<IdentifiedRecord[]>([])
   const [timetable, setTimetable] = useState<TimetableSlotSummary[]>([])
@@ -468,6 +499,263 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
       logger.error("Failed to refresh assignments", { error })
     }
   }, [effectiveStudentId, filterAssignmentsForStudent])
+
+  const filterAssignmentsForStudentRef = useRef(filterAssignmentsForStudent)
+
+  useEffect(() => {
+    filterAssignmentsForStudentRef.current = filterAssignmentsForStudent
+  }, [filterAssignmentsForStudent])
+
+  useEffect(() => {
+    if (!effectiveStudentId) {
+      return
+    }
+
+    const normalizedStudentId = normalizeString(effectiveStudentId)
+
+    const handleAssignmentUpdate = (payload: unknown) => {
+      if (!isRecord(payload)) {
+        void refreshAssignments()
+        return
+      }
+
+      const record = payload as Record<string, unknown>
+      const candidateStudentId = normalizeString(record.studentId ?? record.student_id)
+
+      if (candidateStudentId && normalizedStudentId !== candidateStudentId) {
+        const assignedIds = record.assignedStudentIds ?? record.assigned_student_ids
+
+        if (Array.isArray(assignedIds)) {
+          const normalizedAssigned = assignedIds
+            .map((value) => normalizeString(value))
+            .filter((value) => value.length > 0)
+
+          if (!normalizedAssigned.includes(normalizedStudentId)) {
+            return
+          }
+        } else {
+          return
+        }
+      }
+
+      void refreshAssignments()
+    }
+
+    dbManager.on("assignmentsUpdate", handleAssignmentUpdate)
+    dbManager.on("assignmentSubmitted", handleAssignmentUpdate)
+
+    return () => {
+      dbManager.off("assignmentsUpdate", handleAssignmentUpdate)
+      dbManager.off("assignmentSubmitted", handleAssignmentUpdate)
+    }
+  }, [effectiveStudentId, refreshAssignments])
+
+  useEffect(() => {
+    let isActive = true
+
+    const loadDashboardData = async () => {
+      setLoading(true)
+
+      try {
+        const fallbackStudent: StudentDashboardProps["student"] = {
+          id: initialStudentId,
+          name: initialStudentName,
+          email: initialStudentEmail,
+          class: initialStudentClass,
+          admissionNumber: initialStudentAdmissionNumber,
+        }
+
+        let resolvedProfile = fallbackStudent
+
+        try {
+          const profileRecord = await dbManager.getStudentProfile(initialStudentId)
+          resolvedProfile = resolveStudentProfile(profileRecord, fallbackStudent)
+        } catch (profileError) {
+          logger.error("Failed to load student profile", {
+            error: profileError,
+            studentId: initialStudentId,
+          })
+          resolvedProfile = resolveStudentProfile(null, fallbackStudent)
+        }
+
+        if (!isActive) {
+          return
+        }
+
+        setStudentProfile(resolvedProfile)
+        setEffectiveStudentId((previous) => (previous !== resolvedProfile.id ? resolvedProfile.id : previous))
+        setEffectiveClassName((previous) =>
+          previous !== resolvedProfile.class ? resolvedProfile.class : previous,
+        )
+
+        const targetStudentId = resolvedProfile.id
+        const targetClassName = resolvedProfile.class
+
+        const [academicResult, attendanceResult, timetableResult, assignmentsResult, libraryResult] =
+          await Promise.allSettled([
+            dbManager.getStudentAcademicData(targetStudentId),
+            dbManager.getStudentAttendance(targetStudentId),
+            dbManager.getTimetable(targetClassName),
+            dbManager.getAssignments({ studentId: targetStudentId }),
+            dbManager.getLibraryBooks(targetStudentId),
+          ])
+
+        if (!isActive) {
+          return
+        }
+
+        const teacherCandidates = new Set<string>()
+
+        if (academicResult.status === "fulfilled") {
+          const normalizedSubjects = normalizeIdentifiedCollection(academicResult.value, "subject").map(
+            (subject) => {
+              const record = subject as Record<string, unknown>
+              const subjectName =
+                normalizeString(subject.subject) ||
+                normalizeString(getRecordValue(record, "name")) ||
+                normalizeString(getRecordValue(record, "title")) ||
+                "Subject"
+
+              const totalCandidates = [
+                subject.total,
+                subject.totalPercentage,
+                subject.percentage,
+                getRecordValue(record, "totalScore"),
+                getRecordValue(record, "totalMarks"),
+                getRecordValue(record, "score"),
+              ]
+
+              const resolvedTotalCandidate = totalCandidates
+                .map((value) => toNumber(value))
+                .find((value) => Number.isFinite(value) && value > 0)
+
+              const resolvedTotal = clampPercentage(
+                resolvedTotalCandidate ?? toNumber(subject.totalPercentage ?? 0),
+              )
+
+              const gradeCandidate =
+                normalizeString(subject.grade) || normalizeString(getRecordValue(record, "grade"))
+              const resolvedGrade = gradeCandidate ? gradeCandidate.toUpperCase() : deriveGradeFromScore(resolvedTotal)
+
+              const teacherCandidate =
+                normalizeString(subject.teacherName) ||
+                normalizeString(subject.teacher) ||
+                normalizeString(getRecordValue(record, "instructor")) ||
+                normalizeString(getRecordValue(record, "teacherName")) ||
+                normalizeString(getRecordValue(record, "teacher")) ||
+                ""
+
+              if (teacherCandidate) {
+                teacherCandidates.add(teacherCandidate)
+              }
+
+              return {
+                ...subject,
+                subject: subjectName,
+                total: resolvedTotal,
+                grade: resolvedGrade,
+                teacherName: teacherCandidate || null,
+              }
+            },
+          )
+
+          setSubjects(normalizedSubjects)
+        } else {
+          setSubjects([])
+        }
+
+        const attendanceFallback = { present: 0, total: 0, percentage: 0 }
+        if (attendanceResult.status === "fulfilled") {
+          const summary = extractAttendanceSummary(attendanceResult.value, attendanceFallback)
+          setAttendance(summary ?? attendanceFallback)
+        } else {
+          setAttendance(attendanceFallback)
+        }
+
+        let normalizedTimetable: TimetableSlotSummary[] = []
+        if (timetableResult.status === "fulfilled") {
+          normalizedTimetable = normalizeTimetableCollection(timetableResult.value).map((slot) => {
+            const teacherName = normalizeString(slot.teacher)
+            if (teacherName) {
+              teacherCandidates.add(teacherName)
+            }
+
+            return {
+              id: slot.id,
+              day: slot.day,
+              time: slot.time,
+              subject: slot.subject,
+              teacher: slot.teacher,
+              location: slot.location,
+            }
+          })
+        }
+        setTimetable(normalizedTimetable)
+
+        let normalizedAssignments: IdentifiedRecord[] = []
+        if (assignmentsResult.status === "fulfilled") {
+          normalizedAssignments = normalizeIdentifiedCollection(assignmentsResult.value, "assignment")
+
+          normalizedAssignments.forEach((assignment) => {
+            const assignmentRecord = assignment as Record<string, unknown>
+            const teacherName =
+              normalizeString(assignment.teacherName) ||
+              normalizeString(assignment.teacher) ||
+              normalizeString(getRecordValue(assignmentRecord, "teacherName")) ||
+              normalizeString(getRecordValue(assignmentRecord, "teacher"))
+
+            if (teacherName) {
+              teacherCandidates.add(teacherName)
+            }
+          })
+        }
+
+        const filteredAssignments = filterAssignmentsForStudentRef.current(
+          normalizedAssignments,
+          teacherCandidates,
+        )
+        setAssignments(filteredAssignments)
+
+        const normalizedLibraryBooks =
+          libraryResult.status === "fulfilled"
+            ? normalizeIdentifiedCollection(libraryResult.value, "libraryBook")
+            : []
+        setLibraryBooks(normalizedLibraryBooks)
+
+        const nextTeacherList = Array.from(teacherCandidates)
+        setStudentTeachers((previous) =>
+          haveSameStringMembers(previous, nextTeacherList) ? previous : nextTeacherList,
+        )
+      } catch (error) {
+        if (!isActive) {
+          return
+        }
+
+        logger.error("Failed to load student dashboard data", { error, studentId: initialStudentId })
+        setSubjects([])
+        setAssignments([])
+        setTimetable([])
+        setLibraryBooks([])
+        setAttendance({ present: 0, total: 0, percentage: 0 })
+      } finally {
+        if (isActive) {
+          setLoading(false)
+        }
+      }
+    }
+
+    void loadDashboardData()
+
+    return () => {
+      isActive = false
+    }
+  }, [
+    initialStudentAdmissionNumber,
+    initialStudentClass,
+    initialStudentEmail,
+    initialStudentId,
+    initialStudentName,
+  ])
 
   const getAssignmentStatusMeta = (status: unknown) => {
     const normalized = typeof status === "string" ? status : "sent"
@@ -1283,7 +1571,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
               <p className="text-sm text-yellow-800 font-medium">Are you sure you want to submit this assignment?</p>
               <p className="text-xs text-yellow-700 mt-1">
-                Once submitted, the status will change to "Submitted" and your teacher will be notified.
+                Once submitted, the status will change to &quot;Submitted&quot; and your teacher will be notified.
               </p>
             </div>
           </div>
