@@ -241,9 +241,7 @@ const selectSentenceRounds = (): SentenceRound[] => shuffleArray(SENTENCE_ROUNDS
 
 export function StudentGameHub() {
   // Math Sprint state
-  const [mathProblems, setMathProblems] = useState<MathProblem[]>(() =>
-    Array.from({ length: MATH_ROUND_SIZE }, generateMathProblem),
-  )
+  const [mathProblems, setMathProblems] = useState<MathProblem[]>([])
   const [mathActive, setMathActive] = useState(false)
   const [mathAnswered, setMathAnswered] = useState(false)
   const [mathIndex, setMathIndex] = useState(0)
@@ -253,7 +251,7 @@ export function StudentGameHub() {
   const [mathCelebration, setMathCelebration] = useState(false)
 
   // Spelling Bee state
-  const [spellingWords, setSpellingWords] = useState<SpellingWord[]>(selectSpellingWords)
+  const [spellingWords, setSpellingWords] = useState<SpellingWord[]>([])
   const [spellingActive, setSpellingActive] = useState(false)
   const [spellingPaused, setSpellingPaused] = useState(false)
   const [spellingIndex, setSpellingIndex] = useState(0)
@@ -265,7 +263,7 @@ export function StudentGameHub() {
   const spellingInputRef = useRef<HTMLInputElement | null>(null)
 
   // Sentence scramble state
-  const [sentenceRounds, setSentenceRounds] = useState<SentenceRound[]>(selectSentenceRounds)
+  const [sentenceRounds, setSentenceRounds] = useState<SentenceRound[]>([])
   const [sentenceActive, setSentenceActive] = useState(false)
   const [sentencePaused, setSentencePaused] = useState(false)
   const [sentenceIndex, setSentenceIndex] = useState(0)
@@ -279,20 +277,47 @@ export function StudentGameHub() {
   const currentWord = spellingWords[spellingIndex] ?? null
   const currentSentence = sentenceRounds[sentenceIndex] ?? null
 
-  const mathProgress = useMemo(
-    () => ((mathIndex + (mathAnswered ? 1 : 0)) / mathProblems.length) * 100,
-    [mathIndex, mathAnswered, mathProblems.length],
-  )
+  useEffect(() => {
+    if (mathProblems.length === 0) {
+      setMathProblems(Array.from({ length: MATH_ROUND_SIZE }, generateMathProblem))
+    }
+  }, [mathProblems.length])
 
-  const spellingProgress = useMemo(
-    () => ((spellingIndex + (spellingFeedback === "correct" ? 1 : 0)) / spellingWords.length) * 100,
-    [spellingIndex, spellingFeedback, spellingWords.length],
-  )
+  useEffect(() => {
+    if (spellingWords.length === 0) {
+      setSpellingWords(selectSpellingWords())
+    }
+  }, [spellingWords.length])
 
-  const sentenceProgress = useMemo(
-    () => (sentenceAttempts.length / sentenceRounds.length) * 100,
-    [sentenceAttempts.length, sentenceRounds.length],
-  )
+  useEffect(() => {
+    if (sentenceRounds.length === 0) {
+      setSentenceRounds(selectSentenceRounds())
+    }
+  }, [sentenceRounds.length])
+
+  const mathProgress = useMemo(() => {
+    if (mathProblems.length === 0) {
+      return 0
+    }
+    return ((mathIndex + (mathAnswered ? 1 : 0)) / mathProblems.length) * 100
+  }, [mathIndex, mathAnswered, mathProblems.length])
+
+  const spellingProgress = useMemo(() => {
+    if (spellingWords.length === 0) {
+      return 0
+    }
+    return (
+      ((spellingIndex + (spellingFeedback === "correct" ? 1 : 0)) / spellingWords.length) *
+      100
+    )
+  }, [spellingIndex, spellingFeedback, spellingWords.length])
+
+  const sentenceProgress = useMemo(() => {
+    if (sentenceRounds.length === 0) {
+      return 0
+    }
+    return (sentenceAttempts.length / sentenceRounds.length) * 100
+  }, [sentenceAttempts.length, sentenceRounds.length])
 
   // Math Sprint logic
   useEffect(() => {
