@@ -89,6 +89,8 @@ const formatSpeedMessage = (seconds: number) => {
   return "⛽ Smooth cruise"
 }
 
+const trackPosition = (value: number) => `${Math.min(92, Math.max(6, value))}%`
+
 export default function MathRacing() {
   const [raceActive, setRaceActive] = useState(false)
   const [sessionId, setSessionId] = useState(0)
@@ -247,8 +249,10 @@ export default function MathRacing() {
     return { label: "Keep solving!", variant: "border-indigo-200 bg-indigo-50 text-indigo-700" }
   }, [penalties, raceActive, streak])
 
+  const carBaseClass = "absolute flex -translate-x-1/2 items-center gap-3 transition-all duration-500 ease-out"
+
   return (
-    <Card className="border-amber-200 bg-gradient-to-br from-amber-50 via-white to-sky-50">
+    <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-sky-50 shadow-xl">
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="text-2xl font-semibold text-slate-900">Math Racing</CardTitle>
@@ -257,13 +261,73 @@ export default function MathRacing() {
           </Badge>
         </div>
         <CardDescription className="text-slate-600">
-          Answer math problems to fuel your vehicle. The faster you respond, the more speed you earn. Watch out for
-          penalties and keep your streak alive to unlock turbo boosts!
+          Solve equations to rocket your car down the neon track. Each correct answer pushes your racer forward, while
+          mistakes slow you down. Keep your streak alive to unlock turbo boosts and cross the finish line first!
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-8">
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-4">
+            <div className="rounded-3xl border-4 border-slate-900 bg-slate-950 p-4 text-slate-100 shadow-2xl">
+              <div className="relative h-56 overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800">
+                <div className="absolute inset-0 flex flex-col justify-between py-6">
+                  <div className="h-0.5 w-full bg-white/10" />
+                  <div className="h-0.5 w-full bg-white/10" />
+                </div>
+                <div
+                  className="absolute inset-y-3 right-3 w-8 rounded-2xl"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(45deg, rgba(255,255,255,0.85) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.85) 50%, rgba(255,255,255,0.85) 75%, transparent 75%, transparent)",
+                    backgroundSize: "16px 16px",
+                  }}
+                />
+                <div className="absolute inset-x-4 top-4 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  <span>Start</span>
+                  <span>Finish</span>
+                </div>
+                <div
+                  className={cn(carBaseClass, "top-[34%]")}
+                  style={{ left: trackPosition(playerProgress) }}
+                >
+                  <div className="relative h-12 w-20 rounded-[18px] bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-600 shadow-[0_16px_30px_-18px_rgba(16,185,129,0.95)]">
+                    <div className="absolute -left-9 top-1/2 h-2 w-9 -translate-y-1/2 rounded-full bg-emerald-300/40 blur-sm" />
+                    <div className="absolute left-3 top-2 h-3 w-6 rounded-md bg-emerald-100/90" />
+                    <div className="absolute right-3 top-2 h-3 w-6 rounded-md bg-emerald-50/80" />
+                    <div className="absolute left-3 bottom-1 h-3 w-3 rounded-full bg-slate-900" />
+                    <div className="absolute right-3 bottom-1 h-3 w-3 rounded-full bg-slate-900" />
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-100">You</span>
+                </div>
+                <div
+                  className={cn(carBaseClass, "top-[72%]")}
+                  style={{ left: trackPosition(rivalProgress) }}
+                >
+                  <div className="relative h-12 w-20 rounded-[18px] bg-gradient-to-r from-rose-400 via-rose-500 to-rose-600 shadow-[0_16px_30px_-18px_rgba(244,63,94,0.95)]">
+                    <div className="absolute -left-9 top-1/2 h-2 w-9 -translate-y-1/2 rounded-full bg-rose-300/40 blur-sm" />
+                    <div className="absolute left-3 top-2 h-3 w-6 rounded-md bg-rose-100/90" />
+                    <div className="absolute right-3 top-2 h-3 w-6 rounded-md bg-rose-50/80" />
+                    <div className="absolute left-3 bottom-1 h-3 w-3 rounded-full bg-slate-900" />
+                    <div className="absolute right-3 bottom-1 h-3 w-3 rounded-full bg-slate-900" />
+                  </div>
+                  <span className="text-xs font-semibold text-rose-100">Rival</span>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 text-xs text-slate-200 sm:grid-cols-3">
+                <div className="rounded-2xl bg-slate-900/80 p-3 text-center">
+                  <p className="text-[10px] uppercase tracking-widest text-slate-400">Lap streak</p>
+                  <p className="text-lg font-semibold text-emerald-200">{streak}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-900/80 p-3 text-center">
+                  <p className="text-[10px] uppercase tracking-widest text-slate-400">Boost record</p>
+                  <p className="text-lg font-semibold text-amber-200">{bestBoost ?? 0}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-900/80 p-3 text-center">
+                  <p className="text-[10px] uppercase tracking-widest text-slate-400">Penalty laps</p>
+                  <p className="text-lg font-semibold text-rose-200">{penalties}</p>
+                </div>
+              </div>
+            </div>
             <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium text-slate-700">Your vehicle</span>
