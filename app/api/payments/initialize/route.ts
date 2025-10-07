@@ -169,6 +169,7 @@ export async function POST(request: NextRequest) {
     sanitizedMetadata.payment_type = normalizedPaymentType
 
     const classKey = canonicalClassKeyLocal(resolvedClassName)
+    const isEventOnlyPayment = normalizedPaymentType === "event_fee"
 
     const requestedSchoolFeeId =
       typeof body.schoolFeeId === "string"
@@ -191,11 +192,11 @@ export async function POST(request: NextRequest) {
       schoolFeeConfig = null
     }
 
-    if (!schoolFeeConfig) {
+    if (!schoolFeeConfig && !isEventOnlyPayment) {
       schoolFeeConfig = await getActiveSchoolFeeConfigurationForClass(resolvedClassName, requestedTerm)
     }
 
-    if (!schoolFeeConfig) {
+    if (!schoolFeeConfig && !isEventOnlyPayment) {
       return NextResponse.json(
         {
           status: false,
@@ -247,7 +248,15 @@ export async function POST(request: NextRequest) {
       eventFeesTotal = Number((eventFeesTotal + Number(eventRecord.amount)).toFixed(2))
     }
 
-    const totalAmountInNaira = Number((Number(schoolFeeConfig.amount) + eventFeesTotal).toFixed(2))
+    if (isEventOnlyPayment && eventFeeRecords.length === 0) {
+      return NextResponse.json(
+        { status: false, message: "Select at least one event fee to proceed." },
+        { status: 400 },
+      )
+    }
+
+    const schoolFeeAmount = schoolFeeConfig ? Number(schoolFeeConfig.amount) : 0
+    const totalAmountInNaira = Number((schoolFeeAmount + eventFeesTotal).toFixed(2))
     const amountInKobo = Math.round(totalAmountInNaira * 100)
 
     if (!Number.isFinite(amountInKobo) || amountInKobo <= 0) {
@@ -271,13 +280,15 @@ export async function POST(request: NextRequest) {
     const amountInNaira = amountInKobo / 100
 
     const feeSnapshot = {
-      schoolFee: {
-        id: schoolFeeConfig.id,
-        className: schoolFeeConfig.className,
-        term: schoolFeeConfig.term,
-        amount: schoolFeeConfig.amount,
-        version: schoolFeeConfig.version,
-      },
+      schoolFee: schoolFeeConfig
+        ? {
+            id: schoolFeeConfig.id,
+            className: schoolFeeConfig.className,
+            term: schoolFeeConfig.term,
+            amount: schoolFeeConfig.amount,
+            version: schoolFeeConfig.version,
+          }
+        : null,
       eventFees: eventFeeRecords.map((entry) => ({
         id: entry.id,
         name: entry.name,
@@ -287,9 +298,11 @@ export async function POST(request: NextRequest) {
       total: totalAmountInNaira,
     }
 
-    sanitizedMetadata.school_fee_configuration_id = schoolFeeConfig.id
-    sanitizedMetadata.schoolFeeConfigurationId = schoolFeeConfig.id
-    sanitizedMetadata.school_fee_amount = Number(schoolFeeConfig.amount)
+    if (schoolFeeConfig) {
+      sanitizedMetadata.school_fee_configuration_id = schoolFeeConfig.id
+      sanitizedMetadata.schoolFeeConfigurationId = schoolFeeConfig.id
+      sanitizedMetadata.school_fee_amount = Number(schoolFeeConfig.amount)
+    }
     sanitizedMetadata.event_fee_total = eventFeesTotal
     sanitizedMetadata.total_due = totalAmountInNaira
     sanitizedMetadata.event_fee_ids = eventFeeRecords.map((entry) => entry.id)

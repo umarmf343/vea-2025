@@ -36,6 +36,8 @@ export async function GET(request: NextRequest) {
     const providedClassName = searchParams.get("className")
     const requestedTerm = resolveTermLabel(searchParams.get("term") ?? searchParams.get("termKey"))
     const session = searchParams.get("session")
+    const scope = (searchParams.get("scope") ?? "").trim().toLowerCase()
+    const eventOnly = scope === "event" || scope === "events" || scope === "event_only"
 
     let className: string | null = providedClassName ? sanitizeInput(providedClassName) : null
 
@@ -54,7 +56,7 @@ export async function GET(request: NextRequest) {
     }
 
     const schoolFee = await getActiveSchoolFeeConfigurationForClass(className, requestedTerm)
-    if (!schoolFee) {
+    if (!schoolFee && !eventOnly) {
       return NextResponse.json(
         { error: "No active school fee configuration for the specified class and term" },
         { status: 404 },
@@ -62,20 +64,24 @@ export async function GET(request: NextRequest) {
     }
 
     const eventFees = await listActiveEventFeesForClass(className)
+    const eventPaymentTitle =
+      eventFees.length === 1 ? eventFees[0]?.name ?? null : eventFees.length > 0 ? "Event Fees" : null
 
     return NextResponse.json({
       className,
       term: requestedTerm,
       session: session ? sanitizeInput(session) : null,
-      schoolFee: {
-        id: schoolFee.id,
-        amount: schoolFee.amount,
-        className: schoolFee.className,
-        term: schoolFee.term,
-        version: schoolFee.version,
-        notes: schoolFee.notes ?? null,
-        effectiveDate: schoolFee.effectiveDate,
-      },
+      schoolFee: schoolFee
+        ? {
+            id: schoolFee.id,
+            amount: schoolFee.amount,
+            className: schoolFee.className,
+            term: schoolFee.term,
+            version: schoolFee.version,
+            notes: schoolFee.notes ?? null,
+            effectiveDate: schoolFee.effectiveDate,
+          }
+        : null,
       eventFees: eventFees.map((event) => ({
         id: event.id,
         name: event.name,
@@ -84,6 +90,7 @@ export async function GET(request: NextRequest) {
         dueDate: event.dueDate ?? null,
         applicableClasses: event.applicableClasses,
       })),
+      eventPaymentTitle,
     })
   } catch (error) {
     console.error("Failed to load fee configuration for payment:", error)
