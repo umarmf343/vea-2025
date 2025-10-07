@@ -192,6 +192,210 @@ export interface CreateReceiptPayload extends Omit<ReceiptRecord, "id" | "create
   dateIssued?: string | null
 }
 
+export type ExpenseCategory =
+  | "Salaries"
+  | "Utilities"
+  | "Supplies"
+  | "Maintenance"
+  | "Transport"
+  | "Training"
+  | "Technology"
+  | "Miscellaneous"
+
+export interface FeePaymentRecord extends CollectionRecord {
+  studentId: string | null
+  studentName: string
+  classId: string | null
+  className: string | null
+  feeType: string
+  amount: number
+  paymentDate: string
+  paymentMethod: string
+  receiptNumber: string
+  paymentReference: string | null
+  term: string
+  createdBy: string
+  createdByName: string
+  lastModifiedBy: string
+  lastModifiedByName: string
+  deletedAt: string | null
+  deletionReason: string | null
+  deletedBy: string | null
+  deletedByName: string | null
+}
+
+export interface CreateFeePaymentPayload {
+  studentId?: string | null
+  studentName: string
+  classId?: string | null
+  className?: string | null
+  feeType: string
+  amount: number
+  paymentDate: string
+  paymentMethod: string
+  receiptNumber?: string | null
+  paymentReference?: string | null
+  term: string
+}
+
+export interface UpdateFeePaymentPayload
+  extends Partial<Omit<CreateFeePaymentPayload, "studentName" | "term" | "paymentDate">> {
+  studentName?: string
+  term?: string
+  paymentDate?: string
+}
+
+export interface ExpenseRecord extends CollectionRecord {
+  category: ExpenseCategory
+  amount: number
+  expenseDate: string
+  description: string
+  receiptReference: string | null
+  approvedBy: string
+  documentUrl: string | null
+  createdBy: string
+  createdByName: string
+  lastModifiedBy: string
+  lastModifiedByName: string
+  deletedAt: string | null
+  deletionReason: string | null
+  deletedBy: string | null
+  deletedByName: string | null
+}
+
+export interface CreateExpensePayload {
+  category: ExpenseCategory
+  amount: number
+  expenseDate: string
+  description: string
+  receiptReference?: string | null
+  approvedBy: string
+  documentUrl?: string | null
+}
+
+export interface UpdateExpensePayload extends Partial<CreateExpensePayload> {}
+
+export interface FeeWaiverRecord extends CollectionRecord {
+  studentId: string | null
+  studentName: string
+  classId: string | null
+  className: string | null
+  term: string
+  amount: number
+  reason: string
+  notes: string | null
+  createdBy: string
+  createdByName: string
+  lastModifiedBy: string
+  lastModifiedByName: string
+  deletedAt: string | null
+  deletionReason: string | null
+  deletedBy: string | null
+  deletedByName: string | null
+}
+
+export interface CreateFeeWaiverPayload {
+  studentId?: string | null
+  studentName: string
+  classId?: string | null
+  className?: string | null
+  term: string
+  amount: number
+  reason: string
+  notes?: string | null
+}
+
+export interface UpdateFeeWaiverPayload extends Partial<CreateFeeWaiverPayload> {}
+
+export interface FinancialAccessLogRecord extends CollectionRecord {
+  userId: string
+  userRole: string
+  userName: string
+  action: string
+  filters: Record<string, unknown> | null
+}
+
+export interface CreateFinancialAccessLogPayload {
+  userId: string
+  userRole: string
+  userName: string
+  action: string
+  filters?: Record<string, unknown> | null
+}
+
+export interface FinancialAuditContext {
+  userId: string
+  userName: string
+}
+
+export interface FinancialAnalyticsSummary {
+  totalCollected: number
+  totalExpenses: number
+  netIncome: number
+  collectionRate: number
+  studentsPaid: number
+  defaultersCount: number
+  outstandingAmount: number
+  avgCollectionTime: number
+  onTimePaymentRate: number
+}
+
+export interface MonthlyFinancialPoint {
+  month: string
+  collected: number
+  expected: number
+  expenses: number
+  percentage: number
+}
+
+export interface ClassCollectionAnalyticsEntry {
+  className: string
+  collected: number
+  expected: number
+  students: number
+  percentage: number
+}
+
+export interface ExpenseAnalyticsEntry {
+  category: ExpenseCategory
+  amount: number
+  percentage: number
+}
+
+export interface FeeTypeAnalyticsEntry {
+  feeType: string
+  amount: number
+  percentage: number
+}
+
+export interface DefaulterAnalyticsEntry {
+  studentId: string
+  studentName: string
+  className: string | null
+  term: string
+  parentName: string | null
+  parentEmail: string | null
+  parentPhone: string | null
+  outstanding: number
+  expected: number
+  paid: number
+  waived: number
+}
+
+export interface FinancialAnalyticsSnapshot {
+  summary: FinancialAnalyticsSummary
+  monthly: MonthlyFinancialPoint[]
+  classCollection: ClassCollectionAnalyticsEntry[]
+  expenses: ExpenseAnalyticsEntry[]
+  feeTypeBreakdown: FeeTypeAnalyticsEntry[]
+  defaulters: DefaulterAnalyticsEntry[]
+  topDefaulters: DefaulterAnalyticsEntry[]
+}
+
+export interface FinancialAnalyticsQueryOptions extends FeePaymentQueryOptions {
+  classFilter?: string | null
+}
+
 export interface ReportCardSubjectRecord {
   name: string
   ca1: number
@@ -460,6 +664,10 @@ const STORAGE_KEYS = {
   FEE_STRUCTURE: "vea_fee_structure",
   FEE_COMMUNICATIONS: "vea_fee_structure_communications",
   RECEIPTS: "vea_payment_receipts",
+  FINANCIAL_COLLECTIONS: "vea_financial_collections",
+  FINANCIAL_EXPENSES: "vea_financial_expenses",
+  FINANCIAL_WAIVERS: "vea_financial_waivers",
+  FINANCIAL_ACCESS_LOGS: "vea_financial_access_logs",
   NOTICES: "vea_noticeboard",
   TIMETABLES: "vea_class_timetables",
   TEACHER_CLASS_ASSIGNMENTS: "vea_teacher_class_assignments",
@@ -474,6 +682,21 @@ const serverCollections = new Map<string, unknown[]>()
 const DATA_DIRECTORY = join(process.cwd(), ".vea-data")
 
 let hasEnsuredDataDirectory = false
+
+const EXPENSE_CATEGORY_VALUES: ExpenseCategory[] = [
+  "Salaries",
+  "Utilities",
+  "Supplies",
+  "Maintenance",
+  "Transport",
+  "Training",
+  "Technology",
+  "Miscellaneous",
+]
+
+const EXPENSE_CATEGORY_SET = new Set(EXPENSE_CATEGORY_VALUES.map((category) => category.toLowerCase()))
+
+export const EXPENSE_CATEGORIES: readonly ExpenseCategory[] = EXPENSE_CATEGORY_VALUES
 
 function ensureDataDirectoryExists(): void {
   if (hasEnsuredDataDirectory) {
@@ -566,6 +789,94 @@ function persistCollection<T>(key: string, data: T[]): void {
   }
 }
 
+const normaliseWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim()
+
+function normaliseStringInput(value: unknown): string {
+  if (typeof value !== "string") {
+    return ""
+  }
+
+  return normaliseWhitespace(value)
+}
+
+function normaliseOptionalString(value: unknown): string | null {
+  const normalized = normaliseStringInput(value)
+  return normalized.length > 0 ? normalized : null
+}
+
+function ensurePositiveAmount(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number.parseFloat(String(value))
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    throw new Error("Amount must be a positive number")
+  }
+
+  return Number(numeric.toFixed(2))
+}
+
+function normaliseDateInput(value: unknown, fallback: Date = new Date()): string {
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = new Date(value)
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString()
+    }
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString()
+  }
+
+  return fallback.toISOString()
+}
+
+function canonicalReceiptNumber(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const cleaned = value.replace(/[^0-9a-z/\-]/gi, "").trim()
+  return cleaned.length > 0 ? cleaned.toUpperCase() : null
+}
+
+function canonicalTermKey(value: unknown): string {
+  if (typeof value !== "string") {
+    return ""
+  }
+
+  return value.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+function canonicalClassKey(value: unknown): string {
+  if (typeof value !== "string") {
+    return ""
+  }
+
+  const cleaned = value.trim().toLowerCase().replace(/\s+/g, " ")
+  if (!cleaned) {
+    return ""
+  }
+
+  return cleaned.replace(/\b([a-z])$/i, "").trim()
+}
+
+function ensureExpenseCategory(category: unknown): ExpenseCategory {
+  if (typeof category !== "string") {
+    throw new Error("Expense category is required")
+  }
+
+  const normalized = category.trim()
+  if (normalized.length === 0) {
+    throw new Error("Expense category is required")
+  }
+
+  const lookup = normalized.toLowerCase()
+  if (!EXPENSE_CATEGORY_SET.has(lookup)) {
+    throw new Error(`Invalid expense category: ${normalized}`)
+  }
+
+  return EXPENSE_CATEGORY_VALUES.find((entry) => entry.toLowerCase() === lookup) as ExpenseCategory
+}
+
+
 function ensureCollection<T>(key: string, seed: () => T[]): T[] {
   const existing = readCollection<T>(key)
   if (existing) {
@@ -575,6 +886,25 @@ function ensureCollection<T>(key: string, seed: () => T[]): T[] {
   const seeded = seed()
   persistCollection(key, seeded)
   return deepClone(seeded)
+}
+
+function ensureFeePaymentRecords(): FeePaymentRecord[] {
+  return ensureCollection<FeePaymentRecord>(STORAGE_KEYS.FINANCIAL_COLLECTIONS, defaultEmptyCollection)
+}
+
+function ensureExpenseRecords(): ExpenseRecord[] {
+  return ensureCollection<ExpenseRecord>(STORAGE_KEYS.FINANCIAL_EXPENSES, defaultEmptyCollection)
+}
+
+function ensureFeeWaiverRecords(): FeeWaiverRecord[] {
+  return ensureCollection<FeeWaiverRecord>(STORAGE_KEYS.FINANCIAL_WAIVERS, defaultEmptyCollection)
+}
+
+function ensureFinancialAccessLogs(): FinancialAccessLogRecord[] {
+  return ensureCollection<FinancialAccessLogRecord>(
+    STORAGE_KEYS.FINANCIAL_ACCESS_LOGS,
+    defaultEmptyCollection,
+  )
 }
 
 function ensureSingletonRecord<T extends CollectionRecord>(key: string, factory: () => T): T {
@@ -3445,6 +3775,1040 @@ export async function updatePaymentRecord(
   payments[index] = existing
   persistCollection(STORAGE_KEYS.PAYMENTS, payments)
   return deepClone(existing)
+}
+
+function generateCollectionReceiptNumber(timestamp: string): string {
+  const datePart = timestamp.slice(0, 10).replace(/-/g, "")
+  const randomPart = nodeRandomBytes(3).toString("hex").toUpperCase()
+  return `COL-${datePart}-${randomPart}`
+}
+
+export interface FeePaymentQueryOptions {
+  term?: string
+  startDate?: string
+  endDate?: string
+  includeDeleted?: boolean
+}
+
+export async function listFeePaymentRecords(
+  options: FeePaymentQueryOptions = {},
+): Promise<FeePaymentRecord[]> {
+  const payments = ensureFeePaymentRecords()
+  const startDate = options.startDate ? new Date(options.startDate) : null
+  const endDate = options.endDate ? new Date(options.endDate) : null
+  const hasValidStart = startDate instanceof Date && !Number.isNaN(startDate.getTime())
+  const hasValidEnd = endDate instanceof Date && !Number.isNaN(endDate.getTime())
+  const termKey = canonicalTermKey(options.term ?? "")
+
+  const filtered = payments.filter((record) => {
+    if (!options.includeDeleted && record.deletedAt) {
+      return false
+    }
+
+    if (termKey && canonicalTermKey(record.term) !== termKey) {
+      return false
+    }
+
+    const paymentTimestamp = new Date(record.paymentDate || record.createdAt)
+    if (hasValidStart && paymentTimestamp < startDate!) {
+      return false
+    }
+
+    if (hasValidEnd && paymentTimestamp > endDate!) {
+      return false
+    }
+
+    return true
+  })
+
+  filtered.sort((a, b) => {
+    const left = new Date(a.paymentDate || a.createdAt).getTime()
+    const right = new Date(b.paymentDate || b.createdAt).getTime()
+    return right - left
+  })
+
+  return deepClone(filtered)
+}
+
+export async function createFeePaymentRecord(
+  payload: CreateFeePaymentPayload,
+  context: FinancialAuditContext,
+): Promise<FeePaymentRecord> {
+  const payments = ensureFeePaymentRecords()
+  const timestamp = new Date().toISOString()
+
+  const studentName = normaliseStringInput(payload.studentName)
+  if (!studentName) {
+    throw new Error("Student name is required")
+  }
+
+  const feeType = normaliseStringInput(payload.feeType) || "General"
+  const paymentMethod = normaliseStringInput(payload.paymentMethod)
+  if (!paymentMethod) {
+    throw new Error("Payment method is required")
+  }
+
+  const term = normaliseStringInput(payload.term)
+  if (!term) {
+    throw new Error("Term is required")
+  }
+
+  const amount = ensurePositiveAmount(payload.amount)
+  const paymentDate = normaliseDateInput(payload.paymentDate, new Date(timestamp))
+  const receiptCandidate = canonicalReceiptNumber(payload.receiptNumber)
+
+  if (receiptCandidate) {
+    const conflict = payments.find(
+      (record) =>
+        canonicalReceiptNumber(record.receiptNumber) === receiptCandidate &&
+        (!record.deletedAt || record.deletedAt.length === 0),
+    )
+
+    if (conflict) {
+      throw new Error("Receipt number already exists")
+    }
+  }
+
+  const record: FeePaymentRecord = {
+    id: generateId("fee_payment"),
+    studentId: normaliseOptionalString(payload.studentId) ?? null,
+    studentName,
+    classId: normaliseOptionalString(payload.classId) ?? null,
+    className: normaliseOptionalString(payload.className),
+    feeType,
+    amount,
+    paymentDate,
+    paymentMethod,
+    receiptNumber: receiptCandidate ?? generateCollectionReceiptNumber(paymentDate),
+    paymentReference: normaliseOptionalString(payload.paymentReference),
+    term,
+    createdBy: context.userId,
+    createdByName: normaliseStringInput(context.userName) || context.userName,
+    lastModifiedBy: context.userId,
+    lastModifiedByName: normaliseStringInput(context.userName) || context.userName,
+    deletedAt: null,
+    deletionReason: null,
+    deletedBy: null,
+    deletedByName: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  payments.push(record)
+  persistCollection(STORAGE_KEYS.FINANCIAL_COLLECTIONS, payments)
+  return deepClone(record)
+}
+
+export async function updateFeePaymentRecordById(
+  id: string,
+  updates: UpdateFeePaymentPayload,
+  context: FinancialAuditContext,
+): Promise<FeePaymentRecord | null> {
+  const payments = ensureFeePaymentRecords()
+  const index = payments.findIndex((entry) => entry.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const existing = payments[index]
+  if (existing.deletedAt) {
+    throw new Error("Cannot update a deleted payment record")
+  }
+
+  const updated: FeePaymentRecord = { ...existing }
+
+  if (updates.studentName !== undefined) {
+    const name = normaliseStringInput(updates.studentName)
+    if (!name) {
+      throw new Error("Student name is required")
+    }
+    updated.studentName = name
+  }
+
+  if (updates.amount !== undefined) {
+    updated.amount = ensurePositiveAmount(updates.amount)
+  }
+
+  if (updates.feeType !== undefined) {
+    const value = normaliseStringInput(updates.feeType)
+    updated.feeType = value || updated.feeType
+  }
+
+  if (updates.paymentMethod !== undefined) {
+    const method = normaliseStringInput(updates.paymentMethod)
+    if (!method) {
+      throw new Error("Payment method is required")
+    }
+    updated.paymentMethod = method
+  }
+
+  if (updates.paymentDate !== undefined) {
+    updated.paymentDate = normaliseDateInput(updates.paymentDate, new Date(updated.paymentDate))
+  }
+
+  if (updates.term !== undefined) {
+    const value = normaliseStringInput(updates.term)
+    if (!value) {
+      throw new Error("Term is required")
+    }
+    updated.term = value
+  }
+
+  if (updates.receiptNumber !== undefined) {
+    const candidate = canonicalReceiptNumber(updates.receiptNumber)
+    if (candidate) {
+      const conflict = payments.find(
+        (record) =>
+          record.id !== id &&
+          canonicalReceiptNumber(record.receiptNumber) === candidate &&
+          (!record.deletedAt || record.deletedAt.length === 0),
+      )
+
+      if (conflict) {
+        throw new Error("Receipt number already exists")
+      }
+
+      updated.receiptNumber = candidate
+    }
+  }
+
+  if (updates.classId !== undefined) {
+    updated.classId = normaliseOptionalString(updates.classId)
+  }
+
+  if (updates.className !== undefined) {
+    updated.className = normaliseOptionalString(updates.className)
+  }
+
+  if (updates.studentId !== undefined) {
+    updated.studentId = normaliseOptionalString(updates.studentId)
+  }
+
+  if (updates.paymentReference !== undefined) {
+    updated.paymentReference = normaliseOptionalString(updates.paymentReference)
+  }
+
+  const timestamp = new Date().toISOString()
+  updated.updatedAt = timestamp
+  updated.lastModifiedBy = context.userId
+  updated.lastModifiedByName = normaliseStringInput(context.userName) || context.userName
+
+  payments[index] = updated
+  persistCollection(STORAGE_KEYS.FINANCIAL_COLLECTIONS, payments)
+  return deepClone(updated)
+}
+
+export async function softDeleteFeePaymentRecord(
+  id: string,
+  reason: string,
+  context: FinancialAuditContext,
+): Promise<FeePaymentRecord | null> {
+  const payments = ensureFeePaymentRecords()
+  const index = payments.findIndex((entry) => entry.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const resolvedReason = normaliseStringInput(reason)
+  if (!resolvedReason) {
+    throw new Error("Deletion reason is required")
+  }
+
+  const timestamp = new Date().toISOString()
+  const existing = payments[index]
+  const updated: FeePaymentRecord = {
+    ...existing,
+    deletedAt: timestamp,
+    deletionReason: resolvedReason,
+    deletedBy: context.userId,
+    deletedByName: normaliseStringInput(context.userName) || context.userName,
+    updatedAt: timestamp,
+    lastModifiedBy: context.userId,
+    lastModifiedByName: normaliseStringInput(context.userName) || context.userName,
+  }
+
+  payments[index] = updated
+  persistCollection(STORAGE_KEYS.FINANCIAL_COLLECTIONS, payments)
+  return deepClone(updated)
+}
+
+export interface ExpenseQueryOptions {
+  startDate?: string
+  endDate?: string
+  includeDeleted?: boolean
+  category?: ExpenseCategory | string
+}
+
+export async function listExpenseRecords(
+  options: ExpenseQueryOptions = {},
+): Promise<ExpenseRecord[]> {
+  const expenses = ensureExpenseRecords()
+  const startDate = options.startDate ? new Date(options.startDate) : null
+  const endDate = options.endDate ? new Date(options.endDate) : null
+  const hasValidStart = startDate instanceof Date && !Number.isNaN(startDate.getTime())
+  const hasValidEnd = endDate instanceof Date && !Number.isNaN(endDate.getTime())
+  const categoryKey = options.category ? ensureExpenseCategory(options.category).toLowerCase() : ""
+
+  const filtered = expenses.filter((record) => {
+    if (!options.includeDeleted && record.deletedAt) {
+      return false
+    }
+
+    if (categoryKey && record.category.toLowerCase() !== categoryKey) {
+      return false
+    }
+
+    const expenseDate = new Date(record.expenseDate || record.createdAt)
+    if (hasValidStart && expenseDate < startDate!) {
+      return false
+    }
+
+    if (hasValidEnd && expenseDate > endDate!) {
+      return false
+    }
+
+    return true
+  })
+
+  filtered.sort((a, b) => {
+    const left = new Date(a.expenseDate || a.createdAt).getTime()
+    const right = new Date(b.expenseDate || b.createdAt).getTime()
+    return right - left
+  })
+
+  return deepClone(filtered)
+}
+
+export async function createExpenseRecord(
+  payload: CreateExpensePayload,
+  context: FinancialAuditContext,
+): Promise<ExpenseRecord> {
+  const expenses = ensureExpenseRecords()
+  const timestamp = new Date().toISOString()
+
+  const category = ensureExpenseCategory(payload.category)
+  const amount = ensurePositiveAmount(payload.amount)
+  const description = normaliseStringInput(payload.description)
+  if (!description) {
+    throw new Error("Expense description is required")
+  }
+
+  const approvedBy = normaliseStringInput(payload.approvedBy)
+  if (!approvedBy) {
+    throw new Error("Approved by is required")
+  }
+
+  const record: ExpenseRecord = {
+    id: generateId("expense"),
+    category,
+    amount,
+    expenseDate: normaliseDateInput(payload.expenseDate, new Date(timestamp)),
+    description,
+    receiptReference: normaliseOptionalString(payload.receiptReference),
+    approvedBy,
+    documentUrl: normaliseOptionalString(payload.documentUrl),
+    createdBy: context.userId,
+    createdByName: normaliseStringInput(context.userName) || context.userName,
+    lastModifiedBy: context.userId,
+    lastModifiedByName: normaliseStringInput(context.userName) || context.userName,
+    deletedAt: null,
+    deletionReason: null,
+    deletedBy: null,
+    deletedByName: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  expenses.push(record)
+  persistCollection(STORAGE_KEYS.FINANCIAL_EXPENSES, expenses)
+  return deepClone(record)
+}
+
+export async function updateExpenseRecordById(
+  id: string,
+  updates: UpdateExpensePayload,
+  context: FinancialAuditContext,
+): Promise<ExpenseRecord | null> {
+  const expenses = ensureExpenseRecords()
+  const index = expenses.findIndex((entry) => entry.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const existing = expenses[index]
+  if (existing.deletedAt) {
+    throw new Error("Cannot update a deleted expense")
+  }
+
+  const updated: ExpenseRecord = { ...existing }
+
+  if (updates.category !== undefined) {
+    updated.category = ensureExpenseCategory(updates.category)
+  }
+
+  if (updates.amount !== undefined) {
+    updated.amount = ensurePositiveAmount(updates.amount)
+  }
+
+  if (updates.description !== undefined) {
+    const desc = normaliseStringInput(updates.description)
+    if (!desc) {
+      throw new Error("Expense description is required")
+    }
+    updated.description = desc
+  }
+
+  if (updates.expenseDate !== undefined) {
+    updated.expenseDate = normaliseDateInput(updates.expenseDate, new Date(updated.expenseDate))
+  }
+
+  if (updates.approvedBy !== undefined) {
+    const approver = normaliseStringInput(updates.approvedBy)
+    if (!approver) {
+      throw new Error("Approved by is required")
+    }
+    updated.approvedBy = approver
+  }
+
+  if (updates.receiptReference !== undefined) {
+    updated.receiptReference = normaliseOptionalString(updates.receiptReference)
+  }
+
+  if (updates.documentUrl !== undefined) {
+    updated.documentUrl = normaliseOptionalString(updates.documentUrl)
+  }
+
+  const timestamp = new Date().toISOString()
+  updated.updatedAt = timestamp
+  updated.lastModifiedBy = context.userId
+  updated.lastModifiedByName = normaliseStringInput(context.userName) || context.userName
+
+  expenses[index] = updated
+  persistCollection(STORAGE_KEYS.FINANCIAL_EXPENSES, expenses)
+  return deepClone(updated)
+}
+
+export async function softDeleteExpenseRecord(
+  id: string,
+  reason: string,
+  context: FinancialAuditContext,
+): Promise<ExpenseRecord | null> {
+  const expenses = ensureExpenseRecords()
+  const index = expenses.findIndex((entry) => entry.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const resolvedReason = normaliseStringInput(reason)
+  if (!resolvedReason) {
+    throw new Error("Deletion reason is required")
+  }
+
+  const timestamp = new Date().toISOString()
+  const existing = expenses[index]
+  const updated: ExpenseRecord = {
+    ...existing,
+    deletedAt: timestamp,
+    deletionReason: resolvedReason,
+    deletedBy: context.userId,
+    deletedByName: normaliseStringInput(context.userName) || context.userName,
+    updatedAt: timestamp,
+    lastModifiedBy: context.userId,
+    lastModifiedByName: normaliseStringInput(context.userName) || context.userName,
+  }
+
+  expenses[index] = updated
+  persistCollection(STORAGE_KEYS.FINANCIAL_EXPENSES, expenses)
+  return deepClone(updated)
+}
+
+export interface FeeWaiverQueryOptions {
+  term?: string
+  studentId?: string
+  includeDeleted?: boolean
+}
+
+export async function listFeeWaiverRecords(
+  options: FeeWaiverQueryOptions = {},
+): Promise<FeeWaiverRecord[]> {
+  const waivers = ensureFeeWaiverRecords()
+  const termKey = canonicalTermKey(options.term ?? "")
+  const studentKey = options.studentId ? options.studentId.trim().toLowerCase() : ""
+
+  const filtered = waivers.filter((record) => {
+    if (!options.includeDeleted && record.deletedAt) {
+      return false
+    }
+
+    if (termKey && canonicalTermKey(record.term) !== termKey) {
+      return false
+    }
+
+    if (studentKey) {
+      const recordStudentIds = [record.studentId, record.studentName, record.classId, record.className]
+      const matchesStudent = recordStudentIds
+        .filter(Boolean)
+        .some((candidate) => String(candidate).trim().toLowerCase() === studentKey)
+      if (!matchesStudent) {
+        return false
+      }
+    }
+
+    return true
+  })
+
+  filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+  return deepClone(filtered)
+}
+
+export async function createFeeWaiverRecord(
+  payload: CreateFeeWaiverPayload,
+  context: FinancialAuditContext,
+): Promise<FeeWaiverRecord> {
+  const waivers = ensureFeeWaiverRecords()
+  const timestamp = new Date().toISOString()
+
+  const studentName = normaliseStringInput(payload.studentName)
+  if (!studentName) {
+    throw new Error("Student name is required")
+  }
+
+  const term = normaliseStringInput(payload.term)
+  if (!term) {
+    throw new Error("Term is required")
+  }
+
+  const reason = normaliseStringInput(payload.reason)
+  if (!reason) {
+    throw new Error("Waiver reason is required")
+  }
+
+  const amount = ensurePositiveAmount(payload.amount)
+
+  const record: FeeWaiverRecord = {
+    id: generateId("fee_waiver"),
+    studentId: normaliseOptionalString(payload.studentId) ?? null,
+    studentName,
+    classId: normaliseOptionalString(payload.classId) ?? null,
+    className: normaliseOptionalString(payload.className),
+    term,
+    amount,
+    reason,
+    notes: normaliseOptionalString(payload.notes),
+    createdBy: context.userId,
+    createdByName: normaliseStringInput(context.userName) || context.userName,
+    lastModifiedBy: context.userId,
+    lastModifiedByName: normaliseStringInput(context.userName) || context.userName,
+    deletedAt: null,
+    deletionReason: null,
+    deletedBy: null,
+    deletedByName: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  waivers.push(record)
+  persistCollection(STORAGE_KEYS.FINANCIAL_WAIVERS, waivers)
+  return deepClone(record)
+}
+
+export async function updateFeeWaiverRecordById(
+  id: string,
+  updates: UpdateFeeWaiverPayload,
+  context: FinancialAuditContext,
+): Promise<FeeWaiverRecord | null> {
+  const waivers = ensureFeeWaiverRecords()
+  const index = waivers.findIndex((entry) => entry.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const existing = waivers[index]
+  if (existing.deletedAt) {
+    throw new Error("Cannot update a deleted waiver")
+  }
+
+  const updated: FeeWaiverRecord = { ...existing }
+
+  if (updates.studentName !== undefined) {
+    const value = normaliseStringInput(updates.studentName)
+    if (!value) {
+      throw new Error("Student name is required")
+    }
+    updated.studentName = value
+  }
+
+  if (updates.amount !== undefined) {
+    updated.amount = ensurePositiveAmount(updates.amount)
+  }
+
+  if (updates.reason !== undefined) {
+    const value = normaliseStringInput(updates.reason)
+    if (!value) {
+      throw new Error("Waiver reason is required")
+    }
+    updated.reason = value
+  }
+
+  if (updates.term !== undefined) {
+    const value = normaliseStringInput(updates.term)
+    if (!value) {
+      throw new Error("Term is required")
+    }
+    updated.term = value
+  }
+
+  if (updates.notes !== undefined) {
+    updated.notes = normaliseOptionalString(updates.notes)
+  }
+
+  if (updates.studentId !== undefined) {
+    updated.studentId = normaliseOptionalString(updates.studentId)
+  }
+
+  if (updates.classId !== undefined) {
+    updated.classId = normaliseOptionalString(updates.classId)
+  }
+
+  if (updates.className !== undefined) {
+    updated.className = normaliseOptionalString(updates.className)
+  }
+
+  const timestamp = new Date().toISOString()
+  updated.updatedAt = timestamp
+  updated.lastModifiedBy = context.userId
+  updated.lastModifiedByName = normaliseStringInput(context.userName) || context.userName
+
+  waivers[index] = updated
+  persistCollection(STORAGE_KEYS.FINANCIAL_WAIVERS, waivers)
+  return deepClone(updated)
+}
+
+export async function softDeleteFeeWaiverRecord(
+  id: string,
+  reason: string,
+  context: FinancialAuditContext,
+): Promise<FeeWaiverRecord | null> {
+  const waivers = ensureFeeWaiverRecords()
+  const index = waivers.findIndex((entry) => entry.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const resolvedReason = normaliseStringInput(reason)
+  if (!resolvedReason) {
+    throw new Error("Deletion reason is required")
+  }
+
+  const timestamp = new Date().toISOString()
+  const existing = waivers[index]
+  const updated: FeeWaiverRecord = {
+    ...existing,
+    deletedAt: timestamp,
+    deletionReason: resolvedReason,
+    deletedBy: context.userId,
+    deletedByName: normaliseStringInput(context.userName) || context.userName,
+    updatedAt: timestamp,
+    lastModifiedBy: context.userId,
+    lastModifiedByName: normaliseStringInput(context.userName) || context.userName,
+  }
+
+  waivers[index] = updated
+  persistCollection(STORAGE_KEYS.FINANCIAL_WAIVERS, waivers)
+  return deepClone(updated)
+}
+
+export async function recordFinancialAccessLog(
+  payload: CreateFinancialAccessLogPayload,
+): Promise<FinancialAccessLogRecord> {
+  const logs = ensureFinancialAccessLogs()
+  const timestamp = new Date().toISOString()
+
+  const record: FinancialAccessLogRecord = {
+    id: generateId("finance_access"),
+    userId: normaliseStringInput(payload.userId) || payload.userId,
+    userRole: normaliseStringInput(payload.userRole) || payload.userRole,
+    userName: normaliseStringInput(payload.userName) || payload.userName,
+    action: normaliseStringInput(payload.action) || payload.action,
+    filters: payload.filters ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  logs.push(record)
+  persistCollection(STORAGE_KEYS.FINANCIAL_ACCESS_LOGS, logs)
+  return deepClone(record)
+}
+
+export async function listFinancialAccessLogs(): Promise<FinancialAccessLogRecord[]> {
+  const logs = ensureFinancialAccessLogs()
+  const sorted = [...logs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  return deepClone(sorted)
+}
+
+export async function buildFinancialAnalyticsSnapshot(
+  options: FinancialAnalyticsQueryOptions = {},
+): Promise<FinancialAnalyticsSnapshot> {
+  const termKey = canonicalTermKey(options.term ?? "")
+  const classFilterToken = normaliseStringInput(options.classFilter ?? "").toLowerCase()
+  const classFilterKey = canonicalClassKey(options.classFilter ?? "")
+
+  const [payments, expenses, waivers, students, feeStructures] = await Promise.all([
+    listFeePaymentRecords(options),
+    listExpenseRecords({ startDate: options.startDate, endDate: options.endDate }),
+    listFeeWaiverRecords({ term: options.term, includeDeleted: false }),
+    listStudentRecords(),
+    listFeeStructures(),
+  ])
+
+  const feeStructureByClass = new Map<string, FeeStructureRecord>()
+  for (const record of feeStructures) {
+    feeStructureByClass.set(canonicalClassKey(record.className), record)
+  }
+
+  interface StudentLedgerEntry {
+    studentId: string
+    studentName: string
+    classKey: string
+    className: string | null
+    parentName: string | null
+    parentEmail: string | null
+    parentPhone: string | null
+    expected: number
+    paid: number
+    waived: number
+  }
+
+  const studentLedger = new Map<string, StudentLedgerEntry>()
+  const nameToId = new Map<string, string>()
+
+  for (const student of students) {
+    const studentId = normaliseStringInput(student.id)
+    if (!studentId) {
+      continue
+    }
+
+    const metadata = (student.metadata ?? {}) as Record<string, unknown>
+    const classCandidates = [
+      normaliseOptionalString(student.class),
+      normaliseOptionalString((student as { className?: unknown }).className),
+      normaliseOptionalString(metadata.className),
+    ].filter((candidate): candidate is string => Boolean(candidate))
+
+    let resolvedClassName: string | null = classCandidates.length > 0 ? classCandidates[0] ?? null : null
+    let resolvedClassKey = canonicalClassKey(resolvedClassName ?? "")
+
+    if (!resolvedClassKey && classCandidates.length > 1) {
+      const candidate = classCandidates.find((entry) => canonicalClassKey(entry).length > 0)
+      if (candidate) {
+        resolvedClassKey = canonicalClassKey(candidate)
+        resolvedClassName = candidate
+      }
+    }
+
+    if (!resolvedClassKey && metadata.assignedClassName) {
+      const candidate = normaliseOptionalString(metadata.assignedClassName)
+      if (candidate) {
+        resolvedClassKey = canonicalClassKey(candidate)
+        resolvedClassName = candidate
+      }
+    }
+
+    const studentClassIdToken = normaliseStringInput((student as { classId?: unknown }).classId ?? "").toLowerCase()
+
+    if (classFilterToken) {
+      const matchesClass =
+        studentClassIdToken === classFilterToken ||
+        (resolvedClassKey && resolvedClassKey === classFilterKey)
+      if (!matchesClass) {
+        continue
+      }
+    }
+
+    const feeStructure = resolvedClassKey ? feeStructureByClass.get(resolvedClassKey) : undefined
+    if (!resolvedClassName && feeStructure) {
+      resolvedClassName = feeStructure.className
+    }
+
+    const expectedAmount = feeStructure?.total ?? 0
+    const parentName = normaliseOptionalString(student.parentName)
+    const parentEmail = normaliseOptionalString(student.parentEmail)
+    const parentPhone = normaliseOptionalString(student.guardianPhone ?? student.phone)
+
+    const ledgerEntry: StudentLedgerEntry = {
+      studentId,
+      studentName: student.name,
+      classKey: resolvedClassKey,
+      className: resolvedClassName,
+      parentName,
+      parentEmail,
+      parentPhone,
+      expected: expectedAmount,
+      paid: 0,
+      waived: 0,
+    }
+
+    studentLedger.set(studentId, ledgerEntry)
+
+    const nameKey = normaliseStringInput(student.name).toLowerCase()
+    if (nameKey && !nameToId.has(nameKey)) {
+      nameToId.set(nameKey, studentId)
+    }
+  }
+
+  const matchStudentId = (candidate: unknown): string | null => {
+    if (typeof candidate !== "string") {
+      return null
+    }
+
+    const normalized = normaliseStringInput(candidate)
+    if (normalized && studentLedger.has(normalized)) {
+      return normalized
+    }
+
+    const nameKey = normalized.toLowerCase()
+    if (nameToId.has(nameKey)) {
+      return nameToId.get(nameKey) ?? null
+    }
+
+    return null
+  }
+
+  const monthlyMap = new Map<string, { label: string; collected: number; expenses: number }>()
+  const feeTypeTotals = new Map<string, number>()
+  const expenseTotals = new Map<string, number>()
+
+  const registerMonthly = (value: string, amount: number, kind: "collected" | "expenses") => {
+    if (!value) {
+      return
+    }
+
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) {
+      return
+    }
+
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+    const label = date.toLocaleDateString(undefined, { month: "short", year: "numeric" })
+    const entry = monthlyMap.get(key) ?? { label, collected: 0, expenses: 0 }
+
+    if (kind === "collected") {
+      entry.collected += amount
+    } else {
+      entry.expenses += amount
+    }
+
+    monthlyMap.set(key, entry)
+  }
+
+  let totalCollected = 0
+  let totalCollectionTime = 0
+  let collectionTimeCount = 0
+  const msInDay = 1000 * 60 * 60 * 24
+
+  for (const payment of payments) {
+    totalCollected += payment.amount
+    registerMonthly(payment.paymentDate || payment.createdAt, payment.amount, "collected")
+
+    const studentId =
+      matchStudentId(payment.studentId) ??
+      matchStudentId(payment.studentName) ??
+      null
+
+    if (studentId) {
+      const ledger = studentLedger.get(studentId)
+      if (ledger) {
+        ledger.paid += payment.amount
+      }
+    }
+
+    const feeTypeKey = normaliseStringInput(payment.feeType) || "General"
+    feeTypeTotals.set(feeTypeKey, (feeTypeTotals.get(feeTypeKey) ?? 0) + payment.amount)
+
+    const paymentDate = new Date(payment.paymentDate || payment.createdAt)
+    const recordedAt = new Date(payment.updatedAt || payment.createdAt)
+    if (!Number.isNaN(paymentDate.getTime()) && !Number.isNaN(recordedAt.getTime())) {
+      const diff = Math.abs(recordedAt.getTime() - paymentDate.getTime()) / msInDay
+      totalCollectionTime += diff
+      collectionTimeCount += 1
+    }
+  }
+
+  const filteredWaivers = termKey
+    ? waivers.filter((entry) => canonicalTermKey(entry.term) === termKey)
+    : waivers
+
+  for (const waiver of filteredWaivers) {
+    const studentId =
+      matchStudentId(waiver.studentId) ??
+      matchStudentId(waiver.studentName) ??
+      null
+
+    if (studentId) {
+      const ledger = studentLedger.get(studentId)
+      if (ledger) {
+        ledger.waived += waiver.amount
+      }
+    }
+  }
+
+  let totalExpensesAmount = 0
+
+  for (const expense of expenses) {
+    totalExpensesAmount += expense.amount
+    registerMonthly(expense.expenseDate || expense.createdAt, expense.amount, "expenses")
+    expenseTotals.set(
+      expense.category,
+      (expenseTotals.get(expense.category) ?? 0) + expense.amount,
+    )
+  }
+
+  const expectedTotal = Array.from(studentLedger.values()).reduce(
+    (sum, entry) => sum + entry.expected,
+    0,
+  )
+
+  const defaulters: DefaulterAnalyticsEntry[] = []
+  let outstandingAmount = 0
+  let studentsPaid = 0
+  let totalPaid = 0
+  let totalWaived = 0
+
+  const termLabel = options.term ? normaliseStringInput(options.term) : "All Terms"
+
+  for (const entry of studentLedger.values()) {
+    totalPaid += entry.paid
+    totalWaived += entry.waived
+    const outstanding = Math.max(entry.expected - entry.paid - entry.waived, 0)
+
+    if (outstanding > 0.009) {
+      outstandingAmount += outstanding
+      defaulters.push({
+        studentId: entry.studentId,
+        studentName: entry.studentName,
+        className: entry.className,
+        term: termLabel,
+        parentName: entry.parentName,
+        parentEmail: entry.parentEmail,
+        parentPhone: entry.parentPhone,
+        outstanding: Number(outstanding.toFixed(2)),
+        expected: Number(entry.expected.toFixed(2)),
+        paid: Number(entry.paid.toFixed(2)),
+        waived: Number(entry.waived.toFixed(2)),
+      })
+    } else if (entry.expected > 0 || entry.paid > 0) {
+      studentsPaid += 1
+    }
+  }
+
+  defaulters.sort((a, b) => b.outstanding - a.outstanding)
+  const topDefaulters = defaulters.slice(0, 10)
+
+  const totalStudentsWithExpectation = Array.from(studentLedger.values()).filter(
+    (entry) => entry.expected > 0,
+  ).length
+
+  const collectionRate = expectedTotal > 0 ? (totalPaid / expectedTotal) * 100 : 0
+  const onTimePaymentRate =
+    totalStudentsWithExpectation > 0
+      ? ((totalStudentsWithExpectation - defaulters.length) / totalStudentsWithExpectation) * 100
+      : 0
+
+  const avgCollectionTime = collectionTimeCount > 0 ? totalCollectionTime / collectionTimeCount : 0
+
+  const monthlyEntries = Array.from(monthlyMap.entries()).sort((a, b) => (a[0] < b[0] ? -1 : 1))
+  const monthCount = monthlyEntries.length > 0 ? monthlyEntries.length : expectedTotal > 0 ? 1 : 0
+  const monthlyExpected = monthCount > 0 ? expectedTotal / monthCount : 0
+
+  const monthly: MonthlyFinancialPoint[] = monthlyEntries.map(([, entry]) => ({
+    month: entry.label,
+    collected: Number(entry.collected.toFixed(2)),
+    expected: Number(monthlyExpected.toFixed(2)),
+    expenses: Number(entry.expenses.toFixed(2)),
+    percentage:
+      monthlyExpected > 0 ? Number(((entry.collected / monthlyExpected) * 100).toFixed(2)) : 0,
+  }))
+
+  const classCollectionMap = new Map<string, ClassCollectionAnalyticsEntry>()
+  for (const entry of studentLedger.values()) {
+    const classKey = entry.classKey || entry.className || "unassigned"
+    const base = classCollectionMap.get(classKey) ?? {
+      className:
+        entry.className ?? feeStructureByClass.get(entry.classKey)?.className ?? "Unassigned",
+      collected: 0,
+      expected: 0,
+      students: 0,
+      percentage: 0,
+    }
+
+    base.collected += entry.paid
+    base.expected += entry.expected
+    base.students += 1
+    classCollectionMap.set(classKey, base)
+  }
+
+  const classCollection: ClassCollectionAnalyticsEntry[] = Array.from(classCollectionMap.values())
+    .map((entry) => ({
+      className: entry.className,
+      collected: Number(entry.collected.toFixed(2)),
+      expected: Number(entry.expected.toFixed(2)),
+      students: entry.students,
+      percentage: entry.expected > 0 ? Number(((entry.collected / entry.expected) * 100).toFixed(2)) : 0,
+    }))
+    .sort((a, b) => b.collected - a.collected)
+
+  const expenseBreakdown: ExpenseAnalyticsEntry[] = Array.from(expenseTotals.entries())
+    .map(([category, amount]) => ({
+      category: category as ExpenseCategory,
+      amount: Number(amount.toFixed(2)),
+      percentage:
+        totalExpensesAmount > 0 ? Number(((amount / totalExpensesAmount) * 100).toFixed(2)) : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount)
+
+  const feeTypeBreakdown: FeeTypeAnalyticsEntry[] = Array.from(feeTypeTotals.entries())
+    .map(([feeType, amount]) => ({
+      feeType,
+      amount: Number(amount.toFixed(2)),
+      percentage: totalCollected > 0 ? Number(((amount / totalCollected) * 100).toFixed(2)) : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount)
+
+  const summary: FinancialAnalyticsSummary = {
+    totalCollected: Number(totalCollected.toFixed(2)),
+    totalExpenses: Number(totalExpensesAmount.toFixed(2)),
+    netIncome: Number((totalCollected - totalExpensesAmount).toFixed(2)),
+    collectionRate: Number(collectionRate.toFixed(2)),
+    studentsPaid,
+    defaultersCount: defaulters.length,
+    outstandingAmount: Number(outstandingAmount.toFixed(2)),
+    avgCollectionTime: Number(avgCollectionTime.toFixed(2)),
+    onTimePaymentRate: Number(onTimePaymentRate.toFixed(2)),
+  }
+
+  return {
+    summary,
+    monthly,
+    classCollection,
+    expenses: expenseBreakdown,
+    feeTypeBreakdown,
+    defaulters,
+    topDefaulters,
+  }
+}
+
+export async function computeFinancialDefaulters(
+  options: FinancialAnalyticsQueryOptions = {},
+): Promise<DefaulterAnalyticsEntry[]> {
+  const snapshot = await buildFinancialAnalyticsSnapshot(options)
+  return snapshot.defaulters
 }
 
 const NOTICEBOARD_TABLE = "noticeboard_notices"
