@@ -3,6 +3,7 @@
 import type React from "react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
@@ -10,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { GraduationCap, Users, BookOpen, DollarSign, UserCheck, Key, Loader2 } from "lucide-react"
+import { GraduationCap, Users, BookOpen, DollarSign, UserCheck, Key, Loader2, Sparkles } from "lucide-react"
 import { PaymentModal } from "@/components/payment-modal"
 import { StudentProfileCard } from "@/components/student-profile-card"
 import { AcademicProgress } from "@/components/academic-progress"
@@ -2929,6 +2930,43 @@ function ParentDashboard({ user }: { user: User }) {
                 <CardDescription>Common parent portal actions</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
+                {(hasEventPayments || isEventPaymentLoading) && (
+                  <Button
+                    className={cn(
+                      "group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-fuchsia-500 via-purple-500 to-indigo-500 text-white shadow-lg transition-all duration-300 hover:scale-[1.01] hover:shadow-xl focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-fuchsia-200",
+                      !isEventPaymentLoading && "animate-pulse",
+                    )}
+                    onClick={() => setShowEventPaymentModal(true)}
+                    disabled={isEventPaymentLoading}
+                  >
+                    {isEventPaymentLoading ? (
+                      <span className="flex w-full items-center justify-between">
+                        <span className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Checking event fees...
+                        </span>
+                        <Badge
+                          variant="secondary"
+                          className="border-0 bg-white/20 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm"
+                        >
+                          New
+                        </Badge>
+                      </span>
+                    ) : (
+                      <span className="flex w-full items-center justify-between">
+                        <span className="flex items-center gap-2">
+                          <Sparkles className="h-4 w-4" />
+                          {eventPaymentActionLabel}
+                        </span>
+                        <Badge
+                          variant="secondary"
+                          className="border-0 bg-white/20 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm"
+                        >
+                          New
+                        </Badge>
+                      </span>
+                    )}
+                  </Button>
+                )}
                 <Button
                   className={cn(
                     "w-full bg-[#2d682d] hover:bg-[#2d682d]/90 text-white",
@@ -3004,21 +3042,6 @@ function ParentDashboard({ user }: { user: User }) {
                 ) : (
                   <Button className="w-full bg-[#b29032] text-white" variant="outline" disabled>
                     View Cumulative Report
-                  </Button>
-                )}
-                {(hasEventPayments || isEventPaymentLoading) && (
-                  <Button
-                    className="w-full bg-[#b29032] hover:bg-[#b29032]/90 text-white"
-                    onClick={() => setShowEventPaymentModal(true)}
-                    disabled={isEventPaymentLoading}
-                  >
-                    {isEventPaymentLoading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" /> Checking event fees...
-                      </span>
-                    ) : (
-                      eventPaymentActionLabel
-                    )}
                   </Button>
                 )}
                 <Button className="w-full bg-transparent" variant="outline">
