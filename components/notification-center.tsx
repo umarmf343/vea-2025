@@ -103,13 +103,25 @@ export function NotificationCenter({ userRole, userId, studentIds }: Notificatio
     [resolvedUserId],
   )
 
-  const normalizedStudentIds = useMemo(() => {
+  const studentIdsKey = useMemo(() => {
     if (!studentIds || studentIds.length === 0) {
+      return ""
+    }
+
+    return studentIds
+      .map((value) => String(value).trim().toLowerCase())
+      .filter((value) => value.length > 0)
+      .sort()
+      .join("|")
+  }, [studentIds])
+
+  const normalizedStudentIds = useMemo(() => {
+    if (!studentIdsKey) {
       return new Set<string>()
     }
 
-    return new Set(studentIds.map((value) => String(value).trim().toLowerCase()))
-  }, [studentIds])
+    return new Set(studentIdsKey.split("|"))
+  }, [studentIdsKey])
 
 
   const toAudienceArray = useCallback((audience: StoredNotification["audience"]) => {
