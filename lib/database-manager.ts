@@ -2797,6 +2797,13 @@ class DatabaseManager {
     materials.push(record)
     this.persistStudyMaterials(materials)
     this.triggerEvent("studyMaterialsUpdated", record)
+
+    try {
+      await this.notifyStudyMaterialShared(record)
+    } catch (error) {
+      console.error("Unable to notify students about new study material", error)
+    }
+
     return record
   }
 
@@ -2827,6 +2834,80 @@ class DatabaseManager {
     this.persistStudyMaterials(materials)
     this.triggerEvent("studyMaterialsUpdated", materials[index])
     return materials[index]
+  }
+
+  private async notifyStudyMaterialShared(material: StudyMaterialRecord) {
+    if (!this.shouldEmitNotifications()) {
+      return
+    }
+
+    const classLabel = material.className ?? material.classId ?? null
+
+    if (!classLabel) {
+      return
+    }
+
+    const recipients = new Map<string, { id: string; name: string | null }>()
+
+    try {
+      const students = await this.getStudentsByClass(classLabel)
+      students.forEach((student: any) => {
+        const id = typeof student?.id === "string" ? student.id.trim() : String(student?.id ?? "")
+        if (!id) {
+          return
+        }
+
+        if (!recipients.has(id)) {
+          const nameCandidate =
+            this.normalisePersonName(student?.name) ??
+            this.normalisePersonName(student?.fullName) ??
+            this.normalisePersonName(student?.username)
+          recipients.set(id, { id, name: nameCandidate ?? null })
+        }
+      })
+    } catch (error) {
+      console.error("Unable to resolve students for study material notification", error)
+    }
+
+    if (recipients.size === 0) {
+      return
+    }
+
+    const teacherSummary = await this.resolveUserSummary(material.teacherId ?? null)
+    const teacherName =
+      this.normalisePersonName(material.teacherName) ?? teacherSummary?.name ?? "Your teacher"
+    const audienceLabel = material.className ?? material.classId ?? "your class"
+    const metadata = {
+      materialId: material.id,
+      subject: material.subject,
+      className: material.className ?? null,
+      classId: material.classId ?? null,
+      teacherId: material.teacherId ?? null,
+      teacherName,
+      fileName: material.fileName,
+      fileSize: material.fileSize,
+      fileType: material.fileType,
+      uploadedAt: material.uploadDate,
+    }
+
+    await Promise.allSettled(
+      Array.from(recipients.values()).map((recipient) => {
+        const audience = [recipient.id, "student"]
+        return this.saveNotification({
+          title: `${material.subject} material available`,
+          message: `${teacherName} shared "${material.title}" with ${audienceLabel}.`,
+          type: "info",
+          category: "resource",
+          audience,
+          targetAudience: audience,
+          metadata: {
+            ...metadata,
+            studentId: recipient.id,
+            studentName: recipient.name ?? undefined,
+          },
+        })
+      }),
+    )
   }
 
   async createAssignmentSubmission(
