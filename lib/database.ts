@@ -30,6 +30,8 @@ export interface StoredUser extends CollectionRecord {
   classId?: string | null
   studentIds?: string[]
   subjects?: string[]
+  teachingClassIds?: string[]
+  teachingAssignments?: TeacherAssignmentSummary[]
   metadata?: Record<string, unknown> | null
   profileImage?: string | null
   lastLogin?: string | null
@@ -52,6 +54,17 @@ export interface SubjectRecord extends CollectionRecord {
   description?: string | null
   classes: string[]
   teachers: string[]
+}
+
+export interface TeacherAssignmentSummary {
+  classId: string
+  className: string
+  subjects: string[]
+}
+
+export interface TeacherClassAssignmentRecord extends CollectionRecord {
+  teacherId: string
+  classId: string
 }
 
 export interface StudentRecord extends CollectionRecord {
@@ -251,6 +264,7 @@ export interface CreateUserPayload {
   role: string
   passwordHash: string
   classId?: string | null
+  classIds?: string[]
   studentId?: string | null
   studentIds?: string[]
   subjects?: string[]
@@ -265,6 +279,7 @@ export interface UpdateUserPayload extends Partial<Omit<StoredUser, "id" | "emai
   studentId?: string | null
   studentIds?: string[]
   subjects?: string[]
+  classIds?: string[]
 }
 
 export interface CreateClassPayload {
@@ -443,6 +458,7 @@ const STORAGE_KEYS = {
   RECEIPTS: "vea_payment_receipts",
   NOTICES: "vea_noticeboard",
   TIMETABLES: "vea_class_timetables",
+  TEACHER_CLASS_ASSIGNMENTS: "vea_teacher_class_assignments",
   ANALYTICS_REPORTS: "vea_analytics_reports",
   REPORT_CARDS: "reportCards",
   REPORT_CARD_CONFIG: "reportCardConfig",
@@ -1084,6 +1100,195 @@ function normalizeRoleForStorage(role: string): string {
   }
 }
 
+function ensureTeacherClassAssignmentsCollection(): TeacherClassAssignmentRecord[] {
+  return ensureCollection<TeacherClassAssignmentRecord>(
+    STORAGE_KEYS.TEACHER_CLASS_ASSIGNMENTS,
+    defaultEmptyCollection,
+  )
+}
+
+function buildTeacherAssignmentAugmentorFromCollections(
+  assignments: TeacherClassAssignmentRecord[],
+  classes: ClassRecord[],
+): (user: StoredUser) => StoredUser {
+  const classMap = new Map(classes.map((entry) => [entry.id, entry]))
+  const assignmentsByTeacher = new Map<string, TeacherClassAssignmentRecord[]>()
+
+  for (const assignment of assignments) {
+    if (!assignment.teacherId || !classMap.has(assignment.classId)) {
+      continue
+    }
+
+    const existing = assignmentsByTeacher.get(assignment.teacherId)
+    if (existing) {
+      existing.push(assignment)
+    } else {
+      assignmentsByTeacher.set(assignment.teacherId, [assignment])
+    }
+  }
+
+  return (user: StoredUser) => {
+    const normalizedRole = normalizeRoleForStorage(user.role)
+    if (normalizedRole !== "teacher") {
+      const clone = deepClone(user)
+      if (!Array.isArray(clone.subjects)) {
+        clone.subjects = []
+      }
+      return clone
+    }
+
+    const clone = deepClone(user)
+    const teacherAssignments = assignmentsByTeacher.get(clone.id) ?? []
+    const seenClassIds = new Set<string>()
+    const subjects = new Set<string>()
+    const summaries: TeacherAssignmentSummary[] = []
+
+    for (const assignment of teacherAssignments) {
+      if (seenClassIds.has(assignment.classId)) {
+        continue
+      }
+
+      const classRecord = classMap.get(assignment.classId)
+      if (!classRecord) {
+        continue
+      }
+
+      seenClassIds.add(classRecord.id)
+
+      const classSubjects = Array.isArray(classRecord.subjects)
+        ? classRecord.subjects.filter((subject): subject is string => typeof subject === "string" && subject.trim().length > 0)
+        : []
+
+      for (const subject of classSubjects) {
+        subjects.add(subject)
+      }
+
+      summaries.push({
+        classId: classRecord.id,
+        className: classRecord.name,
+        subjects: classSubjects,
+      })
+    }
+
+    clone.classId = null
+    clone.teachingClassIds = Array.from(seenClassIds)
+    clone.subjects = Array.from(subjects)
+    clone.teachingAssignments = summaries
+
+    return clone
+  }
+}
+
+async function buildTeacherAssignmentAugmentor(teacherIds?: string[]): Promise<(user: StoredUser) => StoredUser> {
+  const classes = ensureCollection<ClassRecord>(STORAGE_KEYS.CLASSES, createDefaultClasses)
+
+  if (isDatabaseConfigured()) {
+    const assignments = await getTeacherClassAssignmentsFromDatabase(teacherIds)
+    return buildTeacherAssignmentAugmentorFromCollections(assignments, classes)
+  }
+
+  const assignments = ensureTeacherClassAssignmentsCollection()
+
+  if (teacherIds && teacherIds.length > 0) {
+    const identifiers = new Set(teacherIds)
+    return buildTeacherAssignmentAugmentorFromCollections(
+      assignments.filter((assignment) => identifiers.has(assignment.teacherId)),
+      classes,
+    )
+  }
+
+  return buildTeacherAssignmentAugmentorFromCollections(assignments, classes)
+}
+
+async function augmentUserWithTeachingAssignments(user: StoredUser): Promise<StoredUser> {
+  const teacherIds = normalizeRoleForStorage(user.role) === "teacher" ? [user.id] : undefined
+  const augment = await buildTeacherAssignmentAugmentor(teacherIds)
+  return augment(user)
+}
+
+async function augmentUsersWithTeachingAssignments(users: StoredUser[]): Promise<StoredUser[]> {
+  const teacherIds = users
+    .filter((user) => normalizeRoleForStorage(user.role) === "teacher")
+    .map((user) => user.id)
+
+  const augment = await buildTeacherAssignmentAugmentor(teacherIds.length > 0 ? teacherIds : undefined)
+  return users.map((user) => augment(user))
+}
+
+function normalizeClassIdentifier(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function collectTeacherClassIds(options: { classIds?: unknown; classId?: unknown }): string[] {
+  const identifiers = new Set<string>()
+
+  if (Array.isArray(options.classIds)) {
+    for (const entry of options.classIds) {
+      const normalized = normalizeClassIdentifier(entry)
+      if (normalized) {
+        identifiers.add(normalized)
+      }
+    }
+  }
+
+  const single = normalizeClassIdentifier(options.classId)
+  if (single) {
+    identifiers.add(single)
+  }
+
+  return Array.from(identifiers)
+}
+
+function resolveTeacherClassesForIdentifiers(identifiers: string[], classes: ClassRecord[]): ClassRecord[] {
+  const uniqueClasses: ClassRecord[] = []
+  const seen = new Set<string>()
+
+  for (const identifier of identifiers) {
+    const classRecord = resolveClassRecordByIdentifier(classes, identifier)
+
+    if (!classRecord) {
+      throw new Error(`Class not found for identifier: ${identifier}`)
+    }
+
+    const classSubjects = Array.isArray(classRecord.subjects)
+      ? classRecord.subjects.filter((subject): subject is string => typeof subject === "string" && subject.trim().length > 0)
+      : []
+
+    if (classSubjects.length === 0) {
+      throw new Error(`Cannot assign teacher to ${classRecord.name} because it has no subjects`)
+    }
+
+    if (seen.has(classRecord.id)) {
+      continue
+    }
+
+    seen.add(classRecord.id)
+    uniqueClasses.push(classRecord)
+  }
+
+  if (uniqueClasses.length === 0) {
+    throw new Error("At least one valid class assignment is required for teachers")
+  }
+
+  return uniqueClasses
+}
+
+function resolveClassRecordByIdentifier(classes: ClassRecord[], identifier: string): ClassRecord | null {
+  const directMatch = classes.find((record) => record.id === identifier)
+  if (directMatch) {
+    return directMatch
+  }
+
+  const normalized = identifier.trim().toLowerCase()
+  const fallback = classes.find((record) => record.name.trim().toLowerCase() === normalized)
+  return fallback ?? null
+}
+
 function parseStringArray(value: unknown): string[] {
   if (!value && value !== 0) {
     return []
@@ -1224,6 +1429,70 @@ async function fetchUsersFromDatabase(
   return rows.map(mapDatabaseUser)
 }
 
+type DbTeacherClassAssignmentRow = RowDataPacket & {
+  id: string
+  teacher_id: string
+  class_id: string
+  created_at: string | Date
+  updated_at: string | Date
+}
+
+const TEACHER_CLASS_ASSIGNMENTS_TABLE = "teacher_class_assignments"
+
+let teacherClassAssignmentsTableEnsured = false
+
+async function ensureTeacherClassAssignmentsTable(executor?: SqlExecutor | null) {
+  if (teacherClassAssignmentsTableEnsured) {
+    return
+  }
+
+  const pool = executor ?? getPoolSafe()
+  if (!pool) {
+    return
+  }
+
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS ${TEACHER_CLASS_ASSIGNMENTS_TABLE} (
+      id VARCHAR(64) PRIMARY KEY,
+      teacher_id VARCHAR(64) NOT NULL,
+      class_id VARCHAR(64) NOT NULL,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      UNIQUE KEY unique_teacher_class (teacher_id, class_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  )
+
+  teacherClassAssignmentsTableEnsured = true
+}
+
+async function getTeacherClassAssignmentsFromDatabase(teacherIds?: string[]): Promise<TeacherClassAssignmentRecord[]> {
+  await ensureTeacherClassAssignmentsTable()
+
+  const pool = getPool()
+  const params: string[] = []
+  let query = `SELECT id, teacher_id, class_id, created_at, updated_at FROM ${TEACHER_CLASS_ASSIGNMENTS_TABLE}`
+
+  if (teacherIds && teacherIds.length > 0) {
+    const filtered = teacherIds.filter((id) => typeof id === "string" && id.trim().length > 0)
+    if (filtered.length === 0) {
+      return []
+    }
+
+    query += ` WHERE teacher_id IN (${filtered.map(() => "?").join(", ")})`
+    params.push(...filtered)
+  }
+
+  const [rows] = await pool.query<DbTeacherClassAssignmentRow[]>(query, params)
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    teacherId: String(row.teacher_id),
+    classId: String(row.class_id),
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  }))
+}
+
 async function getUserByEmailFromDatabase(email: string): Promise<StoredUser | null> {
   return (await fetchUsersFromDatabase(
     `SELECT ${DB_USER_COLUMNS} FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1`,
@@ -1289,43 +1558,82 @@ function mapMysqlError(error: unknown): never {
   throw error instanceof Error ? error : new Error("Database operation failed")
 }
 
-async function createUserInDatabase(payload: CreateUserPayload): Promise<StoredUser> {
+async function createUserInDatabase(
+  payload: CreateUserPayload,
+  options?: { normalizedRole?: string; teacherClassIds?: string[] },
+): Promise<StoredUser> {
   const normalizedEmail = payload.email.trim().toLowerCase()
+  const normalizedRole = options?.normalizedRole ?? normalizeRoleForStorage(payload.role)
   const { status, isActive } = resolveUserState({
     statusInput: payload.status,
     isActiveInput: payload.isActive,
     currentStatus: "active",
   })
 
+  const connection = await getPool().getConnection()
+
   try {
-    const [result] = await getPool().execute<ResultSetHeader>(
+    if (normalizedRole === "teacher") {
+      await ensureTeacherClassAssignmentsTable(connection)
+    }
+
+    await connection.beginTransaction()
+
+    const [result] = await connection.execute<ResultSetHeader>(
       `INSERT INTO users (name, email, role, password_hash, status, is_active, class_id, student_ids, subjects, metadata, profile_image, last_login)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
       [
         payload.name,
         normalizedEmail,
-        normalizeRoleForStorage(payload.role),
+        normalizedRole,
         payload.passwordHash,
         status,
         isActive ? 1 : 0,
-        payload.classId ?? null,
+        normalizedRole === "teacher" ? null : payload.classId ?? null,
         formatJsonColumn(payload.studentIds ?? (payload.studentId ? [String(payload.studentId)] : undefined)),
-        formatJsonColumn(payload.subjects),
+        normalizedRole === "teacher" ? JSON.stringify([]) : formatJsonColumn(payload.subjects),
         formatMetadataColumn(payload.metadata ?? null),
         payload.profileImage ?? null,
         payload.lastLogin ?? null,
       ],
     )
 
-    const insertedId = (result as ResultSetHeader).insertId
-    const created = await getUserByIdFromDatabase(String(insertedId))
+    const insertedId = String((result as ResultSetHeader).insertId)
+
+    if (normalizedRole === "teacher") {
+      const classIds = options?.teacherClassIds ?? []
+      if (classIds.length === 0) {
+        throw new Error("Assign at least one class to the teacher account")
+      }
+
+      const timestamp = new Date().toISOString()
+      const placeholders: string[] = []
+      const values: string[] = []
+
+      for (const classId of classIds) {
+        placeholders.push("(?, ?, ?, ?, ?)")
+        values.push(generateId("teacher_class"), insertedId, String(classId), timestamp, timestamp)
+      }
+
+      await connection.query(
+        `INSERT INTO ${TEACHER_CLASS_ASSIGNMENTS_TABLE} (id, teacher_id, class_id, created_at, updated_at) VALUES ${placeholders.join(", ")}`,
+        values,
+      )
+    }
+
+    await connection.commit()
+
+    const created = await getUserByIdFromDatabase(insertedId)
     if (!created) {
       throw new Error("Unable to load created user")
     }
 
     return created
   } catch (error) {
+    await connection.rollback()
     throw mapMysqlError(error)
+  } finally {
+    connection.release()
   }
 }
 
@@ -1334,6 +1642,9 @@ async function updateUserInDatabase(id: string, updates: UpdateUserPayload): Pro
   if (!existing) {
     return null
   }
+
+  const previousRole = normalizeRoleForStorage(existing.role)
+  const nextRole = updates.role !== undefined ? normalizeRoleForStorage(String(updates.role)) : previousRole
 
   const fields: string[] = []
   const values: Array<string | number | null> = []
@@ -1350,7 +1661,7 @@ async function updateUserInDatabase(id: string, updates: UpdateUserPayload): Pro
 
   if (updates.role !== undefined) {
     fields.push("role = ?")
-    values.push(normalizeRoleForStorage(String(updates.role)))
+    values.push(nextRole)
   }
 
   if (updates.passwordHash !== undefined) {
@@ -1358,7 +1669,10 @@ async function updateUserInDatabase(id: string, updates: UpdateUserPayload): Pro
     values.push(String(updates.passwordHash))
   }
 
-  if (updates.classId !== undefined) {
+  if (nextRole === "teacher") {
+    fields.push("class_id = ?")
+    values.push(null)
+  } else if (updates.classId !== undefined) {
     fields.push("class_id = ?")
     values.push(updates.classId ? String(updates.classId) : null)
   }
@@ -1371,7 +1685,7 @@ async function updateUserInDatabase(id: string, updates: UpdateUserPayload): Pro
     values.push(updates.studentId ? JSON.stringify([String(updates.studentId)]) : null)
   }
 
-  if (updates.subjects !== undefined) {
+  if (updates.subjects !== undefined && nextRole !== "teacher") {
     fields.push("subjects = ?")
     values.push(formatJsonColumn(updates.subjects))
   }
@@ -1403,21 +1717,81 @@ async function updateUserInDatabase(id: string, updates: UpdateUserPayload): Pro
     values.push(resolvedState.isActive ? 1 : 0)
   }
 
-  if (fields.length === 0) {
-    return existing
+  const requiresClassValidation = nextRole === "teacher" || previousRole === "teacher"
+  const classes = requiresClassValidation
+    ? ensureCollection<ClassRecord>(STORAGE_KEYS.CLASSES, createDefaultClasses)
+    : []
+
+  let teacherClassIds: string[] | null = null
+  let shouldReplaceAssignments = false
+  let shouldClearAssignments = false
+
+  if (nextRole === "teacher") {
+    if (updates.classIds !== undefined || updates.classId !== undefined) {
+      const requested = collectTeacherClassIds({ classIds: updates.classIds, classId: updates.classId })
+      if (requested.length === 0) {
+        throw new Error("Teachers must be assigned to at least one class")
+      }
+
+      const resolvedClasses = resolveTeacherClassesForIdentifiers(requested, classes)
+      teacherClassIds = resolvedClasses.map((cls) => cls.id)
+      shouldReplaceAssignments = true
+    } else if (previousRole !== "teacher") {
+      throw new Error("Provide classes when converting a user to a teacher")
+    }
+  } else {
+    if (previousRole === "teacher") {
+      shouldClearAssignments = true
+    }
   }
 
-  fields.push("updated_at = CURRENT_TIMESTAMP")
+  const connection = await getPool().getConnection()
 
   try {
+    if (nextRole === "teacher" || shouldClearAssignments || shouldReplaceAssignments) {
+      await ensureTeacherClassAssignmentsTable(connection)
+    }
+
+    await connection.beginTransaction()
+
     const numericId = Number(id)
     if (Number.isNaN(numericId)) {
       throw new Error("Invalid user identifier")
     }
 
-    await getPool().execute(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`, [...values, numericId])
+    if (fields.length > 0) {
+      fields.push("updated_at = CURRENT_TIMESTAMP")
+      await connection.execute(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`, [...values, numericId])
+    }
+
+    if (shouldClearAssignments || shouldReplaceAssignments || nextRole !== "teacher") {
+      if (previousRole === "teacher" || shouldClearAssignments || shouldReplaceAssignments) {
+        await connection.execute(`DELETE FROM ${TEACHER_CLASS_ASSIGNMENTS_TABLE} WHERE teacher_id = ?`, [String(numericId)])
+      }
+    }
+
+    if (nextRole === "teacher" && teacherClassIds && teacherClassIds.length > 0) {
+      const timestamp = new Date().toISOString()
+      const placeholders: string[] = []
+      const assignmentValues: string[] = []
+
+      for (const classId of teacherClassIds) {
+        placeholders.push("(?, ?, ?, ?, ?)")
+        assignmentValues.push(generateId("teacher_class"), String(numericId), String(classId), timestamp, timestamp)
+      }
+
+      await connection.query(
+        `INSERT INTO ${TEACHER_CLASS_ASSIGNMENTS_TABLE} (id, teacher_id, class_id, created_at, updated_at) VALUES ${placeholders.join(", ")}`,
+        assignmentValues,
+      )
+    }
+
+    await connection.commit()
   } catch (error) {
+    await connection.rollback()
     throw mapMysqlError(error)
+  } finally {
+    connection.release()
   }
 
   return await getUserByIdFromDatabase(id)
@@ -1429,57 +1803,95 @@ async function deleteUserFromDatabase(id: string): Promise<boolean> {
     return false
   }
 
-  const [result] = await getPool().execute<ResultSetHeader>("DELETE FROM users WHERE id = ?", [numericId])
-  return (result as ResultSetHeader).affectedRows > 0
+  const connection = await getPool().getConnection()
+
+  try {
+    await ensureTeacherClassAssignmentsTable(connection)
+    await connection.beginTransaction()
+
+    await connection.execute(`DELETE FROM ${TEACHER_CLASS_ASSIGNMENTS_TABLE} WHERE teacher_id = ?`, [String(numericId)])
+    const [result] = await connection.execute<ResultSetHeader>("DELETE FROM users WHERE id = ?", [numericId])
+
+    await connection.commit()
+    return (result as ResultSetHeader).affectedRows > 0
+  } catch (error) {
+    await connection.rollback()
+    throw mapMysqlError(error)
+  } finally {
+    connection.release()
+  }
 }
 
 export async function getUserByEmail(email: string): Promise<StoredUser | null> {
   if (isDatabaseConfigured()) {
-    return await getUserByEmailFromDatabase(email)
+    const databaseUser = await getUserByEmailFromDatabase(email)
+    return databaseUser ? await augmentUserWithTeachingAssignments(databaseUser) : null
   }
 
   const normalized = email.trim().toLowerCase()
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
   const match = users.find((user) => user.email.toLowerCase() === normalized)
-  return match ? deepClone(match) : null
+  return match ? await augmentUserWithTeachingAssignments(match) : null
 }
 
 export async function getUserByIdFromDb(id: string): Promise<StoredUser | null> {
   if (isDatabaseConfigured()) {
     const record = await getUserByIdFromDatabase(id)
     if (record) {
-      return record
+      return await augmentUserWithTeachingAssignments(record)
     }
   }
 
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
   const match = users.find((user) => user.id === id)
-  return match ? deepClone(match) : null
+  return match ? await augmentUserWithTeachingAssignments(match) : null
 }
 
 export async function getAllUsersFromDb(): Promise<StoredUser[]> {
   if (isDatabaseConfigured()) {
-    return await getAllUsersFromDatabase()
+    const databaseUsers = await getAllUsersFromDatabase()
+    return await augmentUsersWithTeachingAssignments(databaseUsers)
   }
 
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
-  return deepClone(users)
+  return await augmentUsersWithTeachingAssignments(users)
 }
 
 export async function getUsersByRoleFromDb(role: string): Promise<StoredUser[]> {
   if (isDatabaseConfigured()) {
-    return await getUsersByRoleFromDatabase(role)
+    const databaseUsers = await getUsersByRoleFromDatabase(role)
+    return await augmentUsersWithTeachingAssignments(databaseUsers)
   }
 
   const normalizedRole = role.trim().toLowerCase()
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
   const filtered = users.filter((user) => user.role.trim().toLowerCase() === normalizedRole)
-  return deepClone(filtered)
+  return await augmentUsersWithTeachingAssignments(filtered)
 }
 
 export async function createUserRecord(payload: CreateUserPayload): Promise<StoredUser> {
+  const normalizedRole = normalizeRoleForStorage(payload.role)
+  const classes: ClassRecord[] = normalizedRole === "teacher"
+    ? ensureCollection<ClassRecord>(STORAGE_KEYS.CLASSES, createDefaultClasses)
+    : []
+  let teacherClasses: ClassRecord[] = []
+
+  if (normalizedRole === "teacher") {
+    const requestedClassIds = collectTeacherClassIds({ classIds: payload.classIds, classId: payload.classId })
+    if (requestedClassIds.length === 0) {
+      throw new Error("Assign at least one class to the teacher account")
+    }
+
+    teacherClasses = resolveTeacherClassesForIdentifiers(requestedClassIds, classes)
+  }
+
   if (isDatabaseConfigured()) {
-    return await createUserInDatabase(payload)
+    const created = await createUserInDatabase(payload, {
+      normalizedRole,
+      teacherClassIds: teacherClasses.map((cls) => cls.id),
+    })
+
+    return await augmentUserWithTeachingAssignments(created)
   }
 
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
@@ -1496,18 +1908,38 @@ export async function createUserRecord(payload: CreateUserPayload): Promise<Stor
     currentStatus: "active",
   })
 
+  const userId = generateId("user")
+  let storedClassId: string | null = payload.classId ?? null
+  let storedSubjects: string[] = Array.isArray(payload.subjects) ? [...payload.subjects] : []
+  const storedStudentIds = payload.studentIds ?? (payload.studentId ? [String(payload.studentId)] : [])
+  const metadata = payload.metadata ?? null
+
+  let assignmentsToPersist: TeacherClassAssignmentRecord[] = []
+
+  if (normalizedRole === "teacher") {
+    assignmentsToPersist = teacherClasses.map((classRecord) => ({
+      id: generateId("teacher_class"),
+      teacherId: userId,
+      classId: classRecord.id,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }))
+    storedClassId = null
+    storedSubjects = []
+  }
+
   const newUser: StoredUser = {
-    id: generateId("user"),
+    id: userId,
     name: payload.name,
     email: normalizedEmail,
-    role: payload.role,
+    role: normalizedRole,
     passwordHash: payload.passwordHash,
     isActive,
     status,
-    classId: payload.classId ?? null,
-    studentIds: payload.studentIds ?? (payload.studentId ? [String(payload.studentId)] : []),
-    subjects: payload.subjects ? [...payload.subjects] : [],
-    metadata: payload.metadata ?? null,
+    classId: storedClassId,
+    studentIds: storedStudentIds,
+    subjects: storedSubjects,
+    metadata,
     profileImage: payload.profileImage ?? null,
     lastLogin: null,
     createdAt: timestamp,
@@ -1516,12 +1948,19 @@ export async function createUserRecord(payload: CreateUserPayload): Promise<Stor
 
   users.push(newUser)
   persistCollection(STORAGE_KEYS.USERS, users)
-  return deepClone(newUser)
+
+  if (assignmentsToPersist.length > 0) {
+    const assignments = ensureTeacherClassAssignmentsCollection()
+    persistCollection(STORAGE_KEYS.TEACHER_CLASS_ASSIGNMENTS, [...assignments, ...assignmentsToPersist])
+  }
+
+  return await augmentUserWithTeachingAssignments(newUser)
 }
 
 export async function updateUserRecord(id: string, updates: UpdateUserPayload): Promise<StoredUser | null> {
   if (isDatabaseConfigured()) {
-    return await updateUserInDatabase(id, updates)
+    const updated = await updateUserInDatabase(id, updates)
+    return updated ? await augmentUserWithTeachingAssignments(updated) : null
   }
 
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
@@ -1534,7 +1973,18 @@ export async function updateUserRecord(id: string, updates: UpdateUserPayload): 
   const existing = users[index]
   const timestamp = new Date().toISOString()
 
-  const { studentId, studentIds, subjects, email, status, isActive, ...otherUpdates } = updates as UpdateUserPayload & {
+  const {
+    studentId,
+    studentIds,
+    subjects,
+    email,
+    status,
+    isActive,
+    classIds,
+    classId,
+    role,
+    ...otherUpdates
+  } = updates as UpdateUserPayload & {
     [key: string]: unknown
   }
 
@@ -1547,6 +1997,57 @@ export async function updateUserRecord(id: string, updates: UpdateUserPayload): 
       throw new Error("Email already in use")
     }
     existing.email = normalizedEmail
+  }
+
+  const previousRole = normalizeRoleForStorage(existing.role)
+  let nextRole = previousRole
+
+  if (role !== undefined) {
+    nextRole = normalizeRoleForStorage(String(role))
+    existing.role = nextRole
+  }
+
+  let assignmentsToPersist: TeacherClassAssignmentRecord[] | null = null
+  const classesForAssignments: ClassRecord[] = nextRole === "teacher" || previousRole === "teacher"
+    ? ensureCollection<ClassRecord>(STORAGE_KEYS.CLASSES, createDefaultClasses)
+    : []
+
+  if (nextRole === "teacher") {
+    existing.classId = null
+
+    if (classIds !== undefined || classId !== undefined) {
+      const requestedClassIds = collectTeacherClassIds({ classIds, classId })
+      if (requestedClassIds.length === 0) {
+        throw new Error("Teachers must be assigned to at least one class")
+      }
+
+      const resolvedClasses = resolveTeacherClassesForIdentifiers(requestedClassIds, classesForAssignments)
+      const newAssignments = resolvedClasses.map((classRecord) => ({
+        id: generateId("teacher_class"),
+        teacherId: existing.id,
+        classId: classRecord.id,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }))
+
+      const currentAssignments = ensureTeacherClassAssignmentsCollection()
+      const filtered = currentAssignments.filter((assignment) => assignment.teacherId !== existing.id)
+      assignmentsToPersist = [...filtered, ...newAssignments]
+    } else if (previousRole !== "teacher") {
+      throw new Error("Provide classes when converting a user to a teacher")
+    }
+
+    existing.subjects = []
+  } else {
+    if (classId !== undefined) {
+      existing.classId = classId ? String(classId) : null
+    }
+
+    if (previousRole === "teacher") {
+      const currentAssignments = ensureTeacherClassAssignmentsCollection()
+      const filtered = currentAssignments.filter((assignment) => assignment.teacherId !== existing.id)
+      assignmentsToPersist = filtered
+    }
   }
 
   for (const [key, value] of Object.entries(otherUpdates)) {
@@ -1571,14 +2072,19 @@ export async function updateUserRecord(id: string, updates: UpdateUserPayload): 
     existing.studentIds = studentId ? [String(studentId)] : []
   }
 
-  if (subjects !== undefined) {
+  if (subjects !== undefined && nextRole !== "teacher") {
     existing.subjects = Array.isArray(subjects) ? subjects.map(String) : []
   }
 
   existing.updatedAt = timestamp
   users[index] = existing
   persistCollection(STORAGE_KEYS.USERS, users)
-  return deepClone(existing)
+
+  if (assignmentsToPersist !== null) {
+    persistCollection(STORAGE_KEYS.TEACHER_CLASS_ASSIGNMENTS, assignmentsToPersist)
+  }
+
+  return await augmentUserWithTeachingAssignments(existing)
 }
 
 export async function deleteUserRecord(id: string): Promise<boolean> {
@@ -1593,8 +2099,17 @@ export async function deleteUserRecord(id: string): Promise<boolean> {
     return false
   }
 
-  users.splice(index, 1)
+  const [removed] = users.splice(index, 1)
   persistCollection(STORAGE_KEYS.USERS, users)
+
+  if (removed && normalizeRoleForStorage(removed.role) === "teacher") {
+    const assignments = ensureTeacherClassAssignmentsCollection()
+    const filtered = assignments.filter((assignment) => assignment.teacherId !== removed.id)
+    if (filtered.length !== assignments.length) {
+      persistCollection(STORAGE_KEYS.TEACHER_CLASS_ASSIGNMENTS, filtered)
+    }
+  }
+
   return true
 }
 
