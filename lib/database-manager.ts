@@ -4198,6 +4198,15 @@ class DatabaseManager {
             class: "JSS 1A",
             className: "JSS 1A",
             classId: "class_jss1a",
+            classIds: ["class_jss1a"],
+            teachingClassIds: ["class_jss1a"],
+            teachingAssignments: [
+              {
+                classId: "class_jss1a",
+                className: "JSS 1A",
+                subjects: ["Mathematics", "English"],
+              },
+            ],
             metadata: {
               assignedClassName: "JSS 1A",
             },

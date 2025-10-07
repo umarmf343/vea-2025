@@ -182,6 +182,177 @@ interface FallbackAccount extends Omit<User, "hasAccess"> {
   token?: string
 }
 
+const normalizeString = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value.trim()
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value)
+  }
+
+  return ""
+}
+
+const isPlainObject = (value: unknown): value is Record<string, any> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const toUniqueStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const normalized = value
+    .map((entry) => normalizeString(entry))
+    .filter((entry) => entry.length > 0)
+
+  return Array.from(new Set(normalized))
+}
+
+const buildIdentifierFromName = (value: string): string => {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+
+  return normalized
+}
+
+const normalizeTeachingAssignments = (
+  input: unknown,
+  options: {
+    fallbackClassId?: unknown
+    fallbackClassName?: unknown
+    fallbackSubjects?: unknown
+  } = {},
+): { classId: string; className: string; subjects: string[] }[] => {
+  const assignments: { classId: string; className: string; subjects: string[] }[] = []
+
+  if (Array.isArray(input)) {
+    input.forEach((entry, index) => {
+      if (!entry || typeof entry !== "object") {
+        return
+      }
+
+      const record = entry as Record<string, any>
+      const classIdCandidate = normalizeString(record.classId ?? record.class_id ?? record.id)
+      const classNameCandidate = normalizeString(record.className ?? record.class_name ?? record.name)
+      const subjects = toUniqueStringArray(record.subjects)
+      const resolvedClassId =
+        classIdCandidate || (classNameCandidate ? buildIdentifierFromName(classNameCandidate) : "") ||
+        `class_${index}`
+      const resolvedClassName = classNameCandidate || classIdCandidate || `Class ${index + 1}`
+
+      assignments.push({
+        classId: resolvedClassId,
+        className: resolvedClassName,
+        subjects,
+      })
+    })
+  }
+
+  const fallbackClassId = normalizeString(options.fallbackClassId)
+  const fallbackClassName = normalizeString(options.fallbackClassName)
+  const fallbackSubjects = toUniqueStringArray(options.fallbackSubjects)
+
+  if (assignments.length === 0 && (fallbackClassId || fallbackClassName)) {
+    const resolvedClassId =
+      fallbackClassId || (fallbackClassName ? buildIdentifierFromName(fallbackClassName) : "") || "class_fallback"
+    const resolvedClassName = fallbackClassName || fallbackClassId || "Assigned Class"
+
+    assignments.push({
+      classId: resolvedClassId,
+      className: resolvedClassName,
+      subjects: fallbackSubjects,
+    })
+  }
+
+  const seen = new Set<string>()
+
+  return assignments
+    .map((assignment, index) => {
+      const classId = assignment.classId.trim().length > 0 ? assignment.classId.trim() : `class_${index}`
+      const className = assignment.className.trim().length > 0 ? assignment.className.trim() : `Class ${index + 1}`
+      const subjects = Array.from(
+        new Set(assignment.subjects.map((subject) => subject.trim()).filter((subject) => subject.length > 0)),
+      )
+      const key = `${classId.toLowerCase()}::${className.toLowerCase()}`
+
+      if (seen.has(key)) {
+        return null
+      }
+
+      seen.add(key)
+      return { classId, className, subjects }
+    })
+    .filter((assignment): assignment is { classId: string; className: string; subjects: string[] } => assignment !== null)
+}
+
+interface BuildUserStateOptions {
+  resolvedRole: UserRole
+  fallbackEmail: string
+  fallbackName?: string
+  fallbackHasAccess?: boolean
+}
+
+const buildUserState = (
+  rawUser: Record<string, any> | null | undefined,
+  options: BuildUserStateOptions,
+): User => {
+  const fallbackEmail = options.fallbackEmail || `${options.resolvedRole}@vea.edu.ng`
+  const email = normalizeString(rawUser?.email) || fallbackEmail
+  const id = normalizeString(rawUser?.id) || email
+  const metadata = isPlainObject(rawUser?.metadata) ? (rawUser?.metadata as Record<string, any>) : null
+  const classId = normalizeString(rawUser?.classId ?? rawUser?.class_id)
+  const className =
+    normalizeString(rawUser?.className ?? rawUser?.class_name) ||
+    normalizeString(metadata?.assignedClassName ?? metadata?.className ?? metadata?.class)
+  const explicitSubjects = toUniqueStringArray(rawUser?.subjects)
+  const metadataSubjects = metadata ? toUniqueStringArray(metadata.subjects) : []
+  const fallbackSubjects = explicitSubjects.length > 0 ? explicitSubjects : metadataSubjects
+
+  const teachingAssignments = normalizeTeachingAssignments(rawUser?.teachingAssignments ?? rawUser?.classes, {
+    fallbackClassId: classId,
+    fallbackClassName: className,
+    fallbackSubjects: fallbackSubjects,
+  })
+
+  const combinedClassIds = Array.from(
+    new Set([
+      ...toUniqueStringArray(rawUser?.classIds ?? rawUser?.class_ids ?? rawUser?.teachingClassIds),
+      ...(classId ? [classId] : []),
+      ...teachingAssignments.map((assignment) => assignment.classId),
+    ]),
+  )
+
+  const resolvedSubjects =
+    explicitSubjects.length > 0
+      ? explicitSubjects
+      : fallbackSubjects.length > 0
+        ? fallbackSubjects
+        : Array.from(new Set(teachingAssignments.flatMap((assignment) => assignment.subjects)))
+
+  const hasAccess =
+    typeof rawUser?.hasAccess === "boolean"
+      ? Boolean(rawUser.hasAccess)
+      : options.fallbackHasAccess ?? roleHasPortalAccess(options.resolvedRole)
+
+  return {
+    id,
+    email,
+    role: options.resolvedRole,
+    name: normalizeString(rawUser?.name) || options.fallbackName || email.split("@")[0],
+    hasAccess,
+    classId: classId || null,
+    className: className || null,
+    subjects: resolvedSubjects,
+    classIds: combinedClassIds,
+    teachingAssignments,
+    metadata,
+  }
+}
+
 const FALLBACK_ACCOUNTS: FallbackAccount[] = [
   {
     id: "user_super_admin",
@@ -216,7 +387,15 @@ const FALLBACK_ACCOUNTS: FallbackAccount[] = [
     hasAccess: roleHasPortalAccess("teacher"),
     classId: "class_jss1a",
     className: "JSS 1A",
+    classIds: ["class_jss1a"],
     subjects: ["Mathematics", "English"],
+    teachingAssignments: [
+      {
+        classId: "class_jss1a",
+        className: "JSS 1A",
+        subjects: ["Mathematics", "English"],
+      },
+    ],
     metadata: {
       assignedClassName: "JSS 1A",
     },
@@ -387,17 +566,28 @@ export default function HomePage() {
 
     if (storedUser && storedToken) {
       try {
-        const parsed = JSON.parse(storedUser) as User
-        if (
-          parsed.role === "teacher" ||
-          parsed.role === "student" ||
-          parsed.role === "parent" ||
-          parsed.role === "admin" ||
-          parsed.role === "super-admin" ||
-          parsed.role === "librarian" ||
-          parsed.role === "accountant"
-        ) {
-          setCurrentUser(parsed)
+        const parsed = JSON.parse(storedUser) as Record<string, unknown>
+        const normalizedRole = mapApiRoleToUi(String(parsed.role ?? "parent"))
+        const allowedRoles: UserRole[] = [
+          "teacher",
+          "student",
+          "parent",
+          "admin",
+          "super-admin",
+          "librarian",
+          "accountant",
+        ]
+
+        if (allowedRoles.includes(normalizedRole)) {
+          const normalizedUser = buildUserState(parsed as Record<string, any>, {
+            resolvedRole: normalizedRole,
+            fallbackEmail: typeof parsed.email === "string" ? parsed.email : `${normalizedRole}@vea.edu.ng`,
+            fallbackName: typeof parsed.name === "string" ? parsed.name : undefined,
+            fallbackHasAccess:
+              typeof parsed.hasAccess === "boolean" ? Boolean(parsed.hasAccess) : roleHasPortalAccess(normalizedRole),
+          })
+
+          setCurrentUser(normalizedUser)
         } else {
           safeStorage.removeItem("vea_current_user")
           safeStorage.removeItem("vea_auth_token")
@@ -437,20 +627,12 @@ export default function HomePage() {
         setLoginError("This account does not match the selected role.")
         return
       }
-      const user: User = {
-        id: String(payload.user?.id ?? ""),
-        email: payload.user?.email ?? loginForm.email,
-        role: userRole,
-        name: payload.user?.name ?? loginForm.email.split("@")[0],
-        hasAccess: roleHasPortalAccess(userRole),
-        classId: payload.user?.classId ?? payload.user?.class_id ?? null,
-        className:
-          typeof payload.user?.metadata?.assignedClassName === "string"
-            ? payload.user.metadata.assignedClassName
-            : null,
-        subjects: Array.isArray(payload.user?.subjects) ? payload.user.subjects : [],
-        metadata: payload.user?.metadata ?? null,
-      }
+      const user = buildUserState(payload.user, {
+        resolvedRole: userRole,
+        fallbackEmail: loginForm.email,
+        fallbackName: payload.user?.name ?? loginForm.email.split("@")[0],
+        fallbackHasAccess: roleHasPortalAccess(userRole),
+      })
 
       setCurrentUser(user)
       if (payload.token) {
@@ -471,17 +653,12 @@ export default function HomePage() {
           return
         }
 
-        const user: User = {
-          id: fallbackUser.id,
-          email: fallbackUser.email,
-          role: userRole,
-          name: fallbackUser.name,
-          hasAccess: fallbackUser.hasAccess ?? roleHasPortalAccess(userRole),
-          classId: fallbackUser.classId ?? null,
-          className: fallbackUser.className ?? null,
-          subjects: fallbackUser.subjects ?? [],
-          metadata: fallbackUser.metadata ?? null,
-        }
+        const user = buildUserState(fallbackUser, {
+          resolvedRole: userRole,
+          fallbackEmail: fallbackUser.email,
+          fallbackName: fallbackUser.name,
+          fallbackHasAccess: fallbackUser.hasAccess ?? roleHasPortalAccess(userRole),
+        })
 
         const token = fallbackUser.token ?? `fallback-token-${fallbackUser.id}-${Date.now()}`
 
