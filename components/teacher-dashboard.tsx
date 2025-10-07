@@ -1187,6 +1187,7 @@ export function TeacherDashboard({
   }, [selectedClass])
 
   const [marksData, setMarksData] = useState<MarksRecord[]>([])
+  const lastPersistedSelectionRef = useRef<string | null>(null)
   const suppressMarksRefreshRef = useRef(false)
 
   const loadRosterCandidates = useCallback(async () => {
@@ -2488,8 +2489,32 @@ export function TeacherDashboard({
   }, [loadAdditionalData])
 
   useEffect(() => {
+    const selectionKey = [
+      selectedClass || "",
+      selectedSubject || "",
+      normalizedTermLabel,
+      selectedSession,
+    ].join("::")
+
+    if (!selectedClass || !selectedSubject || marksData.length === 0) {
+      lastPersistedSelectionRef.current = selectionKey
+      return
+    }
+
+    if (lastPersistedSelectionRef.current !== selectionKey) {
+      lastPersistedSelectionRef.current = selectionKey
+      return
+    }
+
     persistAcademicMarksToStorage()
-  }, [persistAcademicMarksToStorage])
+  }, [
+    marksData,
+    normalizedTermLabel,
+    persistAcademicMarksToStorage,
+    selectedClass,
+    selectedSession,
+    selectedSubject,
+  ])
 
   useEffect(() => {
     setWorkflowRecords(getWorkflowRecords())
