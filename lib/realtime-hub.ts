@@ -49,6 +49,7 @@ export interface RealtimeNotification {
   createdAt: string
   targetUserIds: string[]
   targetRoles: string[]
+  targetStudentIds?: string[]
   actionUrl?: string
   meta?: Record<string, unknown>
 }
