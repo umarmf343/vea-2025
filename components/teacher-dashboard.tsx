@@ -125,6 +125,7 @@ const sanitizeFileName = (value: string) => {
 type TeacherClassAssignment = {
   id: string
   name: string
+  subjects: string[]
 }
 
 type AssignmentStudentInfo = {
@@ -141,6 +142,9 @@ interface TeacherDashboardProps {
     subjects: string[]
     classes: TeacherClassAssignment[]
   }
+  isContextLoading?: boolean
+  contextError?: string | null
+  onRefreshAssignments?: () => void
 }
 
 interface TeacherExamSummary {
@@ -265,11 +269,17 @@ const ASSIGNMENT_STATUS_META: Record<
   },
 }
 
-export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
+export function TeacherDashboard({
+  teacher,
+  isContextLoading = false,
+  contextError = null,
+  onRefreshAssignments,
+}: TeacherDashboardProps) {
   const { toast } = useToast()
   const firstTeacherClass = teacher.classes[0] ?? null
   const teacherClassNames = useMemo(() => teacher.classes.map((cls) => cls.name), [teacher.classes])
   const teacherClassIds = useMemo(() => teacher.classes.map((cls) => cls.id), [teacher.classes])
+  const noClassesAssigned = teacher.classes.length === 0
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showCreateAssignment, setShowCreateAssignment] = useState(false)
   const [assignmentDialogMode, setAssignmentDialogMode] = useState<"create" | "edit">("create")
@@ -279,7 +289,9 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const [previewAssignment, setPreviewAssignment] = useState<TeacherAssignmentSummary | null>(null)
   const [assignmentRoster, setAssignmentRoster] = useState<Record<string, AssignmentStudentInfo>>({})
   const [selectedClass, setSelectedClass] = useState(() => firstTeacherClass?.name ?? "")
-  const [selectedSubject, setSelectedSubject] = useState(teacher.subjects[0] ?? "")
+  const [selectedSubject, setSelectedSubject] = useState(
+    () => firstTeacherClass?.subjects[0] ?? teacher.subjects[0] ?? "",
+  )
   const [selectedTerm, setSelectedTerm] = useState("first")
   const [selectedSession, setSelectedSession] = useState("2024/2025")
   const [workflowRecords, setWorkflowRecords] = useState<ReportCardWorkflowRecord[]>([])
@@ -339,7 +351,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     title: "",
     description: "",
     dueDate: "",
-    subject: teacher.subjects[0] ?? "",
+    subject: firstTeacherClass?.subjects[0] ?? teacher.subjects[0] ?? "",
     classId: firstTeacherClass?.id ?? "",
     className: firstTeacherClass?.name ?? "",
     maximumScore: String(defaultAssignmentMaximum),
@@ -484,22 +496,34 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
   const classSummary =
     teacherClassNames.length > 0 ? teacherClassNames.join(", ") : "No classes assigned yet"
 
+  const normalizeClassName = useCallback((value: string) => value.replace(/\s+/g, "").toLowerCase(), [])
+
   useEffect(() => {
     setSelectedClass(teacherClassNames[0] ?? "")
   }, [teacherClassNames])
 
   useEffect(() => {
-    setSelectedSubject(teacher.subjects[0] ?? "")
-  }, [teacher.subjects])
+    setAssignmentForm((prev) => {
+      const normalizedSelection = normalizeClassName(selectedClass)
+      const defaultClass = teacher.classes.find(
+        (cls) => normalizeClassName(cls.name) === normalizedSelection,
+      )
+      const fallbackClass = defaultClass ?? teacher.classes[0] ?? null
+      const normalizedPrevSubject = typeof prev.subject === "string" ? prev.subject.trim().toLowerCase() : ""
+      const normalizedOptions = subjectsForSelectedClass.map((subject) => subject.trim().toLowerCase())
+      const nextSubject =
+        normalizedPrevSubject && normalizedOptions.includes(normalizedPrevSubject)
+          ? prev.subject
+          : subjectsForSelectedClass[0] ?? ""
 
-  useEffect(() => {
-    setAssignmentForm((prev) => ({
-      ...prev,
-      subject: prev.subject || (teacher.subjects[0] ?? ""),
-      classId: prev.classId || (teacher.classes[0]?.id ?? ""),
-      className: prev.className || (teacher.classes[0]?.name ?? ""),
-    }))
-  }, [teacher.classes, teacher.subjects])
+      return {
+        ...prev,
+        subject: nextSubject,
+        classId: prev.classId || (fallbackClass?.id ?? ""),
+        className: prev.className || (fallbackClass?.name ?? ""),
+      }
+    })
+  }, [normalizeClassName, selectedClass, subjectsForSelectedClass, teacher.classes])
 
   const mockStudents = useMemo(
     () => [
@@ -518,7 +542,40 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
     }
   }
 
-  const normalizeClassName = useCallback((value: string) => value.replace(/\s+/g, "").toLowerCase(), [])
+  const subjectsForSelectedClass = useMemo(() => {
+    if (teacher.classes.length === 0) {
+      return teacher.subjects
+    }
+
+    const normalized = normalizeClassName(selectedClass)
+    if (!normalized) {
+      return teacher.classes[0]?.subjects.length ? teacher.classes[0]?.subjects : teacher.subjects
+    }
+
+    const match = teacher.classes.find((cls) => normalizeClassName(cls.name) === normalized)
+    if (match && match.subjects.length > 0) {
+      return match.subjects
+    }
+
+    return teacher.subjects
+  }, [normalizeClassName, selectedClass, teacher.classes, teacher.subjects])
+
+  useEffect(() => {
+    if (subjectsForSelectedClass.length === 0) {
+      setSelectedSubject("")
+      return
+    }
+
+    setSelectedSubject((prev) => {
+      const normalizedPrev = prev.trim().toLowerCase()
+      const normalizedOptions = subjectsForSelectedClass.map((subject) => subject.trim().toLowerCase())
+      if (normalizedPrev && normalizedOptions.includes(normalizedPrev)) {
+        return prev
+      }
+
+      return subjectsForSelectedClass[0] ?? ""
+    })
+  }, [subjectsForSelectedClass])
 
   const buildInitialGradingDrafts = (submissions: AssignmentSubmissionRecord[]) =>
     submissions.reduce(
@@ -2463,7 +2520,7 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
       title: "",
       description: "",
       dueDate: "",
-      subject: teacher.subjects[0] ?? "",
+      subject: teacher.classes[0]?.subjects[0] ?? teacher.subjects[0] ?? "",
       classId: teacher.classes[0]?.id ?? "",
       className: teacher.classes[0]?.name ?? "",
       maximumScore: String(defaultAssignmentMaximum),
@@ -3576,14 +3633,36 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 <CardTitle className="text-[#2d682d]">My Classes</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  {teacher.classes.map((classItem, index) => (
-                    <div key={classItem.id ?? index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                      <span>{classItem.name}</span>
-                      <Badge variant="outline">{teacher.subjects[index] || "Multiple"}</Badge>
-                    </div>
-                  ))}
-                </div>
+                {isContextLoading ? (
+                  <p className="text-sm text-gray-600">Loading your class assignments...</p>
+                ) : teacher.classes.length === 0 ? (
+                  <div className="space-y-2 text-sm text-gray-600">
+                    <p>{contextError ?? "You are not assigned to any class. Contact your administrator."}</p>
+                    {onRefreshAssignments ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-[#2d682d]/30 text-[#2d682d]"
+                        onClick={() => onRefreshAssignments()}
+                      >
+                        Refresh assignments
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {teacher.classes.map((classItem, index) => (
+                      <div key={classItem.id ?? index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                        <span>{classItem.name}</span>
+                        <Badge variant="outline">
+                          {classItem.subjects.length > 0
+                            ? classItem.subjects.slice(0, 2).join(", ")
+                            : "Subjects not set"}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -3743,31 +3822,58 @@ export function TeacherDashboard({ teacher }: TeacherDashboardProps) {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   <div>
                     <Label>Class</Label>
-                    <Select value={selectedClass} onValueChange={setSelectedClass}>
+                    <Select
+                      value={selectedClass}
+                      onValueChange={setSelectedClass}
+                      disabled={noClassesAssigned || isContextLoading}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select Class" />
                       </SelectTrigger>
                       <SelectContent>
-                        {teacher.classes.map((classItem) => (
-                          <SelectItem key={classItem.id} value={classItem.name}>
-                            {classItem.name}
+                        {noClassesAssigned ? (
+                          <SelectItem value="" disabled>
+                            {isContextLoading ? "Loading..." : "No classes available"}
                           </SelectItem>
-                        ))}
+                        ) : (
+                          teacher.classes.map((classItem) => (
+                            <SelectItem key={classItem.id} value={classItem.name}>
+                              {classItem.name}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
+                    {noClassesAssigned && !isContextLoading ? (
+                      <p className="mt-2 text-sm text-gray-600">
+                        {contextError ?? "You are not assigned to any class. Contact your administrator."}
+                      </p>
+                    ) : null}
                   </div>
                   <div>
                     <Label>Subject</Label>
-                    <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+                    <Select
+                      value={selectedSubject}
+                      onValueChange={setSelectedSubject}
+                      disabled={
+                        noClassesAssigned || subjectsForSelectedClass.length === 0 || isContextLoading
+                      }
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select Subject" />
                       </SelectTrigger>
                       <SelectContent>
-                        {teacher.subjects.map((subject) => (
-                          <SelectItem key={subject} value={subject}>
-                            {subject}
+                        {subjectsForSelectedClass.length === 0 ? (
+                          <SelectItem value="" disabled>
+                            {noClassesAssigned ? "No class assigned" : "No subjects available"}
                           </SelectItem>
-                        ))}
+                        ) : (
+                          subjectsForSelectedClass.map((subject) => (
+                            <SelectItem key={subject} value={subject}>
+                              {subject}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
