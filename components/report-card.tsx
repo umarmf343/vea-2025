@@ -245,13 +245,13 @@ const mockReportCardData: RawReportCardData = {
     headTeacher: "She is very dedicated to her studies.",
   },
   affectiveDomain: {
-    neatness: "V.Good",
-    honesty: "V.Good",
-    punctuality: "V.Good",
+    neatness: true,
+    honesty: true,
+    punctuality: true,
   },
   psychomotorDomain: {
-    sport: "V.Good",
-    handwriting: "V.Good",
+    sport: true,
+    handwriting: true,
   },
   attendance: {
     present: 42,

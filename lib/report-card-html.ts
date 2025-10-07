@@ -1,4 +1,12 @@
 import type { RawReportCardData } from "@/lib/report-card-types"
+import {
+  AFFECTIVE_TRAITS,
+  PSYCHOMOTOR_SKILLS,
+  createBehavioralRecordSkeleton,
+  getAffectiveTraitLabel,
+  getPsychomotorSkillLabel,
+  normalizeBehavioralSelections,
+} from "./report-card-constants"
 
 const escapeHtml = (value: string) =>
   value
@@ -73,25 +81,80 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
     })
     .join("")
 
-  const affectiveEntries = data.affectiveDomain ? Object.entries(data.affectiveDomain) : []
-  const affectiveRows = affectiveEntries
-    .map(([trait, value]) => `
-        <tr>
-          <td>${escapeHtml(trait)}</td>
-          <td>${escapeHtml(typeof value === "string" ? value : "—")}</td>
-        </tr>
-      `)
-    .join("")
+  const resolveBehavioralSelections = (
+    domain: "affective" | "psychomotor",
+    defaults: readonly { key: string; label: string }[],
+    selections: Record<string, boolean | undefined> | undefined,
+  ) => {
+    const skeleton = createBehavioralRecordSkeleton(defaults)
+    const normalized = normalizeBehavioralSelections(domain, selections as Record<string, unknown> | undefined)
+    const merged: Record<string, boolean> = { ...skeleton }
 
-  const psychomotorEntries = data.psychomotorDomain ? Object.entries(data.psychomotorDomain) : []
-  const psychomotorRows = psychomotorEntries
-    .map(([skill, value]) => `
+    Object.entries(normalized).forEach(([key, value]) => {
+      merged[key] = value
+    })
+
+    Object.entries(selections ?? {}).forEach(([key, value]) => {
+      if (!(key in merged)) {
+        merged[key] = Boolean(value)
+      }
+    })
+
+    return merged
+  }
+
+  const buildDomainRows = (
+    traits: readonly { key: string; label: string }[],
+    selections: Record<string, boolean>,
+    labelResolver: (key: string) => string,
+  ) => {
+    const seen = new Set<string>()
+    const orderedKeys: string[] = []
+
+    traits.forEach(({ key }) => {
+      if (!seen.has(key)) {
+        orderedKeys.push(key)
+        seen.add(key)
+      }
+    })
+
+    Object.keys(selections).forEach((key) => {
+      if (!seen.has(key)) {
+        orderedKeys.push(key)
+        seen.add(key)
+      }
+    })
+
+    return orderedKeys
+      .map((key) => {
+        const checked = selections[key]
+        return `
         <tr>
-          <td>${escapeHtml(skill)}</td>
-          <td>${escapeHtml(typeof value === "string" ? value : "—")}</td>
+          <td>${escapeHtml(labelResolver(key))}</td>
+          <td>${checked ? '<span class="checkmark">✓</span>' : ""}</td>
         </tr>
-      `)
-    .join("")
+      `
+      })
+      .join("")
+  }
+
+  const affectiveSelections = resolveBehavioralSelections("affective", AFFECTIVE_TRAITS, data.affectiveDomain)
+  const psychomotorSelections = resolveBehavioralSelections("psychomotor", PSYCHOMOTOR_SKILLS, data.psychomotorDomain)
+
+  const affectiveRows = buildDomainRows(AFFECTIVE_TRAITS, affectiveSelections, getAffectiveTraitLabel)
+  const psychomotorRows = buildDomainRows(
+    PSYCHOMOTOR_SKILLS,
+    psychomotorSelections,
+    getPsychomotorSkillLabel,
+  )
+
+  if (!data.branding?.logo) {
+    console.warn("Report card branding: school logo not set")
+  }
+
+  if (!data.branding?.signature) {
+    console.warn("Report card branding: headmaster signature pending")
+  }
 
   const summary = data.summary ?? {}
 
@@ -271,6 +334,18 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           max-height: 100%;
           object-fit: contain;
         }
+
+        .signature-placeholder {
+          width: 200px;
+          height: 80px;
+          border: 1px dashed #d1d5db;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #6b7280;
+          font-size: 12px;
+          font-style: italic;
+        }
         .signature-name {
           font-size: 14px;
           font-weight: 600;
@@ -300,6 +375,12 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
         .holistic-grid td:first-child {
           text-align: left;
         }
+
+        .holistic-grid .checkmark {
+          color: #047857;
+          font-weight: 700;
+          font-size: 16px;
+        }
       </style>
     </head>
     <body>
@@ -308,7 +389,7 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           ${
             data.branding?.logo
               ? `<img src="${escapeHtml(data.branding.logo)}" alt="School logo" />`
-              : '<div class="logo-placeholder">School Logo</div>'
+              : '<div class="logo-placeholder">School Logo Not Set</div>'
           }
         </div>
         <div class="header-info">
@@ -430,7 +511,7 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
                 </tr>
               </thead>
               <tbody>
-                ${affectiveRows || "<tr><td colspan=\"2\">No affective ratings recorded.</td></tr>"}
+                ${affectiveRows || "<tr><td colspan=\"2\">No affective selections recorded.</td></tr>"}
               </tbody>
             </table>
           </div>
@@ -444,7 +525,7 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
                 </tr>
               </thead>
               <tbody>
-                ${psychomotorRows || "<tr><td colspan=\"2\">No psychomotor ratings recorded.</td></tr>"}
+                ${psychomotorRows || "<tr><td colspan=\"2\">No psychomotor selections recorded.</td></tr>"}
               </tbody>
             </table>
           </div>
@@ -515,7 +596,7 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           ${
             data.branding?.signature
               ? `<div class="signature-image"><img src="${escapeHtml(data.branding.signature)}" alt="Head Teacher signature" /></div>`
-              : '<div class="signature-line"></div>'
+              : '<div class="signature-placeholder">Signature Pending</div>'
           }
           ${
             data.branding?.headmasterName

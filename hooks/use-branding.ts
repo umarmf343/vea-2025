@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 
 import { dbManager } from "@/lib/database-manager"
+import { safeStorage } from "@/lib/safe-storage"
 import {
   BRANDING_STORAGE_KEY,
   type BrandingInfo,
@@ -43,6 +44,23 @@ export const useBranding = (): BrandingInfo => {
       })
     }
 
+    const fetchLatestBranding = async () => {
+      try {
+        const response = await fetch("/api/system/branding", { cache: "no-store" })
+        if (!response.ok) {
+          throw new Error(`Failed to fetch branding (${response.status})`)
+        }
+        const payload = (await response.json()) as { branding?: unknown }
+        if (payload.branding) {
+          const parsed = parseBranding(payload.branding)
+          safeStorage.setItem(BRANDING_STORAGE_KEY, JSON.stringify(parsed))
+          updateBrandingState(parsed)
+        }
+      } catch (error) {
+        console.warn("Unable to refresh branding settings", error)
+      }
+    }
+
     const handleStorageEvent = (event: StorageEvent) => {
       if (!event.key) {
         return
@@ -56,6 +74,7 @@ export const useBranding = (): BrandingInfo => {
     dbManager.on(BRANDING_EVENT_KEY, updateBrandingState)
 
     updateBrandingState(getBrandingFromStorage())
+    void fetchLatestBranding()
 
     if (typeof window !== "undefined") {
       window.addEventListener("storage", handleStorageEvent)

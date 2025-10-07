@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -89,9 +90,10 @@ import {
 import type { ReportCardRecord, ReportCardSubjectRecord } from "@/lib/database"
 import {
   AFFECTIVE_TRAITS,
-  BEHAVIORAL_RATING_OPTIONS,
+  createBehavioralRecordSkeleton,
   PSYCHOMOTOR_SKILLS,
-  normalizeBehavioralRating,
+  interpretBehavioralSelection,
+  normalizeBehavioralDomainKey,
 } from "@/lib/report-card-constants"
 import type {
   RawReportCardData,
@@ -161,7 +163,7 @@ interface TeacherExamSummary {
 
 type TeacherTimetableSlot = TimetableWeeklyViewSlot
 
-type BehavioralDomainState = Record<string, Record<string, string>>
+type BehavioralDomainState = Record<string, Record<string, boolean>>
 type AttendanceState = Record<string, { present: number; absent: number; total: number }>
 type StudentStatusState = Record<string, string>
 
@@ -1199,10 +1201,10 @@ export function TeacherDashboard({
       const nextStatus = { ...prev.studentStatus }
 
       if (!nextAffective[newRecord.studentId]) {
-        nextAffective[newRecord.studentId] = {}
+        nextAffective[newRecord.studentId] = createBehavioralRecordSkeleton(AFFECTIVE_TRAITS)
       }
       if (!nextPsychomotor[newRecord.studentId]) {
-        nextPsychomotor[newRecord.studentId] = {}
+        nextPsychomotor[newRecord.studentId] = createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS)
       }
       if (typeof nextRemarks[newRecord.studentId] === "undefined") {
         nextRemarks[newRecord.studentId] = ""
@@ -1297,8 +1299,11 @@ export function TeacherDashboard({
         totalObtained: student.totalMarksObtained,
         average: student.averageScore,
         position: student.position,
-        affectiveDomain: additionalData.affectiveDomain[student.studentId] ?? {},
-        psychomotorDomain: additionalData.psychomotorDomain[student.studentId] ?? {},
+        affectiveDomain:
+          additionalData.affectiveDomain[student.studentId] ?? createBehavioralRecordSkeleton(AFFECTIVE_TRAITS),
+        psychomotorDomain:
+          additionalData.psychomotorDomain[student.studentId] ??
+          createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS),
         classTeacherRemarks: additionalData.classTeacherRemarks[student.studentId] ?? "",
         remarks: {
           classTeacher: additionalData.classTeacherRemarks[student.studentId] ?? student.teacherRemark,
@@ -2141,34 +2146,30 @@ export function TeacherDashboard({
           }
         | undefined
 
-      if (behavioralRecord) {
-        const affectiveRatings: Record<string, string> = {}
-        const storedAffective = behavioralRecord.affectiveDomain ?? {}
-        AFFECTIVE_TRAITS.forEach(({ key }) => {
-          const rating = normalizeBehavioralRating(
-            typeof storedAffective[key] === "string" ? (storedAffective[key] as string) : undefined,
-          )
-          if (rating) {
-            affectiveRatings[key] = rating
-          }
-        })
-        if (Object.keys(affectiveRatings).length > 0) {
-          nextState.affectiveDomain[student.studentId] = affectiveRatings
-        }
+      const defaultAffectiveSelections = createBehavioralRecordSkeleton(AFFECTIVE_TRAITS)
+      const defaultPsychomotorSelections = createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS)
 
-        const psychomotorRatings: Record<string, string> = {}
-        const storedPsychomotor = behavioralRecord.psychomotorDomain ?? {}
-        PSYCHOMOTOR_SKILLS.forEach(({ key }) => {
-          const rating = normalizeBehavioralRating(
-            typeof storedPsychomotor[key] === "string" ? (storedPsychomotor[key] as string) : undefined,
-          )
-          if (rating) {
-            psychomotorRatings[key] = rating
+      nextState.affectiveDomain[student.studentId] = { ...defaultAffectiveSelections }
+      nextState.psychomotorDomain[student.studentId] = { ...defaultPsychomotorSelections }
+
+      if (behavioralRecord) {
+        const storedAffective = behavioralRecord.affectiveDomain ?? {}
+        Object.entries(storedAffective).forEach(([rawKey, rawValue]) => {
+          const canonicalKey = normalizeBehavioralDomainKey("affective", rawKey)
+          if (!canonicalKey) {
+            return
           }
+          nextState.affectiveDomain[student.studentId][canonicalKey] = interpretBehavioralSelection(rawValue)
         })
-        if (Object.keys(psychomotorRatings).length > 0) {
-          nextState.psychomotorDomain[student.studentId] = psychomotorRatings
-        }
+
+        const storedPsychomotor = behavioralRecord.psychomotorDomain ?? {}
+        Object.entries(storedPsychomotor).forEach(([rawKey, rawValue]) => {
+          const canonicalKey = normalizeBehavioralDomainKey("psychomotor", rawKey)
+          if (!canonicalKey) {
+            return
+          }
+          nextState.psychomotorDomain[student.studentId][canonicalKey] = interpretBehavioralSelection(rawValue)
+        })
       }
 
       const attendanceRecord = attendanceStore[studentKey] as
@@ -3324,23 +3325,24 @@ export function TeacherDashboard({
 
       marksData.forEach((student) => {
         const studentKey = `${student.studentId}-${termLabel}-${selectedSession}`
-        const storedAffective = additionalData.affectiveDomain[student.studentId] ?? {}
-        const storedPsychomotor = additionalData.psychomotorDomain[student.studentId] ?? {}
+        const storedAffective =
+          additionalData.affectiveDomain[student.studentId] ?? createBehavioralRecordSkeleton(AFFECTIVE_TRAITS)
+        const storedPsychomotor =
+          additionalData.psychomotorDomain[student.studentId] ??
+          createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS)
 
-        const affectiveEntries: Record<string, string> = {}
+        const affectiveEntries: Record<string, boolean> = {}
         AFFECTIVE_TRAITS.forEach(({ key }) => {
-          const rating = normalizeBehavioralRating(storedAffective[key])
-          if (rating) {
-            affectiveEntries[key] = rating
-          }
+          const canonicalKey = normalizeBehavioralDomainKey("affective", key) ?? key
+          const value = storedAffective[canonicalKey]
+          affectiveEntries[canonicalKey] = Boolean(value)
         })
 
-        const psychomotorEntries: Record<string, string> = {}
+        const psychomotorEntries: Record<string, boolean> = {}
         PSYCHOMOTOR_SKILLS.forEach(({ key }) => {
-          const rating = normalizeBehavioralRating(storedPsychomotor[key])
-          if (rating) {
-            psychomotorEntries[key] = rating
-          }
+          const canonicalKey = normalizeBehavioralDomainKey("psychomotor", key) ?? key
+          const value = storedPsychomotor[canonicalKey]
+          psychomotorEntries[canonicalKey] = Boolean(value)
         })
 
         existingData[studentKey] = {
@@ -4296,82 +4298,90 @@ export function TeacherDashboard({
                               <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
                                 Affective Domain
                               </p>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                {AFFECTIVE_TRAITS.map(({ key, label }) => (
-                                  <div key={key}>
-                                    <Label className="text-xs">{label}</Label>
-                                    <Select
-                                      value={additionalData.affectiveDomain[student.studentId]?.[key] ?? ""}
-                                      onValueChange={(value) =>
-                                        setAdditionalData((prev) => {
-                                          const previous = prev.affectiveDomain[student.studentId] ?? {}
-                                          return {
-                                            ...prev,
-                                            affectiveDomain: {
-                                              ...prev.affectiveDomain,
-                                              [student.studentId]: {
-                                                ...previous,
-                                                [key]: value,
-                                              },
-                                            },
-                                          }
-                                        })
-                                      }
+                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                {AFFECTIVE_TRAITS.map(({ key, label }) => {
+                                  const fieldId = `affective-${student.studentId}-${key}`
+                                  const checked = Boolean(
+                                    additionalData.affectiveDomain[student.studentId]?.[key],
+                                  )
+                                  return (
+                                    <div
+                                      key={key}
+                                      className="flex items-start gap-3 rounded-md border border-dashed border-emerald-200/70 bg-emerald-50/30 p-3"
                                     >
-                                      <SelectTrigger className="h-8">
-                                        <SelectValue placeholder="Rate" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {BEHAVIORAL_RATING_OPTIONS.map((option) => (
-                                          <SelectItem key={option.value} value={option.value}>
-                                            {option.label}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                ))}
+                                      <Checkbox
+                                        id={fieldId}
+                                        checked={checked}
+                                        onCheckedChange={(nextValue) =>
+                                          setAdditionalData((prev) => {
+                                            const previous =
+                                              prev.affectiveDomain[student.studentId] ??
+                                              createEmptyBehavioralRecord(AFFECTIVE_TRAITS)
+
+                                            return {
+                                              ...prev,
+                                              affectiveDomain: {
+                                                ...prev.affectiveDomain,
+                                                [student.studentId]: {
+                                                  ...previous,
+                                                  [key]: nextValue === true,
+                                                },
+                                              },
+                                            }
+                                          })
+                                        }
+                                      />
+                                      <Label htmlFor={fieldId} className="text-xs font-medium text-gray-700">
+                                        {label}
+                                      </Label>
+                                    </div>
+                                  )
+                                })}
                               </div>
                             </div>
                             <div>
                               <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
                                 Psychomotor Domain
                               </p>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                {PSYCHOMOTOR_SKILLS.map(({ key, label }) => (
-                                  <div key={key}>
-                                    <Label className="text-xs">{label}</Label>
-                                    <Select
-                                      value={additionalData.psychomotorDomain[student.studentId]?.[key] ?? ""}
-                                      onValueChange={(value) =>
-                                        setAdditionalData((prev) => {
-                                          const previous = prev.psychomotorDomain[student.studentId] ?? {}
-                                          return {
-                                            ...prev,
-                                            psychomotorDomain: {
-                                              ...prev.psychomotorDomain,
-                                              [student.studentId]: {
-                                                ...previous,
-                                                [key]: value,
-                                              },
-                                            },
-                                          }
-                                        })
-                                      }
+                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                {PSYCHOMOTOR_SKILLS.map(({ key, label }) => {
+                                  const fieldId = `psychomotor-${student.studentId}-${key}`
+                                  const checked = Boolean(
+                                    additionalData.psychomotorDomain[student.studentId]?.[key],
+                                  )
+                                  return (
+                                    <div
+                                      key={key}
+                                      className="flex items-start gap-3 rounded-md border border-dashed border-blue-200/70 bg-blue-50/40 p-3"
                                     >
-                                      <SelectTrigger className="h-8">
-                                        <SelectValue placeholder="Rate" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {BEHAVIORAL_RATING_OPTIONS.map((option) => (
-                                          <SelectItem key={option.value} value={option.value}>
-                                            {option.label}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                ))}
+                                      <Checkbox
+                                        id={fieldId}
+                                        checked={checked}
+                                        onCheckedChange={(nextValue) =>
+                                          setAdditionalData((prev) => {
+                                            const previous =
+                                              prev.psychomotorDomain[student.studentId] ??
+                                              createEmptyBehavioralRecord(PSYCHOMOTOR_SKILLS)
+
+                                            return {
+                                              ...prev,
+                                              psychomotorDomain: {
+                                                ...prev.psychomotorDomain,
+                                                [student.studentId]: {
+                                                  ...previous,
+                                                  [key]: nextValue === true,
+                                                },
+                                              },
+                                            }
+                                          })
+                                        }
+                                      />
+                                      <Label htmlFor={fieldId} className="text-xs font-medium text-gray-700">
+                                        {label}
+                                      </Label>
+                                    </div>
+                                  )
+                                })}
                               </div>
                             </div>
                           </CardContent>
