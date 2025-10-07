@@ -45,6 +45,7 @@ import {
 
 import { TutorialLink } from "@/components/tutorial-link"
 import { NotificationCenter } from "@/components/notification-center"
+import { FeeConfigurationPanel } from "@/components/accountant/fee-configuration-panel"
 import { logger } from "@/lib/logger"
 import { safeStorage } from "@/lib/safe-storage"
 import type {
@@ -832,11 +833,12 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       </Card>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-1 gap-2 sm:grid-cols-4">
+        <TabsList className="grid w-full grid-cols-1 gap-2 sm:grid-cols-5">
           <TabsTrigger value="collections">Collections</TabsTrigger>
           <TabsTrigger value="expenses">Expenses</TabsTrigger>
           <TabsTrigger value="defaulters">Defaulters</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="fees">Fee Configuration</TabsTrigger>
         </TabsList>
 
         <TabsContent value="collections" className="space-y-4">
@@ -1164,6 +1166,9 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+        <TabsContent value="fees" className="space-y-4">
+          <FeeConfigurationPanel accountantName={accountant.name} />
         </TabsContent>
       </Tabs>
 
