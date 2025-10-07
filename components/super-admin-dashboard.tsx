@@ -319,6 +319,27 @@ function formatFileSize(bytes?: number): string {
   return `${formatted} ${UNITS[unitIndex]}`
 }
 
+function estimateDataUrlSize(dataUrl: string, fallbackSize?: number): number {
+  const [, base64] = dataUrl.split(",")
+  if (!base64) {
+    return fallbackSize ?? 0
+  }
+
+  const paddingMatch = base64.match(/=+$/)
+  const padding = paddingMatch ? paddingMatch[0].length : 0
+  const length = base64.length
+  if (length === 0) {
+    return fallbackSize ?? 0
+  }
+
+  const size = Math.floor((length * 3) / 4) - padding
+  if (!Number.isFinite(size) || size <= 0) {
+    return fallbackSize ?? 0
+  }
+
+  return size
+}
+
 function formatDateTime(value?: string | null): string {
   if (!value) {
     return "Not saved yet"
@@ -1028,45 +1049,85 @@ export default function SuperAdminDashboard() {
           return
         }
 
-        const finalizeUpload = () => {
+        const finalizeUpload = (dataUrl: string) => {
           const uploadedAt = new Date().toISOString()
           setBrandingUploads((previous) => {
             if (key === "logo") {
               return {
                 ...previous,
-                logoUrl: result,
+                logoUrl: dataUrl,
                 logoFileName: file.name,
-                logoFileSize: file.size,
+                logoFileSize: estimateDataUrlSize(dataUrl, file.size),
                 logoUploadedAt: uploadedAt,
               }
             }
 
             return {
               ...previous,
-              signatureUrl: result,
+              signatureUrl: dataUrl,
               signatureFileName: file.name,
-              signatureFileSize: file.size,
+              signatureFileSize: estimateDataUrlSize(dataUrl, file.size),
               signatureUploadedAt: uploadedAt,
             }
           })
         }
 
         if (file.type === "image/svg+xml") {
-          finalizeUpload()
+          finalizeUpload(result)
           return
         }
 
         const image = new Image()
         image.onload = () => {
           if (image.width > limits.width || image.height > limits.height) {
-            toast({
-              variant: "destructive",
-              title: "Image too large",
-              description: `Ensure the ${key === "logo" ? "logo" : "signature"} is at most ${limits.width}x${limits.height}px.`,
-            })
-            return
+            const scale = Math.min(limits.width / image.width, limits.height / image.height)
+
+            if (!Number.isFinite(scale) || scale <= 0) {
+              toast({
+                variant: "destructive",
+                title: "Invalid image",
+                description: "We couldn't resize this image. Please choose another file.",
+              })
+              return
+            }
+
+            if (typeof document === "undefined") {
+              finalizeUpload(result)
+              return
+            }
+
+            const canvas = document.createElement("canvas")
+            canvas.width = Math.max(1, Math.round(image.width * Math.min(scale, 1)))
+            canvas.height = Math.max(1, Math.round(image.height * Math.min(scale, 1)))
+
+            const context = canvas.getContext("2d")
+            if (!context) {
+              toast({
+                variant: "destructive",
+                title: "Upload failed",
+                description: "We couldn't prepare this image. Please try a different one.",
+              })
+              return
+            }
+
+            context.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+            try {
+              const outputType = file.type === "image/jpeg" ? "image/jpeg" : "image/png"
+              const optimizedDataUrl = canvas.toDataURL(outputType, file.type === "image/jpeg" ? 0.85 : undefined)
+              finalizeUpload(optimizedDataUrl)
+              return
+            } catch (error) {
+              console.error("Failed to resize branding image", error)
+              toast({
+                variant: "destructive",
+                title: "Upload failed",
+                description: "We couldn't optimize this image. Please try another file.",
+              })
+              return
+            }
           }
-          finalizeUpload()
+          finalizeUpload(result)
         }
         image.onerror = () => {
           toast({
