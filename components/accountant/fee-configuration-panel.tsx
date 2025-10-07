@@ -29,7 +29,13 @@ const TERM_OPTIONS = [
   { value: "Third Term", label: "Third Term" },
 ]
 
+interface ClassOption {
+  id: string
+  name: string
+}
+
 interface SchoolFeeFormState {
+  classId: string
   className: string
   term: string
   amount: string
@@ -70,7 +76,11 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
   const [error, setError] = useState<string | null>(null)
   const [schoolFees, setSchoolFees] = useState<SchoolFeeConfigurationRecord[]>([])
   const [eventFees, setEventFees] = useState<EventFeeConfigurationRecord[]>([])
+  const [classOptions, setClassOptions] = useState<ClassOption[]>([])
+  const [isLoadingClasses, setIsLoadingClasses] = useState(false)
+  const [classError, setClassError] = useState<string | null>(null)
   const [schoolForm, setSchoolForm] = useState<SchoolFeeFormState>({
+    classId: "",
     className: "",
     term: TERM_OPTIONS[0]?.value ?? "First Term",
     amount: "",
@@ -104,14 +114,15 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
   }, [eventFees])
 
   const resetSchoolForm = () => {
-    setSchoolForm({
-      className: "",
+    setSchoolForm((previous) => ({
+      classId: previous.classId,
+      className: previous.className,
       term: TERM_OPTIONS[0]?.value ?? "First Term",
       amount: "",
       effectiveDate: "",
       activate: true,
       notes: "",
-    })
+    }))
   }
 
   const resetEventForm = () => {
@@ -148,14 +159,70 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
     }
   }
 
+  const loadClasses = async () => {
+    setIsLoadingClasses(true)
+    setClassError(null)
+
+    try {
+      const response = await fetch("/api/classes", buildRequestInit())
+      if (!response.ok) {
+        throw new Error(`Failed to load classes (status ${response.status})`)
+      }
+
+      const payload = (await response.json()) as { classes?: Array<{ id: string; name: string }> }
+      const options = Array.isArray(payload.classes)
+        ? payload.classes
+            .filter((entry): entry is { id: string; name: string } =>
+              Boolean(entry?.id) && Boolean(entry?.name),
+            )
+            .map((entry) => ({ id: String(entry.id), name: String(entry.name) }))
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
+        : []
+
+      setClassOptions(options)
+
+      setSchoolForm((previous) => {
+        if (!previous.classId || options.some((option) => option.id === previous.classId)) {
+          return previous
+        }
+
+        return {
+          ...previous,
+          classId: "",
+          className: "",
+        }
+      })
+    } catch (loadError) {
+      setClassOptions([])
+      setClassError(
+        loadError instanceof Error ? loadError.message : "Unable to load classes. Please try again later.",
+      )
+    } finally {
+      setIsLoadingClasses(false)
+    }
+  }
+
   useEffect(() => {
     void loadConfigurations()
+    void loadClasses()
   }, [])
 
   const handleCreateSchoolFee = async (event: React.FormEvent) => {
     event.preventDefault()
 
-    if (!schoolForm.className.trim() || !schoolForm.term.trim() || !schoolForm.amount.trim()) {
+    if (classOptions.length > 0 && !schoolForm.classId) {
+      toast({
+        title: "Class is required",
+        description: "Please select a class before saving the school fee configuration.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const resolvedClassName =
+      classOptions.find((option) => option.id === schoolForm.classId)?.name || schoolForm.className
+
+    if (!resolvedClassName.trim() || !schoolForm.term.trim() || !schoolForm.amount.trim()) {
       toast({
         title: "Incomplete details",
         description: "Class, term, and amount are required to create a school fee configuration.",
@@ -167,12 +234,13 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
     setIsSubmitting(true)
     try {
       const payload = {
-        className: schoolForm.className,
+        className: resolvedClassName,
         term: schoolForm.term,
         amount: Number(schoolForm.amount),
         effectiveDate: schoolForm.effectiveDate || null,
         notes: schoolForm.notes || null,
         activate: schoolForm.activate,
+        classId: schoolForm.classId || null,
       }
 
       const response = await fetch("/api/fees/school", buildRequestInit({
@@ -188,7 +256,7 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
 
       toast({
         title: "School fee saved",
-        description: `${schoolForm.className} • ${schoolForm.term} has been configured successfully.`,
+        description: `${resolvedClassName} • ${schoolForm.term} has been configured successfully.`,
       })
       resetSchoolForm()
       await loadConfigurations()
@@ -327,7 +395,12 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
               : "Define mandatory school fees and optional event charges. Parents must settle the configured school fee before accessing report cards."}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void loadConfigurations()} disabled={isLoading || isSubmitting}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void Promise.all([loadConfigurations(), loadClasses()])}
+          disabled={isLoading || isSubmitting || isLoadingClasses}
+        >
           <RefreshCw className="mr-2 h-4 w-4" /> Refresh
         </Button>
       </div>
@@ -348,13 +421,42 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
           <form onSubmit={handleCreateSchoolFee} className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="className">Class</Label>
-              <Input
-                id="className"
-                placeholder="e.g. JSS 1"
-                value={schoolForm.className}
-                onChange={(event) => setSchoolForm((prev) => ({ ...prev, className: event.target.value }))}
-                required
-              />
+              <Select
+                value={schoolForm.classId || undefined}
+                onValueChange={(value) => {
+                  const selected = classOptions.find((option) => option.id === value)
+                  setSchoolForm((prev) => ({
+                    ...prev,
+                    classId: selected?.id ?? "",
+                    className: selected?.name ?? "",
+                  }))
+                }}
+                disabled={isLoadingClasses || classOptions.length === 0}
+              >
+                <SelectTrigger id="className">
+                  <SelectValue
+                    placeholder={
+                      isLoadingClasses
+                        ? "Loading classes..."
+                        : classOptions.length === 0
+                          ? "No classes available"
+                          : "Select class"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {classOptions.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {classError ? (
+                <p className="text-xs text-red-600">{classError}</p>
+              ) : classOptions.length === 0 && !isLoadingClasses ? (
+                <p className="text-xs text-muted-foreground">Create a class before configuring fees.</p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="termSelect">Term</Label>
