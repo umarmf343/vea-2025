@@ -1944,6 +1944,10 @@ function ParentDashboard({ user }: { user: User }) {
   const [attendanceData, setAttendanceData] = useState<ParentAttendanceSummaryState | null>(null)
   const [isSnapshotLoading, setIsSnapshotLoading] = useState(false)
   const [snapshotError, setSnapshotError] = useState<string | null>(null)
+  const [showEventPaymentModal, setShowEventPaymentModal] = useState(false)
+  const [eventPaymentTitle, setEventPaymentTitle] = useState<string | null>(null)
+  const [hasEventPayments, setHasEventPayments] = useState(false)
+  const [isEventPaymentLoading, setIsEventPaymentLoading] = useState(false)
 
   const linkedStudentId =
     typeof user.metadata?.linkedStudentId === "string"
@@ -1959,6 +1963,19 @@ function ParentDashboard({ user }: { user: User }) {
     const [first] = (studentData?.name ?? "").split(" ")
     return first && first.trim().length > 0 ? first : "the student"
   }, [studentData?.name])
+
+  const eventPaymentActionLabel = useMemo(() => {
+    if (!eventPaymentTitle) {
+      return "Pay Event Fees"
+    }
+
+    const trimmed = eventPaymentTitle.trim()
+    if (trimmed.length === 0) {
+      return "Pay Event Fees"
+    }
+
+    return trimmed.toLowerCase().startsWith("pay ") ? trimmed : `Pay ${trimmed}`
+  }, [eventPaymentTitle])
 
   const buildFallbackSnapshot = useCallback(() => {
     if (!linkedStudentId) {
@@ -2188,6 +2205,84 @@ function ParentDashboard({ user }: { user: User }) {
   useEffect(() => {
     void loadParentSnapshot()
   }, [loadParentSnapshot])
+
+  useEffect(() => {
+    if (!activeStudentId) {
+      setHasEventPayments(false)
+      setEventPaymentTitle(null)
+      return
+    }
+
+    let cancelled = false
+
+    const loadEventFees = async () => {
+      setIsEventPaymentLoading(true)
+      try {
+        const params = new URLSearchParams({ studentId: activeStudentId, scope: "event" })
+        if (academicPeriod.term) {
+          params.set("term", academicPeriod.term)
+        }
+        if (academicPeriod.session) {
+          params.set("session", academicPeriod.session)
+        }
+
+        const response = await fetch(`/api/payments/fees?${params.toString()}`, { cache: "no-store" })
+        if (!response.ok) {
+          if (!cancelled) {
+            setHasEventPayments(false)
+            setEventPaymentTitle(null)
+          }
+          return
+        }
+
+        const payload = (await response.json()) as {
+          eventFees?: Array<{ id: string; name: string }>
+          eventPaymentTitle?: string | null
+        }
+
+        if (cancelled) {
+          return
+        }
+
+        const availableEvents = Array.isArray(payload.eventFees) ? payload.eventFees : []
+        setHasEventPayments(availableEvents.length > 0)
+
+        if (availableEvents.length === 0) {
+          setEventPaymentTitle(null)
+          return
+        }
+
+        const configuredTitle =
+          typeof payload.eventPaymentTitle === "string" && payload.eventPaymentTitle.trim().length > 0
+            ? payload.eventPaymentTitle.trim()
+            : null
+
+        if (configuredTitle) {
+          setEventPaymentTitle(configuredTitle)
+        } else if (availableEvents.length === 1 && typeof availableEvents[0]?.name === "string") {
+          setEventPaymentTitle(availableEvents[0].name)
+        } else {
+          setEventPaymentTitle("Event Fees")
+        }
+      } catch (error) {
+        logger.error("Unable to load event fee summary", { error })
+        if (!cancelled) {
+          setHasEventPayments(false)
+          setEventPaymentTitle(null)
+        }
+      } finally {
+        if (!cancelled) {
+          setIsEventPaymentLoading(false)
+        }
+      }
+    }
+
+    void loadEventFees()
+
+    return () => {
+      cancelled = true
+    }
+  }, [academicPeriod.session, academicPeriod.term, activeStudentId])
 
   const setAccessFromRecords = useCallback(
     (records: ReportCardAccessRecord[], term?: string, session?: string) => {
@@ -2911,6 +3006,21 @@ function ParentDashboard({ user }: { user: User }) {
                     View Cumulative Report
                   </Button>
                 )}
+                {(hasEventPayments || isEventPaymentLoading) && (
+                  <Button
+                    className="w-full bg-[#b29032] hover:bg-[#b29032]/90 text-white"
+                    onClick={() => setShowEventPaymentModal(true)}
+                    disabled={isEventPaymentLoading}
+                  >
+                    {isEventPaymentLoading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Checking event fees...
+                      </span>
+                    ) : (
+                      eventPaymentActionLabel
+                    )}
+                  </Button>
+                )}
                 <Button className="w-full bg-transparent" variant="outline">
                   View Payment History
                 </Button>
@@ -2991,6 +3101,17 @@ function ParentDashboard({ user }: { user: User }) {
         isOpen={showPaymentModal}
         onClose={() => setShowPaymentModal(false)}
         onPaymentSuccess={handlePaymentSuccess}
+        studentName={studentData?.name ?? ""}
+        studentId={activeStudentId ?? ""}
+        parentName={user.name}
+        parentEmail={user.email}
+      />
+      <PaymentModal
+        mode="event"
+        eventPaymentLabel={eventPaymentActionLabel}
+        isOpen={showEventPaymentModal}
+        onClose={() => setShowEventPaymentModal(false)}
+        onPaymentSuccess={() => setShowEventPaymentModal(false)}
         studentName={studentData?.name ?? ""}
         studentId={activeStudentId ?? ""}
         parentName={user.name}

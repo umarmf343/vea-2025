@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
+import { useToast } from "@/hooks/use-toast"
+import { logger } from "@/lib/logger"
 import { CreditCard, Loader2 } from "lucide-react"
 
 interface PaymentModalProps {
@@ -19,6 +21,8 @@ interface PaymentModalProps {
   studentId: string
   parentName: string
   parentEmail?: string
+  mode?: "school" | "event"
+  eventPaymentLabel?: string
 }
 
 interface FeeConfiguration {
@@ -33,7 +37,7 @@ interface FeeConfiguration {
     version: number
     notes: string | null
     effectiveDate: string
-  }
+  } | null
   eventFees: Array<{
     id: string
     name: string
@@ -42,6 +46,7 @@ interface FeeConfiguration {
     dueDate: string | null
     applicableClasses: string[]
   }>
+  eventPaymentTitle?: string | null
 }
 
 export function PaymentModal({
@@ -52,7 +57,10 @@ export function PaymentModal({
   studentId,
   parentName,
   parentEmail,
+  mode = "school",
+  eventPaymentLabel,
 }: PaymentModalProps) {
+  const { toast } = useToast()
   const [isProcessing, setIsProcessing] = useState(false)
   const [paymentForm, setPaymentForm] = useState({
     email: parentEmail ?? "",
@@ -90,6 +98,10 @@ export function PaymentModal({
           session: paymentForm.session,
         })
 
+        if (mode === "event") {
+          params.set("scope", "event")
+        }
+
         const response = await fetch(`/api/payments/fees?${params.toString()}`, { cache: "no-store" })
 
         if (!response.ok) {
@@ -99,7 +111,7 @@ export function PaymentModal({
             if (typeof payload?.error === "string") {
               message = payload.error
             }
-          } catch (error) {
+          } catch {
             // ignore parsing error
           }
 
@@ -115,7 +127,11 @@ export function PaymentModal({
 
         if (!cancelled) {
           setConfiguration(payload)
-          setSelectedEventIds([])
+          const defaultSelection =
+            mode === "event" && Array.isArray(payload.eventFees)
+              ? payload.eventFees.map((event) => event.id)
+              : []
+          setSelectedEventIds(defaultSelection)
           setConfigError(null)
         }
       } catch (error) {
@@ -138,7 +154,7 @@ export function PaymentModal({
     return () => {
       cancelled = true
     }
-  }, [isOpen, studentId, paymentForm.term, paymentForm.session])
+  }, [isOpen, studentId, paymentForm.term, paymentForm.session, mode])
 
   useEffect(() => {
     if (!isOpen) {
@@ -147,9 +163,9 @@ export function PaymentModal({
       setConfigError(null)
       setIsLoadingConfig(false)
     }
-  }, [isOpen])
+  }, [isOpen, mode])
 
-  const schoolFeeAmount = configuration?.schoolFee.amount ?? 0
+  const schoolFeeAmount = mode === "school" ? configuration?.schoolFee?.amount ?? 0 : 0
   const selectedEventTotal = useMemo(() => {
     if (!configuration) {
       return 0
@@ -160,10 +176,13 @@ export function PaymentModal({
       .reduce((sum, event) => Number((sum + Number(event.amount)).toFixed(2)), 0)
   }, [configuration, selectedEventIds])
 
-  const totalDue = useMemo(() => Number((schoolFeeAmount + selectedEventTotal).toFixed(2)), [
-    schoolFeeAmount,
-    selectedEventTotal,
-  ])
+  const totalDue = useMemo(() => {
+    if (mode === "event") {
+      return Number(selectedEventTotal.toFixed(2))
+    }
+
+    return Number((schoolFeeAmount + selectedEventTotal).toFixed(2))
+  }, [mode, schoolFeeAmount, selectedEventTotal])
 
   const formatCurrency = (value: number) => `₦${Number(value || 0).toLocaleString()}`
 
@@ -182,25 +201,31 @@ export function PaymentModal({
         throw new Error("Fee configuration not available. Please try again.")
       }
 
+      if (mode === "event" && selectedEventIds.length === 0) {
+        throw new Error("Select at least one event fee to proceed with payment.")
+      }
+
       const amountToCharge = totalDue
       if (!Number.isFinite(amountToCharge) || amountToCharge <= 0) {
         throw new Error("Unable to determine payable amount. Please contact the school administrator.")
       }
 
+      const paymentType = mode === "event" ? "event_fee" : "school_fees"
+
       const requestBody = {
         email: paymentForm.email,
         amount: Math.round(amountToCharge * 100),
         studentId,
-        paymentType: "school_fees",
+        paymentType,
         term: paymentForm.term,
         session: paymentForm.session,
-        schoolFeeId: configuration.schoolFee.id,
+        schoolFeeId: configuration.schoolFee?.id,
         eventFeeIds: selectedEventIds,
         metadata: {
           student_name: studentName,
           studentId,
           student_id: studentId,
-          payment_type: "school_fees",
+          payment_type: paymentType,
           term: configuration.term,
           session: paymentForm.session,
           phone: paymentForm.phone,
@@ -211,7 +236,9 @@ export function PaymentModal({
           payer_role: "parent",
           class_name: configuration.className,
           className: configuration.className,
-          school_fee_configuration_id: configuration.schoolFee.id,
+          ...(configuration.schoolFee
+            ? { school_fee_configuration_id: configuration.schoolFee.id }
+            : {}),
           selected_event_fee_ids: selectedEventIds,
           event_fee_ids: selectedEventIds,
         },
@@ -229,26 +256,51 @@ export function PaymentModal({
       const data = await response.json()
 
       if (data.status) {
-        // Redirect to Paystack payment page
-        window.location.href = data.data.authorization_url
+        onPaymentSuccess()
+        const browserScope =
+          typeof globalThis !== "undefined" && globalThis
+            ? (globalThis as { location?: Location; top?: unknown })
+            : null
+
+        if (browserScope?.location && data.data?.authorization_url) {
+          browserScope.location.href = data.data.authorization_url
+        } else {
+          logger.warn("Paystack returned without a browser window context", {
+            authorizationUrl: data.data?.authorization_url,
+          })
+        }
       } else {
         throw new Error(data.message || "Payment initialization failed")
       }
     } catch (error) {
-      console.error("Payment error:", error)
-      alert("Payment initialization failed. Please try again.")
+      logger.error("Payment initialization failed", { error })
+      const description =
+        error instanceof Error && error.message
+          ? error.message
+          : "Payment initialization failed. Please try again."
+      toast({
+        title: "Unable to start payment",
+        description,
+        variant: "destructive",
+      })
     } finally {
       setIsProcessing(false)
     }
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open) {
+        onClose()
+      }
+    }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-[#2d682d]">
             <CreditCard className="h-5 w-5" />
-            Pay School Fees
+            {mode === "event"
+              ? eventPaymentLabel || configuration?.eventPaymentTitle || "Pay Event Fees"
+              : "Pay School Fees"}
           </DialogTitle>
           <DialogDescription>
             {configuration
@@ -331,7 +383,7 @@ export function PaymentModal({
             <>
               {configuration.eventFees.length > 0 ? (
                 <div className="space-y-2">
-                  <Label>Optional Event Fees</Label>
+                  <Label>{mode === "event" ? "Available Event Fees" : "Optional Event Fees"}</Label>
                   <div className="space-y-2">
                     {configuration.eventFees.map((event) => {
                       const isSelected = selectedEventIds.includes(event.id)
@@ -366,15 +418,23 @@ export function PaymentModal({
                     })}
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <div className="rounded-md border border-[#2d682d]/20 bg-white/60 p-3 text-sm text-[#2d682d]">
+                  {mode === "event"
+                    ? "No event fees are available for payment right now."
+                    : "No optional event fees are available for this class."}
+                </div>
+              )}
 
               <div className="bg-[#2d682d]/5 p-4 rounded-lg space-y-2">
+                {mode === "school" && configuration.schoolFee ? (
+                  <div className="flex justify-between items-center text-sm">
+                    <span>School Fees ({configuration.schoolFee.term})</span>
+                    <span className="font-semibold">{formatCurrency(schoolFeeAmount)}</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between items-center text-sm">
-                  <span>School Fees ({configuration.schoolFee.term})</span>
-                  <span className="font-semibold">{formatCurrency(schoolFeeAmount)}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span>Selected Event Fees</span>
+                  <span>{mode === "event" ? "Event Fees" : "Selected Event Fees"}</span>
                   <span>{formatCurrency(selectedEventTotal)}</span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
@@ -403,7 +463,13 @@ export function PaymentModal({
             <Button
               type="submit"
               className="flex-1 bg-[#b29032] hover:bg-[#8a6b25]"
-              disabled={isProcessing || isLoadingConfig || !configuration || Boolean(configError)}
+              disabled={
+                isProcessing ||
+                isLoadingConfig ||
+                !configuration ||
+                Boolean(configError) ||
+                (mode === "event" && selectedEventIds.length === 0)
+              }
             >
               {isProcessing ? (
                 <>
