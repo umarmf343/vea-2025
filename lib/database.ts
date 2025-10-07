@@ -1143,6 +1143,23 @@ function buildTeacherAssignmentAugmentorFromCollections(
     const subjects = new Set<string>()
     const summaries: TeacherAssignmentSummary[] = []
 
+    const addSubject = (value: unknown) => {
+      if (typeof value !== "string") {
+        return
+      }
+
+      const trimmed = value.trim()
+      if (trimmed.length > 0) {
+        subjects.add(trimmed)
+      }
+    }
+
+    if (Array.isArray(clone.subjects)) {
+      for (const subject of clone.subjects) {
+        addSubject(subject)
+      }
+    }
+
     for (const assignment of teacherAssignments) {
       if (seenClassIds.has(assignment.classId)) {
         continue
@@ -1160,7 +1177,7 @@ function buildTeacherAssignmentAugmentorFromCollections(
         : []
 
       for (const subject of classSubjects) {
-        subjects.add(subject)
+        addSubject(subject)
       }
 
       summaries.push({
@@ -1168,6 +1185,57 @@ function buildTeacherAssignmentAugmentorFromCollections(
         className: classRecord.name,
         subjects: classSubjects,
       })
+    }
+
+    if (summaries.length === 0) {
+      const fallbackIdentifiers = new Set<string>()
+
+      const normalizedClassId = normalizeClassIdentifier(clone.classId)
+      if (normalizedClassId) {
+        fallbackIdentifiers.add(normalizedClassId)
+      }
+
+      if (typeof clone.className === "string" && clone.className.trim().length > 0) {
+        fallbackIdentifiers.add(clone.className.trim())
+      }
+
+      for (const identifier of fallbackIdentifiers) {
+        const classRecord = resolveClassRecordByIdentifier(classes, identifier)
+        if (!classRecord) {
+          continue
+        }
+
+        if (seenClassIds.has(classRecord.id)) {
+          continue
+        }
+
+        seenClassIds.add(classRecord.id)
+
+        const classSubjects = Array.isArray(classRecord.subjects)
+          ? classRecord.subjects.filter((subject): subject is string => typeof subject === "string" && subject.trim().length > 0)
+          : []
+
+        for (const subject of classSubjects) {
+          addSubject(subject)
+        }
+
+        summaries.push({
+          classId: classRecord.id,
+          className: classRecord.name,
+          subjects: classSubjects,
+        })
+      }
+
+      if (summaries.length === 0 && typeof clone.className === "string" && clone.className.trim().length > 0) {
+        const fallbackClassId = normalizedClassId ?? clone.className.trim()
+        const fallbackSubjects = Array.from(subjects)
+        seenClassIds.add(fallbackClassId)
+        summaries.push({
+          classId: fallbackClassId,
+          className: clone.className.trim(),
+          subjects: fallbackSubjects,
+        })
+      }
     }
 
     clone.classId = null
