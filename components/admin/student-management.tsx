@@ -35,6 +35,7 @@ interface StudentRecord {
   subjects: string[]
   attendance: { present: number; total: number }
   grades: { subject: string; ca1: number; ca2: number; exam: number; total: number; grade: string }[]
+  isReal?: boolean
 }
 
 const PAYMENT_BADGE: Record<StudentRecord["paymentStatus"], string> = {

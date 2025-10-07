@@ -87,6 +87,7 @@ export interface StudentRecord extends CollectionRecord {
   attendance: { present: number; total: number }
   grades: { subject: string; ca1: number; ca2: number; exam: number; total: number; grade: string }[]
   photoUrl?: string | null
+  isReal: boolean
 }
 
 export interface AttendanceLogRecord extends CollectionRecord {
@@ -303,7 +304,10 @@ export interface CreateSubjectPayload {
 
 export interface UpdateSubjectPayload extends Partial<Omit<SubjectRecord, "id" | "createdAt" | "updatedAt">> {}
 
-export interface CreateStudentPayload extends Omit<StudentRecord, "id" | "createdAt" | "updatedAt"> {}
+export interface CreateStudentPayload
+  extends Omit<StudentRecord, "id" | "createdAt" | "updatedAt" | "isReal"> {
+  isReal?: boolean
+}
 
 export interface UpdateStudentPayload extends Partial<Omit<StudentRecord, "id" | "createdAt" | "updatedAt">> {}
 
@@ -912,6 +916,7 @@ function createDefaultStudents(): StudentRecord[] {
         { subject: "English", ca1: 16, ca2: 17, exam: 42, total: 75, grade: "B" },
       ],
       photoUrl: null,
+      isReal: false,
       createdAt: timestamp,
       updatedAt: timestamp,
     },
@@ -939,6 +944,7 @@ function createDefaultStudents(): StudentRecord[] {
         { subject: "Physics", ca1: 14, ca2: 16, exam: 50, total: 80, grade: "B" },
       ],
       photoUrl: null,
+      isReal: false,
       createdAt: timestamp,
       updatedAt: timestamp,
     },
@@ -2345,7 +2351,23 @@ export async function deleteSubjectRecord(id: string): Promise<boolean> {
 
 export async function listStudentRecords(): Promise<StudentRecord[]> {
   const students = ensureCollection<StudentRecord>(STORAGE_KEYS.STUDENTS, createDefaultStudents)
-  return deepClone(students)
+  let mutated = false
+
+  for (const student of students) {
+    if (typeof student.isReal !== "boolean") {
+      student.isReal = true
+      mutated = true
+    }
+  }
+
+  if (mutated) {
+    persistCollection(STORAGE_KEYS.STUDENTS, students)
+  }
+
+  return deepClone(students).map((student) => ({
+    ...student,
+    isReal: student.isReal !== false,
+  }))
 }
 
 export async function getStudentRecordById(id: string): Promise<StudentRecord | null> {
@@ -2355,7 +2377,20 @@ export async function getStudentRecordById(id: string): Promise<StudentRecord | 
 
   const students = ensureCollection<StudentRecord>(STORAGE_KEYS.STUDENTS, createDefaultStudents)
   const record = students.find((student) => student.id === id)
-  return record ? deepClone(record) : null
+
+  if (!record) {
+    return null
+  }
+
+  if (typeof record.isReal !== "boolean") {
+    record.isReal = true
+    persistCollection(STORAGE_KEYS.STUDENTS, students)
+  }
+
+  return deepClone({
+    ...record,
+    isReal: record.isReal !== false,
+  })
 }
 
 export async function createStudentRecord(payload: CreateStudentPayload): Promise<StudentRecord> {
@@ -2373,6 +2408,7 @@ export async function createStudentRecord(payload: CreateStudentPayload): Promis
     attendance: payload.attendance ?? { present: 0, total: 0 },
     grades: payload.grades ? payload.grades.map((grade) => ({ ...grade })) : [],
     photoUrl: payload.photoUrl ?? null,
+    isReal: payload.isReal !== false,
     createdAt: timestamp,
     updatedAt: timestamp,
   }
@@ -2415,6 +2451,10 @@ export async function updateStudentRecord(
       existing.attendance = { ...(value as StudentRecord["attendance"]) }
     } else if (key === "photoUrl") {
       existing.photoUrl = value ?? null
+    } else if (key === "status") {
+      existing.status = String(value).toLowerCase() === "inactive" ? "inactive" : "active"
+    } else if (key === "isReal") {
+      existing.isReal = value !== false
     } else if (key !== "id" && key !== "createdAt" && key !== "updatedAt") {
       ;(existing as Record<string, unknown>)[key] = value
     }

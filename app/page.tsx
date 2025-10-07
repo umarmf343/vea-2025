@@ -100,6 +100,9 @@ interface User {
   subjects?: string[]
   classIds?: string[]
   teachingAssignments?: { classId: string; className: string; subjects: string[] }[]
+  assignedClassIds?: string[]
+  assignedClassNames?: string[]
+  assignedClasses?: { id: string; name: string }[]
   metadata?: Record<string, unknown> | null
 }
 
@@ -225,6 +228,7 @@ const normalizeTeachingAssignments = (
     fallbackClassId?: unknown
     fallbackClassName?: unknown
     fallbackSubjects?: unknown
+    fallbackAssignedClasses?: unknown
   } = {},
 ): { classId: string; className: string; subjects: string[] }[] => {
   const assignments: { classId: string; className: string; subjects: string[] }[] = []
@@ -251,6 +255,30 @@ const normalizeTeachingAssignments = (
       })
     })
   }
+
+  const fallbackAssignedClasses = Array.isArray(options.fallbackAssignedClasses)
+    ? options.fallbackAssignedClasses
+    : []
+
+  fallbackAssignedClasses.forEach((entry, index) => {
+    if (!entry || typeof entry !== "object") {
+      return
+    }
+
+    const record = entry as Record<string, any>
+    const classIdCandidate = normalizeString(record.id ?? record.classId ?? record.class_id)
+    const classNameCandidate = normalizeString(record.name ?? record.className ?? record.class_name)
+    const resolvedClassId =
+      classIdCandidate || (classNameCandidate ? buildIdentifierFromName(classNameCandidate) : "") ||
+      `class_assigned_${index}`
+    const resolvedClassName = classNameCandidate || classIdCandidate || `Assigned Class ${index + 1}`
+
+    assignments.push({
+      classId: resolvedClassId,
+      className: resolvedClassName,
+      subjects: [],
+    })
+  })
 
   const fallbackClassId = normalizeString(options.fallbackClassId)
   const fallbackClassName = normalizeString(options.fallbackClassName)
@@ -311,18 +339,49 @@ const buildUserState = (
   const explicitSubjects = toUniqueStringArray(rawUser?.subjects)
   const metadataSubjects = metadata ? toUniqueStringArray(metadata.subjects) : []
   const fallbackSubjects = explicitSubjects.length > 0 ? explicitSubjects : metadataSubjects
+  const assignedClassIdsFromRaw = toUniqueStringArray(
+    rawUser?.assignedClassIds ?? rawUser?.assigned_class_ids ?? rawUser?.teachingClassIds,
+  )
+  const assignedClassNamesFromRaw = toUniqueStringArray(
+    rawUser?.assignedClassNames ?? rawUser?.assigned_class_names,
+  )
+  const assignedClassSummaries = Array.isArray(rawUser?.assignedClasses)
+    ? (rawUser?.assignedClasses as unknown[])
+        .map((entry, index) => {
+          if (!entry || typeof entry !== "object") {
+            return null
+          }
+
+          const record = entry as Record<string, any>
+          const idCandidate = normalizeString(record.id ?? record.classId ?? record.class_id)
+          const nameCandidate = normalizeString(record.name ?? record.className ?? record.class_name)
+          const resolvedId =
+            idCandidate || (nameCandidate ? buildIdentifierFromName(nameCandidate) : "") || `class_assigned_${index}`
+          const resolvedName = nameCandidate || idCandidate || `Assigned Class ${index + 1}`
+
+          if (!resolvedId && !resolvedName) {
+            return null
+          }
+
+          return { id: resolvedId, name: resolvedName }
+        })
+        .filter((entry): entry is { id: string; name: string } => Boolean(entry))
+    : []
 
   const teachingAssignments = normalizeTeachingAssignments(rawUser?.teachingAssignments ?? rawUser?.classes, {
     fallbackClassId: classId,
     fallbackClassName: className,
     fallbackSubjects: fallbackSubjects,
+    fallbackAssignedClasses: assignedClassSummaries,
   })
 
   const combinedClassIds = Array.from(
     new Set([
       ...toUniqueStringArray(rawUser?.classIds ?? rawUser?.class_ids ?? rawUser?.teachingClassIds),
+      ...assignedClassIdsFromRaw,
       ...(classId ? [classId] : []),
       ...teachingAssignments.map((assignment) => assignment.classId),
+      ...assignedClassSummaries.map((entry) => entry.id),
     ]),
   )
 
@@ -338,6 +397,51 @@ const buildUserState = (
       ? Boolean(rawUser.hasAccess)
       : options.fallbackHasAccess ?? roleHasPortalAccess(options.resolvedRole)
 
+  const assignedClassIds = Array.from(
+    new Set([
+      ...assignedClassIdsFromRaw,
+      ...assignedClassSummaries.map((entry) => entry.id),
+      ...(classId ? [classId] : []),
+      ...teachingAssignments.map((assignment) => assignment.classId),
+    ]),
+  )
+
+  const assignedClassNames = Array.from(
+    new Set([
+      ...assignedClassNamesFromRaw,
+      ...assignedClassSummaries.map((entry) => entry.name),
+      ...(className ? [className] : []),
+      ...teachingAssignments.map((assignment) => assignment.className),
+    ]),
+  )
+
+  const assignedClassMap = new Map<string, { id: string; name: string }>()
+
+  const registerAssignedClass = (idValue: string, nameValue: string) => {
+    const id = idValue.trim()
+    const name = nameValue.trim()
+
+    if (!id && !name) {
+      return
+    }
+
+    const resolvedId = id || (name ? buildIdentifierFromName(name) : "") || `assigned_${assignedClassMap.size}`
+    const resolvedName = name || id || `Assigned Class ${assignedClassMap.size + 1}`
+    const key = `${resolvedId.toLowerCase()}::${resolvedName.toLowerCase()}`
+
+    if (!assignedClassMap.has(key)) {
+      assignedClassMap.set(key, { id: resolvedId, name: resolvedName })
+    }
+  }
+
+  assignedClassSummaries.forEach((entry) => registerAssignedClass(entry.id, entry.name))
+  teachingAssignments.forEach((assignment) => registerAssignedClass(assignment.classId, assignment.className))
+  if (classId || className) {
+    registerAssignedClass(classId || "", className || "")
+  }
+
+  const assignedClasses = Array.from(assignedClassMap.values())
+
   return {
     id,
     email,
@@ -349,6 +453,9 @@ const buildUserState = (
     subjects: resolvedSubjects,
     classIds: combinedClassIds,
     teachingAssignments,
+    assignedClassIds,
+    assignedClassNames,
+    assignedClasses,
     metadata,
   }
 }
@@ -396,6 +503,9 @@ const FALLBACK_ACCOUNTS: FallbackAccount[] = [
         subjects: ["Mathematics", "English"],
       },
     ],
+    assignedClassIds: ["class_jss1a"],
+    assignedClassNames: ["JSS 1A"],
+    assignedClasses: [{ id: "class_jss1a", name: "JSS 1A" }],
     metadata: {
       assignedClassName: "JSS 1A",
     },
@@ -1181,51 +1291,120 @@ export default function HomePage() {
 
 type TeacherClassAssignment = { id: string; name: string; subjects: string[] }
 
+const buildTeacherAssignmentsFromUser = (
+  user: User,
+): { classes: TeacherClassAssignment[]; subjects: string[] } => {
+  if (user.role !== "teacher") {
+    return { classes: [], subjects: [] }
+  }
+
+  const classMap = new Map<string, TeacherClassAssignment>()
+  const subjectSet = new Set<string>()
+
+  const registerClass = (
+    idValue: unknown,
+    nameValue?: unknown,
+    subjectsValue?: unknown,
+    fallbackIndex?: number,
+  ) => {
+    const id = typeof idValue === "string" ? idValue.trim() : ""
+    const name = typeof nameValue === "string" ? nameValue.trim() : ""
+    const index = typeof fallbackIndex === "number" ? fallbackIndex : classMap.size
+
+    if (!id && !name) {
+      return
+    }
+
+    const resolvedId = id || (name ? buildIdentifierFromName(name) : `class_${index}`)
+    const resolvedName = name || id || `Class ${index + 1}`
+    const normalizedSubjects: string[] = []
+
+    if (Array.isArray(subjectsValue)) {
+      for (const subject of subjectsValue) {
+        if (typeof subject === "string") {
+          const trimmed = subject.trim()
+          if (trimmed.length > 0) {
+            normalizedSubjects.push(trimmed)
+          }
+        }
+      }
+    }
+    const key = `${resolvedId.toLowerCase()}::${resolvedName.toLowerCase()}`
+
+    if (classMap.has(key)) {
+      const existing = classMap.get(key) as TeacherClassAssignment
+      const merged = new Set<string>([...existing.subjects, ...normalizedSubjects])
+      existing.subjects = Array.from(merged)
+      classMap.set(key, existing)
+    } else {
+      classMap.set(key, { id: resolvedId, name: resolvedName, subjects: normalizedSubjects })
+    }
+
+    normalizedSubjects.forEach((subject) => subjectSet.add(subject))
+  }
+
+  const teachingAssignments = Array.isArray(user.teachingAssignments) ? user.teachingAssignments : []
+  teachingAssignments.forEach((assignment, index) => {
+    registerClass(assignment?.classId, assignment?.className, assignment?.subjects, index)
+  })
+
+  const assignedSummaries = Array.isArray(user.assignedClasses) ? user.assignedClasses : []
+  assignedSummaries.forEach((summary, index) => {
+    registerClass(summary?.id, summary?.name, [], teachingAssignments.length + index)
+  })
+
+  const fallbackAssignedIds = Array.isArray(user.assignedClassIds) ? user.assignedClassIds : []
+  const fallbackAssignedNames = Array.isArray(user.assignedClassNames) ? user.assignedClassNames : []
+
+  fallbackAssignedIds.forEach((identifier, index) => {
+    registerClass(
+      identifier,
+      fallbackAssignedNames[index] ?? identifier,
+      [],
+      teachingAssignments.length + assignedSummaries.length + index,
+    )
+  })
+
+  fallbackAssignedNames.forEach((name, index) => {
+    registerClass(
+      undefined,
+      name,
+      [],
+      teachingAssignments.length + assignedSummaries.length + fallbackAssignedIds.length + index,
+    )
+  })
+
+  registerClass(
+    user.classId,
+    user.className,
+    user.subjects,
+    teachingAssignments.length + assignedSummaries.length + fallbackAssignedIds.length + fallbackAssignedNames.length,
+  )
+
+  const explicitSubjects = Array.isArray(user.subjects)
+    ? user.subjects
+        .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+        .filter((subject) => subject.length > 0)
+    : []
+
+  explicitSubjects.forEach((subject) => subjectSet.add(subject))
+
+  const classes = Array.from(classMap.values())
+  const subjects =
+    explicitSubjects.length > 0
+      ? explicitSubjects
+      : subjectSet.size > 0
+        ? Array.from(subjectSet)
+        : []
+
+  return { classes, subjects }
+}
+
 function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const branding = useBranding()
   const resolvedLogo = branding.logoUrl
   const resolvedSchoolName = branding.schoolName
-  const [teacherAssignments, setTeacherAssignments] = useState<{
-    classes: TeacherClassAssignment[]
-    subjects: string[]
-  }>(() => {
-    if (user.role !== "teacher") {
-      return { classes: [], subjects: [] }
-    }
-
-    const assignments = Array.isArray(user.teachingAssignments) ? user.teachingAssignments : []
-    const classes = assignments
-      .map((assignment, index) => {
-        const rawId = typeof assignment.classId === "string" ? assignment.classId.trim() : ""
-        const rawName = typeof assignment.className === "string" ? assignment.className.trim() : ""
-        const subjects = Array.isArray(assignment.subjects)
-          ? assignment.subjects
-              .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
-              .filter((subject) => subject.length > 0)
-          : []
-        const id = rawId || rawName || `class_${index}`
-        const name = rawName || rawId || id
-        return id || name ? { id, name, subjects } : null
-      })
-      .filter((assignment): assignment is TeacherClassAssignment => Boolean(assignment))
-
-    const derivedSubjects = Array.isArray(user.subjects) && user.subjects.length > 0
-      ? user.subjects
-      : Array.from(
-          new Set(
-            assignments.flatMap((assignment) =>
-              Array.isArray(assignment.subjects)
-                ? assignment.subjects.filter((subject) => typeof subject === "string")
-                : [],
-            ),
-          ),
-        ).map((subject) => subject?.toString() ?? "")
-
-    return {
-      classes,
-      subjects: derivedSubjects.filter((subject) => subject.length > 0),
-    }
-  })
+  const [teacherAssignments, setTeacherAssignments] = useState(() => buildTeacherAssignmentsFromUser(user))
   const [isTeacherContextLoading, setIsTeacherContextLoading] = useState(false)
   const [teacherContextError, setTeacherContextError] = useState<string | null>(null)
   const [studentClassInfo, setStudentClassInfo] = useState<{ className: string; classId: string | null }>(
@@ -1252,38 +1431,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       return
     }
 
-    const assignments = Array.isArray(user.teachingAssignments) ? user.teachingAssignments : []
-    const classes = assignments
-      .map((assignment, index) => {
-        const rawId = typeof assignment.classId === "string" ? assignment.classId.trim() : ""
-        const rawName = typeof assignment.className === "string" ? assignment.className.trim() : ""
-        const subjects = Array.isArray(assignment.subjects)
-          ? assignment.subjects
-              .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
-              .filter((subject) => subject.length > 0)
-          : []
-        const id = rawId || rawName || `class_${index}`
-        const name = rawName || rawId || id
-        return id || name ? { id, name, subjects } : null
-      })
-      .filter((assignment): assignment is TeacherClassAssignment => Boolean(assignment))
-
-    const derivedSubjects = Array.isArray(user.subjects) && user.subjects.length > 0
-      ? user.subjects
-      : Array.from(
-          new Set(
-            assignments.flatMap((assignment) =>
-              Array.isArray(assignment.subjects)
-                ? assignment.subjects.filter((subject) => typeof subject === "string")
-                : [],
-            ),
-          ),
-        ).map((subject) => subject?.toString() ?? "")
-
-    setTeacherAssignments({
-      classes,
-      subjects: derivedSubjects.filter((subject) => subject.length > 0),
-    })
+    setTeacherAssignments(buildTeacherAssignmentsFromUser(user))
   }, [user])
 
   const refreshTeacherAssignments = useCallback(async () => {
@@ -1398,6 +1546,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               subjects: cls.subjects,
             }))
             storedUser.subjects = normalizedSubjects
+            storedUser.assignedClasses = normalizedClasses.map((cls) => ({ id: cls.id, name: cls.name }))
+            storedUser.assignedClassIds = normalizedClasses.map((cls) => cls.id)
+            storedUser.assignedClassNames = normalizedClasses.map((cls) => cls.name)
             safeStorage.setItem("vea_current_user", JSON.stringify(storedUser))
           }
         } catch (error) {
