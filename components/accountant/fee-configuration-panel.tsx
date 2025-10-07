@@ -18,6 +18,7 @@ import {
 } from "@/lib/database"
 import { safeStorage } from "@/lib/safe-storage"
 import { useToast } from "@/hooks/use-toast"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
 interface FeeConfigurationPanelProps {
   accountantName: string
@@ -49,7 +50,7 @@ interface EventFeeFormState {
   description: string
   amount: string
   dueDate: string
-  classes: string
+  classIds: string[]
   activate: boolean
 }
 
@@ -93,9 +94,11 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
     description: "",
     amount: "",
     dueDate: "",
-    classes: "",
+    classIds: [],
     activate: true,
   })
+  const [isEventClassPopoverOpen, setIsEventClassPopoverOpen] = useState(false)
+  const [eventClassSearch, setEventClassSearch] = useState("")
 
   const sortedSchoolFees = useMemo(() => {
     return [...schoolFees].sort((a, b) => {
@@ -126,7 +129,71 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
   }
 
   const resetEventForm = () => {
-    setEventForm({ name: "", description: "", amount: "", dueDate: "", classes: "", activate: true })
+    setEventForm({ name: "", description: "", amount: "", dueDate: "", classIds: [], activate: true })
+  }
+
+  const selectedEventClassNames = useMemo(() => {
+    return eventForm.classIds
+      .map((id) => classOptions.find((option) => option.id === id)?.name)
+      .filter((value): value is string => Boolean(value))
+  }, [eventForm.classIds, classOptions])
+
+  const filteredEventClassOptions = useMemo(() => {
+    const query = eventClassSearch.trim().toLowerCase()
+    if (!query) {
+      return classOptions
+    }
+
+    return classOptions.filter((option) => option.name.toLowerCase().includes(query))
+  }, [classOptions, eventClassSearch])
+
+  const eventClassTriggerLabel = useMemo(() => {
+    if (isLoadingClasses) {
+      return "Loading classes..."
+    }
+
+    if (classOptions.length === 0) {
+      return "No classes available"
+    }
+
+    if (selectedEventClassNames.length === 0) {
+      return "Select classes"
+    }
+
+    if (selectedEventClassNames.length === classOptions.length) {
+      return "All classes selected"
+    }
+
+    if (selectedEventClassNames.length <= 2) {
+      return selectedEventClassNames.join(", ")
+    }
+
+    return `${selectedEventClassNames.slice(0, 2).join(", ")} +${selectedEventClassNames.length - 2} more`
+  }, [classOptions, isLoadingClasses, selectedEventClassNames])
+
+  const toggleEventClassSelection = (classId: string) => {
+    setEventForm((previous) => {
+      const exists = previous.classIds.includes(classId)
+      return {
+        ...previous,
+        classIds: exists
+          ? previous.classIds.filter((value) => value !== classId)
+          : [...previous.classIds, classId],
+      }
+    })
+  }
+
+  const setEventClassSelection = (classId: string, shouldSelect: boolean) => {
+    setEventForm((previous) => {
+      const exists = previous.classIds.includes(classId)
+      if (shouldSelect && !exists) {
+        return { ...previous, classIds: [...previous.classIds, classId] }
+      }
+      if (!shouldSelect && exists) {
+        return { ...previous, classIds: previous.classIds.filter((value) => value !== classId) }
+      }
+      return previous
+    })
   }
 
   const loadConfigurations = async () => {
@@ -192,6 +259,18 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
           className: "",
         }
       })
+
+      setEventForm((previous) => {
+        const validIds = previous.classIds.filter((id) => options.some((option) => option.id === id))
+        if (validIds.length === previous.classIds.length) {
+          return previous
+        }
+
+        return {
+          ...previous,
+          classIds: validIds,
+        }
+      })
     } catch (loadError) {
       setClassOptions([])
       setClassError(
@@ -206,6 +285,12 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
     void loadConfigurations()
     void loadClasses()
   }, [])
+
+  useEffect(() => {
+    if (!isEventClassPopoverOpen) {
+      setEventClassSearch("")
+    }
+  }, [isEventClassPopoverOpen])
 
   const handleCreateSchoolFee = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -283,19 +368,40 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
       return
     }
 
+    if (classOptions.length === 0) {
+      toast({
+        title: "No classes available",
+        description: "Create at least one class before configuring event fees.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (eventForm.classIds.length === 0) {
+      toast({
+        title: "Class selection required",
+        description: "Choose one or more classes that should receive this event fee notification.",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsSubmitting(true)
     try {
+      const applicableClasses = eventForm.classIds
+        .map((id) => classOptions.find((option) => option.id === id)?.name)
+        .filter((value): value is string => Boolean(value))
+
+      if (applicableClasses.length === 0) {
+        throw new Error("Unable to resolve selected classes. Please refresh and try again.")
+      }
+
       const payload = {
         name: eventForm.name,
         description: eventForm.description || null,
         amount: Number(eventForm.amount),
         dueDate: eventForm.dueDate || null,
-        applicableClasses: eventForm.classes
-          ? eventForm.classes
-              .split(",")
-              .map((value) => value.trim())
-              .filter((value) => value.length > 0)
-          : [],
+        applicableClasses,
         activate: eventForm.activate,
       }
 
@@ -312,6 +418,7 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
 
       toast({ title: "Event fee saved", description: `${eventForm.name} has been created.` })
       resetEventForm()
+      setIsEventClassPopoverOpen(false)
       await loadConfigurations()
     } catch (submitError) {
       toast({
@@ -635,15 +742,74 @@ export function FeeConfigurationPanel({ accountantName }: FeeConfigurationPanelP
             </div>
             <div className="space-y-2">
               <Label htmlFor="eventClasses">Applicable Classes</Label>
-              <Input
-                id="eventClasses"
-                placeholder="Separate multiple classes with commas"
-                value={eventForm.classes}
-                onChange={(evt) => setEventForm((prev) => ({ ...prev, classes: evt.target.value }))}
-              />
-              <p className="text-xs text-muted-foreground">
-                Leave blank to make the event available to all classes.
-              </p>
+              <Popover open={isEventClassPopoverOpen} onOpenChange={setIsEventClassPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-between"
+                    disabled={isLoadingClasses || classOptions.length === 0}
+                  >
+                    <span className="truncate">{eventClassTriggerLabel}</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[320px] p-0" align="start">
+                  <div className="border-b p-2">
+                    <Input
+                      id="eventClasses"
+                      placeholder="Search classes..."
+                      value={eventClassSearch}
+                      onChange={(evt) => setEventClassSearch(evt.target.value)}
+                      className="h-8"
+                    />
+                  </div>
+                  <div className="max-h-60 overflow-y-auto p-2 space-y-1">
+                    {filteredEventClassOptions.length === 0 ? (
+                      <p className="px-1 py-2 text-sm text-muted-foreground">No classes found.</p>
+                    ) : (
+                      filteredEventClassOptions.map((option) => {
+                        const isSelected = eventForm.classIds.includes(option.id)
+                        return (
+                          <label
+                            key={option.id}
+                            className={`flex cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm transition ${
+                              isSelected ? "bg-[#2d682d]/10 text-[#1f4d1f]" : "hover:bg-muted"
+                            }`}
+                            onClick={() => toggleEventClassSelection(option.id)}
+                          >
+                            <span>{option.name}</span>
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={(checked) =>
+                                setEventClassSelection(option.id, Boolean(checked))
+                              }
+                              onClick={(evt) => evt.stopPropagation()}
+                              aria-label={`Select ${option.name}`}
+                            />
+                          </label>
+                        )
+                      })
+                    )}
+                  </div>
+                  <div className="border-t px-3 py-2 text-xs text-muted-foreground">
+                    {selectedEventClassNames.length === 0 ? (
+                      "Select one or more classes to notify the right parents."
+                    ) : (
+                      <>
+                        <span className="font-medium text-[#2d682d]">
+                          {selectedEventClassNames.length}
+                        </span>{" "}
+                        {selectedEventClassNames.length === 1 ? "class" : "classes"} selected
+                      </>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {classError ? (
+                <p className="text-xs text-red-600">{classError}</p>
+              ) : classOptions.length === 0 && !isLoadingClasses ? (
+                <p className="text-xs text-muted-foreground">Create a class before configuring fees.</p>
+              ) : null}
             </div>
             <div className="flex items-center gap-2 md:col-span-2">
               <Checkbox

@@ -932,7 +932,7 @@ function canonicalTermKey(value: unknown): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ")
 }
 
-function canonicalClassKey(value: unknown): string {
+export function canonicalClassKey(value: unknown): string {
   if (typeof value !== "string") {
     return ""
   }
