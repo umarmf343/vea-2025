@@ -98,6 +98,8 @@ interface User {
   classId?: string | null
   className?: string | null
   subjects?: string[]
+  classIds?: string[]
+  teachingAssignments?: { classId: string; className: string; subjects: string[] }[]
   metadata?: Record<string, unknown> | null
 }
 
@@ -1014,13 +1016,32 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       return { classes: [], subjects: [] }
     }
 
-    const classId = typeof user.classId === "string" ? user.classId.trim() : ""
-    const className = typeof user.className === "string" ? user.className.trim() : ""
-    const identifier = classId || className
+    const assignments = Array.isArray(user.teachingAssignments) ? user.teachingAssignments : []
+    const classes = assignments
+      .map((assignment, index) => {
+        const rawId = typeof assignment.classId === "string" ? assignment.classId.trim() : ""
+        const rawName = typeof assignment.className === "string" ? assignment.className.trim() : ""
+        const id = rawId || rawName || `class_${index}`
+        const name = rawName || rawId || id
+        return id || name ? { id, name } : null
+      })
+      .filter((assignment): assignment is TeacherClassAssignment => Boolean(assignment))
+
+    const derivedSubjects = Array.isArray(user.subjects) && user.subjects.length > 0
+      ? user.subjects
+      : Array.from(
+          new Set(
+            assignments.flatMap((assignment) =>
+              Array.isArray(assignment.subjects)
+                ? assignment.subjects.filter((subject) => typeof subject === "string")
+                : [],
+            ),
+          ),
+        ).map((subject) => subject?.toString() ?? "")
 
     return {
-      classes: identifier ? [{ id: classId || identifier, name: className || identifier }] : [],
-      subjects: Array.isArray(user.subjects) ? user.subjects : [],
+      classes,
+      subjects: derivedSubjects.filter((subject) => subject.length > 0),
     }
   })
   const [studentClassInfo, setStudentClassInfo] = useState<{ className: string; classId: string | null }>(
@@ -1038,74 +1059,33 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       return
     }
 
-    let isMounted = true
+    const assignments = Array.isArray(user.teachingAssignments) ? user.teachingAssignments : []
+    const classes = assignments
+      .map((assignment, index) => {
+        const rawId = typeof assignment.classId === "string" ? assignment.classId.trim() : ""
+        const rawName = typeof assignment.className === "string" ? assignment.className.trim() : ""
+        const id = rawId || rawName || `class_${index}`
+        const name = rawName || rawId || id
+        return id || name ? { id, name } : null
+      })
+      .filter((assignment): assignment is TeacherClassAssignment => Boolean(assignment))
 
-    const loadTeacherAssignments = async () => {
-      const subjects = Array.isArray(user.subjects) ? user.subjects : []
-      let classes: TeacherClassAssignment[] = []
+    const derivedSubjects = Array.isArray(user.subjects) && user.subjects.length > 0
+      ? user.subjects
+      : Array.from(
+          new Set(
+            assignments.flatMap((assignment) =>
+              Array.isArray(assignment.subjects)
+                ? assignment.subjects.filter((subject) => typeof subject === "string")
+                : [],
+            ),
+          ),
+        ).map((subject) => subject?.toString() ?? "")
 
-      const classId = typeof user.classId === "string" ? user.classId.trim() : ""
-      const fallbackClassName = typeof user.className === "string" ? user.className.trim() : ""
-
-      if (classId) {
-        try {
-          const response = await fetch(`/api/classes?id=${encodeURIComponent(classId)}`)
-          if (response.ok) {
-            const payload = (await response.json()) as {
-              class?: { id?: string; name?: string }
-              classes?: Array<{ id?: string; name?: string }>
-            }
-
-            const rawRecords = [
-              ...(payload.class ? [payload.class] : []),
-              ...(Array.isArray(payload.classes) ? payload.classes : []),
-            ]
-
-            const normalized = rawRecords
-              .map((record) => {
-                const rawId = typeof record.id === "string" ? record.id.trim() : ""
-                const rawName = typeof record.name === "string" ? record.name.trim() : ""
-                const id = rawId || rawName || classId
-                const name = rawName || rawId || fallbackClassName || classId
-                if (!id && !name) {
-                  return null
-                }
-                return { id, name }
-              })
-              .filter((record): record is TeacherClassAssignment => Boolean(record))
-
-            if (normalized.length > 0) {
-              const matched = normalized.find((record) => record.id === classId)
-              classes = matched
-                ? [matched, ...normalized.filter((record) => record.id !== matched.id)]
-                : normalized
-            }
-          } else if (response.status !== 404) {
-            logger.error("Unable to load class assignments", {
-              status: response.status,
-              statusText: response.statusText,
-            })
-          }
-        } catch (error) {
-          logger.error("Unable to load class assignments", { error })
-        }
-      }
-
-      if (classes.length === 0 && (classId || fallbackClassName)) {
-        const identifier = classId || fallbackClassName
-        classes = [{ id: classId || identifier, name: fallbackClassName || identifier }]
-      }
-
-      if (isMounted) {
-        setTeacherAssignments({ classes, subjects })
-      }
-    }
-
-    void loadTeacherAssignments()
-
-    return () => {
-      isMounted = false
-    }
+    setTeacherAssignments({
+      classes,
+      subjects: derivedSubjects.filter((subject) => subject.length > 0),
+    })
   }, [user])
 
   useEffect(() => {

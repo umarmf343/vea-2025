@@ -81,7 +81,20 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, email, role, password, classId, studentId, studentIds, subjects, status, isActive, metadata } = body
+    const {
+      name,
+      email,
+      role,
+      password,
+      classId,
+      classIds,
+      studentId,
+      studentIds,
+      subjects,
+      status,
+      isActive,
+      metadata,
+    } = body
 
     if (!name || !email || !role || !password) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
@@ -102,15 +115,25 @@ export async function POST(request: NextRequest) {
 
     const sanitizedMetadata = sanitizeMetadata(metadata)
 
+    const sanitizedClassIds = Array.isArray(classIds)
+      ? classIds.map((id: string) => sanitizeInput(String(id)))
+      : undefined
+
     const newUser = await createUserRecord({
       name: sanitizeInput(name),
       email: sanitizeInput(email),
       role: resolvedRole,
       passwordHash: hashedPassword,
-      classId: classId ? String(classId) : undefined,
+      classId: resolvedRole === "teacher" ? undefined : classId ? String(classId) : undefined,
+      classIds: resolvedRole === "teacher" ? sanitizedClassIds : undefined,
       studentId: studentId ? String(studentId) : undefined,
       studentIds: sanitizedStudentIds,
-      subjects: Array.isArray(subjects) ? subjects.map((subject: string) => sanitizeInput(subject)) : undefined,
+      subjects:
+        resolvedRole === "teacher"
+          ? undefined
+          : Array.isArray(subjects)
+            ? subjects.map((subject: string) => sanitizeInput(subject))
+            : undefined,
       status: statusValue,
       isActive: isActiveValue,
       metadata: sanitizedMetadata ?? null,
@@ -132,7 +155,19 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, password, subjects, classId, studentId, studentIds, status, isActive, metadata, ...updateData } = body
+    const {
+      id,
+      password,
+      subjects,
+      classId,
+      classIds,
+      studentId,
+      studentIds,
+      status,
+      isActive,
+      metadata,
+      ...updateData
+    } = body
 
     if (!id) {
       return NextResponse.json({ error: "User ID is required" }, { status: 400 })
@@ -157,6 +192,12 @@ export async function PUT(request: NextRequest) {
 
     if (classId !== undefined) {
       sanitizedUpdate.classId = classId ? String(classId) : null
+    }
+
+    if (classIds !== undefined) {
+      sanitizedUpdate.classIds = Array.isArray(classIds)
+        ? classIds.map((value: string) => sanitizeInput(String(value)))
+        : []
     }
 
     if (studentId !== undefined) {
