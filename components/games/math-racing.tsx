@@ -34,6 +34,13 @@ const difficultyLabels: Record<MathQuestion["difficulty"], string> = {
   pilot: "Pilot mode",
 }
 
+const defaultQuestion: MathQuestion = {
+  prompt: "0 + 0",
+  answer: 0,
+  difficulty: "warm-up",
+  operation: "+",
+}
+
 const createQuestion = (): MathQuestion => {
   const difficultyPool: MathQuestion["difficulty"][] = ["warm-up", "speedster", "pilot"]
   const difficulty = difficultyPool[Math.floor(Math.random() * difficultyPool.length)]
@@ -96,7 +103,7 @@ export default function MathRacing() {
   const [sessionId, setSessionId] = useState(0)
   const [playerProgress, setPlayerProgress] = useState(0)
   const [rivalProgress, setRivalProgress] = useState(0)
-  const [question, setQuestion] = useState<MathQuestion>(() => createQuestion())
+  const [question, setQuestion] = useState<MathQuestion>(defaultQuestion)
   const [answer, setAnswer] = useState("")
   const [raceLog, setRaceLog] = useState<RaceLogEntry[]>([])
   const [roundsCompleted, setRoundsCompleted] = useState(0)
@@ -141,6 +148,10 @@ export default function MathRacing() {
     },
     [],
   )
+
+  useEffect(() => {
+    setQuestion(createQuestion())
+  }, [])
 
   useEffect(() => {
     if (!raceActive) {
