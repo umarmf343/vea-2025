@@ -142,6 +142,12 @@ export default function MathRacing() {
     [],
   )
 
+  const handleStopRace = useCallback(() => {
+    if (raceActive) {
+      stopRace("⛔ Race halted. Ready when you are!")
+    }
+  }, [raceActive, stopRace])
+
   useEffect(() => {
     if (!raceActive) {
       return
@@ -150,7 +156,7 @@ export default function MathRacing() {
     questionStartRef.current = Date.now()
     const interval = setInterval(() => {
       setRivalProgress((previous) => {
-        const updated = clampProgress(previous + 3 + Math.random() * 4)
+        const updated = clampProgress(previous + (3 + Math.random() * 4) / 10)
         if (updated >= 100) {
           stopRace("🏁 Rival championed the race. Try again!")
         }
@@ -386,6 +392,9 @@ export default function MathRacing() {
                 </Button>
                 <Button type="button" variant="outline" onClick={() => startRace()}>
                   {raceActive ? "Restart race" : "Start engines"}
+                </Button>
+                <Button type="button" variant="destructive" onClick={handleStopRace} disabled={!raceActive}>
+                  Stop race
                 </Button>
                 <Badge variant="outline" className="border-slate-200 bg-slate-100 text-slate-600">
                   Penalties: {penalties}
