@@ -1138,14 +1138,23 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           </div>
 
           <div className="signatures-box">
-            <span>
-              Teacher&apos;s Signature:
+            <div className="signature-item">
+              <span className="signature-label">Teacher&apos;s Signature:</span>
               <div className="signature-line" />
-            </span>
-            <span>
-              Headmaster&apos;s Signature:
-              <div className="signature-line" />
-            </span>
+            </div>
+            <div className="signature-item">
+              <span className="signature-label">Headmaster&apos;s Signature:</span>
+              {reportCardData.branding.signature ? (
+                <div className="signature-image">
+                  <img src={reportCardData.branding.signature} alt="Headmaster's signature" />
+                </div>
+              ) : (
+                <div className="signature-line" />
+              )}
+              {reportCardData.branding.headmasterName ? (
+                <span className="signature-name">{reportCardData.branding.headmasterName}</span>
+              ) : null}
+            </div>
           </div>
 
           <div className="grading-key-container">
@@ -1412,8 +1421,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           min-width: 280px;
         }
 
-        .vacation-box,
-        .signatures-box {
+        .vacation-box {
           display: flex;
           gap: 24px;
           margin-top: 6px;
@@ -1422,19 +1430,55 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           padding: 0 15px 8px;
         }
 
+        .signatures-box {
+          display: flex;
+          gap: 24px;
+          margin-top: 6px;
+          font-size: 1em;
+          align-items: flex-start;
+          padding: 0 15px 8px;
+          flex-wrap: wrap;
+        }
+
+        .signature-item {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          font-weight: 600;
+          color: #27613d;
+        }
+
+        .signature-label {
+          font-size: 1em;
+        }
+
         .signature-line {
           border-bottom: 1px dotted #27613d;
-          width: 110px;
+          width: 140px;
           height: 2px;
           margin-top: 12px;
           display: inline-block;
         }
 
-        .signatures-box span {
+        .signature-image {
+          width: 140px;
+          height: 70px;
           display: flex;
-          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .signature-image img {
+          max-width: 100%;
+          max-height: 100%;
+          object-fit: contain;
+        }
+
+        .signature-name {
+          font-size: 0.85em;
           font-weight: 600;
-          color: #27613d;
+          color: #1b4332;
+          letter-spacing: 0.02em;
         }
 
         .af-domain-table {

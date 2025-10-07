@@ -143,9 +143,39 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           display: flex;
           justify-content: space-between;
           align-items: center;
+          gap: 24px;
           margin-bottom: 30px;
           padding-bottom: 20px;
           border-bottom: 2px solid #2d682d;
+        }
+        .logo-container {
+          width: 100px;
+          height: 100px;
+          border: 2px solid #2d682d;
+          border-radius: 16px;
+          background: #f0fdf4;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          flex-shrink: 0;
+        }
+        .logo-container img {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+        }
+        .logo-placeholder {
+          font-size: 12px;
+          font-weight: 600;
+          color: #6b7280;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          text-align: center;
+          padding: 0 8px;
+        }
+        .header-info {
+          flex: 1;
         }
         .school-name {
           font-size: 24px;
@@ -214,7 +244,37 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           margin-top: 40px;
           display: flex;
           justify-content: space-between;
+          align-items: flex-end;
+          gap: 40px;
+          flex-wrap: wrap;
+        }
+        .signature > div {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          min-width: 200px;
+        }
+        .signature-line {
+          border-bottom: 1px solid #d1d5db;
+          width: 200px;
+          height: 1px;
+        }
+        .signature-image {
+          width: 200px;
+          height: 80px;
+          display: flex;
           align-items: center;
+          justify-content: center;
+        }
+        .signature-image img {
+          max-width: 100%;
+          max-height: 100%;
+          object-fit: contain;
+        }
+        .signature-name {
+          font-size: 14px;
+          font-weight: 600;
+          color: #1b4332;
         }
         .holistic-grid {
           gap: 12px;
@@ -244,7 +304,14 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
     </head>
     <body>
       <header class="header">
-        <div>
+        <div class="logo-container">
+          ${
+            data.branding?.logo
+              ? `<img src="${escapeHtml(data.branding.logo)}" alt="School logo" />`
+              : '<div class="logo-placeholder">School Logo</div>'
+          }
+        </div>
+        <div class="header-info">
           <div class="school-name">${escapeHtml(data.branding?.schoolName ?? "Victory Educational Academy")}</div>
           ${
             data.branding?.address
@@ -441,11 +508,20 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
       <div class="signature">
         <div>
           <div class="muted">Class Teacher Signature</div>
-          <div style="margin-top: 40px; border-bottom: 1px solid #d1d5db; width: 200px;"></div>
+          <div class="signature-line"></div>
         </div>
         <div>
           <div class="muted">Head Teacher Signature</div>
-          <div style="margin-top: 40px; border-bottom: 1px solid #d1d5db; width: 200px;"></div>
+          ${
+            data.branding?.signature
+              ? `<div class="signature-image"><img src="${escapeHtml(data.branding.signature)}" alt="Head Teacher signature" /></div>`
+              : '<div class="signature-line"></div>'
+          }
+          ${
+            data.branding?.headmasterName
+              ? `<div class="signature-name">${escapeHtml(data.branding.headmasterName)}</div>`
+              : ""
+          }
         </div>
       </div>
 
