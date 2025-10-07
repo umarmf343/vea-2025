@@ -167,7 +167,9 @@ export default function MathRacing() {
     questionStartRef.current = Date.now()
     const interval = setInterval(() => {
       setRivalProgress((previous) => {
-        const updated = clampProgress(previous + (3 + Math.random() * 4) / 10)
+        const baseIncrement = (3 + Math.random() * 4) / 10
+        const speedMultiplier = 5
+        const updated = clampProgress(previous + baseIncrement * speedMultiplier)
         if (updated >= 100) {
           stopRace("🏁 Rival championed the race. Try again!")
         }
