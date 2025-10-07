@@ -10,16 +10,213 @@ import {
   deleteUserRecord,
   getAllClassesFromDb,
   getUserByEmail,
+  getUserByIdFromDb,
   getUsersByRoleFromDb,
   type ClassRecord,
   type StoredUser,
   type StudentRecord,
   updateUserRecord,
 } from "@/lib/database"
-import { hashPassword, sanitizeInput } from "@/lib/security"
+import { hashPassword, sanitizeInput, verifyToken } from "@/lib/security"
 import { logger } from "@/lib/logger"
 
 export const runtime = "nodejs"
+
+const normalizeRole = (value: unknown): string => {
+  if (typeof value !== "string") {
+    return ""
+  }
+
+  return value.trim().toLowerCase().replace(/[\s-]+/g, "_")
+}
+
+const normalizeString = (value: unknown): string => {
+  if (typeof value !== "string") {
+    return ""
+  }
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : ""
+}
+
+const normalizeClassToken = (value: unknown): string => {
+  const normalized = normalizeString(value)
+  return normalized ? normalized.toLowerCase() : ""
+}
+
+const normalizeStatusValue = (value: unknown): "active" | "inactive" | "" => {
+  const normalized = normalizeString(value).toLowerCase()
+  if (normalized === "inactive") {
+    return "inactive"
+  }
+
+  if (normalized === "active") {
+    return "active"
+  }
+
+  return ""
+}
+
+interface TeacherScopeContext {
+  tokens: Set<string>
+  classes: Array<{ id: string; name: string }>
+}
+
+async function resolveTeacherScope(teacher: StoredUser): Promise<TeacherScopeContext> {
+  const classes = await getAllClassesFromDb()
+  const classById = new Map(classes.map((cls) => [normalizeClassToken(cls.id), cls]))
+  const classByName = new Map(classes.map((cls) => [normalizeClassToken(cls.name), cls]))
+
+  const tokens = new Set<string>()
+  const summaries: Array<{ id: string; name: string }> = []
+  const seenSummaryKeys = new Set<string>()
+
+  const registerClassRecord = (record: ClassRecord | null, fallbackId?: string, fallbackName?: string) => {
+    const resolvedId = normalizeString(record?.id ?? fallbackId ?? "")
+    const resolvedName = normalizeString(record?.name ?? fallbackName ?? "")
+    const normalizedId = normalizeClassToken(resolvedId)
+    const normalizedName = normalizeClassToken(resolvedName)
+
+    if (normalizedId) {
+      tokens.add(normalizedId)
+    }
+
+    if (normalizedName) {
+      tokens.add(normalizedName)
+    }
+
+    const summaryId = resolvedId || resolvedName || `class_${summaries.length + 1}`
+    const summaryName = resolvedName || resolvedId || `Class ${summaries.length + 1}`
+    const summaryKey = `${summaryId.toLowerCase()}::${summaryName.toLowerCase()}`
+
+    if (!seenSummaryKeys.has(summaryKey)) {
+      summaries.push({ id: summaryId, name: summaryName })
+      seenSummaryKeys.add(summaryKey)
+    }
+  }
+
+  const registerClassId = (candidate: unknown) => {
+    const identifier = normalizeString(candidate)
+    if (!identifier) {
+      return
+    }
+
+    const record = classById.get(normalizeClassToken(identifier)) ?? null
+    registerClassRecord(record, identifier, record?.name)
+  }
+
+  const registerClassName = (candidate: unknown) => {
+    const name = normalizeString(candidate)
+    if (!name) {
+      return
+    }
+
+    const record = classByName.get(normalizeClassToken(name)) ?? null
+    registerClassRecord(record, record?.id, name)
+  }
+
+  const assignments = Array.isArray(teacher.teachingAssignments) ? teacher.teachingAssignments : []
+  for (const assignment of assignments) {
+    const rawId = normalizeString((assignment as { classId?: unknown }).classId)
+    const rawName = normalizeString((assignment as { className?: unknown }).className)
+
+    if (rawId) {
+      const record = classById.get(normalizeClassToken(rawId)) ?? null
+      registerClassRecord(record, rawId, record?.name ?? rawName)
+      continue
+    }
+
+    if (rawName) {
+      const record = classByName.get(normalizeClassToken(rawName)) ?? null
+      registerClassRecord(record, record?.id, rawName)
+    }
+  }
+
+  const teachingClassIds = Array.isArray(teacher.teachingClassIds) ? teacher.teachingClassIds : []
+  for (const identifier of teachingClassIds) {
+    registerClassId(identifier)
+  }
+
+  const metadata = (teacher.metadata ?? {}) as Record<string, unknown>
+  const metadataAssignedIds = Array.isArray(metadata.assignedClassIds) ? metadata.assignedClassIds : []
+  for (const identifier of metadataAssignedIds) {
+    registerClassId(identifier)
+  }
+
+  const metadataAssignedNames = Array.isArray(metadata.assignedClassNames) ? metadata.assignedClassNames : []
+  for (const name of metadataAssignedNames) {
+    registerClassName(name)
+  }
+
+  registerClassId(teacher.classId)
+  registerClassName((teacher as { className?: unknown }).className)
+  registerClassName(metadata.assignedClassName)
+
+  return { tokens, classes: summaries }
+}
+
+interface RequestContextResolution {
+  role: string
+  user: StoredUser | null
+  tokenProvided: boolean
+}
+
+async function resolveRequestContext(
+  request: NextRequest,
+): Promise<{ context: RequestContextResolution; errorResponse?: NextResponse }> {
+  const authHeader = request.headers.get("authorization")
+
+  if (!authHeader) {
+    return { context: { role: "", user: null, tokenProvided: false } }
+  }
+
+  if (!authHeader.toLowerCase().startsWith("bearer ")) {
+    return {
+      context: { role: "", user: null, tokenProvided: true },
+      errorResponse: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    }
+  }
+
+  const token = authHeader.slice(7).trim()
+  if (!token) {
+    return {
+      context: { role: "", user: null, tokenProvided: true },
+      errorResponse: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    }
+  }
+
+  try {
+    const decoded = verifyToken(token)
+    const userId = normalizeString((decoded as { userId?: unknown }).userId)
+    const roleFromToken = normalizeRole((decoded as { role?: unknown }).role)
+
+    if (!userId) {
+      return {
+        context: { role: roleFromToken, user: null, tokenProvided: true },
+        errorResponse: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      }
+    }
+
+    const user = await getUserByIdFromDb(userId)
+    if (!user) {
+      logger.warn("Rejected student list request for missing user", { userId })
+      return {
+        context: { role: roleFromToken, user: null, tokenProvided: true },
+        errorResponse: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      }
+    }
+
+    return { context: { role: normalizeRole(user.role), user, tokenProvided: true } }
+  } catch (error) {
+    logger.warn("Rejected student list request due to invalid token", {
+      error: error instanceof Error ? error.message : error,
+    })
+    return {
+      context: { role: "", user: null, tokenProvided: true },
+      errorResponse: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    }
+  }
+}
 
 function normalizePaymentStatus(status: unknown): "paid" | "pending" | "overdue" {
   if (typeof status !== "string") {
@@ -180,30 +377,127 @@ async function removeStudentUser(studentId: string, email?: string | null): Prom
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const studentId = searchParams.get("id")
+    const studentId = normalizeString(searchParams.get("id"))
     const classFilter = searchParams.get("class")
     const statusFilter = searchParams.get("status")
 
+    const { context, errorResponse } = await resolveRequestContext(request)
+    if (errorResponse) {
+      return errorResponse
+    }
+
+    const normalizedRole = context.role
+    const normalizedStatusFilter = normalizeStatusValue(statusFilter)
+
+    if (normalizedRole === "teacher") {
+      const teacher = context.user
+
+      if (!teacher) {
+        logger.warn("Teacher student request rejected due to missing user context")
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      }
+
+      const scope = await resolveTeacherScope(teacher)
+
+      if (scope.classes.length === 0) {
+        logger.info("Teacher has no class assignments; returning empty student list", { teacherId: teacher.id })
+        return NextResponse.json({
+          students: [],
+          scope: { classes: scope.classes },
+          message: "You are not assigned to any students. Contact your administrator.",
+        })
+      }
+
+      const normalizedClassFilter = normalizeClassToken(classFilter)
+      if (classFilter && normalizedClassFilter && !scope.tokens.has(normalizedClassFilter)) {
+        logger.warn("Teacher attempted to filter students by unauthorized class", {
+          teacherId: teacher.id,
+          requestedClass: classFilter,
+        })
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+      }
+
+      if (normalizedStatusFilter && normalizedStatusFilter !== "active") {
+        logger.warn("Teacher attempted to filter students by unsupported status", {
+          teacherId: teacher.id,
+          status: statusFilter,
+        })
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+      }
+
+      if (studentId) {
+        const record = await getStudentRecordById(studentId)
+
+        if (!record || record.isReal === false || normalizeStatusValue(record.status) !== "active") {
+          return NextResponse.json({ students: [], scope: { classes: scope.classes } })
+        }
+
+        const normalizedStudentToken = normalizeClassToken(record.class)
+        if (!scope.tokens.has(normalizedStudentToken)) {
+          logger.warn("Teacher attempted to access student outside scope", {
+            teacherId: teacher.id,
+            studentId,
+          })
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+        }
+
+        return NextResponse.json({
+          students: [{ ...record, status: "active" }],
+          scope: { classes: scope.classes },
+        })
+      }
+
+      let students = await listStudentRecords()
+      students = students.filter((student) => {
+        const normalizedStudentToken = normalizeClassToken(student.class)
+        const studentStatus = normalizeStatusValue(student.status)
+        return student.isReal !== false && studentStatus === "active" && scope.tokens.has(normalizedStudentToken)
+      })
+
+      if (normalizedClassFilter) {
+        students = students.filter((student) => normalizeClassToken(student.class) === normalizedClassFilter)
+      }
+
+      return NextResponse.json({
+        students,
+        scope: { classes: scope.classes },
+        message: students.length === 0 ? "No students found for your assigned classes yet." : undefined,
+      })
+    }
+
     if (studentId) {
       const record = await getStudentRecordById(studentId)
-      return NextResponse.json({ students: record ? [record] : [] })
+      if (!record) {
+        return NextResponse.json({ students: [] })
+      }
+
+      if (normalizedRole !== "super_admin" && record.isReal === false) {
+        return NextResponse.json({ students: [] })
+      }
+
+      return NextResponse.json({ students: [record] })
     }
 
     let students = await listStudentRecords()
 
-    if (classFilter) {
-      const normalizedClass = sanitizeInput(classFilter).toLowerCase()
-      students = students.filter((student) => student.class.toLowerCase() === normalizedClass)
+    if (normalizedRole !== "super_admin") {
+      students = students.filter((student) => student.isReal !== false)
     }
 
-    if (statusFilter) {
-      const normalizedStatus = sanitizeInput(statusFilter).toLowerCase()
-      students = students.filter((student) => student.status.toLowerCase() === normalizedStatus)
+    if (classFilter) {
+      const normalizedClass = normalizeClassToken(classFilter)
+      if (normalizedClass) {
+        students = students.filter((student) => normalizeClassToken(student.class) === normalizedClass)
+      }
+    }
+
+    if (normalizedStatusFilter) {
+      students = students.filter((student) => normalizeStatusValue(student.status) === normalizedStatusFilter)
     }
 
     return NextResponse.json({ students })
   } catch (error) {
-    console.error("Failed to fetch students:", error)
+    logger.error("Failed to fetch students", { error })
     return NextResponse.json({ error: "Failed to fetch students" }, { status: 500 })
   }
 }
@@ -250,6 +544,7 @@ export async function POST(request: NextRequest) {
           }))
         : [],
       photoUrl: typeof body.photoUrl === "string" ? body.photoUrl : null,
+      isReal: true,
     })
 
     try {

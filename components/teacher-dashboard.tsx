@@ -124,6 +124,24 @@ const sanitizeFileName = (value: string) => {
   return sanitized.length > 0 ? sanitized : "report-card"
 }
 
+const normalizeClassToken = (value: unknown): string => {
+  if (typeof value !== "string") {
+    return ""
+  }
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed.toLowerCase() : ""
+}
+
+const normalizeStudentString = (value: unknown): string => {
+  if (typeof value !== "string") {
+    return ""
+  }
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : ""
+}
+
 type TeacherClassAssignment = {
   id: string
   name: string
@@ -134,6 +152,14 @@ type AssignmentStudentInfo = {
   id: string
   name: string | null
   className: string | null
+}
+
+type TeacherScopedStudent = {
+  id: string
+  name: string
+  className: string
+  subjects: string[]
+  status: string
 }
 
 interface TeacherDashboardProps {
@@ -282,6 +308,22 @@ export function TeacherDashboard({
   const teacherClassNames = useMemo(() => teacher.classes.map((cls) => cls.name), [teacher.classes])
   const teacherClassIds = useMemo(() => teacher.classes.map((cls) => cls.id), [teacher.classes])
   const noClassesAssigned = teacher.classes.length === 0
+  const teacherClassTokenList = useMemo(() => {
+    const tokens = new Set<string>()
+    teacher.classes.forEach((cls) => {
+      const idToken = normalizeClassToken(cls.id)
+      const nameToken = normalizeClassToken(cls.name)
+      if (idToken) {
+        tokens.add(idToken)
+      }
+      if (nameToken) {
+        tokens.add(nameToken)
+      }
+    })
+    return Array.from(tokens)
+  }, [teacher.classes])
+  const teacherClassTokenKey = useMemo(() => teacherClassTokenList.join("|"), [teacherClassTokenList])
+  const teacherHasAssignedClasses = teacherClassTokenList.length > 0
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showCreateAssignment, setShowCreateAssignment] = useState(false)
   const [assignmentDialogMode, setAssignmentDialogMode] = useState<"create" | "edit">("create")
@@ -371,6 +413,10 @@ export function TeacherDashboard({
   const [gradingDrafts, setGradingDrafts] = useState<Record<string, { score: string; comment: string }>>({})
   const [gradingSubmissionId, setGradingSubmissionId] = useState<string | null>(null)
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false)
+  const [teacherStudents, setTeacherStudents] = useState<TeacherScopedStudent[]>([])
+  const [isTeacherStudentsLoading, setIsTeacherStudentsLoading] = useState(false)
+  const [teacherStudentsError, setTeacherStudentsError] = useState<string | null>(null)
+  const [teacherStudentsMessage, setTeacherStudentsMessage] = useState<string | null>(null)
 
   const assignmentMaximum = defaultAssignmentMaximum
   const resolvedAssignmentMaximum = (() => {
@@ -476,6 +522,132 @@ export function TeacherDashboard({
     }
   }, [assignments])
 
+  const normalizeTeacherStudentRecords = useCallback(
+    (records: unknown): TeacherScopedStudent[] => {
+      if (!Array.isArray(records)) {
+        return []
+      }
+
+      const tokenSet = new Set(teacherClassTokenList)
+      const fallbackClassName = teacher.classes[0]?.name ?? ""
+
+      return records
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") {
+            return null
+          }
+
+          const source = entry as Record<string, unknown>
+          const primaryId = normalizeStudentString(source.id)
+          const alternateId = normalizeStudentString((source as { studentId?: unknown }).studentId)
+          const id = primaryId || alternateId || `student_${Math.random().toString(36).slice(2)}`
+
+          const name =
+            normalizeStudentString(source.name) ||
+            `Student ${id.slice(-4)}`
+
+          const classCandidate =
+            normalizeStudentString(source.class) ||
+            normalizeStudentString((source as { className?: unknown }).className) ||
+            normalizeStudentString(
+              ((source as { metadata?: { assignedClassName?: unknown } }).metadata ?? {}).assignedClassName,
+            ) ||
+            fallbackClassName
+
+          const normalizedToken = normalizeClassToken(classCandidate)
+
+          if (tokenSet.size > 0 && normalizedToken && !tokenSet.has(normalizedToken)) {
+            return null
+          }
+
+          if (tokenSet.size > 0 && normalizedToken === "" && teacherHasAssignedClasses) {
+            return null
+          }
+
+          const rawSubjects = (source as { subjects?: unknown }).subjects
+          const subjects = Array.isArray(rawSubjects)
+            ? rawSubjects
+                .filter((subject): subject is string => typeof subject === "string" && subject.trim().length > 0)
+                .map((subject) => subject.trim())
+            : []
+
+          const status = normalizeStudentString((source as { status?: unknown }).status) || "active"
+
+          return {
+            id,
+            name,
+            className: classCandidate || fallbackClassName || "",
+            subjects,
+            status,
+          }
+        })
+        .filter((student): student is TeacherScopedStudent => Boolean(student))
+    },
+    [teacher.classes, teacherClassTokenList, teacherHasAssignedClasses],
+  )
+
+  const refreshTeacherStudents = useCallback(async () => {
+    if (!teacherHasAssignedClasses) {
+      setIsTeacherStudentsLoading(false)
+      setTeacherStudents([])
+      setTeacherStudentsError(null)
+      setTeacherStudentsMessage("You are not assigned to any students. Contact your administrator.")
+      return
+    }
+
+    const token = safeStorage.getItem("vea_auth_token")
+    if (!token) {
+      setTeacherStudents([])
+      setTeacherStudentsError("Your session has expired. Please log in again.")
+      setTeacherStudentsMessage(null)
+      setIsTeacherStudentsLoading(false)
+      return
+    }
+
+    setIsTeacherStudentsLoading(true)
+    setTeacherStudentsError(null)
+
+    try {
+      const response = await fetch("/api/students", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        const message =
+          typeof (payload as { error?: unknown }).error === "string"
+            ? (payload as { error?: string }).error
+            : "Unable to load students"
+        throw new Error(message)
+      }
+
+      const rawStudents = Array.isArray((payload as { students?: unknown }).students)
+        ? ((payload as { students?: unknown[] }).students ?? [])
+        : []
+      const normalizedRecords = normalizeTeacherStudentRecords(rawStudents)
+      setTeacherStudents(normalizedRecords)
+
+      const responseMessage = normalizeStudentString((payload as { message?: unknown }).message)
+      if (responseMessage) {
+        setTeacherStudentsMessage(responseMessage)
+      } else if (normalizedRecords.length === 0) {
+        setTeacherStudentsMessage("No students found for your assigned classes yet.")
+      } else {
+        setTeacherStudentsMessage(null)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to load students"
+      logger.error("Failed to load teacher students", { error: message, teacherId: teacher.id })
+      setTeacherStudentsError(message)
+      setTeacherStudents([])
+    } finally {
+      setIsTeacherStudentsLoading(false)
+    }
+  }, [normalizeTeacherStudentRecords, teacher.id, teacherHasAssignedClasses, teacherClassTokenKey])
+
   const [teacherExams, setTeacherExams] = useState<TeacherExamSummary[]>([])
   const [isExamLoading, setIsExamLoading] = useState(true)
   const [teacherTimetable, setTeacherTimetable] = useState<TeacherTimetableSlot[]>([])
@@ -578,6 +750,45 @@ export function TeacherDashboard({
       return subjectsForSelectedClass[0] ?? ""
     })
   }, [subjectsForSelectedClass])
+
+  useEffect(() => {
+    if (!teacherHasAssignedClasses) {
+      setTeacherStudents([])
+      setTeacherStudentsError(null)
+      setTeacherStudentsMessage("You are not assigned to any students. Contact your administrator.")
+      return
+    }
+
+    setTeacherStudentsMessage(null)
+    void refreshTeacherStudents()
+  }, [refreshTeacherStudents, teacherHasAssignedClasses])
+
+  useEffect(() => {
+    const handleStudentsRefreshed = (payload?: unknown) => {
+      if (!teacherHasAssignedClasses) {
+        return
+      }
+
+      if (Array.isArray(payload)) {
+        const normalized = normalizeTeacherStudentRecords(payload)
+        setTeacherStudents(normalized)
+        setTeacherStudentsError(null)
+        if (normalized.length === 0) {
+          setTeacherStudentsMessage("No students found for your assigned classes yet.")
+        } else {
+          setTeacherStudentsMessage(null)
+        }
+        return
+      }
+
+      void refreshTeacherStudents()
+    }
+
+    dbManager.on("studentsRefreshed", handleStudentsRefreshed)
+    return () => {
+      dbManager.off("studentsRefreshed", handleStudentsRefreshed)
+    }
+  }, [normalizeTeacherStudentRecords, refreshTeacherStudents, teacherHasAssignedClasses])
 
   const buildInitialGradingDrafts = (submissions: AssignmentSubmissionRecord[]) =>
     submissions.reduce(
@@ -4839,21 +5050,76 @@ export function TeacherDashboard({
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {mockStudents.map((student) => (
-                  <div key={student.id} className="flex justify-between items-center p-4 border rounded-lg">
-                    <div>
-                      <h3 className="font-medium">{student.name}</h3>
-                      <p className="text-sm text-gray-600">{student.class}</p>
-                      <div className="flex gap-1 mt-1">
-                        {student.subjects.map((subject, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs">
-                            {subject}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Students are automatically scoped to your assigned classes.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="inline-flex items-center gap-2"
+                    onClick={() => {
+                      void refreshTeacherStudents()
+                    }}
+                    disabled={isTeacherStudentsLoading}
+                  >
+                    {isTeacherStudentsLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                    Refresh
+                  </Button>
+                </div>
+
+                {teacherStudentsError ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    {teacherStudentsError}
                   </div>
-                ))}
+                ) : null}
+
+                {teacherStudentsMessage && !teacherStudentsError ? (
+                  <div className="rounded-md border border-dashed border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+                    {teacherStudentsMessage}
+                  </div>
+                ) : null}
+
+                {isTeacherStudentsLoading ? (
+                  <div className="flex items-center gap-2 rounded-md border border-dashed border-emerald-200 p-3 text-sm text-emerald-700">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading students…
+                  </div>
+                ) : null}
+
+                {!isTeacherStudentsLoading && !teacherStudentsError && teacherStudents.length > 0 ? (
+                  <div className="space-y-3">
+                    {teacherStudents.map((student) => (
+                      <div
+                        key={student.id}
+                        className="flex flex-col justify-between gap-3 rounded-lg border border-slate-200 p-4 md:flex-row md:items-center"
+                      >
+                        <div>
+                          <h3 className="font-medium text-slate-900">{student.name}</h3>
+                          <p className="text-sm text-slate-600">
+                            {student.className ? student.className : "Class not set"}
+                          </p>
+                          {student.subjects.length > 0 ? (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {student.subjects.map((subject) => (
+                                <Badge key={`${student.id}-${subject}`} variant="secondary" className="text-xs">
+                                  {subject}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                          <CheckCircle className="h-4 w-4" />
+                          {student.status.toLowerCase() === "inactive" ? "Inactive" : "Active"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </CardContent>
           </Card>
