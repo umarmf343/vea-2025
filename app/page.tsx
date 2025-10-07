@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -1179,7 +1179,7 @@ export default function HomePage() {
   )
 }
 
-type TeacherClassAssignment = { id: string; name: string }
+type TeacherClassAssignment = { id: string; name: string; subjects: string[] }
 
 function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const branding = useBranding()
@@ -1198,9 +1198,14 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       .map((assignment, index) => {
         const rawId = typeof assignment.classId === "string" ? assignment.classId.trim() : ""
         const rawName = typeof assignment.className === "string" ? assignment.className.trim() : ""
+        const subjects = Array.isArray(assignment.subjects)
+          ? assignment.subjects
+              .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+              .filter((subject) => subject.length > 0)
+          : []
         const id = rawId || rawName || `class_${index}`
         const name = rawName || rawId || id
-        return id || name ? { id, name } : null
+        return id || name ? { id, name, subjects } : null
       })
       .filter((assignment): assignment is TeacherClassAssignment => Boolean(assignment))
 
@@ -1221,6 +1226,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       subjects: derivedSubjects.filter((subject) => subject.length > 0),
     }
   })
+  const [isTeacherContextLoading, setIsTeacherContextLoading] = useState(false)
+  const [teacherContextError, setTeacherContextError] = useState<string | null>(null)
   const [studentClassInfo, setStudentClassInfo] = useState<{ className: string; classId: string | null }>(
     user.role === "student"
       ? {
@@ -1229,10 +1236,19 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         }
       : { className: "", classId: null },
   )
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     if (user.role !== "teacher") {
       setTeacherAssignments({ classes: [], subjects: [] })
+      setTeacherContextError(null)
+      setIsTeacherContextLoading(false)
       return
     }
 
@@ -1241,9 +1257,14 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       .map((assignment, index) => {
         const rawId = typeof assignment.classId === "string" ? assignment.classId.trim() : ""
         const rawName = typeof assignment.className === "string" ? assignment.className.trim() : ""
+        const subjects = Array.isArray(assignment.subjects)
+          ? assignment.subjects
+              .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+              .filter((subject) => subject.length > 0)
+          : []
         const id = rawId || rawName || `class_${index}`
         const name = rawName || rawId || id
-        return id || name ? { id, name } : null
+        return id || name ? { id, name, subjects } : null
       })
       .filter((assignment): assignment is TeacherClassAssignment => Boolean(assignment))
 
@@ -1264,6 +1285,147 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       subjects: derivedSubjects.filter((subject) => subject.length > 0),
     })
   }, [user])
+
+  const refreshTeacherAssignments = useCallback(async () => {
+    if (user.role !== "teacher") {
+      return
+    }
+
+    const token = safeStorage.getItem("vea_auth_token")
+    if (!token) {
+      if (isMountedRef.current) {
+        setTeacherAssignments({ classes: [], subjects: [] })
+        setTeacherContextError("Your session has expired. Please log in again.")
+      }
+      return
+    }
+
+    if (isMountedRef.current) {
+      setIsTeacherContextLoading(true)
+      setTeacherContextError(null)
+    }
+
+    try {
+      const response = await fetch("/api/teachers/context", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+      })
+
+      if (!response.ok) {
+        let message = "Unable to load your class assignments."
+        if (response.status === 401) {
+          message = "Your session has expired. Please log in again."
+        } else if (response.status === 403) {
+          message = "This account does not have teacher access."
+        } else if (response.status === 404) {
+          message = "You are not assigned to any class. Contact your administrator."
+        }
+
+        if (isMountedRef.current) {
+          setTeacherAssignments({ classes: [], subjects: [] })
+          setTeacherContextError(message)
+        }
+        return
+      }
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        classes?: Array<{ id?: unknown; name?: unknown; subjects?: unknown }>
+        subjects?: unknown
+      }
+
+      const normalizedClasses: TeacherClassAssignment[] = []
+      const seenKeys = new Set<string>()
+      const subjectSet = new Set<string>()
+
+      if (Array.isArray(payload.classes)) {
+        payload.classes.forEach((entry, index) => {
+          const rawId = typeof entry?.id === "string" ? entry.id.trim() : ""
+          const rawName = typeof entry?.name === "string" ? entry.name.trim() : ""
+          const subjects = Array.isArray(entry?.subjects)
+            ? entry.subjects
+                .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+                .filter((subject) => subject.length > 0)
+            : []
+          const id = rawId || rawName || `class_${index}`
+          const name = rawName || rawId || id
+
+          if (!id && !name) {
+            return
+          }
+
+          const key = `${id.toLowerCase()}::${name.toLowerCase()}`
+          if (seenKeys.has(key)) {
+            return
+          }
+
+          seenKeys.add(key)
+          subjects.forEach((subject) => subjectSet.add(subject))
+          normalizedClasses.push({ id, name, subjects })
+        })
+      }
+
+      if (Array.isArray(payload.subjects)) {
+        for (const subject of payload.subjects) {
+          if (typeof subject === "string") {
+            const trimmed = subject.trim()
+            if (trimmed.length > 0) {
+              subjectSet.add(trimmed)
+            }
+          }
+        }
+      }
+
+      const normalizedSubjects = Array.from(subjectSet)
+
+      if (isMountedRef.current) {
+        setTeacherAssignments({ classes: normalizedClasses, subjects: normalizedSubjects })
+        setTeacherContextError(
+          normalizedClasses.length === 0
+            ? "You are not assigned to any class. Contact your administrator."
+            : null,
+        )
+
+        try {
+          const storedUserRaw = safeStorage.getItem("vea_current_user")
+          if (storedUserRaw) {
+            const storedUser = JSON.parse(storedUserRaw) as Record<string, any>
+            storedUser.teachingAssignments = normalizedClasses.map((cls) => ({
+              classId: cls.id,
+              className: cls.name,
+              subjects: cls.subjects,
+            }))
+            storedUser.subjects = normalizedSubjects
+            safeStorage.setItem("vea_current_user", JSON.stringify(storedUser))
+          }
+        } catch (error) {
+          logger.error("Failed to persist refreshed teacher assignments", { error })
+        }
+      }
+    } catch (error) {
+      logger.error("Failed to load teacher assignments", { error })
+      if (isMountedRef.current) {
+        setTeacherAssignments({ classes: [], subjects: [] })
+        setTeacherContextError(
+          "Unable to load your class assignments. Check your connection or contact your administrator.",
+        )
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsTeacherContextLoading(false)
+      }
+    }
+  }, [user.id, user.role])
+
+  useEffect(() => {
+    if (user.role !== "teacher") {
+      return
+    }
+
+    void refreshTeacherAssignments()
+  }, [refreshTeacherAssignments, user.role, user.id])
 
   useEffect(() => {
     if (user.role !== "student") {
@@ -1402,6 +1564,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               subjects: teacherAssignments.subjects,
               classes: teacherAssignments.classes,
             }}
+            isContextLoading={isTeacherContextLoading}
+            contextError={teacherContextError}
+            onRefreshAssignments={refreshTeacherAssignments}
           />
         )}
         {user.role === "librarian" && (

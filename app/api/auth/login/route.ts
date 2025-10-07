@@ -29,18 +29,27 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate JWT token
-    const token = generateToken({
+    const normalizedRole = typeof user.role === "string"
+      ? user.role.trim().toLowerCase().replace(/[\s-]+/g, "_")
+      : "student"
+    const tokenPayload: Record<string, unknown> = {
       userId: user.id,
       email: user.email,
-      role: user.role,
-    })
+      role: normalizedRole,
+    }
+
+    if (normalizedRole === "teacher") {
+      tokenPayload.teacherId = user.id
+    }
+
+    const token = generateToken(tokenPayload)
 
     // Return user data without password
     const { passwordHash: _passwordHash, ...userWithoutPassword } = user
     void _passwordHash
 
     return NextResponse.json({
-      user: userWithoutPassword,
+      user: { ...userWithoutPassword, role: normalizedRole },
       token,
       message: "Login successful",
     })
