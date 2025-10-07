@@ -3832,7 +3832,7 @@ export function TeacherDashboard({
                       </SelectTrigger>
                       <SelectContent>
                         {noClassesAssigned ? (
-                          <SelectItem value="" disabled>
+                          <SelectItem value="__no_classes__" disabled>
                             {isContextLoading ? "Loading..." : "No classes available"}
                           </SelectItem>
                         ) : (
@@ -3864,7 +3864,7 @@ export function TeacherDashboard({
                       </SelectTrigger>
                       <SelectContent>
                         {subjectsForSelectedClass.length === 0 ? (
-                          <SelectItem value="" disabled>
+                          <SelectItem value="__no_subjects__" disabled>
                             {noClassesAssigned ? "No class assigned" : "No subjects available"}
                           </SelectItem>
                         ) : (
