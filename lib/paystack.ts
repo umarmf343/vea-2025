@@ -6,7 +6,7 @@ export const REVENUE_PARTNER_DETAILS = {
   accountNumber: "3066490309",
   bankName: "First Bank of Nigeria",
   bankCode: "011",
-  splitPercentage: 1,
+  splitPercentage: 2,
 } as const
 
 let cachedSubaccountCode: string | null = process.env.PAYSTACK_PARTNER_SUBACCOUNT_CODE?.trim() ?? null
@@ -230,7 +230,7 @@ async function ensurePartnerSplitCode(subaccountCode: string): Promise<string> {
             share: REVENUE_PARTNER_DETAILS.splitPercentage,
           },
         ],
-        bearer_type: "account",
+        bearer_type: "all",
       }),
     })
 

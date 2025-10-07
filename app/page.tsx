@@ -2993,7 +2993,6 @@ function ParentDashboard({ user }: { user: User }) {
         onPaymentSuccess={handlePaymentSuccess}
         studentName={studentData?.name ?? ""}
         studentId={activeStudentId ?? ""}
-        amount={50000}
         parentName={user.name}
         parentEmail={user.email}
       />
