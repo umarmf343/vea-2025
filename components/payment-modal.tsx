@@ -2,12 +2,13 @@
 
 import type React from "react"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Checkbox } from "@/components/ui/checkbox"
 import { CreditCard, Loader2 } from "lucide-react"
 
 interface PaymentModalProps {
@@ -16,9 +17,31 @@ interface PaymentModalProps {
   onPaymentSuccess: () => void
   studentName: string
   studentId: string
-  amount: number
   parentName: string
   parentEmail?: string
+}
+
+interface FeeConfiguration {
+  className: string
+  term: string
+  session: string | null
+  schoolFee: {
+    id: string
+    amount: number
+    term: string
+    className: string
+    version: number
+    notes: string | null
+    effectiveDate: string
+  }
+  eventFees: Array<{
+    id: string
+    name: string
+    description: string | null
+    amount: number
+    dueDate: string | null
+    applicableClasses: string[]
+  }>
 }
 
 export function PaymentModal({
@@ -27,7 +50,6 @@ export function PaymentModal({
   onPaymentSuccess,
   studentName,
   studentId,
-  amount,
   parentName,
   parentEmail,
 }: PaymentModalProps) {
@@ -38,6 +60,10 @@ export function PaymentModal({
     term: "first",
     session: "2024/2025",
   })
+  const [configuration, setConfiguration] = useState<FeeConfiguration | null>(null)
+  const [selectedEventIds, setSelectedEventIds] = useState<string[]>([])
+  const [isLoadingConfig, setIsLoadingConfig] = useState(false)
+  const [configError, setConfigError] = useState<string | null>(null)
 
   useEffect(() => {
     setPaymentForm((previous) => ({
@@ -46,37 +72,158 @@ export function PaymentModal({
     }))
   }, [parentEmail])
 
+  useEffect(() => {
+    if (!isOpen || !studentId) {
+      return
+    }
+
+    let cancelled = false
+
+    const fetchConfiguration = async () => {
+      setIsLoadingConfig(true)
+      setConfigError(null)
+
+      try {
+        const params = new URLSearchParams({
+          studentId,
+          term: paymentForm.term,
+          session: paymentForm.session,
+        })
+
+        const response = await fetch(`/api/payments/fees?${params.toString()}`, { cache: "no-store" })
+
+        if (!response.ok) {
+          let message = `Unable to load fee configuration (status ${response.status})`
+          try {
+            const payload = await response.json()
+            if (typeof payload?.error === "string") {
+              message = payload.error
+            }
+          } catch (error) {
+            // ignore parsing error
+          }
+
+          if (!cancelled) {
+            setConfiguration(null)
+            setSelectedEventIds([])
+            setConfigError(message)
+          }
+          return
+        }
+
+        const payload = (await response.json()) as FeeConfiguration
+
+        if (!cancelled) {
+          setConfiguration(payload)
+          setSelectedEventIds([])
+          setConfigError(null)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setConfiguration(null)
+          setSelectedEventIds([])
+          setConfigError(
+            error instanceof Error ? error.message : "Unable to load fee configuration. Please try again.",
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingConfig(false)
+        }
+      }
+    }
+
+    void fetchConfiguration()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, studentId, paymentForm.term, paymentForm.session])
+
+  useEffect(() => {
+    if (!isOpen) {
+      setConfiguration(null)
+      setSelectedEventIds([])
+      setConfigError(null)
+      setIsLoadingConfig(false)
+    }
+  }, [isOpen])
+
+  const schoolFeeAmount = configuration?.schoolFee.amount ?? 0
+  const selectedEventTotal = useMemo(() => {
+    if (!configuration) {
+      return 0
+    }
+
+    return configuration.eventFees
+      .filter((event) => selectedEventIds.includes(event.id))
+      .reduce((sum, event) => Number((sum + Number(event.amount)).toFixed(2)), 0)
+  }, [configuration, selectedEventIds])
+
+  const totalDue = useMemo(() => Number((schoolFeeAmount + selectedEventTotal).toFixed(2)), [
+    schoolFeeAmount,
+    selectedEventTotal,
+  ])
+
+  const formatCurrency = (value: number) => `₦${Number(value || 0).toLocaleString()}`
+
+  const toggleEventSelection = (id: string) => {
+    setSelectedEventIds((previous) =>
+      previous.includes(id) ? previous.filter((value) => value !== id) : [...previous, id],
+    )
+  }
+
   const handlePayment = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsProcessing(true)
 
     try {
+      if (!configuration) {
+        throw new Error("Fee configuration not available. Please try again.")
+      }
+
+      const amountToCharge = totalDue
+      if (!Number.isFinite(amountToCharge) || amountToCharge <= 0) {
+        throw new Error("Unable to determine payable amount. Please contact the school administrator.")
+      }
+
+      const requestBody = {
+        email: paymentForm.email,
+        amount: Math.round(amountToCharge * 100),
+        studentId,
+        paymentType: "school_fees",
+        term: paymentForm.term,
+        session: paymentForm.session,
+        schoolFeeId: configuration.schoolFee.id,
+        eventFeeIds: selectedEventIds,
+        metadata: {
+          student_name: studentName,
+          studentId,
+          student_id: studentId,
+          payment_type: "school_fees",
+          term: configuration.term,
+          session: paymentForm.session,
+          phone: paymentForm.phone,
+          parent_name: parentName,
+          parentName,
+          parent_email: paymentForm.email,
+          parentEmail: paymentForm.email,
+          payer_role: "parent",
+          class_name: configuration.className,
+          className: configuration.className,
+          school_fee_configuration_id: configuration.schoolFee.id,
+          selected_event_fee_ids: selectedEventIds,
+          event_fee_ids: selectedEventIds,
+        },
+      }
+
       // Initialize Paystack payment
       const response = await fetch("/api/payments/initialize", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          email: paymentForm.email,
-          amount: amount * 100, // Convert to kobo for Paystack
-          studentId,
-          paymentType: "school_fees",
-          metadata: {
-            student_name: studentName,
-            studentId,
-            student_id: studentId,
-            payment_type: "school_fees",
-            term: paymentForm.term,
-            session: paymentForm.session,
-            phone: paymentForm.phone,
-            parent_name: parentName,
-            parentName,
-            parent_email: paymentForm.email,
-            parentEmail: paymentForm.email,
-            payer_role: "parent",
-          },
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       const data = await response.json()
@@ -104,7 +251,9 @@ export function PaymentModal({
             Pay School Fees
           </DialogTitle>
           <DialogDescription>
-            Complete payment for {studentName} - ₦{amount.toLocaleString()}
+            {configuration
+              ? `Complete payment for ${studentName} - ${formatCurrency(totalDue)}`
+              : `Complete payment for ${studentName}`}
           </DialogDescription>
         </DialogHeader>
 
@@ -170,21 +319,76 @@ export function PaymentModal({
             </div>
           </div>
 
-          <div className="bg-[#2d682d]/5 p-4 rounded-lg">
-            <div className="flex justify-between items-center text-sm">
-              <span>School Fees ({paymentForm.term} term)</span>
-              <span className="font-semibold">₦{amount.toLocaleString()}</span>
+          {isLoadingConfig ? (
+            <div className="flex items-center gap-2 rounded-md border border-[#2d682d]/20 bg-white/60 p-3 text-sm text-[#2d682d]">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading fee configuration...
             </div>
-            <div className="flex justify-between items-center text-sm mt-1">
-              <span>Processing Fee</span>
-              <span>₦0</span>
+          ) : configError ? (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {configError}
             </div>
-            <hr className="my-2" />
-            <div className="flex justify-between items-center font-semibold text-[#2d682d]">
-              <span>Total</span>
-              <span>₦{amount.toLocaleString()}</span>
-            </div>
-          </div>
+          ) : configuration ? (
+            <>
+              {configuration.eventFees.length > 0 ? (
+                <div className="space-y-2">
+                  <Label>Optional Event Fees</Label>
+                  <div className="space-y-2">
+                    {configuration.eventFees.map((event) => {
+                      const isSelected = selectedEventIds.includes(event.id)
+                      return (
+                        <label
+                          key={event.id}
+                          className={`flex items-start gap-3 rounded-md border p-3 text-sm ${
+                            isSelected
+                              ? "border-[#2d682d] bg-[#2d682d]/10"
+                              : "border-[#2d682d]/20"
+                          }`}
+                        >
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleEventSelection(event.id)}
+                            className="mt-1"
+                          />
+                          <div className="space-y-1">
+                            <p className="font-medium text-[#2d682d]">{event.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatCurrency(event.amount)}
+                              {event.dueDate
+                                ? ` • Due ${new Date(event.dueDate).toLocaleDateString()}`
+                                : ""}
+                            </p>
+                            {event.description ? (
+                              <p className="text-xs text-muted-foreground">{event.description}</p>
+                            ) : null}
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="bg-[#2d682d]/5 p-4 rounded-lg space-y-2">
+                <div className="flex justify-between items-center text-sm">
+                  <span>School Fees ({configuration.schoolFee.term})</span>
+                  <span className="font-semibold">{formatCurrency(schoolFeeAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span>Selected Event Fees</span>
+                  <span>{formatCurrency(selectedEventTotal)}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span>Processing Fee</span>
+                  <span>{formatCurrency(0)}</span>
+                </div>
+                <hr className="my-2" />
+                <div className="flex justify-between items-center font-semibold text-[#2d682d]">
+                  <span>Total Due</span>
+                  <span>{formatCurrency(totalDue)}</span>
+                </div>
+              </div>
+            </>
+          ) : null}
 
           <div className="flex gap-3">
             <Button
@@ -196,14 +400,18 @@ export function PaymentModal({
             >
               Cancel
             </Button>
-            <Button type="submit" className="flex-1 bg-[#b29032] hover:bg-[#8a6b25]" disabled={isProcessing}>
+            <Button
+              type="submit"
+              className="flex-1 bg-[#b29032] hover:bg-[#8a6b25]"
+              disabled={isProcessing || isLoadingConfig || !configuration || Boolean(configError)}
+            >
               {isProcessing ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Processing...
                 </>
               ) : (
-                "Pay Now"
+                `Pay ${formatCurrency(totalDue)}`
               )}
             </Button>
           </div>

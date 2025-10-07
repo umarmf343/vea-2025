@@ -4,13 +4,15 @@ import { type NextRequest, NextResponse } from "next/server"
 
 import {
   createOrUpdateReceipt,
+  createFeePaymentRecord,
   findPaymentByReference,
   recordPaymentInitialization,
   updatePaymentRecord,
 } from "@/lib/database"
 import { sanitizeInput } from "@/lib/security"
-import { getPaystackSecretKey } from "@/lib/paystack"
+import { ensurePartnerSplitConfiguration, getPaystackSecretKey, REVENUE_PARTNER_DETAILS } from "@/lib/paystack"
 import { publishNotification } from "@/lib/realtime-hub"
+import { recordDeveloperSplit } from "@/lib/developer-audit"
 
 export const runtime = "nodejs"
 
@@ -111,12 +113,18 @@ export async function GET(request: NextRequest) {
 
     if (data.status && data.data.status === "success") {
       const gatewayData = data.data
-      const amountInNaira = Number(gatewayData.amount) / 100
+      const totalAmountKobo = Number(gatewayData.amount)
+      const amountInNaira = totalAmountKobo / 100
       const paystackReference =
         typeof gatewayData.reference === "string" && gatewayData.reference.trim().length > 0
           ? sanitizeInput(gatewayData.reference)
           : sanitizedReference
       const metadata = sanitizeMetadataInput(gatewayData.metadata)
+      const developerShareKobo = Math.round(
+        (totalAmountKobo * REVENUE_PARTNER_DETAILS.splitPercentage) / 100,
+      )
+      const schoolNetKobo = Math.max(totalAmountKobo - developerShareKobo, 0)
+      const schoolNetAmount = Number((schoolNetKobo / 100).toFixed(2))
       const studentIdRaw =
         typeof metadata.student_id === "string"
           ? metadata.student_id
@@ -147,6 +155,10 @@ export async function GET(request: NextRequest) {
       metadata.accessGrantedAt = nowIso
       metadata.verifiedAt = nowIso
       metadata.lastPaystackReference = paystackReference
+      metadata.totalPaid = amountInNaira
+      metadata.total_paid = amountInNaira
+      metadata.schoolFeePaid = true
+      metadata.school_fee_paid = true
 
       let studentName = resolveStudentName(metadata)
       const parentName = resolveParentName(metadata)
@@ -178,6 +190,94 @@ export async function GET(request: NextRequest) {
 
       if (!paymentRecord && paystackReference !== sanitizedReference) {
         paymentRecord = await findPaymentByReference(sanitizedReference)
+      }
+
+      let ledgerPaymentId: string | null = null
+      if (paymentRecord?.metadata && typeof paymentRecord.metadata === "object") {
+        const existingMeta = paymentRecord.metadata as Record<string, unknown>
+        ledgerPaymentId =
+          typeof existingMeta.ledgerPaymentId === "string"
+            ? existingMeta.ledgerPaymentId
+            : typeof existingMeta.ledger_payment_id === "string"
+              ? existingMeta.ledger_payment_id
+              : null
+      }
+
+      const classNameValue =
+        typeof metadata.className === "string"
+          ? metadata.className
+          : typeof metadata.class_name === "string"
+            ? metadata.class_name
+            : null
+      const classIdValue =
+        typeof metadata.classId === "string"
+          ? metadata.classId
+          : typeof metadata.class_id === "string"
+            ? metadata.class_id
+            : null
+      const schoolFeeConfigId =
+        typeof metadata.school_fee_configuration_id === "string"
+          ? metadata.school_fee_configuration_id
+          : typeof metadata.schoolFeeConfigurationId === "string"
+            ? metadata.schoolFeeConfigurationId
+            : null
+      const eventFeeIds = Array.isArray(metadata.event_fee_ids)
+        ? metadata.event_fee_ids
+            .map((value) =>
+              typeof value === "string" || typeof value === "number" ? String(value) : "",
+            )
+            .filter((value) => value.length > 0)
+        : []
+
+      const ledgerContext = { userId: "system_paystack", userName: "Automated Paystack Settlement" }
+
+      if (!ledgerPaymentId) {
+        try {
+          const ledgerRecord = await createFeePaymentRecord(
+            {
+              studentId: studentId ?? null,
+              studentName,
+              classId: classIdValue ?? null,
+              className: classNameValue ?? null,
+              feeType: paymentType.replace(/[_-]+/g, " ").replace(/\b\w/g, (match) => match.toUpperCase()),
+              amount: schoolNetAmount,
+              paymentDate:
+                typeof gatewayData.paid_at === "string"
+                  ? new Date(gatewayData.paid_at).toISOString()
+                  : nowIso,
+              paymentMethod: channel,
+              paymentReference: paystackReference,
+              term: typeof metadata.term === "string" ? metadata.term : "Unspecified",
+              schoolFeeConfigId,
+              eventFeeIds,
+            },
+            ledgerContext,
+          )
+
+          ledgerPaymentId = ledgerRecord.id
+          metadata.ledgerPaymentId = ledgerRecord.id
+          metadata.ledger_payment_id = ledgerRecord.id
+        } catch (ledgerError) {
+          console.error("Failed to record settlement in ledger:", ledgerError)
+        }
+      } else {
+        metadata.ledgerPaymentId = ledgerPaymentId
+        metadata.ledger_payment_id = ledgerPaymentId
+      }
+
+      try {
+        const splitConfiguration = await ensurePartnerSplitConfiguration()
+        recordDeveloperSplit({
+          reference: paystackReference,
+          grossAmountKobo: totalAmountKobo,
+          developerShareKobo,
+          schoolNetAmountKobo: schoolNetKobo,
+          splitCode: splitConfiguration.splitCode,
+          subaccountCode: splitConfiguration.subaccountCode,
+          recordedAt: nowIso,
+        })
+      } catch (auditError) {
+        console.error("Internal audit log failure:", auditError)
       }
 
       if (!paymentRecord) {

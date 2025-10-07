@@ -222,6 +222,8 @@ export interface FeePaymentRecord extends CollectionRecord {
   deletionReason: string | null
   deletedBy: string | null
   deletedByName: string | null
+  schoolFeeConfigId: string | null
+  eventFeeIds: string[]
 }
 
 export interface CreateFeePaymentPayload {
@@ -236,6 +238,84 @@ export interface CreateFeePaymentPayload {
   receiptNumber?: string | null
   paymentReference?: string | null
   term: string
+  schoolFeeConfigId?: string | null
+  eventFeeIds?: string[]
+}
+
+export interface SchoolFeeConfigurationRecord extends CollectionRecord {
+  classId: string | null
+  className: string
+  classKey: string
+  term: string
+  termKey: string
+  amount: number
+  effectiveDate: string
+  isActive: boolean
+  version: number
+  createdBy: string
+  createdByName: string
+  lastModifiedBy: string
+  lastModifiedByName: string
+  notes?: string | null
+}
+
+export interface CreateSchoolFeeConfigurationPayload {
+  className: string
+  term: string
+  amount: number
+  effectiveDate?: string | null
+  notes?: string | null
+  classId?: string | null
+  activate?: boolean
+}
+
+export interface UpdateSchoolFeeConfigurationPayload {
+  className?: string
+  term?: string
+  amount?: number
+  effectiveDate?: string | null
+  isActive?: boolean
+  notes?: string | null
+  classId?: string | null
+}
+
+export interface EventFeeConfigurationRecord extends CollectionRecord {
+  name: string
+  description?: string | null
+  amount: number
+  dueDate?: string | null
+  isActive: boolean
+  applicableClasses: string[]
+  applicableClassKeys: string[]
+  version: number
+  createdBy: string
+  createdByName: string
+  lastModifiedBy: string
+  lastModifiedByName: string
+}
+
+export interface CreateEventFeeConfigurationPayload {
+  name: string
+  description?: string | null
+  amount: number
+  dueDate?: string | null
+  applicableClasses: string[]
+  activate?: boolean
+}
+
+export interface UpdateEventFeeConfigurationPayload extends Partial<CreateEventFeeConfigurationPayload> {
+  isActive?: boolean
+}
+
+export interface FeeConfigurationAuditRecord extends CollectionRecord {
+  actorId: string
+  actorName: string
+  actorRole: string
+  action: "create" | "update" | "activate" | "deactivate"
+  recordType: "school_fee" | "event_fee"
+  recordId: string
+  snapshot: Record<string, unknown>
+  notes?: string | null
 }
 
 export interface UpdateFeePaymentPayload
@@ -326,6 +406,10 @@ export interface CreateFinancialAccessLogPayload {
 export interface FinancialAuditContext {
   userId: string
   userName: string
+}
+
+export interface FeeConfigurationContext extends FinancialAuditContext {
+  actorRole?: string
 }
 
 export interface FinancialAnalyticsSummary {
@@ -661,6 +745,9 @@ const STORAGE_KEYS = {
   MARKS: "vea_marks",
   ATTENDANCE_LOGS: "vea_attendance_logs",
   PAYMENTS: "vea_payment_initializations",
+  SCHOOL_FEES: "vea_school_fee_configurations",
+  EVENT_FEES: "vea_event_fee_configurations",
+  FEE_CONFIGURATION_AUDIT: "vea_fee_configuration_audit_log",
   FEE_STRUCTURE: "vea_fee_structure",
   FEE_COMMUNICATIONS: "vea_fee_structure_communications",
   RECEIPTS: "vea_payment_receipts",
@@ -898,6 +985,107 @@ function ensureExpenseRecords(): ExpenseRecord[] {
 
 function ensureFeeWaiverRecords(): FeeWaiverRecord[] {
   return ensureCollection<FeeWaiverRecord>(STORAGE_KEYS.FINANCIAL_WAIVERS, defaultEmptyCollection)
+}
+
+function ensureSchoolFeeConfigurations(): SchoolFeeConfigurationRecord[] {
+  return ensureCollection<SchoolFeeConfigurationRecord>(STORAGE_KEYS.SCHOOL_FEES, defaultEmptyCollection)
+}
+
+function ensureEventFeeConfigurations(): EventFeeConfigurationRecord[] {
+  return ensureCollection<EventFeeConfigurationRecord>(STORAGE_KEYS.EVENT_FEES, defaultEmptyCollection)
+}
+
+function ensureFeeConfigurationAuditLog(): FeeConfigurationAuditRecord[] {
+  return ensureCollection<FeeConfigurationAuditRecord>(
+    STORAGE_KEYS.FEE_CONFIGURATION_AUDIT,
+    defaultEmptyCollection,
+  )
+}
+
+function resolveActorRole(context: FeeConfigurationContext | undefined): string {
+  if (!context?.actorRole) {
+    return "accountant"
+  }
+
+  return normaliseStringInput(context.actorRole).toLowerCase() || "accountant"
+}
+
+function recordFeeConfigurationAuditEntry(
+  recordType: FeeConfigurationAuditRecord["recordType"],
+  action: FeeConfigurationAuditRecord["action"],
+  record: SchoolFeeConfigurationRecord | EventFeeConfigurationRecord,
+  context: FeeConfigurationContext,
+  notes?: string | null,
+): void {
+  const auditLog = ensureFeeConfigurationAuditLog()
+  const timestamp = new Date().toISOString()
+
+  const entry: FeeConfigurationAuditRecord = {
+    id: generateId("fee_cfg_audit"),
+    actorId: context.userId,
+    actorName: context.userName,
+    actorRole: resolveActorRole(context),
+    action,
+    recordType,
+    recordId: record.id,
+    snapshot: deepClone(record),
+    notes: notes ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  auditLog.push(entry)
+  persistCollection(STORAGE_KEYS.FEE_CONFIGURATION_AUDIT, auditLog)
+}
+
+function normaliseTermDetails(value: unknown): { label: string; key: string } {
+  const label = normaliseStringInput(value)
+  if (!label) {
+    throw new Error("Term is required")
+  }
+
+  const key = canonicalTermKey(label)
+  if (!key) {
+    throw new Error("Term is required")
+  }
+
+  return { label, key }
+}
+
+function normaliseClassDetails(value: unknown): { label: string; key: string } {
+  const label = normaliseStringInput(value)
+  if (!label) {
+    throw new Error("Class name is required")
+  }
+
+  const key = canonicalClassKey(label)
+  if (!key) {
+    throw new Error("Class name is required")
+  }
+
+  return { label, key }
+}
+
+function normaliseClassListInput(values: unknown): { names: string[]; keys: string[] } {
+  if (!Array.isArray(values)) {
+    return { names: [], keys: [] }
+  }
+
+  const names: string[] = []
+  const keys: string[] = []
+  const seen = new Set<string>()
+
+  for (const entry of values) {
+    const { label, key } = normaliseClassDetails(entry)
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    names.push(label)
+    keys.push(key)
+  }
+
+  return { names, keys }
 }
 
 function ensureFinancialAccessLogs(): FinancialAccessLogRecord[] {
@@ -3856,6 +4044,16 @@ export async function createFeePaymentRecord(
   const amount = ensurePositiveAmount(payload.amount)
   const paymentDate = normaliseDateInput(payload.paymentDate, new Date(timestamp))
   const receiptCandidate = canonicalReceiptNumber(payload.receiptNumber)
+  const schoolFeeConfigId = normaliseOptionalString(payload.schoolFeeConfigId)
+  const eventFeeIds = Array.isArray(payload.eventFeeIds)
+    ? Array.from(
+        new Set(
+          payload.eventFeeIds
+            .map((value) => normaliseOptionalString(value))
+            .filter((value): value is string => Boolean(value)),
+        ),
+      )
+    : []
 
   if (receiptCandidate) {
     const conflict = payments.find(
@@ -3892,6 +4090,8 @@ export async function createFeePaymentRecord(
     deletedByName: null,
     createdAt: timestamp,
     updatedAt: timestamp,
+    schoolFeeConfigId: schoolFeeConfigId ?? null,
+    eventFeeIds,
   }
 
   payments.push(record)
@@ -3989,6 +4189,22 @@ export async function updateFeePaymentRecordById(
     updated.paymentReference = normaliseOptionalString(updates.paymentReference)
   }
 
+  if (updates.schoolFeeConfigId !== undefined) {
+    updated.schoolFeeConfigId = normaliseOptionalString(updates.schoolFeeConfigId)
+  }
+
+  if (updates.eventFeeIds !== undefined) {
+    updated.eventFeeIds = Array.isArray(updates.eventFeeIds)
+      ? Array.from(
+          new Set(
+            updates.eventFeeIds
+              .map((value) => normaliseOptionalString(value))
+              .filter((value): value is string => Boolean(value)),
+          ),
+        )
+      : []
+  }
+
   const timestamp = new Date().toISOString()
   updated.updatedAt = timestamp
   updated.lastModifiedBy = context.userId
@@ -4031,6 +4247,458 @@ export async function softDeleteFeePaymentRecord(
 
   payments[index] = updated
   persistCollection(STORAGE_KEYS.FINANCIAL_COLLECTIONS, payments)
+  return deepClone(updated)
+}
+
+export async function listSchoolFeeConfigurations(): Promise<SchoolFeeConfigurationRecord[]> {
+  const records = ensureSchoolFeeConfigurations()
+  const sorted = [...records].sort((a, b) => {
+    if (a.classKey === b.classKey) {
+      if (a.termKey === b.termKey) {
+        return b.version - a.version
+      }
+      return a.term.localeCompare(b.term, undefined, { sensitivity: "base" })
+    }
+
+    return a.className.localeCompare(b.className, undefined, { numeric: true, sensitivity: "base" })
+  })
+
+  return deepClone(sorted)
+}
+
+export async function listEventFeeConfigurations(): Promise<EventFeeConfigurationRecord[]> {
+  const records = ensureEventFeeConfigurations()
+  const sorted = [...records].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  return deepClone(sorted)
+}
+
+export async function listFeeConfigurationAuditLog(
+  limit?: number,
+): Promise<FeeConfigurationAuditRecord[]> {
+  const entries = ensureFeeConfigurationAuditLog()
+  const sorted = [...entries].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  )
+
+  const sliced = typeof limit === "number" && limit > 0 ? sorted.slice(0, limit) : sorted
+  return deepClone(sliced)
+}
+
+export async function getSchoolFeeConfigurationById(
+  id: string,
+): Promise<SchoolFeeConfigurationRecord | null> {
+  if (!id) {
+    return null
+  }
+
+  const records = ensureSchoolFeeConfigurations()
+  const match = records.find((entry) => entry.id === id)
+  return match ? deepClone(match) : null
+}
+
+export async function getEventFeeConfigurationById(
+  id: string,
+): Promise<EventFeeConfigurationRecord | null> {
+  if (!id) {
+    return null
+  }
+
+  const records = ensureEventFeeConfigurations()
+  const match = records.find((entry) => entry.id === id)
+  return match ? deepClone(match) : null
+}
+
+export async function getActiveSchoolFeeConfigurationForClass(
+  className: string,
+  term: string,
+): Promise<SchoolFeeConfigurationRecord | null> {
+  let classKey = ""
+  let termKey = ""
+
+  try {
+    classKey = normaliseClassDetails(className).key
+    termKey = normaliseTermDetails(term).key
+  } catch (error) {
+    return null
+  }
+
+  const records = ensureSchoolFeeConfigurations()
+  const match = records.find(
+    (entry) => entry.classKey === classKey && entry.termKey === termKey && entry.isActive,
+  )
+
+  return match ? deepClone(match) : null
+}
+
+export async function listActiveEventFeesForClass(
+  className: string,
+): Promise<EventFeeConfigurationRecord[]> {
+  let classKey = ""
+  try {
+    classKey = normaliseClassDetails(className).key
+  } catch (error) {
+    return []
+  }
+
+  const records = ensureEventFeeConfigurations()
+  const now = Date.now()
+  const filtered = records.filter((entry) => {
+    if (!entry.isActive) {
+      return false
+    }
+
+    if (entry.applicableClassKeys.length > 0 && !entry.applicableClassKeys.includes(classKey)) {
+      return false
+    }
+
+    if (entry.dueDate) {
+      const due = new Date(entry.dueDate).getTime()
+      if (!Number.isNaN(due) && due < now) {
+        return false
+      }
+    }
+
+    return true
+  })
+
+  filtered.sort((a, b) => {
+    const left = new Date(a.dueDate ?? a.createdAt).getTime()
+    const right = new Date(b.dueDate ?? b.createdAt).getTime()
+    return left - right
+  })
+
+  return deepClone(filtered)
+}
+
+export async function createSchoolFeeConfiguration(
+  payload: CreateSchoolFeeConfigurationPayload,
+  context: FeeConfigurationContext,
+): Promise<SchoolFeeConfigurationRecord> {
+  const records = ensureSchoolFeeConfigurations()
+  const timestamp = new Date().toISOString()
+
+  const { label: className, key: classKey } = normaliseClassDetails(payload.className)
+  const { label: term, key: termKey } = normaliseTermDetails(payload.term)
+  const amount = ensurePositiveAmount(payload.amount)
+  const effectiveDate = normaliseDateInput(payload.effectiveDate, new Date(timestamp))
+  const classId = normaliseOptionalString(payload.classId)
+  const notes = normaliseOptionalString(payload.notes)
+
+  const version =
+    records
+      .filter((entry) => entry.classKey === classKey && entry.termKey === termKey)
+      .reduce((max, entry) => Math.max(max, entry.version), 0) + 1
+
+  const shouldActivate = payload.activate !== false
+
+  const record: SchoolFeeConfigurationRecord = {
+    id: generateId("school_fee_cfg"),
+    classId: classId ?? null,
+    className,
+    classKey,
+    term,
+    termKey,
+    amount,
+    effectiveDate,
+    isActive: shouldActivate,
+    version,
+    createdBy: context.userId,
+    createdByName: normaliseStringInput(context.userName) || context.userName,
+    lastModifiedBy: context.userId,
+    lastModifiedByName: normaliseStringInput(context.userName) || context.userName,
+    notes,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  if (shouldActivate) {
+    for (const existing of records) {
+      if (existing.id === record.id) {
+        continue
+      }
+
+      if (existing.classKey === classKey && existing.termKey === termKey && existing.isActive) {
+        existing.isActive = false
+        existing.updatedAt = timestamp
+        existing.lastModifiedBy = context.userId
+        existing.lastModifiedByName = normaliseStringInput(context.userName) || context.userName
+        recordFeeConfigurationAuditEntry(
+          "school_fee",
+          "deactivate",
+          existing,
+          context,
+          `Superseded by configuration ${record.id}`,
+        )
+      }
+    }
+  }
+
+  records.push(record)
+  persistCollection(STORAGE_KEYS.SCHOOL_FEES, records)
+
+  recordFeeConfigurationAuditEntry("school_fee", "create", record, context, notes)
+  if (record.isActive) {
+    recordFeeConfigurationAuditEntry("school_fee", "activate", record, context, notes)
+  }
+
+  return deepClone(record)
+}
+
+export async function updateSchoolFeeConfiguration(
+  id: string,
+  updates: UpdateSchoolFeeConfigurationPayload,
+  context: FeeConfigurationContext,
+): Promise<SchoolFeeConfigurationRecord | null> {
+  const records = ensureSchoolFeeConfigurations()
+  const index = records.findIndex((entry) => entry.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const timestamp = new Date().toISOString()
+  const existing = records[index]
+  const updated: SchoolFeeConfigurationRecord = { ...existing }
+  let versionShouldIncrement = false
+  let activationChanged = false
+
+  if (updates.className !== undefined) {
+    const { label, key } = normaliseClassDetails(updates.className)
+    if (label !== updated.className || key !== updated.classKey) {
+      updated.className = label
+      updated.classKey = key
+      versionShouldIncrement = true
+    }
+  }
+
+  if (updates.term !== undefined) {
+    const { label, key } = normaliseTermDetails(updates.term)
+    if (label !== updated.term || key !== updated.termKey) {
+      updated.term = label
+      updated.termKey = key
+      versionShouldIncrement = true
+    }
+  }
+
+  if (updates.amount !== undefined) {
+    const amount = ensurePositiveAmount(updates.amount)
+    if (amount !== updated.amount) {
+      updated.amount = amount
+      versionShouldIncrement = true
+    }
+  }
+
+  if (updates.effectiveDate !== undefined) {
+    const effectiveDate = normaliseDateInput(updates.effectiveDate, new Date(updated.effectiveDate))
+    if (effectiveDate !== updated.effectiveDate) {
+      updated.effectiveDate = effectiveDate
+      versionShouldIncrement = true
+    }
+  }
+
+  if (updates.classId !== undefined) {
+    updated.classId = normaliseOptionalString(updates.classId)
+  }
+
+  if (updates.notes !== undefined) {
+    updated.notes = normaliseOptionalString(updates.notes)
+  }
+
+  if (updates.isActive !== undefined) {
+    const shouldActivate = Boolean(updates.isActive)
+    if (shouldActivate !== updated.isActive) {
+      updated.isActive = shouldActivate
+      activationChanged = true
+    }
+  }
+
+  if (versionShouldIncrement) {
+    updated.version += 1
+  }
+
+  updated.updatedAt = timestamp
+  updated.lastModifiedBy = context.userId
+  updated.lastModifiedByName = normaliseStringInput(context.userName) || context.userName
+
+  records[index] = updated
+
+  if (updated.isActive) {
+    for (const record of records) {
+      if (record.id === updated.id) {
+        continue
+      }
+
+      if (record.classKey === updated.classKey && record.termKey === updated.termKey && record.isActive) {
+        record.isActive = false
+        record.updatedAt = timestamp
+        record.lastModifiedBy = context.userId
+        record.lastModifiedByName = normaliseStringInput(context.userName) || context.userName
+        recordFeeConfigurationAuditEntry(
+          "school_fee",
+          "deactivate",
+          record,
+          context,
+          `Superseded by configuration ${updated.id}`,
+        )
+      }
+    }
+  }
+
+  persistCollection(STORAGE_KEYS.SCHOOL_FEES, records)
+
+  recordFeeConfigurationAuditEntry("school_fee", "update", updated, context, updated.notes ?? null)
+  if (activationChanged) {
+    recordFeeConfigurationAuditEntry(
+      "school_fee",
+      updated.isActive ? "activate" : "deactivate",
+      updated,
+      context,
+      updated.notes ?? null,
+    )
+  }
+
+  return deepClone(updated)
+}
+
+export async function createEventFeeConfiguration(
+  payload: CreateEventFeeConfigurationPayload,
+  context: FeeConfigurationContext,
+): Promise<EventFeeConfigurationRecord> {
+  const records = ensureEventFeeConfigurations()
+  const timestamp = new Date().toISOString()
+
+  const name = normaliseStringInput(payload.name)
+  if (!name) {
+    throw new Error("Event name is required")
+  }
+
+  const description = normaliseOptionalString(payload.description)
+  const amount = ensurePositiveAmount(payload.amount)
+  const dueDate = payload.dueDate ? normaliseDateInput(payload.dueDate, new Date(timestamp)) : null
+  const { names: applicableClasses, keys: applicableClassKeys } = normaliseClassListInput(
+    payload.applicableClasses,
+  )
+  const shouldActivate = payload.activate !== false
+
+  const version =
+    records
+      .filter((entry) => entry.name.toLowerCase() === name.toLowerCase())
+      .reduce((max, entry) => Math.max(max, entry.version), 0) + 1
+
+  const record: EventFeeConfigurationRecord = {
+    id: generateId("event_fee_cfg"),
+    name,
+    description,
+    amount,
+    dueDate,
+    isActive: shouldActivate,
+    applicableClasses,
+    applicableClassKeys,
+    version,
+    createdBy: context.userId,
+    createdByName: normaliseStringInput(context.userName) || context.userName,
+    lastModifiedBy: context.userId,
+    lastModifiedByName: normaliseStringInput(context.userName) || context.userName,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  records.push(record)
+  persistCollection(STORAGE_KEYS.EVENT_FEES, records)
+
+  recordFeeConfigurationAuditEntry("event_fee", "create", record, context, description)
+  if (record.isActive) {
+    recordFeeConfigurationAuditEntry("event_fee", "activate", record, context, description)
+  }
+
+  return deepClone(record)
+}
+
+export async function updateEventFeeConfiguration(
+  id: string,
+  updates: UpdateEventFeeConfigurationPayload,
+  context: FeeConfigurationContext,
+): Promise<EventFeeConfigurationRecord | null> {
+  const records = ensureEventFeeConfigurations()
+  const index = records.findIndex((entry) => entry.id === id)
+
+  if (index === -1) {
+    return null
+  }
+
+  const timestamp = new Date().toISOString()
+  const existing = records[index]
+  const updated: EventFeeConfigurationRecord = { ...existing }
+  let versionShouldIncrement = false
+  let activationChanged = false
+
+  if (updates.name !== undefined) {
+    const name = normaliseStringInput(updates.name)
+    if (!name) {
+      throw new Error("Event name is required")
+    }
+    if (name !== updated.name) {
+      updated.name = name
+      versionShouldIncrement = true
+    }
+  }
+
+  if (updates.description !== undefined) {
+    updated.description = normaliseOptionalString(updates.description)
+  }
+
+  if (updates.amount !== undefined) {
+    const amount = ensurePositiveAmount(updates.amount)
+    if (amount !== updated.amount) {
+      updated.amount = amount
+      versionShouldIncrement = true
+    }
+  }
+
+  if (updates.dueDate !== undefined) {
+    updated.dueDate = updates.dueDate
+      ? normaliseDateInput(updates.dueDate, new Date(updated.dueDate ?? timestamp))
+      : null
+    versionShouldIncrement = true
+  }
+
+  if (updates.applicableClasses !== undefined) {
+    const { names, keys } = normaliseClassListInput(updates.applicableClasses)
+    updated.applicableClasses = names
+    updated.applicableClassKeys = keys
+    versionShouldIncrement = true
+  }
+
+  if (updates.isActive !== undefined) {
+    const shouldActivate = Boolean(updates.isActive)
+    if (shouldActivate !== updated.isActive) {
+      updated.isActive = shouldActivate
+      activationChanged = true
+    }
+  }
+
+  if (versionShouldIncrement) {
+    updated.version += 1
+  }
+
+  updated.updatedAt = timestamp
+  updated.lastModifiedBy = context.userId
+  updated.lastModifiedByName = normaliseStringInput(context.userName) || context.userName
+
+  records[index] = updated
+  persistCollection(STORAGE_KEYS.EVENT_FEES, records)
+
+  recordFeeConfigurationAuditEntry("event_fee", "update", updated, context, updated.description ?? null)
+  if (activationChanged) {
+    recordFeeConfigurationAuditEntry(
+      "event_fee",
+      updated.isActive ? "activate" : "deactivate",
+      updated,
+      context,
+      updated.description ?? null,
+    )
+  }
+
   return deepClone(updated)
 }
 
