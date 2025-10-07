@@ -1,14 +1,14 @@
 export const AFFECTIVE_TRAITS = [
   { key: "neatness", label: "Neatness" },
-  { key: "attentiveness", label: "Attentiveness" },
   { key: "honesty", label: "Honesty" },
-  { key: "politeness", label: "Politeness" },
   { key: "punctuality", label: "Punctuality" },
+  { key: "attentiveness", label: "Attentiveness" },
+  { key: "politeness", label: "Politeness" },
   { key: "perseverance", label: "Perseverance" },
 ] as const
 
 export const PSYCHOMOTOR_SKILLS = [
-  { key: "gamesSports", label: "Games & Sports" },
+  { key: "sport", label: "Sport" },
   { key: "handwriting", label: "Handwriting" },
   { key: "creativeArts", label: "Creative Arts" },
   { key: "musicalSkills", label: "Musical Skills" },
@@ -16,52 +16,151 @@ export const PSYCHOMOTOR_SKILLS = [
   { key: "verbalFluency", label: "Verbal Fluency" },
 ] as const
 
-export const BEHAVIORAL_RATING_COLUMNS = [
-  { key: "excel", label: "Excellent" },
-  { key: "vgood", label: "V. Good" },
-  { key: "good", label: "Good" },
-  { key: "fair", label: "Fair" },
-  { key: "poor", label: "Needs Imp." },
-] as const
+type BehavioralDomain = "affective" | "psychomotor"
 
-export const BEHAVIORAL_RATING_OPTIONS = [
-  { value: "excel", label: "Excellent" },
-  { value: "vgood", label: "Very Good" },
-  { value: "good", label: "Good" },
-  { value: "fair", label: "Fair" },
-  { value: "poor", label: "Needs Improvement" },
-] as const
+const startCase = (value: string) =>
+  value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/(^|\s)[a-z]/g, (match) => match.toUpperCase())
 
-export const normalizeBehavioralRating = (value: string | undefined | null) => {
-  if (!value) {
-    return null
-  }
-
-  const normalized = value.toString().trim().toLowerCase()
-
-  if (normalized.length === 0) {
-    return null
-  }
-
-  if (["excellent", "excel", "ex"].includes(normalized)) {
-    return "excel"
-  }
-
-  if (["very good", "v.good", "vgood", "verygood", "vg"].includes(normalized.replace(/\s+/g, ""))) {
-    return "vgood"
-  }
-
-  if (["good", "gd"].includes(normalized.replace(/\s+/g, ""))) {
-    return "good"
-  }
-
-  if (["fair", "average"].includes(normalized)) {
-    return "fair"
-  }
-
-  if (["poor", "vpoor", "verypoor", "needsimprovement"].includes(normalized.replace(/\s+/g, ""))) {
-    return "poor"
-  }
-
-  return null
+const createAliasMap = (
+  canonicalKeys: readonly { key: string; label: string }[],
+  aliases: Record<string, string>,
+) => {
+  const map = new Map<string, string>()
+  canonicalKeys.forEach(({ key }) => {
+    const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "")
+    map.set(normalized, key)
+  })
+  Object.entries(aliases).forEach(([alias, target]) => {
+    const normalizedAlias = alias.toLowerCase().replace(/[^a-z0-9]/g, "")
+    map.set(normalizedAlias, target)
+  })
+  return map
 }
+
+const AFFECTIVE_ALIAS_MAP = createAliasMap(AFFECTIVE_TRAITS, {
+  attentive: "attentiveness",
+  attendance: "attentiveness",
+  respectful: "politeness",
+  courtesy: "politeness",
+  resilient: "perseverance",
+  resilience: "perseverance",
+  discipline: "perseverance",
+})
+
+const PSYCHOMOTOR_ALIAS_MAP = createAliasMap(PSYCHOMOTOR_SKILLS, {
+  sports: "sport",
+  games: "sport",
+  gamessports: "sport",
+  gamesandsports: "sport",
+  drawing: "creativeArts",
+  craft: "practicalProjects",
+  crafts: "practicalProjects",
+  art: "creativeArts",
+  arts: "creativeArts",
+  music: "musicalSkills",
+  musicals: "musicalSkills",
+  oratory: "verbalFluency",
+  communication: "verbalFluency",
+})
+
+const BEHAVIORAL_TRUE_VALUES = new Set([
+  "true",
+  "yes",
+  "1",
+  "y",
+  "checked",
+  "selected",
+  "on",
+  "excel",
+  "excellent",
+  "vgood",
+  "verygood",
+  "good",
+  "fair",
+  "poor",
+])
+
+const BEHAVIORAL_FALSE_VALUES = new Set(["false", "no", "0", "n", "unchecked", "off"])
+
+export const normalizeBehavioralDomainKey = (domain: BehavioralDomain, key: string): string | null => {
+  if (!key || typeof key !== "string") {
+    return null
+  }
+
+  const sanitized = key.toLowerCase().replace(/[^a-z0-9]/g, "")
+  const map = domain === "affective" ? AFFECTIVE_ALIAS_MAP : PSYCHOMOTOR_ALIAS_MAP
+  return map.get(sanitized) ?? null
+}
+
+export const interpretBehavioralSelection = (value: unknown): boolean => {
+  if (typeof value === "boolean") {
+    return value
+  }
+
+  if (typeof value === "number") {
+    return !Number.isNaN(value) && value > 0
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (!normalized.length) {
+      return false
+    }
+    if (BEHAVIORAL_FALSE_VALUES.has(normalized)) {
+      return false
+    }
+    if (BEHAVIORAL_TRUE_VALUES.has(normalized)) {
+      return true
+    }
+    return true
+  }
+
+  return false
+}
+
+export const normalizeBehavioralSelections = (
+  domain: BehavioralDomain,
+  record: Record<string, unknown> | undefined,
+): Record<string, boolean> => {
+  const normalized: Record<string, boolean> = {}
+  if (!record || typeof record !== "object") {
+    return normalized
+  }
+
+  Object.entries(record).forEach(([rawKey, rawValue]) => {
+    const canonicalKey = normalizeBehavioralDomainKey(domain, rawKey)
+    if (!canonicalKey) {
+      return
+    }
+    normalized[canonicalKey] = interpretBehavioralSelection(rawValue)
+  })
+
+  return normalized
+}
+
+const createLabelLookup = (entries: readonly { key: string; label: string }[]) => {
+  const lookup = new Map<string, string>()
+  entries.forEach(({ key, label }) => {
+    lookup.set(key, label)
+  })
+  return lookup
+}
+
+const AFFECTIVE_LABEL_LOOKUP = createLabelLookup(AFFECTIVE_TRAITS)
+const PSYCHOMOTOR_LABEL_LOOKUP = createLabelLookup(PSYCHOMOTOR_SKILLS)
+
+export const getAffectiveTraitLabel = (key: string) =>
+  AFFECTIVE_LABEL_LOOKUP.get(key) ?? startCase(key)
+
+export const getPsychomotorSkillLabel = (key: string) =>
+  PSYCHOMOTOR_LABEL_LOOKUP.get(key) ?? startCase(key)
+
+export const createBehavioralRecordSkeleton = (
+  entries: readonly { key: string; label: string }[],
+): Record<string, boolean> =>
+  Object.fromEntries(entries.map(({ key }) => [key, false] as const)) as Record<string, boolean>

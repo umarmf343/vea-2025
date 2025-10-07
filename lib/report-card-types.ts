@@ -58,8 +58,8 @@ export interface RawReportCardData {
   totalObtained?: number
   average?: number
   position?: number | string
-  affectiveDomain?: Record<string, string | undefined>
-  psychomotorDomain?: Record<string, string | undefined>
+  affectiveDomain?: Record<string, boolean | undefined>
+  psychomotorDomain?: Record<string, boolean | undefined>
   classTeacherRemarks?: string
   remarks?: {
     classTeacher?: string

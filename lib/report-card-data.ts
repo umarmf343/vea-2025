@@ -4,6 +4,11 @@ import type { RawReportCardData, StoredStudentMarkRecord, StoredSubjectRecord } 
 import { safeStorage } from "./safe-storage"
 import { logger } from "./logger"
 import { normalizeTermLabel } from "./report-card-access"
+import {
+  AFFECTIVE_TRAITS,
+  PSYCHOMOTOR_SKILLS,
+  createBehavioralRecordSkeleton,
+} from "./report-card-constants"
 
 export interface StudentMarks {
   studentId: string
@@ -22,15 +27,8 @@ export interface StudentMarks {
       lastUpdated: string
     }
   }
-  affectiveDomain: {
-    neatness: string
-    honesty: string
-    punctuality: string
-  }
-  psychomotorDomain: {
-    sport: string
-    handwriting: string
-  }
+  affectiveDomain: Record<string, boolean>
+  psychomotorDomain: Record<string, boolean>
   classTeacherRemarks: string
   adminOverrides?: {
     [field: string]: any
@@ -329,15 +327,8 @@ export const saveTeacherMarks = async (marksData: {
           studentName: studentMark.studentName,
           class: marksData.class,
           subjects: {},
-          affectiveDomain: {
-            neatness: "Good",
-            honesty: "Good",
-            punctuality: "Good",
-          },
-          psychomotorDomain: {
-            sport: "Good",
-            handwriting: "Good",
-          },
+          affectiveDomain: createBehavioralRecordSkeleton(AFFECTIVE_TRAITS),
+          psychomotorDomain: createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS),
           classTeacherRemarks: reportCardSettings.defaultRemarks,
         }
       }

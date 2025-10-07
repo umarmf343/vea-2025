@@ -1,5 +1,11 @@
 import type { ReportCardRecord, ReportCardSubjectRecord } from "@/lib/database"
 import { deriveGradeFromScore } from "@/lib/grade-utils"
+import {
+  AFFECTIVE_TRAITS,
+  PSYCHOMOTOR_SKILLS,
+  createBehavioralRecordSkeleton,
+  normalizeBehavioralSelections,
+} from "@/lib/report-card-constants"
 import type { RawReportCardData } from "@/lib/report-card-types"
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -47,6 +53,24 @@ const normaliseSubject = (subject: ReportCardSubjectRecord) => {
   }
 }
 
+const mergeBehavioralDomain = (
+  domain: "affective" | "psychomotor",
+  baseDomain: Record<string, boolean>,
+  override: Record<string, unknown> | undefined,
+) => {
+  const merged = { ...baseDomain }
+  const normalized = normalizeBehavioralSelections(domain, override)
+  Object.entries(normalized).forEach(([key, value]) => {
+    merged[key] = value
+  })
+
+  Object.keys(merged).forEach((key) => {
+    merged[key] = Boolean(merged[key])
+  })
+
+  return merged
+}
+
 export const mapReportCardRecordToRaw = (record: ReportCardRecord): RawReportCardData => {
   const subjects = (record.subjects ?? []).map((subject) => normaliseSubject(subject))
 
@@ -77,8 +101,8 @@ export const mapReportCardRecordToRaw = (record: ReportCardRecord): RawReportCar
     totalObtained: totalMarksObtained,
     average: averageScore,
     position: baseSummary.position,
-    affectiveDomain: {},
-    psychomotorDomain: {},
+    affectiveDomain: createBehavioralRecordSkeleton(AFFECTIVE_TRAITS),
+    psychomotorDomain: createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS),
     classTeacherRemarks: record.classTeacherRemark ?? undefined,
     remarks: {
       classTeacher: record.classTeacherRemark ?? undefined,
@@ -128,8 +152,16 @@ export const mapReportCardRecordToRaw = (record: ReportCardRecord): RawReportCar
       classTeacher: metadataRaw.remarks?.classTeacher ?? mergedClassTeacherRemark,
       headTeacher: metadataRaw.remarks?.headTeacher ?? base.remarks?.headTeacher,
     },
-    affectiveDomain: metadataRaw.affectiveDomain ?? base.affectiveDomain,
-    psychomotorDomain: metadataRaw.psychomotorDomain ?? base.psychomotorDomain,
+    affectiveDomain: mergeBehavioralDomain(
+      "affective",
+      base.affectiveDomain,
+      metadataRaw.affectiveDomain as Record<string, unknown> | undefined,
+    ),
+    psychomotorDomain: mergeBehavioralDomain(
+      "psychomotor",
+      base.psychomotorDomain,
+      metadataRaw.psychomotorDomain as Record<string, unknown> | undefined,
+    ),
     attendance: metadataRaw.attendance ?? base.attendance,
     termInfo: metadataRaw.termInfo ?? base.termInfo,
     fees: metadataRaw.fees ?? base.fees,

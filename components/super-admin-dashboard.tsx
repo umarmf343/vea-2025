@@ -224,6 +224,13 @@ const DEFAULT_BRANDING: BrandingState = {
   signatureUrl: null,
 }
 
+const BRANDING_IMAGE_LIMITS = {
+  logo: { width: 200, height: 100 },
+  signature: { width: 300, height: 80 },
+} as const
+
+const ALLOWED_BRANDING_TYPES = new Set(["image/png", "image/jpeg", "image/jpg", "image/svg+xml"])
+
 const DEFAULT_SETTINGS: SystemSettingsState = {
   academicYear: "2024/2025",
   currentTerm: "First Term",
@@ -996,34 +1003,93 @@ export default function SuperAdminDashboard() {
     [branding, brandingUploads, toast],
   )
 
-  const handleBrandingFile = useCallback((file: File, key: "logo" | "signature") => {
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const value = typeof event.target?.result === "string" ? event.target.result : ""
-      setBrandingUploads((previous) => {
-        const uploadedAt = new Date().toISOString()
+  const handleBrandingFile = useCallback(
+    (file: File, key: "logo" | "signature") => {
+      if (!ALLOWED_BRANDING_TYPES.has(file.type)) {
+        toast({
+          variant: "destructive",
+          title: "Unsupported file",
+          description: "Upload PNG, JPG, or SVG assets only.",
+        })
+        return
+      }
 
-        if (key === "logo") {
-          return {
-            ...previous,
-            logoUrl: value,
-            logoFileName: file.name,
-            logoFileSize: file.size,
-            logoUploadedAt: uploadedAt,
+      const limits = BRANDING_IMAGE_LIMITS[key]
+      const reader = new FileReader()
+
+      reader.onload = (event) => {
+        const result = event.target?.result
+        if (typeof result !== "string" || result.length === 0) {
+          toast({
+            variant: "destructive",
+            title: "Upload failed",
+            description: "Unable to read the selected file. Try again.",
+          })
+          return
+        }
+
+        const finalizeUpload = () => {
+          const uploadedAt = new Date().toISOString()
+          setBrandingUploads((previous) => {
+            if (key === "logo") {
+              return {
+                ...previous,
+                logoUrl: result,
+                logoFileName: file.name,
+                logoFileSize: file.size,
+                logoUploadedAt: uploadedAt,
+              }
+            }
+
+            return {
+              ...previous,
+              signatureUrl: result,
+              signatureFileName: file.name,
+              signatureFileSize: file.size,
+              signatureUploadedAt: uploadedAt,
+            }
+          })
+        }
+
+        if (file.type === "image/svg+xml") {
+          finalizeUpload()
+          return
+        }
+
+        const image = new Image()
+        image.onload = () => {
+          if (image.width > limits.width || image.height > limits.height) {
+            toast({
+              variant: "destructive",
+              title: "Image too large",
+              description: `Ensure the ${key === "logo" ? "logo" : "signature"} is at most ${limits.width}x${limits.height}px.`,
+            })
+            return
           }
+          finalizeUpload()
         }
+        image.onerror = () => {
+          toast({
+            variant: "destructive",
+            title: "Invalid image",
+            description: "We couldn't verify this image. Please choose another file.",
+          })
+        }
+        image.src = result
+      }
 
-        return {
-          ...previous,
-          signatureUrl: value,
-          signatureFileName: file.name,
-          signatureFileSize: file.size,
-          signatureUploadedAt: uploadedAt,
-        }
-      })
-    }
-    reader.readAsDataURL(file)
-  }, [])
+      reader.onerror = () => {
+        toast({
+          variant: "destructive",
+          title: "Upload failed",
+          description: "Unable to read the selected file. Try again.",
+        })
+      }
+
+      reader.readAsDataURL(file)
+    },
+    [toast],
+  )
 
   const handleSaveSettings = useCallback(
     async (options?: SaveActionOptions) => {

@@ -9,7 +9,10 @@ import { useToast } from "@/hooks/use-toast"
 import {
   AFFECTIVE_TRAITS,
   PSYCHOMOTOR_SKILLS,
-  normalizeBehavioralRating,
+  createBehavioralRecordSkeleton,
+  getAffectiveTraitLabel,
+  getPsychomotorSkillLabel,
+  normalizeBehavioralSelections,
 } from "@/lib/report-card-constants"
 import type { RawReportCardData } from "@/lib/report-card-types"
 import { deriveGradeFromScore } from "@/lib/grade-utils"
@@ -65,8 +68,8 @@ interface NormalizedReportCard {
     grade?: string
   }
   attendance: AttendanceSummary
-  affectiveDomain: Record<string, string>
-  psychomotorDomain: Record<string, string>
+  affectiveDomain: Record<string, boolean>
+  psychomotorDomain: Record<string, boolean>
   remarks: {
     classTeacher: string
     headTeacher: string
@@ -304,19 +307,9 @@ const PRIMARY_AFFECTIVE_TRAITS = [
 ] as const
 
 const PRIMARY_PSYCHOMOTOR_SKILLS = [
-  { key: "gamesSports", label: "Sport" },
+  { key: "sport", label: "Sport" },
   { key: "handwriting", label: "Handwriting" },
 ] as const
-
-const DOMAIN_COLUMNS = [
-  { key: "excel", label: "Excel." },
-  { key: "vgood", label: "V.Good" },
-  { key: "good", label: "Good" },
-  { key: "fair", label: "Poor" },
-  { key: "poor", label: "V.Poor" },
-] as const
-
-const AFFECTIVE_DOMAIN_COLUMNS = DOMAIN_COLUMNS.filter((column) => column.key !== "poor")
 
 const normalizeSubjects = (subjects: Array<Record<string, unknown>> | undefined): SubjectScore[] => {
   if (!Array.isArray(subjects)) {
@@ -356,21 +349,31 @@ const normalizeSubjects = (subjects: Array<Record<string, unknown>> | undefined)
   })
 }
 
-const normalizeDomainRatings = (
-  rawRatings: Record<string, string | undefined> | undefined,
-  defaultRatings: Record<string, string | undefined>,
-) => {
-  const normalized: Record<string, string> = {}
+const buildBehavioralDomain = (
+  domain: "affective" | "psychomotor",
+  defaults: readonly { key: string; label: string }[],
+  stored: Record<string, unknown> | undefined,
+  fallback: Record<string, boolean | undefined>,
+): Record<string, boolean> => {
+  const skeleton = createBehavioralRecordSkeleton(defaults)
+  const normalizedStored = normalizeBehavioralSelections(domain, stored)
+  const normalizedFallback = normalizeBehavioralSelections(domain, fallback)
+  const merged: Record<string, boolean> = { ...skeleton }
 
-  const merged = { ...defaultRatings, ...rawRatings }
-  Object.entries(merged).forEach(([trait, rating]) => {
-    const normalizedRating = normalizeBehavioralRating(rating)
-    if (normalizedRating) {
-      normalized[trait] = normalizedRating
-    }
-  })
+  const applySelections = (entries: Record<string, boolean>) => {
+    Object.entries(entries).forEach(([key, value]) => {
+      if (key in merged) {
+        merged[key] = value
+      } else {
+        merged[key] = value
+      }
+    })
+  }
 
-  return normalized
+  applySelections(normalizedFallback)
+  applySelections(normalizedStored)
+
+  return merged
 }
 
 const normalizeReportCard = (
@@ -453,8 +456,18 @@ const normalizeReportCard = (
   }
   const attendancePercentage = inferredTotal > 0 ? Math.round((attendanceStats.present / inferredTotal) * 100) : 0
 
-  const affectiveRatings = normalizeDomainRatings(behavioralRecord?.affectiveDomain, source.affectiveDomain ?? {})
-  const psychomotorRatings = normalizeDomainRatings(
+  const defaultAffectiveTraits = [...PRIMARY_AFFECTIVE_TRAITS, ...AFFECTIVE_TRAITS]
+  const defaultPsychomotorSkills = [...PRIMARY_PSYCHOMOTOR_SKILLS, ...PSYCHOMOTOR_SKILLS]
+
+  const affectiveSelections = buildBehavioralDomain(
+    "affective",
+    defaultAffectiveTraits,
+    behavioralRecord?.affectiveDomain,
+    source.affectiveDomain ?? {},
+  )
+  const psychomotorSelections = buildBehavioralDomain(
+    "psychomotor",
+    defaultPsychomotorSkills,
     behavioralRecord?.psychomotorDomain,
     source.psychomotorDomain ?? {},
   )
@@ -470,6 +483,14 @@ const normalizeReportCard = (
     signature: source.branding?.signature ?? defaultBranding.signatureUrl ?? null,
     headmasterName: source.branding?.headmasterName?.trim() || defaultBranding.headmasterName,
     defaultRemark: source.branding?.defaultRemark?.trim() || defaultBranding.defaultRemark,
+  }
+
+  if (!resolvedBranding.logo) {
+    console.warn("Report card branding missing school logo; displaying placeholder.")
+  }
+
+  if (!resolvedBranding.signature) {
+    console.warn("Report card branding missing headmaster signature; displaying placeholder.")
   }
 
   const termInfo = {
@@ -514,8 +535,8 @@ const normalizeReportCard = (
       total: inferredTotal,
       percentage: attendancePercentage,
     },
-    affectiveDomain: affectiveRatings,
-    psychomotorDomain: psychomotorRatings,
+    affectiveDomain: affectiveSelections,
+    psychomotorDomain: psychomotorSelections,
     remarks: {
       classTeacher:
         remarkRecord?.remark?.trim() ??
@@ -527,11 +548,6 @@ const normalizeReportCard = (
     termInfo,
     branding: resolvedBranding,
   }
-}
-
-const isBehavioralRatingMatch = (ratings: Record<string, string>, traitKey: string, target: string) => {
-  const rating = normalizeBehavioralRating(ratings[traitKey])
-  return rating === target
 }
 
 export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
@@ -598,14 +614,14 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
     ordered.forEach((trait) => {
       if (!seen.has(trait.key)) {
-        traits.push(trait)
+        traits.push({ key: trait.key, label: getAffectiveTraitLabel(trait.key) })
         seen.add(trait.key)
       }
     })
 
     Object.keys(reportCardData.affectiveDomain).forEach((key) => {
       if (!seen.has(key)) {
-        traits.push({ key, label: formatStatusLabel(key) ?? key })
+        traits.push({ key, label: getAffectiveTraitLabel(key) })
         seen.add(key)
       }
     })
@@ -624,14 +640,14 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
     ordered.forEach((trait) => {
       if (!seen.has(trait.key)) {
-        traits.push(trait)
+        traits.push({ key: trait.key, label: getPsychomotorSkillLabel(trait.key) })
         seen.add(trait.key)
       }
     })
 
     Object.keys(reportCardData.psychomotorDomain).forEach((key) => {
       if (!seen.has(key)) {
-        traits.push({ key, label: formatStatusLabel(key) ?? key })
+        traits.push({ key, label: getPsychomotorSkillLabel(key) })
         seen.add(key)
       }
     })
@@ -1051,13 +1067,11 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
               </div>
               <div className="domain-block psychomotor-block">
                 <strong>PSYCHOMOTOR DOMAIN</strong>
-                <table className="af-domain-table">
+                <table className="af-domain-table checkmark-table">
                   <thead>
                     <tr>
-                      <th></th>
-                      {DOMAIN_COLUMNS.map((column) => (
-                        <th key={`psychomotor-header-${column.key}`}>{column.label}</th>
-                      ))}
+                      <th>Skill</th>
+                      <th className="check-column">Demonstrated</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1065,23 +1079,14 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                       psychomotorSkills.map((skill) => (
                         <tr key={skill.key}>
                           <td>{skill.label}</td>
-                          {DOMAIN_COLUMNS.map((column) => {
-                            const match = isBehavioralRatingMatch(
-                              reportCardData.psychomotorDomain,
-                              skill.key,
-                              column.key,
-                            )
-                            return (
-                              <td key={`${skill.key}-${column.key}`} className={match ? "tick" : ""}>
-                                {match ? "✓" : ""}
-                              </td>
-                            )
-                          })}
+                          <td className={reportCardData.psychomotorDomain[skill.key] ? "tick" : ""}>
+                            {reportCardData.psychomotorDomain[skill.key] ? "✓" : ""}
+                          </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={DOMAIN_COLUMNS.length + 1}>No psychomotor records available.</td>
+                        <td colSpan={2}>No psychomotor records available.</td>
                       </tr>
                     )}
                   </tbody>
@@ -1090,13 +1095,11 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             </div>
             <div className="domain-block affective-block">
               <strong>AFFECTIVE DOMAIN</strong>
-              <table className="af-domain-table">
+              <table className="af-domain-table checkmark-table">
                 <thead>
                   <tr>
-                    <th></th>
-                    {AFFECTIVE_DOMAIN_COLUMNS.map((column) => (
-                      <th key={`affective-header-${column.key}`}>{column.label}</th>
-                    ))}
+                    <th>Trait</th>
+                    <th className="check-column">Demonstrated</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1104,23 +1107,14 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                     affectiveTraits.map((trait) => (
                       <tr key={trait.key}>
                         <td>{trait.label}</td>
-                        {AFFECTIVE_DOMAIN_COLUMNS.map((column) => {
-                          const match = isBehavioralRatingMatch(
-                            reportCardData.affectiveDomain,
-                            trait.key,
-                            column.key,
-                          )
-                          return (
-                            <td key={`${trait.key}-${column.key}`} className={match ? "tick" : ""}>
-                              {match ? "✓" : ""}
-                            </td>
-                          )
-                        })}
+                        <td className={reportCardData.affectiveDomain[trait.key] ? "tick" : ""}>
+                          {reportCardData.affectiveDomain[trait.key] ? "✓" : ""}
+                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={AFFECTIVE_DOMAIN_COLUMNS.length + 1}>No affective records available.</td>
+                      <td colSpan={2}>No affective records available.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1149,7 +1143,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                   <img src={reportCardData.branding.signature} alt="Headmaster's signature" />
                 </div>
               ) : (
-                <div className="signature-line" />
+                <div className="signature-placeholder">Signature Pending</div>
               )}
               {reportCardData.branding.headmasterName ? (
                 <span className="signature-name">{reportCardData.branding.headmasterName}</span>
@@ -1474,6 +1468,18 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           object-fit: contain;
         }
 
+        .signature-placeholder {
+          width: 140px;
+          height: 70px;
+          border: 1px dashed #9ca3af;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #6b7280;
+          font-size: 0.75rem;
+          font-style: italic;
+        }
+
         .signature-name {
           font-size: 0.85em;
           font-weight: 600;
@@ -1514,6 +1520,19 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           color: #05762b;
           font-size: 1.2em;
           font-weight: bold;
+        }
+
+        .checkmark-table .check-column {
+          width: 120px;
+        }
+
+        .checkmark-table td:nth-child(2) {
+          text-align: center;
+        }
+
+        .checkmark-table .tick {
+          display: inline-block;
+          min-width: 1.5em;
         }
 
         hr {

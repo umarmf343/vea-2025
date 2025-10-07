@@ -11,15 +11,8 @@ export interface StudentMarks {
     exam: number
     totalObtainable: number
   }>
-  affectiveDomain: {
-    neatness: string
-    honesty: string
-    punctuality: string
-  }
-  psychomotorDomain: {
-    sport: string
-    handwriting: string
-  }
+  affectiveDomain: Record<string, boolean>
+  psychomotorDomain: Record<string, boolean>
   classTeacherRemarks: string
   attendance: {
     present: number
