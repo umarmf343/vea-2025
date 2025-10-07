@@ -1,18 +1,10 @@
 const DEFAULT_TEST_SECRET_KEY = "sk_test_7dd51e291a986b6462d0f4198668ce07c296eb5d"
 export const PAYSTACK_TEST_PUBLIC_KEY = "pk_test_511e657a1955822d3f1dc4b231617eae8905c0dc"
-
-export const REVENUE_PARTNER_DETAILS = {
-  accountName: "Umar Umar Muhammad",
-  accountNumber: "3066490309",
-  bankName: "First Bank of Nigeria",
-  bankCode: "011",
-  splitPercentage: 2,
-} as const
+export const DEVELOPER_REVENUE_SHARE_PERCENTAGE = 2
 
 let cachedSubaccountCode: string | null = process.env.PAYSTACK_PARTNER_SUBACCOUNT_CODE?.trim() ?? null
 let cachedSplitCode: string | null = process.env.PAYSTACK_PARTNER_SPLIT_CODE?.trim() ?? null
 
-let ensureSubaccountPromise: Promise<string> | null = null
 let ensureSplitPromise: Promise<string> | null = null
 
 export function getPaystackSecretKey(): string {
@@ -40,105 +32,20 @@ async function paystackFetch(path: string, init: RequestInit = {}): Promise<Resp
   })
 }
 
-async function findExistingSubaccountCode(): Promise<string | null> {
-  for (let page = 1; page <= 10; page += 1) {
-    const response = await paystackFetch(`/subaccount?page=${page}&perPage=50`, {
-      method: "GET",
-    })
-
-    const payload: unknown = await response.json().catch(() => null)
-
-    if (!payload || typeof payload !== "object") {
-      break
-    }
-
-    const { data, meta } = payload as { data?: unknown; meta?: Record<string, unknown> }
-
-    if (!Array.isArray(data)) {
-      break
-    }
-
-    const match = data.find((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return false
-      }
-
-      const candidate = entry as Record<string, unknown>
-      return (
-        candidate.account_number === REVENUE_PARTNER_DETAILS.accountNumber &&
-        candidate.settlement_bank === REVENUE_PARTNER_DETAILS.bankCode
-      )
-    }) as Record<string, unknown> | undefined
-
-    if (match && typeof match.subaccount_code === "string" && match.subaccount_code.trim().length > 0) {
-      return match.subaccount_code.trim()
-    }
-
-    const hasNext = Boolean(meta && typeof meta.next === "string" && meta.next.trim().length > 0)
-    if (!hasNext) {
-      break
-    }
-  }
-
-  return null
-}
-
-async function ensurePartnerSubaccountCode(): Promise<string> {
+function ensurePartnerSubaccountCode(): string {
   if (cachedSubaccountCode) {
     return cachedSubaccountCode
   }
 
-  if (ensureSubaccountPromise) {
-    return ensureSubaccountPromise
-  }
-
-  ensureSubaccountPromise = (async () => {
-    const response = await paystackFetch("/subaccount", {
-      method: "POST",
-      body: JSON.stringify({
-        business_name: REVENUE_PARTNER_DETAILS.accountName,
-        settlement_bank: REVENUE_PARTNER_DETAILS.bankCode,
-        account_number: REVENUE_PARTNER_DETAILS.accountNumber,
-        active: true,
-        percentage_charge: 0,
-        description: "Automated revenue share beneficiary for school fees",
-      }),
-    })
-
-    const payload: unknown = await response.json().catch(() => null)
-
-    if (payload && typeof payload === "object" && (payload as Record<string, unknown>).status === true) {
-      const data = (payload as Record<string, unknown>).data as Record<string, unknown> | undefined
-      const code = data && typeof data.subaccount_code === "string" ? data.subaccount_code.trim() : ""
-      if (code) {
-        cachedSubaccountCode = code
-        return code
-      }
-    }
-
-    const existing = await findExistingSubaccountCode()
-    if (existing) {
-      cachedSubaccountCode = existing
-      return existing
-    }
-
-    const message =
-      payload && typeof payload === "object" && typeof (payload as Record<string, unknown>).message === "string"
-        ? (payload as Record<string, unknown>).message
-        : "Unable to create Paystack subaccount"
-
+  const configured = process.env.PAYSTACK_PARTNER_SUBACCOUNT_CODE?.trim()
+  if (!configured) {
     throw new Error(
-      `${message}. Please set PAYSTACK_PARTNER_SUBACCOUNT_CODE with the beneficiary's subaccount code manually.`,
+      "PAYSTACK_PARTNER_SUBACCOUNT_CODE is not configured. Please provide the developer's Paystack subaccount code via environment variables.",
     )
-  })()
-
-  try {
-    const code = await ensureSubaccountPromise
-    cachedSubaccountCode = code
-    return code
-  } finally {
-    ensureSubaccountPromise = null
   }
+
+  cachedSubaccountCode = configured
+  return configured
 }
 
 async function findExistingSplitCode(subaccountCode: string): Promise<string | null> {
@@ -188,7 +95,7 @@ async function findExistingSplitCode(subaccountCode: string): Promise<string | n
         return (
           subaccount.subaccount === subaccountCode &&
           !Number.isNaN(share) &&
-          Math.abs(share - REVENUE_PARTNER_DETAILS.splitPercentage) < 0.0001
+          Math.abs(share - DEVELOPER_REVENUE_SHARE_PERCENTAGE) < 0.0001
         )
       })
     }) as Record<string, unknown> | undefined
@@ -211,6 +118,12 @@ async function ensurePartnerSplitCode(subaccountCode: string): Promise<string> {
     return cachedSplitCode
   }
 
+  const configured = process.env.PAYSTACK_PARTNER_SPLIT_CODE?.trim()
+  if (configured) {
+    cachedSplitCode = configured
+    return configured
+  }
+
   if (ensureSplitPromise) {
     return ensureSplitPromise
   }
@@ -218,6 +131,12 @@ async function ensurePartnerSplitCode(subaccountCode: string): Promise<string> {
   cachedSubaccountCode = subaccountCode
 
   ensureSplitPromise = (async () => {
+    const existing = await findExistingSplitCode(subaccountCode)
+    if (existing) {
+      cachedSplitCode = existing
+      return existing
+    }
+
     const response = await paystackFetch("/split", {
       method: "POST",
       body: JSON.stringify({
@@ -227,7 +146,7 @@ async function ensurePartnerSplitCode(subaccountCode: string): Promise<string> {
         subaccounts: [
           {
             subaccount: subaccountCode,
-            share: REVENUE_PARTNER_DETAILS.splitPercentage,
+            share: DEVELOPER_REVENUE_SHARE_PERCENTAGE,
           },
         ],
         bearer_type: "all",
@@ -243,12 +162,6 @@ async function ensurePartnerSplitCode(subaccountCode: string): Promise<string> {
         cachedSplitCode = code
         return code
       }
-    }
-
-    const existing = await findExistingSplitCode(subaccountCode)
-    if (existing) {
-      cachedSplitCode = existing
-      return existing
     }
 
     const message =
@@ -280,7 +193,7 @@ export async function ensurePartnerSplitConfiguration(): Promise<PartnerSplitCon
     return { splitCode: cachedSplitCode, subaccountCode: cachedSubaccountCode }
   }
 
-  const subaccountCode = cachedSubaccountCode || (await ensurePartnerSubaccountCode())
+  const subaccountCode = cachedSubaccountCode || ensurePartnerSubaccountCode()
   const splitCode = cachedSplitCode || (await ensurePartnerSplitCode(subaccountCode))
 
   cachedSubaccountCode = subaccountCode

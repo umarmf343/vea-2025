@@ -10,7 +10,11 @@ import {
   updatePaymentRecord,
 } from "@/lib/database"
 import { sanitizeInput } from "@/lib/security"
-import { ensurePartnerSplitConfiguration, getPaystackSecretKey, REVENUE_PARTNER_DETAILS } from "@/lib/paystack"
+import {
+  DEVELOPER_REVENUE_SHARE_PERCENTAGE,
+  ensurePartnerSplitConfiguration,
+  getPaystackSecretKey,
+} from "@/lib/paystack"
 import { publishNotification } from "@/lib/realtime-hub"
 import { recordDeveloperSplit } from "@/lib/developer-audit"
 
@@ -120,9 +124,7 @@ export async function GET(request: NextRequest) {
           ? sanitizeInput(gatewayData.reference)
           : sanitizedReference
       const metadata = sanitizeMetadataInput(gatewayData.metadata)
-      const developerShareKobo = Math.round(
-        (totalAmountKobo * REVENUE_PARTNER_DETAILS.splitPercentage) / 100,
-      )
+      const developerShareKobo = Math.round((totalAmountKobo * DEVELOPER_REVENUE_SHARE_PERCENTAGE) / 100)
       const schoolNetKobo = Math.max(totalAmountKobo - developerShareKobo, 0)
       const schoolNetAmount = Number((schoolNetKobo / 100).toFixed(2))
       const studentIdRaw =
