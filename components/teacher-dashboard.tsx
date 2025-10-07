@@ -498,6 +498,24 @@ export function TeacherDashboard({
 
   const normalizeClassName = useCallback((value: string) => value.replace(/\s+/g, "").toLowerCase(), [])
 
+  const subjectsForSelectedClass = useMemo(() => {
+    if (teacher.classes.length === 0) {
+      return teacher.subjects
+    }
+
+    const normalized = normalizeClassName(selectedClass)
+    if (!normalized) {
+      return teacher.classes[0]?.subjects.length ? teacher.classes[0]?.subjects : teacher.subjects
+    }
+
+    const match = teacher.classes.find((cls) => normalizeClassName(cls.name) === normalized)
+    if (match && match.subjects.length > 0) {
+      return match.subjects
+    }
+
+    return teacher.subjects
+  }, [normalizeClassName, selectedClass, teacher.classes, teacher.subjects])
+
   useEffect(() => {
     setSelectedClass(teacherClassNames[0] ?? "")
   }, [teacherClassNames])
@@ -541,24 +559,6 @@ export function TeacherDashboard({
       return value
     }
   }
-
-  const subjectsForSelectedClass = useMemo(() => {
-    if (teacher.classes.length === 0) {
-      return teacher.subjects
-    }
-
-    const normalized = normalizeClassName(selectedClass)
-    if (!normalized) {
-      return teacher.classes[0]?.subjects.length ? teacher.classes[0]?.subjects : teacher.subjects
-    }
-
-    const match = teacher.classes.find((cls) => normalizeClassName(cls.name) === normalized)
-    if (match && match.subjects.length > 0) {
-      return match.subjects
-    }
-
-    return teacher.subjects
-  }, [normalizeClassName, selectedClass, teacher.classes, teacher.subjects])
 
   useEffect(() => {
     if (subjectsForSelectedClass.length === 0) {
