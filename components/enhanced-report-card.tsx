@@ -1136,7 +1136,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
               <span className="signature-label">Teacher&apos;s Signature:</span>
               <div className="signature-line" />
             </div>
-            <div className="signature-item">
+            <div className="signature-item headmaster-signature">
               <span className="signature-label">Headmaster&apos;s Signature:</span>
               {reportCardData.branding.signature ? (
                 <div className="signature-image">
@@ -1440,6 +1440,12 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           gap: 12px;
           font-weight: 600;
           color: #27613d;
+        }
+
+        .signature-item.headmaster-signature {
+          margin-left: auto;
+          align-items: flex-end;
+          text-align: right;
         }
 
         .signature-label {
