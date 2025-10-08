@@ -57,6 +57,8 @@ import { AdminApprovalDashboard } from "@/components/admin-approval-dashboard"
 import { FinancialReports } from "@/components/financial-reports"
 import { InternalMessaging } from "@/components/internal-messaging"
 import { PaymentManagement } from "@/components/admin/payment-management"
+import { ReportCardConfig } from "@/components/admin/report-card-config"
+import { ReportCardLayoutManager } from "@/components/admin/report-card-layout-manager"
 import { StudentManagement } from "@/components/admin/student-management"
 import { UserManagement } from "@/components/admin/user-management"
 import { SchoolCalendarApprovalPanel } from "@/components/school-calendar-approval"
@@ -104,6 +106,7 @@ type DashboardTab =
   | "students"
   | "users"
   | "system"
+  | "report-card"
   | "reports"
 
 type PanelRole =
@@ -1445,6 +1448,12 @@ export default function SuperAdminDashboard() {
               System
             </TabsTrigger>
             <TabsTrigger
+              value="report-card"
+              className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
+            >
+              Report Card
+            </TabsTrigger>
+            <TabsTrigger
               value="reports"
               className="min-w-[120px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
             >
@@ -2338,6 +2347,11 @@ export default function SuperAdminDashboard() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="report-card" className="space-y-6">
+          <ReportCardLayoutManager />
+          <ReportCardConfig />
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-6">
