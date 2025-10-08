@@ -21,6 +21,7 @@ import { hashPassword, sanitizeInput, verifyToken } from "@/lib/security"
 import { logger } from "@/lib/logger"
 
 export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
 const normalizeRole = (value: unknown): string => {
   if (typeof value !== "string") {
