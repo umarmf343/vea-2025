@@ -252,6 +252,7 @@ interface NewUserState {
   studentIds: string[]
   classId: string
   classIds: string[]
+  teachingAssignments: { classId: string; subjects: string[] }[]
   subjects: string[]
   phoneNumber1: string
   phoneNumber2: string
@@ -266,6 +267,7 @@ const INITIAL_USER_STATE: NewUserState = {
   studentIds: [],
   classId: "",
   classIds: [],
+  teachingAssignments: [],
   subjects: [],
   phoneNumber1: "",
   phoneNumber2: "",
@@ -318,33 +320,24 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
   const availableStudents = useMemo(() => users.filter((user) => user.role === "student"), [users])
   const [availableClasses, setAvailableClasses] = useState<ClassOption[]>([])
 
-  const selectedNewTeacherClasses = useMemo(
-    () => availableClasses.filter((cls) => newUser.classIds.includes(cls.id)),
-    [availableClasses, newUser.classIds],
-  )
-
   const selectedNewTeacherSubjects = useMemo(
     () =>
-      Array.from(new Set(selectedNewTeacherClasses.flatMap((cls) => cls.subjects ?? []))).filter(
-        (subject): subject is string => subject.length > 0,
-      ),
-    [selectedNewTeacherClasses],
-  )
-
-  const selectedEditingTeacherClasses = useMemo(
-    () =>
-      availableClasses.filter((cls) =>
-        editingUser?.role === "teacher" ? editingUser.classIds.includes(cls.id) : false,
-      ),
-    [availableClasses, editingUser?.classIds, editingUser?.role],
+      Array.from(
+        new Set(newUser.teachingAssignments.flatMap((assignment) => assignment.subjects ?? [])),
+      ).filter((subject): subject is string => subject.length > 0),
+    [newUser.teachingAssignments],
   )
 
   const selectedEditingTeacherSubjects = useMemo(
     () =>
-      Array.from(new Set(selectedEditingTeacherClasses.flatMap((cls) => cls.subjects ?? []))).filter(
-        (subject): subject is string => subject.length > 0,
-      ),
-    [selectedEditingTeacherClasses],
+      editingUser?.role === "teacher"
+        ? Array.from(
+            new Set(
+              editingUser.teachingAssignments.flatMap((assignment) => assignment.subjects ?? []),
+            ),
+          ).filter((subject): subject is string => subject.length > 0)
+        : [],
+    [editingUser?.role, editingUser?.teachingAssignments],
   )
 
   useEffect(() => {
@@ -400,7 +393,8 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
     try {
       const normalizedClassId = newUser.classId.trim()
       const selectedClass = availableClasses.find((cls) => cls.id === normalizedClassId)
-      const selectedTeacherClasses = availableClasses.filter((cls) => newUser.classIds.includes(cls.id))
+
+      let teacherAssignmentPayload: { classId: string; className: string; subjects: string[] }[] = []
 
       if (newUser.role === "parent" && newUser.studentIds.length === 0) {
         setError("Please assign at least one student to the parent account")
@@ -408,14 +402,58 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
       }
 
       if (newUser.role === "teacher") {
-        if (selectedTeacherClasses.length === 0) {
+        if (newUser.teachingAssignments.length === 0) {
           setError("Select at least one class before creating a teacher account")
           return
         }
 
-        const invalidClass = selectedTeacherClasses.find((cls) => cls.subjects.length === 0)
-        if (invalidClass) {
-          setError(`Add subjects to ${invalidClass.name} before assigning it to a teacher`)
+        const processedAssignments = new Map<string, { classId: string; className: string; subjects: string[] }>()
+
+        for (const assignment of newUser.teachingAssignments) {
+          const classOption = availableClasses.find((cls) => cls.id === assignment.classId)
+          if (!classOption) {
+            setError("One of the selected classes is no longer available. Please refresh and try again.")
+            return
+          }
+
+          const canonicalSubjects = Array.from(
+            new Set(
+              (classOption.subjects ?? [])
+                .map((subject) => subject.toString().trim())
+                .filter((subject) => subject.length > 0),
+            ),
+          )
+
+          if (canonicalSubjects.length === 0) {
+            setError(`Add subjects to ${classOption.name} before assigning it to a teacher`)
+            return
+          }
+
+          const canonicalTokens = canonicalSubjects.map((subject) => subject.toLowerCase())
+          const sanitizedSubjects = Array.from(
+            new Set(
+              (assignment.subjects ?? [])
+                .map((subject) => subject.trim())
+                .filter((subject) => subject.length > 0 && canonicalTokens.includes(subject.toLowerCase())),
+            ),
+          )
+
+          if (sanitizedSubjects.length === 0) {
+            setError(`Select at least one subject for ${classOption.name}`)
+            return
+          }
+
+          processedAssignments.set(classOption.id, {
+            classId: classOption.id,
+            className: classOption.name,
+            subjects: sanitizedSubjects,
+          })
+        }
+
+        teacherAssignmentPayload = Array.from(processedAssignments.values())
+
+        if (teacherAssignmentPayload.length === 0) {
+          setError("Select at least one class before creating a teacher account")
           return
         }
       } else if (shouldAssignClass(newUser.role) && !normalizedClassId) {
@@ -437,13 +475,15 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
         return
       }
 
+      const assignmentClassIds = teacherAssignmentPayload.map((assignment) => assignment.classId)
+
       const classMetadata =
         newUser.role === "teacher"
           ? {
-              assignedClassIds: [...newUser.classIds],
-              assignedClassNames: selectedTeacherClasses.map((cls) => cls.name),
+              assignedClassIds: assignmentClassIds,
+              assignedClassNames: teacherAssignmentPayload.map((assignment) => assignment.className),
               teachingSubjects: Array.from(
-                new Set(selectedTeacherClasses.flatMap((cls) => cls.subjects ?? [])),
+                new Set(teacherAssignmentPayload.flatMap((assignment) => assignment.subjects)),
               ),
             }
           : shouldAssignClass(newUser.role)
@@ -481,8 +521,15 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
           password: newUser.password,
           studentIds: newUser.role === "parent" ? newUser.studentIds : undefined,
           classId: newUser.role === "student" ? (normalizedClassId || null) : undefined,
-          classIds: newUser.role === "teacher" ? newUser.classIds : undefined,
+          classIds: newUser.role === "teacher" ? assignmentClassIds : undefined,
           subjects: newUser.role === "teacher" ? undefined : newUser.subjects,
+          teachingAssignments:
+            newUser.role === "teacher"
+              ? teacherAssignmentPayload.map((assignment) => ({
+                  classId: assignment.classId,
+                  subjects: assignment.subjects,
+                }))
+              : undefined,
           metadata,
         }),
       })
@@ -520,7 +567,7 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
         normalizedClassId !== null
           ? availableClasses.find((cls) => cls.id === normalizedClassId)
           : undefined
-      const selectedTeacherClasses = availableClasses.filter((cls) => editingUser.classIds.includes(cls.id))
+      let teacherAssignmentPayload: { classId: string; className: string; subjects: string[] }[] = []
       const metadataPayload: Record<string, any> = editingUser.metadata ? { ...editingUser.metadata } : {}
 
       const primaryPhone = editingUser.contactPhonePrimary?.trim() ?? ""
@@ -538,21 +585,65 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
       }
 
       if (editingUser.role === "teacher") {
-        if (selectedTeacherClasses.length === 0) {
+        if (editingUser.teachingAssignments.length === 0) {
           setError("Select at least one class before saving this teacher")
           return
         }
 
-        const invalidClass = selectedTeacherClasses.find((cls) => cls.subjects.length === 0)
-        if (invalidClass) {
-          setError(`Add subjects to ${invalidClass.name} before assigning it to a teacher`)
+        const processedAssignments = new Map<string, { classId: string; className: string; subjects: string[] }>()
+
+        for (const assignment of editingUser.teachingAssignments) {
+          const classOption = availableClasses.find((cls) => cls.id === assignment.classId)
+          if (!classOption) {
+            setError("One of the selected classes is no longer available. Please refresh and try again.")
+            return
+          }
+
+          const canonicalSubjects = Array.from(
+            new Set(
+              (classOption.subjects ?? [])
+                .map((subject) => subject.toString().trim())
+                .filter((subject) => subject.length > 0),
+            ),
+          )
+
+          if (canonicalSubjects.length === 0) {
+            setError(`Add subjects to ${classOption.name} before assigning it to a teacher`)
+            return
+          }
+
+          const canonicalTokens = canonicalSubjects.map((subject) => subject.toLowerCase())
+          const sanitizedSubjects = Array.from(
+            new Set(
+              (assignment.subjects ?? [])
+                .map((subject) => subject.trim())
+                .filter((subject) => subject.length > 0 && canonicalTokens.includes(subject.toLowerCase())),
+            ),
+          )
+
+          if (sanitizedSubjects.length === 0) {
+            setError(`Select at least one subject for ${classOption.name}`)
+            return
+          }
+
+          processedAssignments.set(classOption.id, {
+            classId: classOption.id,
+            className: classOption.name,
+            subjects: sanitizedSubjects,
+          })
+        }
+
+        teacherAssignmentPayload = Array.from(processedAssignments.values())
+
+        if (teacherAssignmentPayload.length === 0) {
+          setError("Select at least one class before saving this teacher")
           return
         }
 
-        metadataPayload.assignedClassIds = [...editingUser.classIds]
-        metadataPayload.assignedClassNames = selectedTeacherClasses.map((cls) => cls.name)
+        metadataPayload.assignedClassIds = teacherAssignmentPayload.map((assignment) => assignment.classId)
+        metadataPayload.assignedClassNames = teacherAssignmentPayload.map((assignment) => assignment.className)
         metadataPayload.teachingSubjects = Array.from(
-          new Set(selectedTeacherClasses.flatMap((cls) => cls.subjects ?? [])),
+          new Set(teacherAssignmentPayload.flatMap((assignment) => assignment.subjects)),
         )
 
         if ("assignedClassName" in metadataPayload) {
@@ -610,6 +701,8 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
 
       metadataPayload.contactAddress = address
 
+      const assignmentClassIds = teacherAssignmentPayload.map((assignment) => assignment.classId)
+
       const metadata = Object.keys(metadataPayload).length > 0 ? metadataPayload : undefined
       const response = await fetch("/api/users", {
         method: "PUT",
@@ -622,8 +715,15 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
           status: editingUser.status,
           studentIds: editingUser.role === "parent" ? editingUser.studentIds : undefined,
           classId: editingUser.role === "student" ? normalizedClassId : undefined,
-          classIds: editingUser.role === "teacher" ? editingUser.classIds : undefined,
+          classIds: editingUser.role === "teacher" ? assignmentClassIds : undefined,
           subjects: editingUser.role === "teacher" ? undefined : editingUser.subjects,
+          teachingAssignments:
+            editingUser.role === "teacher"
+              ? teacherAssignmentPayload.map((assignment) => ({
+                  classId: assignment.classId,
+                  subjects: assignment.subjects,
+                }))
+              : undefined,
           metadata,
         }),
       })
@@ -875,36 +975,137 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>Assign Classes</Label>
-                    <div className="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
+                    <div className="space-y-3 rounded-md border p-3">
                       {availableClasses.length === 0 ? (
                         <p className="text-sm text-gray-500">Create classes with subjects before assigning teachers.</p>
                       ) : (
                         availableClasses.map((cls) => {
-                          const isSelected = newUser.classIds.includes(cls.id)
-                          const isDisabled = cls.subjects.length === 0
+                          const canonicalSubjects = Array.from(
+                            new Set(
+                              (cls.subjects ?? []).map((subject) => subject.toString().trim()).filter((subject) => subject.length > 0),
+                            ),
+                          )
+                          const assignment = newUser.teachingAssignments.find((entry) => entry.classId === cls.id)
+                          const isSelected = Boolean(assignment)
+                          const isDisabled = canonicalSubjects.length === 0
+                          const canonicalSubjectTokens = canonicalSubjects.map((subject) => subject.toLowerCase())
+                          const selectedSubjectTokens = new Set(
+                            (assignment?.subjects ?? []).map((subject) => subject.trim().toLowerCase()),
+                          )
+
                           return (
-                            <label key={cls.id} className="flex items-start gap-2 text-sm">
-                              <Checkbox
-                                checked={isSelected}
-                                disabled={isDisabled}
-                                onCheckedChange={(checked) =>
-                                  setNewUser((prev) => ({
-                                    ...prev,
-                                    classIds: checked
-                                      ? [...prev.classIds, cls.id]
-                                      : prev.classIds.filter((id) => id !== cls.id),
-                                  }))
-                                }
-                              />
-                              <span className="flex flex-col">
-                                <span className="font-medium">{cls.name}</span>
-                                <span className="text-xs text-gray-500">
-                                  {cls.subjects.length > 0
-                                    ? `Subjects: ${cls.subjects.join(", ")}`
-                                    : "Add subjects before assigning this class."}
+                            <div key={cls.id} className="space-y-2">
+                              <label className="flex items-start gap-2 text-sm">
+                                <Checkbox
+                                  checked={isSelected}
+                                  disabled={isDisabled}
+                                  onCheckedChange={(checked) =>
+                                    setNewUser((prev) => {
+                                      const nextAssignments = prev.teachingAssignments.filter(
+                                        (entry) => entry.classId !== cls.id,
+                                      )
+
+                                      if (checked === true && !isDisabled) {
+                                        nextAssignments.push({
+                                          classId: cls.id,
+                                          subjects: [...canonicalSubjects],
+                                        })
+                                      }
+
+                                      const nextClassIds = Array.from(
+                                        new Set(nextAssignments.map((entry) => entry.classId)),
+                                      )
+
+                                      return {
+                                        ...prev,
+                                        classIds: nextClassIds,
+                                        teachingAssignments: nextAssignments,
+                                      }
+                                    })
+                                  }
+                                />
+                                <span className="flex flex-col">
+                                  <span className="font-medium">{cls.name}</span>
+                                  <span className="text-xs text-gray-500">
+                                    {canonicalSubjects.length > 0
+                                      ? `Subjects: ${canonicalSubjects.join(", ")}`
+                                      : "Add subjects before assigning this class."}
+                                  </span>
                                 </span>
-                              </span>
-                            </label>
+                              </label>
+                              {isSelected ? (
+                                <div className="ml-6 space-y-1">
+                                  {canonicalSubjects.length === 0 ? (
+                                    <p className="text-xs text-amber-600">
+                                      Add subjects to this class before assigning it to a teacher.
+                                    </p>
+                                  ) : (
+                                    canonicalSubjects.map((subject) => {
+                                      const normalizedSubject = subject.trim()
+                                      const subjectToken = normalizedSubject.toLowerCase()
+                                      const isSubjectSelected = selectedSubjectTokens.has(subjectToken)
+
+                                      return (
+                                        <label key={`${cls.id}-${subject}`} className="flex items-center gap-2 text-xs">
+                                          <Checkbox
+                                            checked={isSubjectSelected}
+                                            onCheckedChange={(checked) =>
+                                              setNewUser((prev) => {
+                                                const existing = prev.teachingAssignments.find(
+                                                  (entry) => entry.classId === cls.id,
+                                                )
+                                                const others = prev.teachingAssignments.filter(
+                                                  (entry) => entry.classId !== cls.id,
+                                                )
+
+                                                let nextSubjects = existing?.subjects ?? []
+
+                                                if (checked === true) {
+                                                  if (!nextSubjects.some((entry) => entry.trim().toLowerCase() === subjectToken)) {
+                                                    nextSubjects = [...nextSubjects, normalizedSubject]
+                                                  }
+                                                } else {
+                                                  nextSubjects = nextSubjects.filter(
+                                                    (entry) => entry.trim().toLowerCase() !== subjectToken,
+                                                  )
+                                                }
+
+                                                const sanitizedSubjects = Array.from(
+                                                  new Set(
+                                                    nextSubjects
+                                                      .map((entry) => entry.trim())
+                                                      .filter((entry) => entry.length > 0)
+                                                      .filter((entry) =>
+                                                        canonicalSubjectTokens.includes(entry.toLowerCase()),
+                                                      ),
+                                                  ),
+                                                )
+
+                                                const nextAssignments =
+                                                  sanitizedSubjects.length === 0
+                                                    ? others
+                                                    : [...others, { classId: cls.id, subjects: sanitizedSubjects }]
+
+                                                const nextClassIds = Array.from(
+                                                  new Set(nextAssignments.map((entry) => entry.classId)),
+                                                )
+
+                                                return {
+                                                  ...prev,
+                                                  classIds: nextClassIds,
+                                                  teachingAssignments: nextAssignments,
+                                                }
+                                              })
+                                            }
+                                          />
+                                          <span>{subject}</span>
+                                        </label>
+                                      )
+                                    })
+                                  )}
+                                </div>
+                              ) : null}
+                            </div>
                           )
                         })
                       )}
@@ -1157,7 +1358,7 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                 <Label>Role</Label>
                 <Select
                   value={editingUser.role}
-                  onValueChange={(value: UserRole) =>
+                          onValueChange={(value: UserRole) =>
                     setEditingUser((prev) =>
                       prev
                         ? {
@@ -1167,6 +1368,8 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                             classId: value === "student" ? prev.classId : null,
                             classIds: value === "teacher" ? prev.classIds : [],
                             subjects: value === "teacher" ? prev.subjects : [],
+                            teachingAssignments:
+                              value === "teacher" ? prev.teachingAssignments : [],
                           }
                         : prev,
                     )
@@ -1235,40 +1438,146 @@ export function UserManagement({ hideSuperAdmin = false }: UserManagementProps =
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>Assigned Classes</Label>
-                    <div className="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
+                    <div className="space-y-3 rounded-md border p-3">
                       {availableClasses.length === 0 ? (
                         <p className="text-sm text-gray-500">Create classes with subjects before assigning teachers.</p>
                       ) : (
                         availableClasses.map((cls) => {
-                          const isSelected = editingUser.classIds.includes(cls.id)
-                          const isDisabled = cls.subjects.length === 0
+                          const canonicalSubjects = Array.from(
+                            new Set(
+                              (cls.subjects ?? []).map((subject) => subject.toString().trim()).filter((subject) => subject.length > 0),
+                            ),
+                          )
+                          const assignment = editingUser.teachingAssignments.find((entry) => entry.classId === cls.id)
+                          const isSelected = Boolean(assignment)
+                          const isDisabled = canonicalSubjects.length === 0
+                          const canonicalSubjectTokens = canonicalSubjects.map((subject) => subject.toLowerCase())
+                          const selectedSubjectTokens = new Set(
+                            (assignment?.subjects ?? []).map((subject) => subject.trim().toLowerCase()),
+                          )
+
                           return (
-                            <label key={cls.id} className="flex items-start gap-2 text-sm">
-                              <Checkbox
-                                checked={isSelected}
-                                disabled={isDisabled}
-                                onCheckedChange={(checked) =>
-                                  setEditingUser((prev) =>
-                                    prev
-                                      ? {
-                                          ...prev,
-                                          classIds: checked
-                                            ? [...prev.classIds, cls.id]
-                                            : prev.classIds.filter((id) => id !== cls.id),
-                                        }
-                                      : prev,
-                                  )
-                                }
-                              />
-                              <span className="flex flex-col">
-                                <span className="font-medium">{cls.name}</span>
-                                <span className="text-xs text-gray-500">
-                                  {cls.subjects.length > 0
-                                    ? `Subjects: ${cls.subjects.join(", ")}`
-                                    : "Add subjects before assigning this class."}
+                            <div key={cls.id} className="space-y-2">
+                              <label className="flex items-start gap-2 text-sm">
+                                <Checkbox
+                                  checked={isSelected}
+                                  disabled={isDisabled}
+                                  onCheckedChange={(checked) =>
+                                    setEditingUser((prev) => {
+                                      if (!prev) {
+                                        return prev
+                                      }
+
+                                      const remainingAssignments = prev.teachingAssignments.filter(
+                                        (entry) => entry.classId !== cls.id,
+                                      )
+
+                                      const nextAssignments =
+                                        checked === true && !isDisabled
+                                          ? [
+                                              ...remainingAssignments,
+                                              { classId: cls.id, subjects: [...canonicalSubjects] },
+                                            ]
+                                          : remainingAssignments
+
+                                      const nextClassIds = Array.from(
+                                        new Set(nextAssignments.map((entry) => entry.classId)),
+                                      )
+
+                                      return {
+                                        ...prev,
+                                        classIds: nextClassIds,
+                                        teachingAssignments: nextAssignments,
+                                      }
+                                    })
+                                  }
+                                />
+                                <span className="flex flex-col">
+                                  <span className="font-medium">{cls.name}</span>
+                                  <span className="text-xs text-gray-500">
+                                    {canonicalSubjects.length > 0
+                                      ? `Subjects: ${canonicalSubjects.join(", ")}`
+                                      : "Add subjects before assigning this class."}
+                                  </span>
                                 </span>
-                              </span>
-                            </label>
+                              </label>
+                              {isSelected ? (
+                                <div className="ml-6 space-y-1">
+                                  {canonicalSubjects.length === 0 ? (
+                                    <p className="text-xs text-amber-600">
+                                      Add subjects to this class before assigning it to a teacher.
+                                    </p>
+                                  ) : (
+                                    canonicalSubjects.map((subject) => {
+                                      const normalizedSubject = subject.trim()
+                                      const subjectToken = normalizedSubject.toLowerCase()
+                                      const isSubjectSelected = selectedSubjectTokens.has(subjectToken)
+
+                                      return (
+                                        <label key={`${cls.id}-${subject}`} className="flex items-center gap-2 text-xs">
+                                          <Checkbox
+                                            checked={isSubjectSelected}
+                                            onCheckedChange={(checked) =>
+                                              setEditingUser((prev) => {
+                                                if (!prev) {
+                                                  return prev
+                                                }
+
+                                                const existing = prev.teachingAssignments.find(
+                                                  (entry) => entry.classId === cls.id,
+                                                )
+                                                const others = prev.teachingAssignments.filter(
+                                                  (entry) => entry.classId !== cls.id,
+                                                )
+
+                                                let nextSubjects = existing?.subjects ?? []
+
+                                                if (checked === true) {
+                                                  if (!nextSubjects.some((entry) => entry.trim().toLowerCase() === subjectToken)) {
+                                                    nextSubjects = [...nextSubjects, normalizedSubject]
+                                                  }
+                                                } else {
+                                                  nextSubjects = nextSubjects.filter(
+                                                    (entry) => entry.trim().toLowerCase() !== subjectToken,
+                                                  )
+                                                }
+
+                                                const sanitizedSubjects = Array.from(
+                                                  new Set(
+                                                    nextSubjects
+                                                      .map((entry) => entry.trim())
+                                                      .filter((entry) => entry.length > 0)
+                                                      .filter((entry) =>
+                                                        canonicalSubjectTokens.includes(entry.toLowerCase()),
+                                                      ),
+                                                  ),
+                                                )
+
+                                                const nextAssignments =
+                                                  sanitizedSubjects.length === 0
+                                                    ? others
+                                                    : [...others, { classId: cls.id, subjects: sanitizedSubjects }]
+
+                                                const nextClassIds = Array.from(
+                                                  new Set(nextAssignments.map((entry) => entry.classId)),
+                                                )
+
+                                                return {
+                                                  ...prev,
+                                                  classIds: nextClassIds,
+                                                  teachingAssignments: nextAssignments,
+                                                }
+                                              })
+                                            }
+                                          />
+                                          <span>{subject}</span>
+                                        </label>
+                                      )
+                                    })
+                                  )}
+                                </div>
+                              ) : null}
+                            </div>
                           )
                         })
                       )}

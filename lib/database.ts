@@ -66,6 +66,7 @@ export interface TeacherAssignmentSummary {
 export interface TeacherClassAssignmentRecord extends CollectionRecord {
   teacherId: string
   classId: string
+  subjects: string[]
 }
 
 export interface StudentRecord extends CollectionRecord {
@@ -556,6 +557,7 @@ export interface CreateUserPayload {
   passwordHash: string
   classId?: string | null
   classIds?: string[]
+  teachingAssignments?: { classId?: string | null; subjects?: string[] }[]
   studentId?: string | null
   studentIds?: string[]
   subjects?: string[]
@@ -571,6 +573,7 @@ export interface UpdateUserPayload extends Partial<Omit<StoredUser, "id" | "emai
   studentIds?: string[]
   subjects?: string[]
   classIds?: string[]
+  teachingAssignments?: { classId?: string | null; subjects?: string[] }[]
 }
 
 export interface CreateClassPayload {
@@ -1629,10 +1632,117 @@ function normalizeRoleForStorage(role: string): string {
 }
 
 function ensureTeacherClassAssignmentsCollection(): TeacherClassAssignmentRecord[] {
-  return ensureCollection<TeacherClassAssignmentRecord>(
+  const assignments = ensureCollection<TeacherClassAssignmentRecord>(
     STORAGE_KEYS.TEACHER_CLASS_ASSIGNMENTS,
     defaultEmptyCollection,
   )
+
+  return assignments.map((assignment) => ({
+    ...assignment,
+    subjects: Array.isArray(assignment.subjects)
+      ? assignment.subjects.map((subject) => String(subject))
+      : [],
+  }))
+}
+
+type NormalizedTeacherAssignment = {
+  classRecord: ClassRecord
+  subjects: string[]
+}
+
+function normalizeTeacherAssignmentRequests(
+  assignmentRequests: { classId?: string | null; className?: string | null; subjects?: unknown }[] | undefined,
+  fallbackClassIds: string[],
+  classes: ClassRecord[],
+): NormalizedTeacherAssignment[] {
+  const normalized: NormalizedTeacherAssignment[] = []
+  const seen = new Set<string>()
+
+  const resolveClass = (identifier: string): ClassRecord => {
+    const classRecord = resolveClassRecordByIdentifier(classes, identifier)
+    if (!classRecord) {
+      throw new Error(`Class not found for identifier: ${identifier}`)
+    }
+    return classRecord
+  }
+
+  const toToken = (value: string) => value.replace(/\s+/g, "").toLowerCase()
+
+  const registerAssignment = (classRecord: ClassRecord, requestedSubjects: unknown) => {
+    if (seen.has(classRecord.id)) {
+      return
+    }
+
+    const classSubjects = normalizeSubjectList(classRecord.subjects)
+    if (classSubjects.length === 0) {
+      throw new Error(`Cannot assign teacher to ${classRecord.name} because it has no subjects`)
+    }
+
+    const classSubjectTokens = classSubjects.map((subject) => ({
+      token: toToken(subject),
+      value: subject,
+    }))
+
+    const requestedList = normalizeSubjectList(requestedSubjects)
+    let effectiveSubjects: string[] = classSubjects
+
+    if (requestedList.length > 0) {
+      const matched = requestedList
+        .map((subject) => {
+          const token = toToken(subject)
+          const match = classSubjectTokens.find((entry) => entry.token === token)
+          return match?.value ?? null
+        })
+        .filter((subject): subject is string => Boolean(subject))
+
+      if (matched.length === 0) {
+        throw new Error(`None of the selected subjects are offered in ${classRecord.name}`)
+      }
+
+      effectiveSubjects = Array.from(new Set(matched))
+    }
+
+    if (effectiveSubjects.length === 0) {
+      throw new Error(`Unable to resolve subjects for ${classRecord.name}`)
+    }
+
+    seen.add(classRecord.id)
+    normalized.push({ classRecord, subjects: effectiveSubjects })
+  }
+
+  const assignments = Array.isArray(assignmentRequests) ? assignmentRequests : []
+
+  assignments.forEach((assignment) => {
+    const classId = normalizeClassIdentifier(assignment.classId)
+    const className = normalizeClassIdentifier(assignment.className)
+    const identifier = classId || className
+
+    if (!identifier) {
+      return
+    }
+
+    const classRecord = resolveClassRecordByIdentifier(classes, identifier)
+    if (!classRecord) {
+      throw new Error(`Class not found for identifier: ${identifier}`)
+    }
+
+    registerAssignment(classRecord, assignment.subjects)
+  })
+
+  const fallbackIdentifiers = fallbackClassIds
+    .map((identifier) => normalizeClassIdentifier(identifier))
+    .filter((identifier): identifier is string => Boolean(identifier))
+
+  fallbackIdentifiers.forEach((identifier) => {
+    const classRecord = resolveClass(identifier)
+    registerAssignment(classRecord, undefined)
+  })
+
+  if (normalized.length === 0) {
+    throw new Error("At least one valid class assignment with subjects is required for teachers")
+  }
+
+  return normalized
 }
 
 function buildTeacherAssignmentAugmentorFromCollections(
@@ -1641,6 +1751,7 @@ function buildTeacherAssignmentAugmentorFromCollections(
 ): (user: StoredUser) => StoredUser {
   const classMap = new Map(classes.map((entry) => [entry.id, entry]))
   const assignmentsByTeacher = new Map<string, TeacherClassAssignmentRecord[]>()
+  const toToken = (value: string) => value.replace(/\s+/g, "").toLowerCase()
 
   for (const assignment of assignments) {
     if (!assignment.teacherId || !classMap.has(assignment.classId)) {
@@ -1701,15 +1812,31 @@ function buildTeacherAssignmentAugmentorFromCollections(
       seenClassIds.add(classRecord.id)
 
       const classSubjects = normalizeSubjectList(classRecord.subjects)
+      const classSubjectTokens = classSubjects.map((subject) => ({
+        token: toToken(subject),
+        value: subject,
+      }))
+      const assignedSubjects = normalizeSubjectList(assignment.subjects)
+      const matchedSubjects =
+        assignedSubjects.length > 0
+          ? assignedSubjects
+              .map((subject) => {
+                const token = toToken(subject)
+                const match = classSubjectTokens.find((entry) => entry.token === token)
+                return match?.value ?? null
+              })
+              .filter((subject): subject is string => Boolean(subject))
+          : classSubjects
+      const effectiveSubjects = matchedSubjects.length > 0 ? matchedSubjects : classSubjects
 
-      for (const subject of classSubjects) {
+      for (const subject of effectiveSubjects) {
         addSubject(subject)
       }
 
       summaries.push({
         classId: classRecord.id,
         className: classRecord.name,
-        subjects: classSubjects,
+        subjects: effectiveSubjects,
       })
     }
 
@@ -1834,38 +1961,6 @@ function collectTeacherClassIds(options: { classIds?: unknown; classId?: unknown
   }
 
   return Array.from(identifiers)
-}
-
-function resolveTeacherClassesForIdentifiers(identifiers: string[], classes: ClassRecord[]): ClassRecord[] {
-  const uniqueClasses: ClassRecord[] = []
-  const seen = new Set<string>()
-
-  for (const identifier of identifiers) {
-    const classRecord = resolveClassRecordByIdentifier(classes, identifier)
-
-    if (!classRecord) {
-      throw new Error(`Class not found for identifier: ${identifier}`)
-    }
-
-    const classSubjects = normalizeSubjectList(classRecord.subjects)
-
-    if (classSubjects.length === 0) {
-      throw new Error(`Cannot assign teacher to ${classRecord.name} because it has no subjects`)
-    }
-
-    if (seen.has(classRecord.id)) {
-      continue
-    }
-
-    seen.add(classRecord.id)
-    uniqueClasses.push(classRecord)
-  }
-
-  if (uniqueClasses.length === 0) {
-    throw new Error("At least one valid class assignment is required for teachers")
-  }
-
-  return uniqueClasses
 }
 
 function resolveClassRecordByIdentifier(classes: ClassRecord[], identifier: string): ClassRecord | null {
@@ -2023,6 +2118,7 @@ type DbTeacherClassAssignmentRow = RowDataPacket & {
   id: string
   teacher_id: string
   class_id: string
+  subjects: string | null
   created_at: string | Date
   updated_at: string | Date
 }
@@ -2046,11 +2142,24 @@ async function ensureTeacherClassAssignmentsTable(executor?: SqlExecutor | null)
       id VARCHAR(64) PRIMARY KEY,
       teacher_id VARCHAR(64) NOT NULL,
       class_id VARCHAR(64) NOT NULL,
+      subjects TEXT NULL,
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL,
       UNIQUE KEY unique_teacher_class (teacher_id, class_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   )
+
+  try {
+    await pool.query(
+      `ALTER TABLE ${TEACHER_CLASS_ASSIGNMENTS_TABLE} ADD COLUMN subjects TEXT NULL AFTER class_id`,
+    )
+  } catch (error) {
+    if (
+      !(error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ER_DUP_FIELDNAME")
+    ) {
+      throw error
+    }
+  }
 
   teacherClassAssignmentsTableEnsured = true
 }
@@ -2060,7 +2169,7 @@ async function getTeacherClassAssignmentsFromDatabase(teacherIds?: string[]): Pr
 
   const pool = getPool()
   const params: string[] = []
-  let query = `SELECT id, teacher_id, class_id, created_at, updated_at FROM ${TEACHER_CLASS_ASSIGNMENTS_TABLE}`
+  let query = `SELECT id, teacher_id, class_id, subjects, created_at, updated_at FROM ${TEACHER_CLASS_ASSIGNMENTS_TABLE}`
 
   if (teacherIds && teacherIds.length > 0) {
     const filtered = teacherIds.filter((id) => typeof id === "string" && id.trim().length > 0)
@@ -2078,6 +2187,7 @@ async function getTeacherClassAssignmentsFromDatabase(teacherIds?: string[]): Pr
     id: String(row.id),
     teacherId: String(row.teacher_id),
     classId: String(row.class_id),
+    subjects: parseStringArray(row.subjects),
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   }))
@@ -2150,7 +2260,7 @@ function mapMysqlError(error: unknown): never {
 
 async function createUserInDatabase(
   payload: CreateUserPayload,
-  options?: { normalizedRole?: string; teacherClassIds?: string[] },
+  options?: { normalizedRole?: string; teacherAssignments?: { classId: string; subjects: string[] }[] },
 ): Promise<StoredUser> {
   const normalizedEmail = payload.email.trim().toLowerCase()
   const normalizedRole = options?.normalizedRole ?? normalizeRoleForStorage(payload.role)
@@ -2191,22 +2301,29 @@ async function createUserInDatabase(
     const insertedId = String((result as ResultSetHeader).insertId)
 
     if (normalizedRole === "teacher") {
-      const classIds = options?.teacherClassIds ?? []
-      if (classIds.length === 0) {
+      const assignments = options?.teacherAssignments ?? []
+      if (assignments.length === 0) {
         throw new Error("Assign at least one class to the teacher account")
       }
 
       const timestamp = new Date().toISOString()
       const placeholders: string[] = []
-      const values: string[] = []
+      const values: Array<string | null> = []
 
-      for (const classId of classIds) {
-        placeholders.push("(?, ?, ?, ?, ?)")
-        values.push(generateId("teacher_class"), insertedId, String(classId), timestamp, timestamp)
+      for (const assignment of assignments) {
+        placeholders.push("(?, ?, ?, ?, ?, ?)")
+        values.push(
+          generateId("teacher_class"),
+          insertedId,
+          String(assignment.classId),
+          JSON.stringify(assignment.subjects ?? []),
+          timestamp,
+          timestamp,
+        )
       }
 
       await connection.query(
-        `INSERT INTO ${TEACHER_CLASS_ASSIGNMENTS_TABLE} (id, teacher_id, class_id, created_at, updated_at) VALUES ${placeholders.join(", ")}`,
+        `INSERT INTO ${TEACHER_CLASS_ASSIGNMENTS_TABLE} (id, teacher_id, class_id, subjects, created_at, updated_at) VALUES ${placeholders.join(", ")}`,
         values,
       )
     }
@@ -2312,23 +2429,53 @@ async function updateUserInDatabase(id: string, updates: UpdateUserPayload): Pro
     ? ensureCollection<ClassRecord>(STORAGE_KEYS.CLASSES, createDefaultClasses)
     : []
 
-  let teacherClassIds: string[] | null = null
+  let teacherAssignmentsPayload: { classId: string; subjects: string[] }[] | null = null
   let shouldReplaceAssignments = false
   let shouldClearAssignments = false
 
   if (nextRole === "teacher") {
-    if (updates.classIds !== undefined || updates.classId !== undefined) {
-      const requested = collectTeacherClassIds({ classIds: updates.classIds, classId: updates.classId })
-      if (requested.length === 0) {
-        throw new Error("Teachers must be assigned to at least one class")
-      }
+    const hasAssignmentUpdates =
+      updates.teachingAssignments !== undefined || updates.classIds !== undefined || updates.classId !== undefined
 
-      const resolvedClasses = resolveTeacherClassesForIdentifiers(requested, classes)
-      teacherClassIds = resolvedClasses.map((cls) => cls.id)
-      shouldReplaceAssignments = true
-    } else if (previousRole !== "teacher") {
+    if (!hasAssignmentUpdates && previousRole !== "teacher") {
       throw new Error("Provide classes when converting a user to a teacher")
     }
+
+    const assignmentRequests = Array.isArray(updates.teachingAssignments)
+      ? updates.teachingAssignments.map((assignment) => ({
+          classId: (assignment as { classId?: unknown }).classId ?? null,
+          className: (assignment as { className?: unknown }).className ?? null,
+          subjects: assignment?.subjects,
+        }))
+      : undefined
+
+    const fallbackClassIdsFromAssignments = Array.isArray(updates.teachingAssignments)
+      ? updates.teachingAssignments
+          .map((assignment) => normalizeClassIdentifier(assignment?.classId ?? assignment?.className))
+          .filter((identifier): identifier is string => Boolean(identifier))
+      : []
+
+    const fallbackClassIdsToUse =
+      fallbackClassIdsFromAssignments.length > 0
+        ? fallbackClassIdsFromAssignments
+        : collectTeacherClassIds({ classIds: updates.classIds, classId: updates.classId })
+
+    if (fallbackClassIdsToUse.length === 0) {
+      throw new Error("Teachers must be assigned to at least one class")
+    }
+
+    const normalizedAssignments = normalizeTeacherAssignmentRequests(
+      assignmentRequests,
+      fallbackClassIdsToUse,
+      classes,
+    )
+
+    teacherAssignmentsPayload = normalizedAssignments.map((assignment) => ({
+      classId: assignment.classRecord.id,
+      subjects: assignment.subjects,
+    }))
+
+    shouldReplaceAssignments = true
   } else {
     if (previousRole === "teacher") {
       shouldClearAssignments = true
@@ -2360,18 +2507,25 @@ async function updateUserInDatabase(id: string, updates: UpdateUserPayload): Pro
       }
     }
 
-    if (nextRole === "teacher" && teacherClassIds && teacherClassIds.length > 0) {
+    if (nextRole === "teacher" && teacherAssignmentsPayload && teacherAssignmentsPayload.length > 0) {
       const timestamp = new Date().toISOString()
       const placeholders: string[] = []
-      const assignmentValues: string[] = []
+      const assignmentValues: Array<string | null> = []
 
-      for (const classId of teacherClassIds) {
-        placeholders.push("(?, ?, ?, ?, ?)")
-        assignmentValues.push(generateId("teacher_class"), String(numericId), String(classId), timestamp, timestamp)
+      for (const assignment of teacherAssignmentsPayload) {
+        placeholders.push("(?, ?, ?, ?, ?, ?)")
+        assignmentValues.push(
+          generateId("teacher_class"),
+          String(numericId),
+          String(assignment.classId),
+          JSON.stringify(assignment.subjects ?? []),
+          timestamp,
+          timestamp,
+        )
       }
 
       await connection.query(
-        `INSERT INTO ${TEACHER_CLASS_ASSIGNMENTS_TABLE} (id, teacher_id, class_id, created_at, updated_at) VALUES ${placeholders.join(", ")}`,
+        `INSERT INTO ${TEACHER_CLASS_ASSIGNMENTS_TABLE} (id, teacher_id, class_id, subjects, created_at, updated_at) VALUES ${placeholders.join(", ")}`,
         assignmentValues,
       )
     }
@@ -2464,21 +2618,24 @@ export async function createUserRecord(payload: CreateUserPayload): Promise<Stor
   const classes: ClassRecord[] = normalizedRole === "teacher"
     ? ensureCollection<ClassRecord>(STORAGE_KEYS.CLASSES, createDefaultClasses)
     : []
-  let teacherClasses: ClassRecord[] = []
+  let teacherAssignments: NormalizedTeacherAssignment[] = []
 
   if (normalizedRole === "teacher") {
-    const requestedClassIds = collectTeacherClassIds({ classIds: payload.classIds, classId: payload.classId })
-    if (requestedClassIds.length === 0) {
-      throw new Error("Assign at least one class to the teacher account")
-    }
-
-    teacherClasses = resolveTeacherClassesForIdentifiers(requestedClassIds, classes)
+    const fallbackClassIds = collectTeacherClassIds({ classIds: payload.classIds, classId: payload.classId })
+    teacherAssignments = normalizeTeacherAssignmentRequests(
+      payload.teachingAssignments,
+      fallbackClassIds,
+      classes,
+    )
   }
 
   if (isDatabaseConfigured()) {
     const created = await createUserInDatabase(payload, {
       normalizedRole,
-      teacherClassIds: teacherClasses.map((cls) => cls.id),
+      teacherAssignments: teacherAssignments.map((assignment) => ({
+        classId: assignment.classRecord.id,
+        subjects: assignment.subjects,
+      })),
     })
 
     return await augmentUserWithTeachingAssignments(created)
@@ -2507,10 +2664,11 @@ export async function createUserRecord(payload: CreateUserPayload): Promise<Stor
   let assignmentsToPersist: TeacherClassAssignmentRecord[] = []
 
   if (normalizedRole === "teacher") {
-    assignmentsToPersist = teacherClasses.map((classRecord) => ({
+    assignmentsToPersist = teacherAssignments.map((assignment) => ({
       id: generateId("teacher_class"),
       teacherId: userId,
-      classId: classRecord.id,
+      classId: assignment.classRecord.id,
+      subjects: assignment.subjects,
       createdAt: timestamp,
       updatedAt: timestamp,
     }))
@@ -2573,6 +2731,7 @@ export async function updateUserRecord(id: string, updates: UpdateUserPayload): 
     classIds,
     classId,
     role,
+    teachingAssignments,
     ...otherUpdates
   } = updates as UpdateUserPayload & {
     [key: string]: unknown
@@ -2598,6 +2757,7 @@ export async function updateUserRecord(id: string, updates: UpdateUserPayload): 
   }
 
   let assignmentsToPersist: TeacherClassAssignmentRecord[] | null = null
+  let normalizedTeachingAssignments: NormalizedTeacherAssignment[] | null = null
   const classesForAssignments: ClassRecord[] = nextRole === "teacher" || previousRole === "teacher"
     ? ensureCollection<ClassRecord>(STORAGE_KEYS.CLASSES, createDefaultClasses)
     : []
@@ -2605,24 +2765,48 @@ export async function updateUserRecord(id: string, updates: UpdateUserPayload): 
   if (nextRole === "teacher") {
     existing.classId = null
 
-    if (classIds !== undefined || classId !== undefined) {
-      const requestedClassIds = collectTeacherClassIds({ classIds, classId })
-      if (requestedClassIds.length === 0) {
-        throw new Error("Teachers must be assigned to at least one class")
-      }
+    const hasAssignmentUpdates =
+      teachingAssignments !== undefined || classIds !== undefined || classId !== undefined || previousRole !== "teacher"
 
-      const resolvedClasses = resolveTeacherClassesForIdentifiers(requestedClassIds, classesForAssignments)
-      const newAssignments = resolvedClasses.map((classRecord) => ({
-        id: generateId("teacher_class"),
-        teacherId: existing.id,
-        classId: classRecord.id,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      }))
+    if (hasAssignmentUpdates) {
+      const assignmentRequests = Array.isArray(teachingAssignments)
+        ? teachingAssignments.map((assignment) => ({
+            classId: (assignment as { classId?: unknown }).classId ?? null,
+            className: (assignment as { className?: unknown }).className ?? null,
+            subjects: assignment?.subjects,
+          }))
+        : undefined
+
+      const fallbackClassIdsFromAssignments = Array.isArray(teachingAssignments)
+        ? teachingAssignments
+            .map((assignment) => normalizeClassIdentifier(assignment?.classId ?? assignment?.className))
+            .filter((identifier): identifier is string => Boolean(identifier))
+        : []
+
+      const fallbackClassIdsToUse =
+        fallbackClassIdsFromAssignments.length > 0
+          ? fallbackClassIdsFromAssignments
+          : collectTeacherClassIds({ classIds, classId })
+
+      normalizedTeachingAssignments = normalizeTeacherAssignmentRequests(
+        assignmentRequests,
+        fallbackClassIdsToUse,
+        classesForAssignments,
+      )
 
       const currentAssignments = ensureTeacherClassAssignmentsCollection()
       const filtered = currentAssignments.filter((assignment) => assignment.teacherId !== existing.id)
-      assignmentsToPersist = [...filtered, ...newAssignments]
+      assignmentsToPersist = [
+        ...filtered,
+        ...normalizedTeachingAssignments.map((assignment) => ({
+          id: generateId("teacher_class"),
+          teacherId: existing.id,
+          classId: assignment.classRecord.id,
+          subjects: assignment.subjects,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })),
+      ]
     } else if (previousRole !== "teacher") {
       throw new Error("Provide classes when converting a user to a teacher")
     }
@@ -2674,7 +2858,17 @@ export async function updateUserRecord(id: string, updates: UpdateUserPayload): 
     persistCollection(STORAGE_KEYS.TEACHER_CLASS_ASSIGNMENTS, assignmentsToPersist)
   }
 
-  return await augmentUserWithTeachingAssignments(existing)
+  const updatedUser = await augmentUserWithTeachingAssignments(existing)
+
+  if (normalizedTeachingAssignments && normalizedTeachingAssignments.length > 0) {
+    updatedUser.teachingAssignments = normalizedTeachingAssignments.map((assignment) => ({
+      classId: assignment.classRecord.id,
+      className: assignment.classRecord.name,
+      subjects: assignment.subjects,
+    }))
+  }
+
+  return updatedUser
 }
 
 export async function deleteUserRecord(id: string): Promise<boolean> {

@@ -421,6 +421,48 @@ export function TeacherDashboard({
   const [isClassSubjectsLoading, setIsClassSubjectsLoading] = useState(false)
   const [classSubjectsError, setClassSubjectsError] = useState<string | null>(null)
   const [classSubjectsNotice, setClassSubjectsNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    setClassSubjectsMap((previous) => {
+      let hasChanges = false
+      const updated = { ...previous }
+
+      teacherClasses.forEach((cls) => {
+        const canonicalSubjects = Array.from(
+          new Set(
+            (cls.subjects ?? [])
+              .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+              .filter((subject) => subject.length > 0),
+          ),
+        )
+
+        if (canonicalSubjects.length === 0) {
+          return
+        }
+
+        const keys = [typeof cls.id === "string" ? cls.id.trim() : "", normalizeClassName(cls.name)]
+          .map((key) => key ?? "")
+          .filter((key) => key.length > 0)
+
+        keys.forEach((key) => {
+          const existing = updated[key] ?? []
+          const sameLength = existing.length === canonicalSubjects.length
+          const sameValues =
+            sameLength &&
+            canonicalSubjects.every((subject) =>
+              existing.some((entry) => entry.toLowerCase() === subject.toLowerCase()),
+            )
+
+          if (!sameValues) {
+            updated[key] = canonicalSubjects
+            hasChanges = true
+          }
+        })
+      })
+
+      return hasChanges ? updated : previous
+    })
+  }, [normalizeClassName, teacherClasses])
   const [selectedTerm, setSelectedTerm] = useState("first")
   const [selectedSession, setSelectedSession] = useState("2024/2025")
   const [workflowRecords, setWorkflowRecords] = useState<ReportCardWorkflowRecord[]>([])
