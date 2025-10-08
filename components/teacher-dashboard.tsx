@@ -200,6 +200,86 @@ type TeacherAssignmentsCacheEntry = {
   updatedAt: string
 }
 
+type TeacherSubjectOption = {
+  key: string
+  subject: string
+  classId: string
+  className: string
+  label: string
+}
+
+const buildTeacherSubjectOptions = (
+  classes: TeacherClassAssignment[],
+  fallbackSubjects: string[],
+): TeacherSubjectOption[] => {
+  const options: TeacherSubjectOption[] = []
+  const seenKeys = new Set<string>()
+
+  const registerOption = (
+    subjectName: string,
+    classId: string,
+    className: string,
+    baseToken: string,
+  ) => {
+    const normalizedSubject = subjectName.trim()
+    if (!normalizedSubject) {
+      return
+    }
+
+    const baseKey = `${normalizedSubject.toLowerCase()}::${baseToken}`
+    let key = baseKey
+    let attempt = 1
+    while (seenKeys.has(key)) {
+      key = `${baseKey}::${attempt}`
+      attempt += 1
+    }
+
+    seenKeys.add(key)
+    options.push({
+      key,
+      subject: normalizedSubject,
+      classId,
+      className,
+      label: className ? `${normalizedSubject} (${className})` : normalizedSubject,
+    })
+  }
+
+  classes.forEach((cls, classIndex) => {
+    if (!cls) {
+      return
+    }
+
+    const rawClassId = typeof cls.id === "string" ? cls.id.trim() : ""
+    const rawClassName = typeof cls.name === "string" ? cls.name.trim() : ""
+    const normalizedClassNameToken = rawClassName.replace(/\s+/g, "").toLowerCase()
+    const classToken =
+      normalizeClassToken(rawClassId) || normalizedClassNameToken || `class_${classIndex + 1}`
+    const classId =
+      rawClassId ||
+      (normalizedClassNameToken ? `class_${normalizedClassNameToken}` : `class_${classIndex + 1}`)
+    const className = rawClassName || rawClassId || `Class ${classIndex + 1}`
+
+    const subjects = Array.isArray(cls.subjects)
+      ? cls.subjects.filter((subject): subject is string => typeof subject === "string")
+      : []
+
+    subjects.forEach((subject, subjectIndex) => {
+      const token = `${classToken || "class"}_${subjectIndex}`
+      registerOption(subject, classId, className, token)
+    })
+  })
+
+  if (options.length === 0) {
+    fallbackSubjects
+      .filter((subject): subject is string => typeof subject === "string" && subject.trim().length > 0)
+      .forEach((subject, index) => {
+        registerOption(subject, "", "", `subject_${index}`)
+      })
+  }
+
+  return options
+}
+
 type TeacherAssignmentsCacheStore = Record<string, TeacherAssignmentsCacheEntry>
 
 const TEACHER_ASSIGNMENTS_CACHE_KEY = "vea_teacher_assignments_cache_v1"
@@ -622,49 +702,6 @@ export function TeacherDashboard({
   const teacherClassTokenKey = useMemo(() => teacherClassTokenList.join("|"), [teacherClassTokenList])
   const teacherHasAssignedClasses = teacherClassTokenList.length > 0
   const normalizeClassName = useCallback((value: string) => value.replace(/\s+/g, "").toLowerCase(), [])
-  const classSubjectsMap = useMemo<Record<string, string[]>>(() => {
-    const map: Record<string, string[]> = {}
-
-    teacherClasses.forEach((cls) => {
-      const canonicalSubjects = Array.from(
-        new Set(
-          (cls.subjects ?? [])
-            .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
-            .filter((subject) => subject.length > 0),
-        ),
-      )
-
-      if (canonicalSubjects.length === 0) {
-        return
-      }
-
-      const keys = [typeof cls.id === "string" ? cls.id.trim() : "", normalizeClassName(cls.name)]
-        .map((key) => key ?? "")
-        .filter((key) => key.length > 0)
-
-      keys.forEach((key) => {
-        if (!key) {
-          return
-        }
-
-        const existing = map[key] ?? []
-        const normalizedExisting = new Set(existing.map((entry) => entry.toLowerCase()))
-        const merged = existing.length > 0 ? [...existing] : []
-
-        canonicalSubjects.forEach((subject) => {
-          const normalized = subject.toLowerCase()
-          if (!normalizedExisting.has(normalized)) {
-            normalizedExisting.add(normalized)
-            merged.push(subject)
-          }
-        })
-
-        map[key] = merged
-      })
-    })
-
-    return map
-  }, [normalizeClassName, teacherClasses])
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showCreateAssignment, setShowCreateAssignment] = useState(false)
   const [assignmentDialogMode, setAssignmentDialogMode] = useState<"create" | "edit">("create")
@@ -676,6 +713,7 @@ export function TeacherDashboard({
   const [selectedClass, setSelectedClass] = useState(() => firstTeacherClass?.name ?? "")
   const [selectedClassId, setSelectedClassId] = useState(() => firstTeacherClass?.id ?? "")
   const [selectedSubject, setSelectedSubject] = useState("")
+  const [selectedSubjectKey, setSelectedSubjectKey] = useState("")
   const [isSubjectSwitcherOpen, setIsSubjectSwitcherOpen] = useState(false)
   const isComponentMountedRef = useRef(false)
   useEffect(() => {
@@ -950,7 +988,7 @@ export function TeacherDashboard({
   const [teacherStudentsError, setTeacherStudentsError] = useState<string | null>(null)
   const [teacherStudentsMessage, setTeacherStudentsMessage] = useState<string | null>(null)
   const [marksData, setMarksData] = useState<MarksRecord[]>([])
-  const [addStudentDialogSubject, setAddStudentDialogSubject] = useState<string>("")
+  const [addStudentDialogSubjectKey, setAddStudentDialogSubjectKey] = useState<string>("")
   const assignmentSubjectFieldId = useId()
   const assignmentClassFieldId = useId()
 
@@ -1309,28 +1347,6 @@ export function TeacherDashboard({
     [normalizeClassName, selectedClass, teacherClasses],
   )
 
-  const handleSelectSubject = useCallback(
-    (value: string) => {
-      const normalizedValue = typeof value === "string" ? value.trim() : ""
-
-      if (normalizedValue === selectedSubject.trim()) {
-        return
-      }
-
-      setMarksData([])
-      setSelectedSubject(normalizedValue)
-    },
-    [selectedSubject, setMarksData],
-  )
-
-  const handleSubjectSwitch = useCallback(
-    (value: string) => {
-      setIsSubjectSwitcherOpen(false)
-      handleSelectSubject(value)
-    },
-    [handleSelectSubject],
-  )
-
   const normalizedTeacherSubjects = useMemo(
     () =>
       Array.from(
@@ -1343,33 +1359,107 @@ export function TeacherDashboard({
     [teacherSubjects],
   )
 
-  const classSpecificSubjects = useMemo(() => {
-    const key = selectedClassId || normalizeClassName(selectedClass)
-    if (!key) {
-      return [] as string[]
-    }
-
-    const subjects = classSubjectsMap[key] ?? []
-    if (subjects.length === 0) {
-      return [] as string[]
-    }
-
-    return Array.from(
-      new Set(
-        subjects
-          .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
-          .filter((subject) => subject.length > 0),
-      ),
-    ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
-  }, [classSubjectsMap, normalizeClassName, selectedClass, selectedClassId])
-
-  const availableSubjects = useMemo(
-    () => (classSpecificSubjects.length > 0 ? classSpecificSubjects : normalizedTeacherSubjects),
-    [classSpecificSubjects, normalizedTeacherSubjects],
+  const teacherSubjectOptions = useMemo(
+    () => buildTeacherSubjectOptions(teacherClasses, normalizedTeacherSubjects),
+    [teacherClasses, normalizedTeacherSubjects],
   )
 
-  const hasAvailableSubjects = availableSubjects.length > 0
-  const isSubjectSelectDisabled = isContextLoading || isTeacherSubjectsLoading || !hasAvailableSubjects
+  const subjectOptionByKey = useMemo(() => {
+    const map = new Map<string, TeacherSubjectOption>()
+    teacherSubjectOptions.forEach((option) => {
+      map.set(option.key, option)
+    })
+    return map
+  }, [teacherSubjectOptions])
+
+  const availableSubjectOptions = useMemo(() => {
+    if (teacherSubjectOptions.length === 0) {
+      return [] as TeacherSubjectOption[]
+    }
+
+    const normalizedIdToken = normalizeClassToken(selectedClassId)
+    const normalizedNameToken = normalizeClassName(selectedClass)
+
+    if (!normalizedIdToken && !normalizedNameToken) {
+      return teacherSubjectOptions
+    }
+
+    return teacherSubjectOptions.filter((option) => {
+      const optionIdToken = normalizeClassToken(option.classId)
+      const optionNameToken = normalizeClassName(option.className)
+
+      if (normalizedIdToken && optionIdToken && optionIdToken === normalizedIdToken) {
+        return true
+      }
+
+      if (normalizedNameToken && optionNameToken && optionNameToken === normalizedNameToken) {
+        return true
+      }
+
+      if (!optionIdToken && !optionNameToken) {
+        return true
+      }
+
+      return false
+    })
+  }, [normalizeClassName, selectedClass, selectedClassId, teacherSubjectOptions])
+
+  const availableSubjects = useMemo(
+    () => availableSubjectOptions.map((option) => option.subject),
+    [availableSubjectOptions],
+  )
+
+  const hasAvailableSubjects = availableSubjectOptions.length > 0
+  const isSubjectSelectDisabled = isTeacherSubjectsLoading && !hasAvailableSubjects
+
+  const selectedSubjectOption = selectedSubjectKey
+    ? subjectOptionByKey.get(selectedSubjectKey) ?? null
+    : null
+  const addStudentDialogOption = addStudentDialogSubjectKey
+    ? subjectOptionByKey.get(addStudentDialogSubjectKey) ?? null
+    : null
+
+  const handleSelectSubject = useCallback(
+    (value: string) => {
+      const option = subjectOptionByKey.get(value)
+
+      if (!option) {
+        setSelectedSubjectKey("")
+        setSelectedSubject("")
+        return
+      }
+
+      if (value === selectedSubjectKey) {
+        if (option.classId && option.classId !== selectedClassId) {
+          setSelectedClassId(option.classId)
+        }
+        if (option.className && option.className !== selectedClass) {
+          setSelectedClass(option.className)
+        }
+        return
+      }
+
+      setMarksData([])
+      setSelectedSubjectKey(value)
+      setSelectedSubject(option.subject)
+
+      if (option.classId && option.classId !== selectedClassId) {
+        setSelectedClassId(option.classId)
+      }
+      if (option.className && option.className !== selectedClass) {
+        setSelectedClass(option.className)
+      }
+    },
+    [selectedClass, selectedClassId, selectedSubjectKey, setMarksData, subjectOptionByKey],
+  )
+
+  const handleSubjectSwitch = useCallback(
+    (value: string) => {
+      setIsSubjectSwitcherOpen(false)
+      handleSelectSubject(value)
+    },
+    [handleSelectSubject],
+  )
 
   useEffect(() => {
     if (teacherClasses.length === 0) {
@@ -1412,29 +1502,51 @@ export function TeacherDashboard({
   }, [selectedSubject])
 
   useEffect(() => {
-    if (availableSubjects.length === 0) {
-      setSelectedSubject((prev) => (prev ? "" : prev))
+    if (availableSubjectOptions.length === 0) {
+      if (selectedSubjectKey) {
+        setSelectedSubjectKey("")
+      }
+      if (selectedSubject) {
+        setSelectedSubject("")
+      }
       return
     }
 
-    const normalizedOptions = new Set(
-      availableSubjects.map((subject) => subject.trim().toLowerCase()),
-    )
+    const optionKeys = new Set(availableSubjectOptions.map((option) => option.key))
 
-    setSelectedSubject((prev) => {
-      const normalizedPrev = prev.trim().toLowerCase()
-
-      if (!normalizedPrev) {
-        return ""
+    if (selectedSubjectKey && optionKeys.has(selectedSubjectKey)) {
+      const currentOption = subjectOptionByKey.get(selectedSubjectKey)
+      if (currentOption) {
+        if (selectedSubject !== currentOption.subject) {
+          setSelectedSubject(currentOption.subject)
+        }
+        if (currentOption.classId && currentOption.classId !== selectedClassId) {
+          setSelectedClassId(currentOption.classId)
+        }
+        if (currentOption.className && currentOption.className !== selectedClass) {
+          setSelectedClass(currentOption.className)
+        }
       }
+      return
+    }
 
-      if (normalizedOptions.has(normalizedPrev)) {
-        return prev
-      }
-
-      return ""
-    })
-  }, [availableSubjects])
+    const fallback = availableSubjectOptions[0]
+    setSelectedSubjectKey(fallback.key)
+    setSelectedSubject(fallback.subject)
+    if (fallback.classId && fallback.classId !== selectedClassId) {
+      setSelectedClassId(fallback.classId)
+    }
+    if (fallback.className && fallback.className !== selectedClass) {
+      setSelectedClass(fallback.className)
+    }
+  }, [
+    availableSubjectOptions,
+    selectedClass,
+    selectedClassId,
+    selectedSubject,
+    selectedSubjectKey,
+    subjectOptionByKey,
+  ])
 
   useEffect(() => {
     setAssignmentForm((prev) => {
@@ -1444,21 +1556,22 @@ export function TeacherDashboard({
         teacherClasses.find((cls) => normalizeClassName(cls.name) === normalizedSelection)
       const fallbackClass = defaultClass ?? teacherClasses[0] ?? null
       const normalizedPrevSubject = typeof prev.subject === "string" ? prev.subject.trim().toLowerCase() : ""
-      const normalizedOptions = availableSubjects.map((subject) => subject.trim().toLowerCase())
+      const normalizedOptions = availableSubjectOptions.map((option) => option.subject.trim().toLowerCase())
+      const nextSubjectOption = availableSubjectOptions[0] ?? null
       const nextSubject =
         normalizedPrevSubject && normalizedOptions.includes(normalizedPrevSubject)
           ? prev.subject
-          : availableSubjects[0] ?? ""
+          : nextSubjectOption?.subject ?? ""
 
       return {
         ...prev,
         subject: nextSubject,
-        classId: prev.classId || (fallbackClass?.id ?? ""),
-        className: prev.className || (fallbackClass?.name ?? ""),
+        classId: prev.classId || nextSubjectOption?.classId || (fallbackClass?.id ?? ""),
+        className: prev.className || nextSubjectOption?.className || (fallbackClass?.name ?? ""),
       }
     })
   }, [
-    availableSubjects,
+    availableSubjectOptions,
     normalizeClassName,
     selectedClass,
     selectedClassId,
@@ -2022,11 +2135,11 @@ export function TeacherDashboard({
 
   useEffect(() => {
     if (isAddStudentDialogOpen) {
-      setAddStudentDialogSubject(selectedSubject)
+      setAddStudentDialogSubjectKey(selectedSubjectKey)
     } else {
-      setAddStudentDialogSubject("")
+      setAddStudentDialogSubjectKey("")
     }
-  }, [isAddStudentDialogOpen, selectedSubject])
+  }, [isAddStudentDialogOpen, selectedSubjectKey])
 
   const handleOpenAddStudentDialog = useCallback(() => {
     if (!selectedClass) {
@@ -2091,7 +2204,12 @@ export function TeacherDashboard({
   const calculateGrade = (total: number) => deriveGradeFromScore(total)
 
   const handleConfirmAddStudents = useCallback(() => {
-    const effectiveSubject = (addStudentDialogSubject || selectedSubject).trim()
+    const preferredOption = addStudentDialogSubjectKey
+      ? subjectOptionByKey.get(addStudentDialogSubjectKey)
+      : null
+    const fallbackOption = selectedSubjectKey ? subjectOptionByKey.get(selectedSubjectKey) : null
+    const resolvedOption = preferredOption ?? fallbackOption ?? null
+    const effectiveSubject = resolvedOption?.subject?.trim() ?? selectedSubject.trim()
 
     if (!effectiveSubject) {
       toast({
@@ -2104,7 +2222,7 @@ export function TeacherDashboard({
 
     const normalizedEffectiveSubject = effectiveSubject.toLowerCase()
     const normalizedAvailableSubjects = new Set(
-      availableSubjects.map((subject) => subject.trim().toLowerCase()),
+      availableSubjectOptions.map((option) => option.subject.trim().toLowerCase()),
     )
 
     if (!normalizedAvailableSubjects.has(normalizedEffectiveSubject)) {
@@ -2230,8 +2348,8 @@ export function TeacherDashboard({
 
     handleCloseAddStudentDialog()
   }, [
-    addStudentDialogSubject,
-    availableSubjects,
+    addStudentDialogSubjectKey,
+    availableSubjectOptions,
     calculatePositionsAndAverages,
     handleCloseAddStudentDialog,
     marksData,
@@ -2240,7 +2358,9 @@ export function TeacherDashboard({
     selectedRosterId,
     selectedSession,
     selectedSubject,
+    selectedSubjectKey,
     setAdditionalData,
+    subjectOptionByKey,
     toast,
   ])
 
@@ -5024,7 +5144,7 @@ export function TeacherDashboard({
                   <div>
                     <Label>Select Subject to Enter Marks</Label>
                     <Select
-                      value={selectedSubject}
+                      value={selectedSubjectKey}
                       onValueChange={handleSelectSubject}
                       disabled={isSubjectSelectDisabled}
                     >
@@ -5037,9 +5157,9 @@ export function TeacherDashboard({
                             Loading subjects...
                           </SelectItem>
                         ) : hasAvailableSubjects ? (
-                          availableSubjects.map((subject) => (
-                            <SelectItem key={subject} value={subject}>
-                              {subject}
+                          availableSubjectOptions.map((option) => (
+                            <SelectItem key={option.key} value={option.key}>
+                              {option.label}
                             </SelectItem>
                           ))
                         ) : (
@@ -6177,23 +6297,28 @@ export function TeacherDashboard({
         <CommandList>
           <CommandEmpty>No matching subjects found.</CommandEmpty>
           <CommandGroup heading="Available subjects">
-            {availableSubjects.map((subject) => {
-              const normalized = subject.trim().toLowerCase()
-              const isActive = normalized === selectedSubject.trim().toLowerCase()
+            {availableSubjectOptions.length === 0 ? (
+              <CommandItem value="no-subjects" disabled>
+                No subjects assigned. Please contact the admin.
+              </CommandItem>
+            ) : (
+              availableSubjectOptions.map((option) => {
+                const isActive = option.key === selectedSubjectKey
 
-              return (
-                <CommandItem
-                  key={subject}
-                  value={normalized}
-                  onSelect={() => handleSubjectSwitch(subject)}
-                >
-                  <div className="flex w-full items-center justify-between">
-                    <span>{subject}</span>
-                    {isActive ? <Check className="h-4 w-4 text-[#2d682d]" /> : null}
-                  </div>
-                </CommandItem>
-              )
-            })}
+                return (
+                  <CommandItem
+                    key={option.key}
+                    value={option.label.toLowerCase()}
+                    onSelect={() => handleSubjectSwitch(option.key)}
+                  >
+                    <div className="flex w-full items-center justify-between">
+                      <span>{option.label}</span>
+                      {isActive ? <Check className="h-4 w-4 text-[#2d682d]" /> : null}
+                    </div>
+                  </CommandItem>
+                )
+              })
+            )}
           </CommandGroup>
         </CommandList>
       </CommandDialog>
@@ -6236,7 +6361,8 @@ export function TeacherDashboard({
                     Subject
                   </span>
                   <span className="text-sm font-medium text-emerald-900">
-                    {addStudentDialogSubject || selectedSubject || "Not selected"}
+                    {addStudentDialogOption?.label || selectedSubjectOption?.label || selectedSubject ||
+                      "Not selected"}
                   </span>
                 </div>
                 <div>
@@ -6263,9 +6389,9 @@ export function TeacherDashboard({
                 Choose subject for this grade entry
               </Label>
               <Select
-                value={addStudentDialogSubject}
+                value={addStudentDialogSubjectKey}
                 onValueChange={(value) => {
-                  setAddStudentDialogSubject(value)
+                  setAddStudentDialogSubjectKey(value)
                   handleSelectSubject(value)
                 }}
                 disabled={isSubjectSelectDisabled}
@@ -6274,16 +6400,20 @@ export function TeacherDashboard({
                   <SelectValue placeholder="Select subject" />
                 </SelectTrigger>
                 <SelectContent>
-                  {isSubjectSelectDisabled && availableSubjects.length === 0 ? (
+                  {isSubjectSelectDisabled && availableSubjectOptions.length === 0 ? (
                     <SelectItem value="__no_subjects__" disabled>
                       No subjects assigned. Please contact the admin.
                     </SelectItem>
-                  ) : (
-                    availableSubjects.map((subject) => (
-                      <SelectItem key={subject} value={subject}>
-                        {subject}
+                  ) : hasAvailableSubjects ? (
+                    availableSubjectOptions.map((option) => (
+                      <SelectItem key={option.key} value={option.key}>
+                        {option.label}
                       </SelectItem>
                     ))
+                  ) : (
+                    <SelectItem value="__no_subjects__" disabled>
+                      No subjects assigned. Please contact the admin.
+                    </SelectItem>
                   )}
                 </SelectContent>
               </Select>

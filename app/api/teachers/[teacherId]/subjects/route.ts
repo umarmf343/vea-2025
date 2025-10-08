@@ -85,6 +85,27 @@ export async function GET(
 
     const { classes, subjects } = summarizeTeacherAssignments(teacherRecord)
 
+    const subjectAssignments = classes.flatMap((assignment) => {
+      if (!assignment || typeof assignment !== "object") {
+        return [] as Array<{ subject: string; classId: string; className: string }>
+      }
+
+      const classId =
+        typeof assignment.id === "string" && assignment.id.trim().length > 0
+          ? assignment.id
+          : ""
+      const className =
+        typeof assignment.name === "string" && assignment.name.trim().length > 0
+          ? assignment.name
+          : ""
+      const subjectsForClass = Array.isArray(assignment.subjects) ? assignment.subjects : []
+
+      return subjectsForClass
+        .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+        .filter((subject) => subject.length > 0)
+        .map((subject) => ({ subject, classId, className }))
+    })
+
     logger.info("Teacher subject assignments resolved", {
       teacherId: teacherRecord.id,
       subjectCount: subjects.length,
@@ -99,6 +120,7 @@ export async function GET(
       },
       subjects,
       classes,
+      subjectAssignments,
       message:
         subjects.length === 0
           ? "No subjects have been assigned to this teacher yet. Please contact the administrator."
