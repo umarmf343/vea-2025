@@ -4,6 +4,7 @@ import type { RawReportCardData, StoredStudentMarkRecord, StoredSubjectRecord } 
 import { safeStorage } from "./safe-storage"
 import { logger } from "./logger"
 import { normalizeTermLabel } from "./report-card-access"
+import { resolveStudentPassportFromCache } from "./student-passport"
 import {
   AFFECTIVE_TRAITS,
   PSYCHOMOTOR_SKILLS,
@@ -280,6 +281,15 @@ export const buildRawReportCardFromStoredRecord = (
     numberOfStudents: record.numberInClass,
   }
 
+  const { passportUrl, photoUrl } = resolveStudentPassportFromCache(
+    {
+      id: record.studentId,
+      admissionNumber: record.studentId,
+      name: record.studentName,
+    },
+    null,
+  )
+
   return {
     student: {
       id: record.studentId,
@@ -290,6 +300,8 @@ export const buildRawReportCardFromStoredRecord = (
       session: record.session,
       numberInClass: record.numberInClass,
       status: record.status,
+      passportUrl,
+      photoUrl,
     },
     subjects: normalizedSubjects,
     summary,
@@ -427,6 +439,15 @@ export const getStudentReportCardData = (
   const average = totalObtainable > 0 ? Math.round((totalObtained / totalObtainable) * 100) : 0
   const position = average >= 80 ? "1st" : average >= 70 ? "2nd" : average >= 60 ? "3rd" : "4th"
 
+  const { passportUrl, photoUrl } = resolveStudentPassportFromCache(
+    {
+      id: studentId,
+      admissionNumber: `VEA/${studentId}/2024`,
+      name: studentData.studentName,
+    },
+    null,
+  )
+
   return {
     student: {
       id: studentId,
@@ -435,6 +456,8 @@ export const getStudentReportCardData = (
       class: studentData.class,
       term: normalizedTerm,
       session,
+      passportUrl,
+      photoUrl,
     },
     subjects,
     summary: {
