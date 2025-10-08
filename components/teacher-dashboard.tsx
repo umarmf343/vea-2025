@@ -403,6 +403,7 @@ export function TeacherDashboard({
   }, [teacherClasses])
   const teacherClassTokenKey = useMemo(() => teacherClassTokenList.join("|"), [teacherClassTokenList])
   const teacherHasAssignedClasses = teacherClassTokenList.length > 0
+  const normalizeClassName = useCallback((value: string) => value.replace(/\s+/g, "").toLowerCase(), [])
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showCreateAssignment, setShowCreateAssignment] = useState(false)
   const [assignmentDialogMode, setAssignmentDialogMode] = useState<"create" | "edit">("create")
@@ -872,8 +873,6 @@ export function TeacherDashboard({
     teacher.subjects.length > 0 ? teacher.subjects.join(", ") : "No subjects assigned yet"
   const classSummary =
     teacherClassNames.length > 0 ? teacherClassNames.join(", ") : "No classes assigned yet"
-
-  const normalizeClassName = useCallback((value: string) => value.replace(/\s+/g, "").toLowerCase(), [])
 
   const handleSelectClass = useCallback(
     (value: string) => {
