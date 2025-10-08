@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AlertCircle, Edit, Loader2, Plus, Trash2, UserRound } from "lucide-react"
 import { dbManager } from "@/lib/database-manager"
 import { safeStorage } from "@/lib/safe-storage"
@@ -36,6 +36,8 @@ interface StudentRecord {
   attendance: { present: number; total: number }
   grades: { subject: string; ca1: number; ca2: number; exam: number; total: number; grade: string }[]
   isReal?: boolean
+  passportUrl?: string | null
+  photoUrl?: string | null
 }
 
 const PAYMENT_BADGE: Record<StudentRecord["paymentStatus"], string> = {
@@ -69,6 +71,8 @@ const INITIAL_STUDENT: StudentRecord = {
   subjects: [],
   attendance: { present: 0, total: 0 },
   grades: [],
+  passportUrl: null,
+  photoUrl: null,
 }
 
 export function StudentManagement() {
@@ -79,19 +83,30 @@ export function StudentManagement() {
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null)
   const [availableClasses, setAvailableClasses] = useState<string[]>([])
 
+  const normalizeStudentRecord = useCallback(
+    (record: StudentRecord): StudentRecord => ({
+      ...record,
+      passportUrl: record.passportUrl ?? record.photoUrl ?? null,
+      photoUrl: record.photoUrl ?? record.passportUrl ?? null,
+    }),
+    [],
+  )
+
   const syncStudentCaches = useCallback((records: StudentRecord[]) => {
+    const normalizedRecords = records.map((record) => normalizeStudentRecord(record))
+
     try {
-      safeStorage.setItem("students", JSON.stringify(records))
+      safeStorage.setItem("students", JSON.stringify(normalizedRecords))
     } catch (storageError) {
       console.error("Unable to persist student cache", storageError)
     }
 
     try {
-      dbManager.triggerEvent("studentsRefreshed", records)
+      dbManager.triggerEvent("studentsRefreshed", normalizedRecords)
     } catch (eventError) {
       console.error("Unable to broadcast student refresh event", eventError)
     }
-  }, [])
+  }, [normalizeStudentRecord])
 
   const loadStudents = useCallback(async () => {
     setLoading(true)
@@ -104,15 +119,18 @@ export function StudentManagement() {
       }
 
       const data = (await response.json()) as { students: StudentRecord[] }
-      setStudents(data.students)
-      syncStudentCaches(data.students)
+      const normalizedRecords = Array.isArray(data.students)
+        ? data.students.map((student) => normalizeStudentRecord(student))
+        : []
+      setStudents(normalizedRecords)
+      syncStudentCaches(normalizedRecords)
     } catch (err) {
       console.error(err)
       setError(err instanceof Error ? err.message : "Unable to fetch students")
     } finally {
       setLoading(false)
     }
-  }, [syncStudentCaches])
+  }, [normalizeStudentRecord, syncStudentCaches])
 
   const loadClasses = useCallback(async () => {
     try {
@@ -209,8 +227,9 @@ export function StudentManagement() {
         }
 
         const data = (await response.json()) as { student: StudentRecord }
+        const normalizedStudent = normalizeStudentRecord(data.student)
         setStudents((previous) => {
-          const updated = previous.map((item) => (item.id === data.student.id ? data.student : item))
+          const updated = previous.map((item) => (item.id === normalizedStudent.id ? normalizedStudent : item))
           syncStudentCaches(updated)
           return updated
         })
@@ -227,8 +246,9 @@ export function StudentManagement() {
         }
 
         const data = (await response.json()) as { student: StudentRecord }
+        const normalizedStudent = normalizeStudentRecord(data.student)
         setStudents((previous) => {
-          const updated = [...previous, data.student]
+          const updated = [...previous, normalizedStudent]
           syncStudentCaches(updated)
           return updated
         })
@@ -277,7 +297,7 @@ export function StudentManagement() {
   }
 
   const openEditDialog = (student: StudentRecord) => {
-    setEditingStudent({ ...student })
+    setEditingStudent(normalizeStudentRecord(student))
     setIsDialogOpen(true)
   }
 
@@ -343,6 +363,12 @@ export function StudentManagement() {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="h-9 w-9 border border-[#2d682d]/20">
+                        {(student.passportUrl ?? student.photoUrl) ? (
+                          <AvatarImage
+                            src={(student.passportUrl ?? student.photoUrl) ?? undefined}
+                            alt={`${student.name} passport`}
+                          />
+                        ) : null}
                         <AvatarFallback>{student.name.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
                       <div>
@@ -561,6 +587,69 @@ export function StudentManagement() {
                   value={editingStudent.parentEmail}
                   onChange={(event) => setEditingStudent({ ...editingStudent, parentEmail: event.target.value })}
                 />
+              </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="student-passport">Passport Photo (optional)</Label>
+                <div className="mt-2 flex flex-wrap items-center gap-4">
+                  <Avatar className="h-16 w-16 border border-dashed border-[#2d682d]/30 bg-white">
+                    {editingStudent.passportUrl ? (
+                      <AvatarImage src={editingStudent.passportUrl} alt={`${editingStudent.name} passport`} />
+                    ) : editingStudent.photoUrl ? (
+                      <AvatarImage src={editingStudent.photoUrl} alt={`${editingStudent.name} passport`} />
+                    ) : null}
+                    <AvatarFallback className="text-sm font-medium text-[#2d682d]">
+                      {editingStudent.name ? editingStudent.name.slice(0, 2).toUpperCase() : "PP"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="space-y-2">
+                    <Input
+                      id="student-passport"
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null
+                        if (!file) {
+                          setEditingStudent((previous) =>
+                            previous ? { ...previous, passportUrl: null, photoUrl: null } : previous,
+                          )
+                          return
+                        }
+
+                        const reader = new FileReader()
+                        reader.onloadend = () => {
+                          if (typeof reader.result === "string") {
+                            setEditingStudent((previous) =>
+                              previous
+                                ? {
+                                    ...previous,
+                                    passportUrl: reader.result,
+                                    photoUrl: reader.result,
+                                  }
+                                : previous,
+                            )
+                          }
+                        }
+                        reader.readAsDataURL(file)
+                      }}
+                    />
+                    {(editingStudent.passportUrl ?? editingStudent.photoUrl) ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-[#2d682d] hover:bg-[#2d682d]/10"
+                        onClick={() =>
+                          setEditingStudent((previous) =>
+                            previous ? { ...previous, passportUrl: null, photoUrl: null } : previous,
+                          )
+                        }
+                      >
+                        Remove photo
+                      </Button>
+                    ) : null}
+                    <p className="text-xs text-gray-500">Upload a clear square image (max 2MB) for the student passport.</p>
+                  </div>
+                </div>
               </div>
               <div className="col-span-full flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setIsDialogOpen(false)}>

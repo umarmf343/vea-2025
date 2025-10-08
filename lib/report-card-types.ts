@@ -9,6 +9,8 @@ export interface RawReportCardStudent {
   status?: string
   dateOfBirth?: string
   gender?: string
+  photoUrl?: string | null
+  passportUrl?: string | null
 }
 
 export interface RawReportCardSummary {

@@ -283,6 +283,12 @@ function buildStudentMetadata(student: StudentRecord): Record<string, string> {
     metadata.address = sanitizeInput(student.address)
   }
 
+  if (student.passportUrl) {
+    metadata.passportUrl = sanitizeInput(student.passportUrl)
+  } else if (student.photoUrl) {
+    metadata.photoUrl = sanitizeInput(student.photoUrl)
+  }
+
   return metadata
 }
 
@@ -506,6 +512,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
+    const passportUrl =
+      typeof body.passportUrl === "string" && body.passportUrl.trim().length > 0
+        ? sanitizeInput(body.passportUrl)
+        : typeof body.photoUrl === "string" && body.photoUrl.trim().length > 0
+          ? sanitizeInput(body.photoUrl)
+          : null
+
     const record = await createStudentRecord({
       name: sanitizeInput(body.name),
       email: sanitizeInput(body.email),
@@ -543,7 +556,8 @@ export async function POST(request: NextRequest) {
             grade: sanitizeInput(String(grade.grade ?? "")),
           }))
         : [],
-      photoUrl: typeof body.photoUrl === "string" ? body.photoUrl : null,
+      passportUrl,
+      photoUrl: passportUrl,
       isReal: true,
     })
 
@@ -581,6 +595,18 @@ export async function PUT(request: NextRequest) {
 
     for (const [key, value] of Object.entries(body)) {
       if (key === "id" || value === undefined) {
+        continue
+      }
+
+      if (key === "passportUrl" || key === "photoUrl") {
+        if (typeof value === "string" && value.trim().length > 0) {
+          const sanitized = sanitizeInput(value)
+          updates.passportUrl = sanitized
+          updates.photoUrl = sanitized
+        } else if (value === null) {
+          updates.passportUrl = null
+          updates.photoUrl = null
+        }
         continue
       }
 

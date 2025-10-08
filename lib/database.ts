@@ -86,6 +86,7 @@ export interface StudentRecord extends CollectionRecord {
   subjects: string[]
   attendance: { present: number; total: number }
   grades: { subject: string; ca1: number; ca2: number; exam: number; total: number; grade: string }[]
+  passportUrl?: string | null
   photoUrl?: string | null
   isReal: boolean
 }
@@ -1433,6 +1434,7 @@ function createDefaultStudents(): StudentRecord[] {
         { subject: "Mathematics", ca1: 18, ca2: 19, exam: 55, total: 92, grade: "A" },
         { subject: "English", ca1: 16, ca2: 17, exam: 42, total: 75, grade: "B" },
       ],
+      passportUrl: null,
       photoUrl: null,
       isReal: false,
       createdAt: timestamp,
@@ -1461,6 +1463,7 @@ function createDefaultStudents(): StudentRecord[] {
         { subject: "Mathematics", ca1: 15, ca2: 17, exam: 48, total: 80, grade: "B" },
         { subject: "Physics", ca1: 14, ca2: 16, exam: 50, total: 80, grade: "B" },
       ],
+      passportUrl: null,
       photoUrl: null,
       isReal: false,
       createdAt: timestamp,
@@ -2884,6 +2887,8 @@ export async function listStudentRecords(): Promise<StudentRecord[]> {
 
   return deepClone(students).map((student) => ({
     ...student,
+    passportUrl: student.passportUrl ?? student.photoUrl ?? null,
+    photoUrl: student.photoUrl ?? student.passportUrl ?? null,
     isReal: student.isReal !== false,
   }))
 }
@@ -2907,6 +2912,8 @@ export async function getStudentRecordById(id: string): Promise<StudentRecord | 
 
   return deepClone({
     ...record,
+    passportUrl: record.passportUrl ?? record.photoUrl ?? null,
+    photoUrl: record.photoUrl ?? record.passportUrl ?? null,
     isReal: record.isReal !== false,
   })
 }
@@ -2919,13 +2926,17 @@ export async function createStudentRecord(payload: CreateStudentPayload): Promis
   }
 
   const timestamp = new Date().toISOString()
+  const normalizedPassport =
+    normaliseOptionalString(payload.passportUrl) ?? normaliseOptionalString(payload.photoUrl)
+
   const record: StudentRecord = {
     id: generateId("student"),
     ...payload,
     subjects: payload.subjects ? payload.subjects.map(String) : [],
     attendance: payload.attendance ?? { present: 0, total: 0 },
     grades: payload.grades ? payload.grades.map((grade) => ({ ...grade })) : [],
-    photoUrl: payload.photoUrl ?? null,
+    passportUrl: normalizedPassport ?? null,
+    photoUrl: normalizedPassport ?? null,
     isReal: payload.isReal !== false,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -2967,8 +2978,10 @@ export async function updateStudentRecord(
       existing.grades = value.map((grade) => ({ ...grade }))
     } else if (key === "attendance" && value && typeof value === "object") {
       existing.attendance = { ...(value as StudentRecord["attendance"]) }
-    } else if (key === "photoUrl") {
-      existing.photoUrl = value ?? null
+    } else if (key === "photoUrl" || key === "passportUrl") {
+      const normalized = value ?? null
+      existing.photoUrl = normalized
+      existing.passportUrl = normalized
     } else if (key === "status") {
       existing.status = String(value).toLowerCase() === "inactive" ? "inactive" : "active"
     } else if (key === "isReal") {

@@ -54,6 +54,7 @@ interface NormalizedReportCard {
     dateOfBirth?: string
     gender?: string
     age?: number
+    passportUrl?: string | null
   }
   subjects: SubjectScore[]
   summary: {
@@ -101,6 +102,7 @@ const STORAGE_KEYS_TO_WATCH = [
   "attendancePositions",
   "classTeacherRemarks",
   "studentPhotos",
+  "students",
 ]
 
 const PX_PER_MM = 96 / 25.4
@@ -502,6 +504,55 @@ const normalizeReportCard = (
     feesBalance: source.termInfo?.feesBalance ?? source.fees?.outstanding ?? attendanceRecord?.termInfo?.feesBalance,
   }
 
+  const extractPassportCandidate = (value: unknown): string | null => {
+    if (typeof value !== "string") {
+      return null
+    }
+
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+
+  let passportUrl =
+    extractPassportCandidate((source.student as { passportUrl?: unknown }).passportUrl) ??
+    extractPassportCandidate((source.student as { photoUrl?: unknown }).photoUrl)
+
+  if (!passportUrl) {
+    const storedStudentsRaw = safeStorage.getItem("students")
+    if (storedStudentsRaw) {
+      try {
+        const parsed = JSON.parse(storedStudentsRaw) as Array<Record<string, unknown>>
+        const normalizedId = String(studentId)
+        const normalizedAdmission = String(source.student.admissionNumber ?? "")
+        const normalizedName = source.student.name.trim().toLowerCase()
+
+        const matched = parsed.find((entry) => {
+          const entryId = typeof entry.id === "string" ? entry.id : String(entry.id ?? "")
+          const entryAdmission =
+            typeof entry.admissionNumber === "string"
+              ? entry.admissionNumber
+              : String(entry.admissionNumber ?? "")
+          const entryName = typeof entry.name === "string" ? entry.name.trim().toLowerCase() : ""
+
+          return (
+            (!!normalizedId && entryId === normalizedId) ||
+            (!!normalizedAdmission && entryAdmission === normalizedAdmission) ||
+            (!!normalizedName && entryName === normalizedName)
+          )
+        })
+
+        if (matched) {
+          passportUrl =
+            extractPassportCandidate(matched.passportUrl) ??
+            extractPassportCandidate(matched.photoUrl) ??
+            passportUrl
+        }
+      } catch (error) {
+        console.warn("Unable to parse stored students for passport lookup", error)
+      }
+    }
+  }
+
   return {
     student: {
       id: String(studentId),
@@ -516,6 +567,7 @@ const normalizeReportCard = (
       dateOfBirth: source.student.dateOfBirth ?? undefined,
       gender: source.student.gender ?? undefined,
       age: calculateAge(source.student.dateOfBirth),
+      passportUrl,
     },
     subjects: normalizedSubjects,
     summary: {
@@ -573,6 +625,11 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
       if (!normalized) {
         setStudentPhoto("")
+        return
+      }
+
+      if (normalized.student.passportUrl) {
+        setStudentPhoto(normalized.student.passportUrl)
         return
       }
 
