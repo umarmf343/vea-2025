@@ -882,16 +882,62 @@ export function TeacherDashboard({
       }
     })
 
-    if (subjectSet.size === 0 && teacher.subjects.length > 0) {
+    if (teacher.subjects.length > 0) {
       registerSubjects(teacher.subjects)
     }
 
-    return Array.from(subjectSet)
+    const storedRecords = readStudentMarksStore()
+    Object.values(storedRecords).forEach((record) => {
+      if (!record) {
+        return
+      }
+
+      if (normalizedName && normalizeClassName(record.className ?? "") !== normalizedName) {
+        return
+      }
+
+      if (
+        normalizedTermLabel &&
+        typeof record.term === "string" &&
+        record.term.trim().length > 0 &&
+        record.term !== normalizedTermLabel
+      ) {
+        return
+      }
+
+      if (
+        selectedSession &&
+        typeof record.session === "string" &&
+        record.session.trim().length > 0 &&
+        record.session !== selectedSession
+      ) {
+        return
+      }
+
+      const subjects = record.subjects ?? {}
+      registerSubjects(Object.keys(subjects))
+      registerSubjects(
+        Object.values(subjects).map((subject) =>
+          typeof subject?.subject === "string" ? subject.subject : "",
+        ),
+      )
+    })
+
+    if (selectedSubject) {
+      registerSubjects([selectedSubject])
+    }
+
+    const subjectList = Array.from(subjectSet)
+
+    return subjectList.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
   }, [
     classSubjectsMap,
     normalizeClassName,
+    normalizedTermLabel,
     selectedClass,
     selectedClassId,
+    selectedSession,
+    selectedSubject,
     teacher.subjects,
     teacherClasses,
   ])
