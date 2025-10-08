@@ -38,6 +38,7 @@ import type { RawReportCardData } from "@/lib/report-card-types"
 import { AutomaticPromotionSystem } from "@/components/automatic-promotion-system"
 import { getStudentReportCardData } from "@/lib/report-card-data"
 import { InternalMessaging, type MessagingParticipant } from "@/components/internal-messaging"
+import { normalizeSubjectList } from "@/lib/subject-utils"
 import { AdminApprovalDashboard } from "@/components/admin-approval-dashboard"
 import { safeStorage } from "@/lib/safe-storage"
 import { getBrandingFromStorage } from "@/lib/branding"
@@ -1334,18 +1335,7 @@ const buildTeacherAssignmentsFromUser = (
 
     const resolvedId = id || (name ? buildIdentifierFromName(name) : `class_${index}`)
     const resolvedName = name || id || `Class ${index + 1}`
-    const normalizedSubjects: string[] = []
-
-    if (Array.isArray(subjectsValue)) {
-      for (const subject of subjectsValue) {
-        if (typeof subject === "string") {
-          const trimmed = subject.trim()
-          if (trimmed.length > 0) {
-            normalizedSubjects.push(trimmed)
-          }
-        }
-      }
-    }
+    const normalizedSubjects = normalizeSubjectList(subjectsValue)
     const key = `${resolvedId.toLowerCase()}::${resolvedName.toLowerCase()}`
 
     if (classMap.has(key)) {
@@ -1509,11 +1499,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         payload.classes.forEach((entry, index) => {
           const rawId = typeof entry?.id === "string" ? entry.id.trim() : ""
           const rawName = typeof entry?.name === "string" ? entry.name.trim() : ""
-          const subjects = Array.isArray(entry?.subjects)
-            ? entry.subjects
-                .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
-                .filter((subject) => subject.length > 0)
-            : []
+          const subjects = normalizeSubjectList(entry?.subjects)
           const id = rawId || rawName || `class_${index}`
           const name = rawName || rawId || id
 
@@ -1532,16 +1518,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         })
       }
 
-      if (Array.isArray(payload.subjects)) {
-        for (const subject of payload.subjects) {
-          if (typeof subject === "string") {
-            const trimmed = subject.trim()
-            if (trimmed.length > 0) {
-              subjectSet.add(trimmed)
-            }
-          }
-        }
-      }
+      normalizeSubjectList(payload.subjects).forEach((subject) => subjectSet.add(subject))
 
       const normalizedSubjects = Array.from(subjectSet)
 
