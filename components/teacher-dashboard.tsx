@@ -120,6 +120,7 @@ import { resolveStudentPassportFromCache } from "@/lib/student-passport"
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
 const SUBJECT_REMARK_OPTIONS = ["Excellent", "V. Good", "Good", "Poor"] as const
+const SUBJECT_REFRESH_TIMEOUT_MS = 15000
 
 const getBrowserRuntime = (): BrowserRuntime | null => {
   if (typeof globalThis === "undefined") {
@@ -542,6 +543,15 @@ export function TeacherDashboard({
       setTeacherSubjectsError(null)
     }
 
+    const runtime = getBrowserRuntime()
+    const abortController = typeof AbortController !== "undefined" ? new AbortController() : null
+    const timeoutId =
+      abortController && runtime?.setTimeout
+        ? runtime.setTimeout(() => {
+            abortController.abort()
+          }, SUBJECT_REFRESH_TIMEOUT_MS)
+        : null
+
     try {
       const response = await fetch(`/api/teachers/${encodeURIComponent(teacher.id)}/subjects`, {
         method: "GET",
@@ -549,6 +559,7 @@ export function TeacherDashboard({
           Authorization: `Bearer ${token}`,
         },
         cache: "no-store",
+        signal: abortController?.signal,
       })
 
       const payload = await response.json().catch(() => ({}))
@@ -587,13 +598,25 @@ export function TeacherDashboard({
 
       return true
     } catch (error) {
-      if (isComponentMountedRef.current) {
-        const message =
-          error instanceof Error ? error.message : "Unable to load your subject assignments."
-        setTeacherSubjectsError(message)
+      if (!isComponentMountedRef.current) {
+        return false
       }
+
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setTeacherSubjectsError(
+          "The request to refresh your subjects took too long. Please check your connection and try again.",
+        )
+        return false
+      }
+
+      const message =
+        error instanceof Error ? error.message : "Unable to load your subject assignments."
+      setTeacherSubjectsError(message)
       throw error
     } finally {
+      if (timeoutId !== null && runtime?.clearTimeout) {
+        runtime.clearTimeout(timeoutId)
+      }
       if (isComponentMountedRef.current) {
         setIsTeacherSubjectsLoading(false)
       }
