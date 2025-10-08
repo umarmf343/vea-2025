@@ -507,11 +507,15 @@ export function TeacherDashboard({
   const [assignmentRoster, setAssignmentRoster] = useState<Record<string, AssignmentStudentInfo>>({})
   const [selectedClass, setSelectedClass] = useState(() => firstTeacherClass?.name ?? "")
   const [selectedClassId, setSelectedClassId] = useState(() => firstTeacherClass?.id ?? "")
-  const [selectedSubject, setSelectedSubject] = useState(
-    () => firstTeacherClass?.subjects[0] ?? teacherSubjects[0] ?? "",
-  )
+  const [selectedSubject, setSelectedSubject] = useState("")
   const [isSubjectSwitcherOpen, setIsSubjectSwitcherOpen] = useState(false)
   const rememberedSubjectByClassRef = useRef(new Map<string, string>())
+  const isComponentMountedRef = useRef(true)
+  useEffect(() => {
+    return () => {
+      isComponentMountedRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     setTeacherAssignmentSources(teacher.classes)
@@ -521,88 +525,86 @@ export function TeacherDashboard({
     setTeacherSubjects(normalizeSubjectArray(teacher.subjects))
   }, [teacher.subjects])
 
-  useEffect(() => {
-    let isMounted = true
+  const fetchAssignedSubjects = useCallback(async (): Promise<boolean> => {
+    const token = safeStorage.getItem("vea_auth_token")
+    if (!token) {
+      if (isComponentMountedRef.current) {
+        setTeacherSubjectsError(
+          "Your session has expired. Please log in again to refresh your subject assignments.",
+        )
+        setIsTeacherSubjectsLoading(false)
+      }
+      return false
+    }
 
-    const fetchAssignedSubjects = async () => {
-      const token = safeStorage.getItem("vea_auth_token")
-      if (!token) {
-        if (isMounted) {
-          setTeacherSubjectsError(
-            "Your session has expired. Please log in again to refresh your subject assignments.",
-          )
-        }
-        return
+    if (isComponentMountedRef.current) {
+      setIsTeacherSubjectsLoading(true)
+      setTeacherSubjectsError(null)
+    }
+
+    try {
+      const response = await fetch(`/api/teachers/${encodeURIComponent(teacher.id)}/subjects`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+      })
+
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        const message =
+          typeof (payload as { error?: unknown }).error === "string"
+            ? ((payload as { error?: string }).error as string)
+            : response.status === 403
+              ? "You do not have permission to load subject assignments."
+              : "Unable to load your subject assignments."
+        throw new Error(message)
       }
 
-      if (isMounted) {
-        setIsTeacherSubjectsLoading(true)
+      if (!isComponentMountedRef.current) {
+        return false
+      }
+
+      const normalizedSubjects = normalizeSubjectArray((payload as { subjects?: unknown }).subjects)
+      const normalizedClasses = normalizeTeacherClassAssignments((payload as { classes?: unknown }).classes)
+
+      setTeacherSubjects(normalizedSubjects)
+      setTeacherAssignmentSources(normalizedClasses)
+
+      if (normalizedSubjects.length === 0) {
+        const message =
+          typeof (payload as { message?: unknown }).message === "string"
+            ? ((payload as { message?: string }).message as string)
+            : null
+        setTeacherSubjectsError(
+          message ?? "No subjects have been assigned to you yet. Please contact your administrator.",
+        )
+      } else {
         setTeacherSubjectsError(null)
       }
 
-      try {
-        const response = await fetch(`/api/teachers/${encodeURIComponent(teacher.id)}/subjects`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          cache: "no-store",
-        })
-
-        const payload = await response.json().catch(() => ({}))
-
-        if (!response.ok) {
-          const message =
-            typeof (payload as { error?: unknown }).error === "string"
-              ? ((payload as { error?: string }).error as string)
-              : response.status === 403
-                ? "You do not have permission to load subject assignments."
-                : "Unable to load your subject assignments."
-          throw new Error(message)
-        }
-
-        if (!isMounted) {
-          return
-        }
-
-        const normalizedSubjects = normalizeSubjectArray((payload as { subjects?: unknown }).subjects)
-        const normalizedClasses = normalizeTeacherClassAssignments((payload as { classes?: unknown }).classes)
-
-        setTeacherSubjects(normalizedSubjects)
-        setTeacherAssignmentSources(normalizedClasses)
-
-        if (normalizedSubjects.length === 0) {
-          const message =
-            typeof (payload as { message?: unknown }).message === "string"
-              ? ((payload as { message?: string }).message as string)
-              : null
-          setTeacherSubjectsError(
-            message ?? "No subjects have been assigned to you yet. Please contact your administrator.",
-          )
-        } else {
-          setTeacherSubjectsError(null)
-        }
-      } catch (error) {
-        if (!isMounted) {
-          return
-        }
-
+      return true
+    } catch (error) {
+      if (isComponentMountedRef.current) {
         const message =
           error instanceof Error ? error.message : "Unable to load your subject assignments."
         setTeacherSubjectsError(message)
-      } finally {
-        if (isMounted) {
-          setIsTeacherSubjectsLoading(false)
-        }
+      }
+      throw error
+    } finally {
+      if (isComponentMountedRef.current) {
+        setIsTeacherSubjectsLoading(false)
       }
     }
-
-    void fetchAssignedSubjects()
-
-    return () => {
-      isMounted = false
-    }
   }, [teacher.id])
+
+  useEffect(() => {
+    void fetchAssignedSubjects().catch((error) => {
+      logger.warn("Initial subject assignment fetch failed", { error })
+    })
+  }, [fetchAssignedSubjects])
 
   const [selectedTerm, setSelectedTerm] = useState("first")
   const [selectedSession, setSelectedSession] = useState("2024/2025")
@@ -1139,15 +1141,9 @@ export function TeacherDashboard({
   useEffect(() => {
     const normalizedOptions = availableSubjects.map((subject) => subject.trim().toLowerCase())
 
-    if (availableSubjects.length === 0) {
-      if (selectedSubject) {
-        setSelectedSubject("")
-      }
-      return
-    }
-
     setSelectedSubject((prev) => {
       const normalizedPrev = prev.trim().toLowerCase()
+
       if (normalizedPrev && normalizedOptions.includes(normalizedPrev)) {
         return prev
       }
@@ -1168,19 +1164,13 @@ export function TeacherDashboard({
         }
       }
 
-      if (availableSubjects.length === 1) {
-        return availableSubjects[0]
-      }
-
-      return ""
+      return normalizedPrev ? "" : prev
     })
-  }, [
-    availableSubjects,
-    normalizeClassName,
-    selectedClass,
-    selectedClassId,
-    selectedSubject,
-  ])
+
+    if (availableSubjects.length === 0 && selectedSubject) {
+      setSelectedSubject("")
+    }
+  }, [availableSubjects, normalizeClassName, selectedClass, selectedClassId, selectedSubject])
 
   useEffect(() => {
     if (!selectedSubject) {
@@ -1579,86 +1569,91 @@ export function TeacherDashboard({
     }
   }, [loadAssignments])
 
-  useEffect(() => {
-    let isMounted = true
-
-    const loadExams = async () => {
-      try {
+  const loadExams = useCallback(async () => {
+    try {
+      if (isComponentMountedRef.current) {
         setIsExamLoading(true)
-        const schedules = await dbManager.getExamSchedules()
-        if (!isMounted) return
+      }
+      const schedules = await dbManager.getExamSchedules()
 
-        const normalizedClasses = new Set(teacherClassNames.map((cls) => normalizeClassName(cls)))
-        const relevantExams = schedules.filter((exam) =>
-          normalizedClasses.has(normalizeClassName(exam.className)),
-        )
+      if (!isComponentMountedRef.current) {
+        return
+      }
 
-        setTeacherExams(relevantExams)
-      } catch (error) {
-        logger.error("Failed to load teacher exams", { error })
-      } finally {
-        if (isMounted) {
-          setIsExamLoading(false)
-        }
+      const normalizedClasses = new Set(teacherClassNames.map((cls) => normalizeClassName(cls)))
+      const relevantExams = schedules.filter((exam) =>
+        normalizedClasses.has(normalizeClassName(exam.className)),
+      )
+
+      setTeacherExams(relevantExams)
+    } catch (error) {
+      logger.error("Failed to load teacher exams", { error })
+    } finally {
+      if (isComponentMountedRef.current) {
+        setIsExamLoading(false)
       }
     }
+  }, [normalizeClassName, teacherClassNames])
 
-    loadExams()
+  useEffect(() => {
+    void loadExams()
 
     const handleExamUpdate = () => {
-      loadExams()
+      void loadExams()
     }
 
     dbManager.on("examScheduleUpdated", handleExamUpdate)
     dbManager.on("examResultsUpdated", handleExamUpdate)
 
     return () => {
-      isMounted = false
       dbManager.off("examScheduleUpdated", handleExamUpdate)
       dbManager.off("examResultsUpdated", handleExamUpdate)
     }
-  }, [teacherClassNames])
+  }, [loadExams])
 
-  useEffect(() => {
-    let isMounted = true
-
-    const loadTimetable = async () => {
-      if (!selectedClass) {
+  const loadTimetable = useCallback(async () => {
+    if (!selectedClass) {
+      if (isComponentMountedRef.current) {
         setTeacherTimetable([])
         setIsTeacherTimetableLoading(false)
+      }
+      return
+    }
+
+    try {
+      if (isComponentMountedRef.current) {
+        setIsTeacherTimetableLoading(true)
+      }
+      const slots = await dbManager.getTimetable(selectedClass)
+
+      if (!isComponentMountedRef.current) {
         return
       }
 
-      try {
-        setIsTeacherTimetableLoading(true)
-        const slots = await dbManager.getTimetable(selectedClass)
-        if (!isMounted) {
-          return
-        }
-
-        const normalized = normalizeTimetableCollection(slots).map(
-          ({ id, day, time, subject, teacher, location }) => ({
-            id,
-            day,
-            time,
-            subject,
-            teacher,
-            location,
-          }),
-        )
-        setTeacherTimetable(normalized)
-      } catch (error) {
-        logger.error("Failed to load teacher timetable", { error })
-        if (isMounted) {
-          setTeacherTimetable([])
-        }
-      } finally {
-        if (isMounted) {
-          setIsTeacherTimetableLoading(false)
-        }
+      const normalized = normalizeTimetableCollection(slots).map(
+        ({ id, day, time, subject, teacher, location }) => ({
+          id,
+          day,
+          time,
+          subject,
+          teacher,
+          location,
+        }),
+      )
+      setTeacherTimetable(normalized)
+    } catch (error) {
+      logger.error("Failed to load teacher timetable", { error })
+      if (isComponentMountedRef.current) {
+        setTeacherTimetable([])
+      }
+    } finally {
+      if (isComponentMountedRef.current) {
+        setIsTeacherTimetableLoading(false)
       }
     }
+  }, [selectedClass])
 
+  useEffect(() => {
     void loadTimetable()
 
     const handleTimetableUpdate = (payload: { className?: string } | undefined) => {
@@ -1677,10 +1672,9 @@ export function TeacherDashboard({
     dbManager.on("timetableUpdated", handleTimetableUpdate)
 
     return () => {
-      isMounted = false
       dbManager.off("timetableUpdated", handleTimetableUpdate)
     }
-  }, [selectedClass])
+  }, [loadTimetable, normalizeClassName, selectedClass])
 
   const lastPersistedSelectionRef = useRef<string | null>(null)
   const suppressMarksRefreshRef = useRef(false)
@@ -4243,6 +4237,68 @@ export function TeacherDashboard({
     }
   }
 
+  const [isHardRefreshing, setIsHardRefreshing] = useState(false)
+  const isHardRefreshingRef = useRef(false)
+
+  const handleHardRefresh = useCallback(async () => {
+    if (isHardRefreshingRef.current) {
+      return
+    }
+
+    isHardRefreshingRef.current = true
+    setIsHardRefreshing(true)
+
+    try {
+      if (typeof onRefreshAssignments === "function") {
+        try {
+          onRefreshAssignments()
+        } catch (callbackError) {
+          logger.warn("Teacher assignment refresh callback failed", { error: callbackError })
+        }
+      }
+
+      const results = await Promise.allSettled([
+        fetchAssignedSubjects(),
+        refreshTeacherStudents(),
+        loadAssignments(),
+        loadExams(),
+        loadTimetable(),
+      ])
+
+      const failures = results.filter((result) => result.status === "rejected")
+
+      if (failures.length > 0) {
+        failures.forEach((failure) => {
+          logger.error("Teacher dashboard refresh task failed", {
+            error: failure.status === "rejected" ? failure.reason : undefined,
+          })
+        })
+        toast({
+          variant: "destructive",
+          title: "Refresh incomplete",
+          description: "Some teacher records could not be updated. Please try again shortly.",
+        })
+        return
+      }
+
+      toast({
+        title: "Dashboard updated",
+        description: "Your classes, subjects, and student lists are now up to date.",
+      })
+    } finally {
+      isHardRefreshingRef.current = false
+      setIsHardRefreshing(false)
+    }
+  }, [
+    fetchAssignedSubjects,
+    loadAssignments,
+    loadExams,
+    loadTimetable,
+    onRefreshAssignments,
+    refreshTeacherStudents,
+    toast,
+  ])
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -4255,7 +4311,24 @@ export function TeacherDashboard({
               <p>Classes: {classSummary}</p>
             </div>
           </div>
-          <TutorialLink href="https://www.youtube.com/watch?v=HkyVTxH2fIM" variant="inverse" />
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <Button
+              type="button"
+              onClick={() => {
+                void handleHardRefresh()
+              }}
+              disabled={isHardRefreshing}
+              className="bg-white/10 text-white hover:bg-white/20"
+            >
+              {isHardRefreshing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Hard Refresh
+            </Button>
+            <TutorialLink href="https://www.youtube.com/watch?v=HkyVTxH2fIM" variant="inverse" />
+          </div>
         </div>
       </div>
 
