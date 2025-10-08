@@ -305,13 +305,54 @@ export function TeacherDashboard({
   onRefreshAssignments,
 }: TeacherDashboardProps) {
   const { toast } = useToast()
-  const firstTeacherClass = teacher.classes[0] ?? null
-  const teacherClassNames = useMemo(() => teacher.classes.map((cls) => cls.name), [teacher.classes])
-  const teacherClassIds = useMemo(() => teacher.classes.map((cls) => cls.id), [teacher.classes])
-  const noClassesAssigned = teacher.classes.length === 0
+  const teacherClasses = useMemo(() => {
+    const deduped: TeacherClassAssignment[] = []
+    const seen = new Set<string>()
+
+    teacher.classes.forEach((cls, index) => {
+      if (!cls) {
+        return
+      }
+
+      const rawId = typeof cls.id === "string" ? cls.id.trim() : ""
+      const rawName = typeof cls.name === "string" ? cls.name.trim() : ""
+      const idToken = normalizeClassToken(rawId)
+      const nameToken = normalizeClassToken(rawName)
+      const summaryKey = `${idToken}::${nameToken}`
+      const dedupeKey = summaryKey || `index:${index}`
+
+      if (seen.has(dedupeKey)) {
+        return
+      }
+
+      seen.add(dedupeKey)
+
+      const subjects = Array.isArray(cls.subjects)
+        ? Array.from(
+            new Set(
+              cls.subjects
+                .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+                .filter((subject) => subject.length > 0),
+            ),
+          )
+        : []
+
+      deduped.push({
+        id: rawId || (rawName ? `class_${normalizeClassToken(rawName)}` : `class_${index + 1}`),
+        name: rawName || rawId || `Class ${index + 1}`,
+        subjects,
+      })
+    })
+
+    return deduped
+  }, [teacher.classes])
+  const firstTeacherClass = teacherClasses[0] ?? null
+  const teacherClassNames = useMemo(() => teacherClasses.map((cls) => cls.name), [teacherClasses])
+  const teacherClassIds = useMemo(() => teacherClasses.map((cls) => cls.id), [teacherClasses])
+  const noClassesAssigned = teacherClasses.length === 0
   const teacherClassTokenList = useMemo(() => {
     const tokens = new Set<string>()
-    teacher.classes.forEach((cls) => {
+    teacherClasses.forEach((cls) => {
       const idToken = normalizeClassToken(cls.id)
       const nameToken = normalizeClassToken(cls.name)
       if (idToken) {
@@ -322,7 +363,7 @@ export function TeacherDashboard({
       }
     })
     return Array.from(tokens)
-  }, [teacher.classes])
+  }, [teacherClasses])
   const teacherClassTokenKey = useMemo(() => teacherClassTokenList.join("|"), [teacherClassTokenList])
   const teacherHasAssignedClasses = teacherClassTokenList.length > 0
   const [selectedTab, setSelectedTab] = useState("overview")
@@ -535,7 +576,7 @@ export function TeacherDashboard({
       }
 
       const tokenSet = new Set(teacherClassTokenList)
-      const fallbackClassName = teacher.classes[0]?.name ?? ""
+      const fallbackClassName = teacherClasses[0]?.name ?? ""
 
       return records
         .map((entry) => {
@@ -589,7 +630,7 @@ export function TeacherDashboard({
         })
         .filter((student): student is TeacherScopedStudent => Boolean(student))
     },
-    [teacher.classes, teacherClassTokenList, teacherHasAssignedClasses],
+    [teacherClasses, teacherClassTokenList, teacherHasAssignedClasses],
   )
 
   const refreshTeacherStudents = useCallback(async () => {
@@ -689,14 +730,14 @@ export function TeacherDashboard({
       setSelectedClass(value)
 
       const normalizedValue = normalizeClassName(value)
-      const match = teacher.classes.find((cls) => {
+      const match = teacherClasses.find((cls) => {
         const normalizedName = normalizeClassName(cls.name)
         return normalizedName === normalizedValue || cls.id === value
       })
 
       setSelectedClassId(match?.id ?? "")
     },
-    [normalizeClassName, teacher.classes],
+    [normalizeClassName, teacherClasses],
   )
 
   const subjectsForSelectedClass = useMemo(() => {
@@ -717,11 +758,11 @@ export function TeacherDashboard({
       }
     }
 
-    if (teacher.classes.length === 0) {
+    if (teacherClasses.length === 0) {
       return teacher.subjects
     }
 
-    const match = teacher.classes.find((cls) => {
+    const match = teacherClasses.find((cls) => {
       if (cls.id && cls.id === selectedClassId) {
         return true
       }
@@ -744,12 +785,12 @@ export function TeacherDashboard({
     normalizeClassName,
     selectedClass,
     selectedClassId,
-    teacher.classes,
+    teacherClasses,
     teacher.subjects,
   ])
 
   useEffect(() => {
-    if (teacher.classes.length === 0) {
+    if (teacherClasses.length === 0) {
       if (selectedClass || selectedClassId) {
         setSelectedClass("")
         setSelectedClassId("")
@@ -758,11 +799,11 @@ export function TeacherDashboard({
     }
 
     const normalizedCurrent = normalizeClassName(selectedClass)
-    const matchById = teacher.classes.find((cls) => cls.id === selectedClassId)
-    const matchByName = teacher.classes.find(
+    const matchById = teacherClasses.find((cls) => cls.id === selectedClassId)
+    const matchByName = teacherClasses.find(
       (cls) => normalizeClassName(cls.name) === normalizedCurrent,
     )
-    const resolved = matchById ?? matchByName ?? teacher.classes[0] ?? null
+    const resolved = matchById ?? matchByName ?? teacherClasses[0] ?? null
 
     if (!resolved) {
       return
@@ -779,16 +820,16 @@ export function TeacherDashboard({
     normalizeClassName,
     selectedClass,
     selectedClassId,
-    teacher.classes,
+    teacherClasses,
   ])
 
   useEffect(() => {
     setAssignmentForm((prev) => {
       const normalizedSelection = normalizeClassName(selectedClass)
       const defaultClass =
-        teacher.classes.find((cls) => cls.id === selectedClassId) ??
-        teacher.classes.find((cls) => normalizeClassName(cls.name) === normalizedSelection)
-      const fallbackClass = defaultClass ?? teacher.classes[0] ?? null
+        teacherClasses.find((cls) => cls.id === selectedClassId) ??
+        teacherClasses.find((cls) => normalizeClassName(cls.name) === normalizedSelection)
+      const fallbackClass = defaultClass ?? teacherClasses[0] ?? null
       const normalizedPrevSubject = typeof prev.subject === "string" ? prev.subject.trim().toLowerCase() : ""
       const normalizedOptions = subjectsForSelectedClass.map((subject) => subject.trim().toLowerCase())
       const nextSubject =
@@ -808,7 +849,7 @@ export function TeacherDashboard({
     selectedClass,
     selectedClassId,
     subjectsForSelectedClass,
-    teacher.classes,
+    teacherClasses,
   ])
 
   const mockStudents = useMemo(
@@ -2956,9 +2997,9 @@ export function TeacherDashboard({
       title: "",
       description: "",
       dueDate: "",
-      subject: teacher.classes[0]?.subjects[0] ?? teacher.subjects[0] ?? "",
-      classId: teacher.classes[0]?.id ?? "",
-      className: teacher.classes[0]?.name ?? "",
+      subject: teacherClasses[0]?.subjects[0] ?? teacher.subjects[0] ?? "",
+      classId: teacherClasses[0]?.id ?? "",
+      className: teacherClasses[0]?.name ?? "",
       maximumScore: String(defaultAssignmentMaximum),
       file: null,
       resourceName: "",
@@ -2968,7 +3009,7 @@ export function TeacherDashboard({
     })
     setEditingAssignmentId(null)
     setAssignmentDialogMode("create")
-  }, [defaultAssignmentMaximum, teacher.classes, teacher.subjects])
+  }, [defaultAssignmentMaximum, teacherClasses, teacher.subjects])
 
   const openCreateAssignmentDialog = () => {
     resetAssignmentForm()
@@ -2979,8 +3020,8 @@ export function TeacherDashboard({
     setAssignmentDialogMode("edit")
     setEditingAssignmentId(assignment.id)
     const matchedClass = assignment.classId
-      ? teacher.classes.find((cls) => cls.id === assignment.classId)
-      : teacher.classes.find((cls) => normalizeClassName(cls.name) === normalizeClassName(assignment.className))
+      ? teacherClasses.find((cls) => cls.id === assignment.classId)
+      : teacherClasses.find((cls) => normalizeClassName(cls.name) === normalizeClassName(assignment.className))
     setAssignmentForm({
       title: assignment.title,
       description: assignment.description ?? "",
@@ -3131,7 +3172,7 @@ export function TeacherDashboard({
       !assignmentForm.subject ||
       !assignmentForm.className ||
       !assignmentForm.dueDate ||
-      (teacher.classes.length > 0 && !assignmentForm.classId)
+      (teacherClasses.length > 0 && !assignmentForm.classId)
     ) {
       toast({
         variant: "destructive",
@@ -3981,7 +4022,7 @@ export function TeacherDashboard({
             <div className="flex items-center space-x-2">
               <GraduationCap className="h-8 w-8 text-[#2d682d]" />
               <div>
-                <p className="text-2xl font-bold text-[#2d682d]">{teacher.classes.length}</p>
+                <p className="text-2xl font-bold text-[#2d682d]">{teacherClasses.length}</p>
                 <p className="text-sm text-gray-600">Classes</p>
               </div>
             </div>
@@ -4072,7 +4113,7 @@ export function TeacherDashboard({
               <CardContent>
                 {isContextLoading ? (
                   <p className="text-sm text-gray-600">Loading your class assignments...</p>
-                ) : teacher.classes.length === 0 ? (
+                ) : teacherClasses.length === 0 ? (
                   <div className="space-y-2 text-sm text-gray-600">
                     <p>{contextError ?? "You are not assigned to any class. Contact your administrator."}</p>
                     {onRefreshAssignments ? (
@@ -4088,7 +4129,7 @@ export function TeacherDashboard({
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {teacher.classes.map((classItem, index) => (
+                    {teacherClasses.map((classItem, index) => (
                       <div key={classItem.id ?? index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
                         <span>{classItem.name}</span>
                         <Badge variant="outline">
@@ -4154,7 +4195,7 @@ export function TeacherDashboard({
                   <div>
                     <label className="text-sm font-medium text-gray-700">Classes</label>
                     <div className="flex gap-1 mt-1">
-                      {teacher.classes.map((classItem, index) => (
+                      {teacherClasses.map((classItem, index) => (
                         <Badge key={classItem.id ?? index} variant="outline">
                           {classItem.name}
                         </Badge>
@@ -4273,8 +4314,8 @@ export function TeacherDashboard({
                             {isContextLoading ? "Loading..." : "No classes available"}
                           </SelectItem>
                         ) : (
-                          teacher.classes.map((classItem) => (
-                            <SelectItem key={classItem.id} value={classItem.name}>
+                          teacherClasses.map((classItem) => (
+                            <SelectItem key={`${classItem.id}-${classItem.name}`} value={classItem.name}>
                               {classItem.name}
                             </SelectItem>
                           ))
@@ -5658,7 +5699,7 @@ export function TeacherDashboard({
                       value={assignmentForm.classId || ""}
                       onValueChange={(value) =>
                         setAssignmentForm((prev) => {
-                          const match = teacher.classes.find((cls) => cls.id === value)
+                          const match = teacherClasses.find((cls) => cls.id === value)
                           return {
                             ...prev,
                             classId: value,
@@ -5671,8 +5712,8 @@ export function TeacherDashboard({
                         <SelectValue placeholder={assignmentForm.className || "Select class"} />
                       </SelectTrigger>
                       <SelectContent>
-                        {teacher.classes.map((classItem) => (
-                          <SelectItem key={classItem.id} value={classItem.id}>
+                        {teacherClasses.map((classItem) => (
+                          <SelectItem key={`${classItem.id}-${classItem.name}`} value={classItem.id}>
                             {classItem.name}
                           </SelectItem>
                         ))}
