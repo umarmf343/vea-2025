@@ -117,7 +117,7 @@ const parseReportCardStudents = (): Record<string, unknown>[] => {
   }
 }
 
-const collectStudentCandidates = (): Record<string, unknown>[] => {
+export const collectStudentCandidates = (): Record<string, unknown>[] => {
   return [...parseStudentsCache(), ...parseReportCardStudents()]
 }
 

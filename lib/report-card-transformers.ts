@@ -1,6 +1,7 @@
 import type { ReportCardRecord, ReportCardSubjectRecord } from "@/lib/database"
 import { deriveGradeFromScore } from "@/lib/grade-utils"
 import { resolveStudentPassportFromCache } from "./student-passport"
+import { resolveCachedAdmissionNumber } from "./student-cache"
 import {
   AFFECTIVE_TRAITS,
   PSYCHOMOTOR_SKILLS,
@@ -90,12 +91,27 @@ export const mapReportCardRecordToRaw = (record: ReportCardRecord): RawReportCar
   const metadataRaw = extractRawFromMetadata(record.metadata)
   const metadataStudentRecord =
     metadataRaw && isRecord(metadataRaw.student) ? metadataRaw.student : undefined
+  const metadataAdmissionCandidate =
+    typeof metadataStudentRecord?.admissionNumber === "string"
+      ? metadataStudentRecord.admissionNumber.trim()
+      : ""
+  const cachedAdmissionNumber =
+    resolveCachedAdmissionNumber({
+      id: record.studentId,
+      admissionNumber: metadataAdmissionCandidate || record.studentId,
+      name: (metadataStudentRecord?.name as string | undefined) ?? record.studentName,
+    }) ?? null
+  const fallbackAdmissionLabel = record.studentId ? `VEA/${record.studentId}` : record.studentName
+  const resolvedAdmissionNumber =
+    (cachedAdmissionNumber && cachedAdmissionNumber.length > 0 ? cachedAdmissionNumber : null) ??
+    (metadataAdmissionCandidate && metadataAdmissionCandidate.length > 0
+      ? metadataAdmissionCandidate
+      : fallbackAdmissionLabel)
 
   const { passportUrl, photoUrl } = resolveStudentPassportFromCache(
     {
       id: record.studentId,
-      admissionNumber:
-        (metadataStudentRecord?.admissionNumber as string | undefined) ?? record.studentId,
+      admissionNumber: resolvedAdmissionNumber,
       name: (metadataStudentRecord?.name as string | undefined) ?? record.studentName,
     },
     metadataStudentRecord ?? null,
@@ -105,7 +121,7 @@ export const mapReportCardRecordToRaw = (record: ReportCardRecord): RawReportCar
     student: {
       id: record.studentId,
       name: record.studentName,
-      admissionNumber: record.studentId ? `VEA/${record.studentId}` : record.studentName,
+      admissionNumber: resolvedAdmissionNumber,
       class: record.className,
       term: record.term,
       session: record.session,
@@ -149,7 +165,11 @@ export const mapReportCardRecordToRaw = (record: ReportCardRecord): RawReportCar
       ...metadataStudent,
       id: metadataStudent.id ? String(metadataStudent.id) : base.student.id,
       name: metadataStudent.name ?? base.student.name,
-      admissionNumber: metadataStudent.admissionNumber ?? base.student.admissionNumber,
+      admissionNumber:
+        typeof metadataStudent.admissionNumber === "string" &&
+        metadataStudent.admissionNumber.trim().length > 0
+          ? metadataStudent.admissionNumber
+          : base.student.admissionNumber,
       class: metadataStudent.class ?? base.student.class,
       term: metadataStudent.term ?? base.student.term,
       session: metadataStudent.session ?? base.student.session,

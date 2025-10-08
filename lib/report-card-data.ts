@@ -10,6 +10,7 @@ import {
   PSYCHOMOTOR_SKILLS,
   createBehavioralRecordSkeleton,
 } from "./report-card-constants"
+import { resolveCachedAdmissionNumber } from "./student-cache"
 
 export interface StudentMarks {
   studentId: string
@@ -281,10 +282,20 @@ export const buildRawReportCardFromStoredRecord = (
     numberOfStudents: record.numberInClass,
   }
 
+  const fallbackAdmissionLabel = record.studentId ? `VEA/${record.studentId}` : record.studentName
+  const cachedAdmissionNumber =
+    resolveCachedAdmissionNumber({
+      id: record.studentId,
+      name: record.studentName,
+    }) ?? null
+  const admissionNumber =
+    (cachedAdmissionNumber && cachedAdmissionNumber.length > 0 ? cachedAdmissionNumber : null) ??
+    fallbackAdmissionLabel
+
   const { passportUrl, photoUrl } = resolveStudentPassportFromCache(
     {
       id: record.studentId,
-      admissionNumber: record.studentId,
+      admissionNumber,
       name: record.studentName,
     },
     null,
@@ -294,7 +305,7 @@ export const buildRawReportCardFromStoredRecord = (
     student: {
       id: record.studentId,
       name: record.studentName,
-      admissionNumber: record.studentId ? `VEA/${record.studentId}` : record.studentName,
+      admissionNumber,
       class: record.className,
       term: normalizedTerm,
       session: record.session,
