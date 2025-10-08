@@ -5,6 +5,14 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
@@ -110,6 +118,8 @@ export default function MathRacing() {
   const [streak, setStreak] = useState(0)
   const [bestBoost, setBestBoost] = useState<number | null>(null)
   const [penalties, setPenalties] = useState(0)
+  const [raceOutcome, setRaceOutcome] = useState<"win" | "loss" | null>(null)
+  const [outcomeMessage, setOutcomeMessage] = useState("")
 
   const rivalIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const questionStartRef = useRef<number | null>(null)
@@ -130,6 +140,8 @@ export default function MathRacing() {
     setStreak(0)
     setPenalties(0)
     setBestBoost(null)
+    setRaceOutcome(null)
+    setOutcomeMessage("")
     const initialQuestion = createQuestion()
     setQuestion(initialQuestion)
     setAnswer("")
@@ -137,9 +149,11 @@ export default function MathRacing() {
   }, [])
 
   const stopRace = useCallback(
-    (message: string) => {
+    (message: string, outcome: "win" | "loss" | null = null) => {
       setRaceActive(false)
       setRaceLog((previous) => [{ id: `${Date.now()}`, message }, ...previous].slice(0, 6))
+      setRaceOutcome(outcome)
+      setOutcomeMessage(message)
       if (rivalIntervalRef.current) {
         clearInterval(rivalIntervalRef.current)
         rivalIntervalRef.current = null
@@ -171,7 +185,7 @@ export default function MathRacing() {
         const speedMultiplier = 5
         const updated = clampProgress(previous + baseIncrement * speedMultiplier)
         if (updated >= 100) {
-          stopRace("🏁 Rival championed the race. Try again!")
+          stopRace("🏁 Rival championed the race. Try again!", "loss")
         }
         return updated
       })
@@ -190,9 +204,9 @@ export default function MathRacing() {
       return
     }
     if (playerProgress >= 100) {
-      stopRace("🏆 You won the math grand prix!")
+      stopRace("🏆 You won the math grand prix!", "win")
     } else if (rivalProgress >= 100) {
-      stopRace("🏁 Rival championed the race. Try again!")
+      stopRace("🏁 Rival championed the race. Try again!", "loss")
     }
   }, [playerProgress, raceActive, rivalProgress, stopRace])
 
@@ -461,6 +475,49 @@ export default function MathRacing() {
           </div>
         </div>
       </CardContent>
+      <Dialog
+        open={raceOutcome !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRaceOutcome(null)
+          }
+        }}
+      >
+        <DialogContent
+          className={cn(
+            "text-center",
+            raceOutcome === "win" ? "border-emerald-200" : raceOutcome === "loss" ? "border-rose-200" : "border-slate-200",
+          )}
+        >
+          <DialogHeader className="space-y-3 text-center">
+            <DialogTitle className="text-3xl font-bold">
+              {raceOutcome === "win"
+                ? "🏆 Grand Prix Champion!"
+                : raceOutcome === "loss"
+                  ? "💀 Catastrophic Crash!"
+                  : ""}
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              {raceOutcome === "win"
+                ? "You blitzed past the finish line like a legend. Bask in the confetti and queue up the next victory lap!"
+                : raceOutcome === "loss"
+                  ? "That was a face-plant into the guardrail. Shake off the slime, wipe off the tears, and fire those engines again!"
+                  : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">{outcomeMessage}</p>
+          <DialogFooter className="mt-4 flex justify-center gap-3 sm:justify-center">
+            <Button
+              onClick={() => {
+                setRaceOutcome(null)
+                startRace()
+              }}
+            >
+              {raceOutcome === "win" ? "Race again" : raceOutcome === "loss" ? "Redeem yourself" : "Start a new race"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }
