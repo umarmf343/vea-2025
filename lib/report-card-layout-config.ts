@@ -91,18 +91,6 @@ const DEFAULT_SECTIONS: ReportCardLayoutSectionConfig[] = [
     ],
   },
   {
-    id: "attendance",
-    title: "Attendance Summary",
-    description: "Attendance performance for the term.",
-    enabled: true,
-    fields: [
-      { id: "attendance_present", label: "Present", enabled: true },
-      { id: "attendance_absent", label: "Absent", enabled: true },
-      { id: "attendance_total", label: "Total School Days", enabled: true },
-      { id: "attendance_percentage", label: "Attendance Percentage", enabled: true },
-    ],
-  },
-  {
     id: "remarks",
     title: "Remarks",
     description: "Teacher and head remarks.",
@@ -134,16 +122,6 @@ const DEFAULT_SECTIONS: ReportCardLayoutSectionConfig[] = [
     fields: [
       { id: "vacation_date", label: "Vacation Date", enabled: true },
       { id: "resumption_date", label: "Resumption Date", enabled: true },
-    ],
-  },
-  {
-    id: "fees",
-    title: "Fees Summary",
-    description: "Financial obligations for the next term.",
-    enabled: true,
-    fields: [
-      { id: "next_term_fees", label: "Next Term Fees", enabled: true },
-      { id: "fees_balance", label: "Outstanding Balance", enabled: true },
     ],
   },
   {
