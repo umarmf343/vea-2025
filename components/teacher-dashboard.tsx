@@ -416,6 +416,7 @@ export function TeacherDashboard({
   const [selectedSubject, setSelectedSubject] = useState(
     () => firstTeacherClass?.subjects[0] ?? teacher.subjects[0] ?? "",
   )
+  const rememberedSubjectByClassRef = useRef(new Map<string, string>())
   const [classSubjectsMap, setClassSubjectsMap] = useState<Record<string, string[]>>({})
   const [isClassSubjectsLoading, setIsClassSubjectsLoading] = useState(false)
   const [classSubjectsError, setClassSubjectsError] = useState<string | null>(null)
@@ -836,7 +837,12 @@ export function TeacherDashboard({
       if (value === "__no_classes__") {
         setSelectedClass("")
         setSelectedClassId("")
+        setSelectedSubject("")
         return
+      }
+
+      if (value !== selectedClass) {
+        setSelectedSubject("")
       }
 
       setSelectedClass(value)
@@ -849,7 +855,7 @@ export function TeacherDashboard({
 
       setSelectedClassId(match?.id ?? "")
     },
-    [normalizeClassName, teacherClasses],
+    [normalizeClassName, selectedClass, teacherClasses],
   )
 
   const subjectsForSelectedClass = useMemo(() => {
@@ -995,21 +1001,63 @@ export function TeacherDashboard({
   ])
 
   useEffect(() => {
+    const normalizedOptions = availableSubjects.map((subject) => subject.trim().toLowerCase())
+
     if (availableSubjects.length === 0) {
-      setSelectedSubject("")
+      if (selectedSubject) {
+        setSelectedSubject("")
+      }
       return
     }
 
     setSelectedSubject((prev) => {
       const normalizedPrev = prev.trim().toLowerCase()
-      const normalizedOptions = availableSubjects.map((subject) => subject.trim().toLowerCase())
       if (normalizedPrev && normalizedOptions.includes(normalizedPrev)) {
         return prev
       }
 
-      return availableSubjects[0] ?? ""
+      const classKey = selectedClassId || normalizeClassName(selectedClass)
+      if (classKey) {
+        const remembered = rememberedSubjectByClassRef.current.get(classKey)
+        if (remembered) {
+          const normalizedRemembered = remembered.trim().toLowerCase()
+          if (normalizedRemembered && normalizedOptions.includes(normalizedRemembered)) {
+            const matchedSubject = availableSubjects.find(
+              (subject) => subject.trim().toLowerCase() === normalizedRemembered,
+            )
+            if (matchedSubject) {
+              return matchedSubject
+            }
+          }
+        }
+      }
+
+      if (availableSubjects.length === 1) {
+        return availableSubjects[0]
+      }
+
+      return ""
     })
-  }, [availableSubjects])
+  }, [
+    availableSubjects,
+    normalizeClassName,
+    selectedClass,
+    selectedClassId,
+    selectedSubject,
+  ])
+
+  useEffect(() => {
+    if (!selectedSubject) {
+      return
+    }
+
+    const key = selectedClassId || normalizeClassName(selectedClass)
+    if (!key) {
+      return
+    }
+
+    rememberedSubjectByClassRef.current.set(key, selectedSubject)
+  }, [normalizeClassName, selectedClass, selectedClassId, selectedSubject])
 
   useEffect(() => {
     setAssignmentForm((prev) => {
@@ -4526,7 +4574,7 @@ export function TeacherDashboard({
                       onValueChange={handleSelectClass}
                       disabled={noClassesAssigned || isContextLoading}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select Class" />
                       </SelectTrigger>
                       <SelectContent>
@@ -4556,7 +4604,7 @@ export function TeacherDashboard({
                       onValueChange={setSelectedSubject}
                       disabled={isContextLoading || isClassSubjectsLoading}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select Subject" />
                       </SelectTrigger>
                       <SelectContent>
@@ -4594,7 +4642,7 @@ export function TeacherDashboard({
                   <div>
                     <Label>Term</Label>
                     <Select value={selectedTerm} onValueChange={setSelectedTerm}>
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -4607,7 +4655,7 @@ export function TeacherDashboard({
                   <div>
                     <Label>Session</Label>
                     <Select value={selectedSession} onValueChange={setSelectedSession}>
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
