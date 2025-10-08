@@ -116,6 +116,7 @@ import {
   shouldSendAssignmentReminder,
 } from "@/lib/assignment-reminders"
 import { resolveStudentPassportFromCache } from "@/lib/student-passport"
+import { resolveCachedAdmissionNumber } from "@/lib/student-cache"
 
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
@@ -2518,10 +2519,29 @@ export function TeacherDashboard({
         grade: summaryGrade,
       }
 
+      const fallbackAdmissionNumber = `VEA/${student.studentId}`
+      const aggregatedAdmissionCandidate =
+        typeof aggregatedRaw?.student?.admissionNumber === "string"
+          ? aggregatedRaw.student.admissionNumber.trim()
+          : ""
+      const cachedAdmissionNumber =
+        resolveCachedAdmissionNumber({
+          id: String(student.studentId),
+          admissionNumber: aggregatedAdmissionCandidate || fallbackAdmissionNumber,
+          name: aggregatedRaw?.student?.name ?? student.studentName,
+        }) ?? null
+      const admissionNumber =
+        (cachedAdmissionNumber && cachedAdmissionNumber.length > 0
+          ? cachedAdmissionNumber
+          : null) ??
+        (aggregatedAdmissionCandidate && aggregatedAdmissionCandidate.length > 0
+          ? aggregatedAdmissionCandidate
+          : fallbackAdmissionNumber)
+
       const { passportUrl, photoUrl } = resolveStudentPassportFromCache(
         {
           id: String(student.studentId),
-          admissionNumber: aggregatedRaw?.student?.admissionNumber ?? `VEA/${student.studentId}`,
+          admissionNumber,
           name: aggregatedRaw?.student?.name ?? student.studentName,
         },
         aggregatedRaw?.student ?? null,
@@ -2531,7 +2551,7 @@ export function TeacherDashboard({
         student: {
           id: String(student.studentId),
           name: student.studentName,
-          admissionNumber: `VEA/${student.studentId}`,
+          admissionNumber,
           class: selectedClass,
           term: normalizedTermLabel,
           session: selectedSession,
@@ -2600,6 +2620,7 @@ export function TeacherDashboard({
         student: {
           ...basePreview.student,
           ...aggregatedRaw.student,
+          admissionNumber,
           numberInClass: additionalData.termInfo.numberInClass,
           status: additionalData.studentStatus[student.studentId] ?? aggregatedRaw.student?.status,
         },
