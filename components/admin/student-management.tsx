@@ -480,7 +480,7 @@ export function StudentManagement() {
                 />
               </div>
               <div>
-                <Label htmlFor="student-admission">Admission Number</Label>
+                <Label htmlFor="student-admission">Admission Number (optional)</Label>
                 <Input
                   id="student-admission"
                   value={editingStudent.admissionNumber}
