@@ -307,7 +307,8 @@ export function TeacherDashboard({
   const { toast } = useToast()
   const teacherClasses = useMemo(() => {
     const deduped: TeacherClassAssignment[] = []
-    const seen = new Set<string>()
+    const idIndex = new Map<string, number>()
+    const nameIndex = new Map<string, number>()
 
     teacher.classes.forEach((cls, index) => {
       if (!cls) {
@@ -318,14 +319,6 @@ export function TeacherDashboard({
       const rawName = typeof cls.name === "string" ? cls.name.trim() : ""
       const idToken = normalizeClassToken(rawId)
       const nameToken = normalizeClassToken(rawName)
-      const summaryKey = `${idToken}::${nameToken}`
-      const dedupeKey = summaryKey || `index:${index}`
-
-      if (seen.has(dedupeKey)) {
-        return
-      }
-
-      seen.add(dedupeKey)
 
       const subjects = Array.isArray(cls.subjects)
         ? Array.from(
@@ -337,11 +330,51 @@ export function TeacherDashboard({
           )
         : []
 
-      deduped.push({
-        id: rawId || (rawName ? `class_${normalizeClassToken(rawName)}` : `class_${index + 1}`),
-        name: rawName || rawId || `Class ${index + 1}`,
-        subjects,
-      })
+      const resolvedId = rawId || (rawName ? `class_${normalizeClassToken(rawName)}` : `class_${index + 1}`)
+      const resolvedName = rawName || rawId || `Class ${index + 1}`
+
+      const existingIndex =
+        (idToken && idIndex.has(idToken) ? idIndex.get(idToken) : undefined) ??
+        (nameToken && nameIndex.has(nameToken) ? nameIndex.get(nameToken) : undefined) ??
+        -1
+
+      if (existingIndex >= 0) {
+        const existing = deduped[existingIndex]
+        const mergedSubjects = new Set([...existing.subjects, ...subjects])
+        const preferredName =
+          existing.name && existing.name !== existing.id
+            ? existing.name
+            : resolvedName && resolvedName !== resolvedId
+              ? resolvedName
+              : existing.name || resolvedName
+
+        deduped[existingIndex] = {
+          id: existing.id || resolvedId,
+          name: preferredName || existing.id || resolvedId,
+          subjects: Array.from(mergedSubjects),
+        }
+
+        if (idToken && !idIndex.has(idToken)) {
+          idIndex.set(idToken, existingIndex)
+        }
+
+        if (nameToken && !nameIndex.has(nameToken)) {
+          nameIndex.set(nameToken, existingIndex)
+        }
+
+        return
+      }
+
+      const insertionIndex = deduped.length
+      deduped.push({ id: resolvedId, name: resolvedName, subjects })
+
+      if (idToken) {
+        idIndex.set(idToken, insertionIndex)
+      }
+
+      if (nameToken) {
+        nameIndex.set(nameToken, insertionIndex)
+      }
     })
 
     return deduped
@@ -664,6 +697,21 @@ export function TeacherDashboard({
       const payload = await response.json().catch(() => ({}))
 
       if (!response.ok) {
+        if (response.status === 404) {
+          const fallbackMessage =
+            normalizeStudentString((payload as { message?: unknown }).message) ||
+            "Student records are not available right now. Please try again later."
+
+          logger.warn("Student endpoint returned 404 for teacher scope", {
+            teacherId: teacher.id,
+          })
+
+          setTeacherStudents([])
+          setTeacherStudentsError(null)
+          setTeacherStudentsMessage(fallbackMessage)
+          return
+        }
+
         const message =
           typeof (payload as { error?: unknown }).error === "string"
             ? (payload as { error?: string }).error
