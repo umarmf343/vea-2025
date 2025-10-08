@@ -510,7 +510,6 @@ export function TeacherDashboard({
   const [selectedClassId, setSelectedClassId] = useState(() => firstTeacherClass?.id ?? "")
   const [selectedSubject, setSelectedSubject] = useState("")
   const [isSubjectSwitcherOpen, setIsSubjectSwitcherOpen] = useState(false)
-  const rememberedSubjectByClassRef = useRef(new Map<string, string>())
   const isComponentMountedRef = useRef(true)
   useEffect(() => {
     return () => {
@@ -612,6 +611,18 @@ export function TeacherDashboard({
       const message =
         error instanceof Error ? error.message : "Unable to load your subject assignments."
       setTeacherSubjectsError(message)
+      const fallbackSubjects = normalizeSubjectArray(teacher.subjects)
+      const fallbackClasses = Array.isArray(teacher.classes)
+        ? teacher.classes
+        : []
+
+      if (fallbackSubjects.length > 0) {
+        setTeacherSubjects(fallbackSubjects)
+      }
+
+      if (fallbackClasses.length > 0) {
+        setTeacherAssignmentSources(fallbackClasses)
+      }
       throw error
     } finally {
       if (timeoutId !== null && runtime?.clearTimeout) {
@@ -1167,46 +1178,21 @@ export function TeacherDashboard({
     setSelectedSubject((prev) => {
       const normalizedPrev = prev.trim().toLowerCase()
 
-      if (normalizedPrev && normalizedOptions.includes(normalizedPrev)) {
+      if (!normalizedPrev) {
         return prev
       }
 
-      const classKey = selectedClassId || normalizeClassName(selectedClass)
-      if (classKey) {
-        const remembered = rememberedSubjectByClassRef.current.get(classKey)
-        if (remembered) {
-          const normalizedRemembered = remembered.trim().toLowerCase()
-          if (normalizedRemembered && normalizedOptions.includes(normalizedRemembered)) {
-            const matchedSubject = availableSubjects.find(
-              (subject) => subject.trim().toLowerCase() === normalizedRemembered,
-            )
-            if (matchedSubject) {
-              return matchedSubject
-            }
-          }
-        }
+      if (!normalizedOptions.includes(normalizedPrev)) {
+        return ""
       }
 
-      return normalizedPrev ? "" : prev
+      return prev
     })
 
     if (availableSubjects.length === 0 && selectedSubject) {
       setSelectedSubject("")
     }
-  }, [availableSubjects, normalizeClassName, selectedClass, selectedClassId, selectedSubject])
-
-  useEffect(() => {
-    if (!selectedSubject) {
-      return
-    }
-
-    const key = selectedClassId || normalizeClassName(selectedClass)
-    if (!key) {
-      return
-    }
-
-    rememberedSubjectByClassRef.current.set(key, selectedSubject)
-  }, [normalizeClassName, selectedClass, selectedClassId, selectedSubject])
+  }, [availableSubjects, selectedSubject])
 
   useEffect(() => {
     setAssignmentForm((prev) => {
@@ -1846,6 +1832,27 @@ export function TeacherDashboard({
   const calculateGrade = (total: number) => deriveGradeFromScore(total)
 
   const handleConfirmAddStudents = useCallback(() => {
+    const normalizedSubject = selectedSubject.trim()
+    const normalizedOptions = availableSubjects.map((subject) => subject.trim().toLowerCase())
+
+    if (!normalizedSubject) {
+      toast({
+        variant: "destructive",
+        title: "Select a subject",
+        description: "Choose one of your assigned subjects before adding a learner to the grade sheet.",
+      })
+      return
+    }
+
+    if (!normalizedOptions.includes(normalizedSubject.toLowerCase())) {
+      toast({
+        variant: "destructive",
+        title: "Subject unavailable",
+        description: "Refresh your assignments and pick a valid subject before continuing.",
+      })
+      return
+    }
+
     if (!selectedRosterId) {
       toast({
         variant: "destructive",
@@ -1959,6 +1966,7 @@ export function TeacherDashboard({
 
     handleCloseAddStudentDialog()
   }, [
+    availableSubjects,
     calculatePositionsAndAverages,
     handleCloseAddStudentDialog,
     marksData,
@@ -4274,7 +4282,7 @@ export function TeacherDashboard({
     try {
       if (typeof onRefreshAssignments === "function") {
         try {
-          onRefreshAssignments()
+          await Promise.resolve(onRefreshAssignments())
         } catch (callbackError) {
           logger.warn("Teacher assignment refresh callback failed", { error: callbackError })
         }
