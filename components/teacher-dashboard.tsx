@@ -5843,41 +5843,77 @@ export function TeacherDashboard({
               updated.
             </DialogDescription>
           </DialogHeader>
-          <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-900">
-            <p className="text-sm font-semibold text-emerald-800">Current selection</p>
-            <div className="mt-2 grid gap-3 sm:grid-cols-2">
-              <div>
-                <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
-                  Class
-                </span>
-                <span className="text-sm font-medium text-emerald-900">
-                  {selectedClass || "Not selected"}
-                </span>
+          <div className="space-y-4">
+            <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-900">
+              <p className="text-sm font-semibold text-emerald-800">Current selection</p>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                    Class
+                  </span>
+                  <span className="text-sm font-medium text-emerald-900">
+                    {selectedClass || "Not selected"}
+                  </span>
+                  <p className="mt-1 text-[11px] text-emerald-700">
+                    This class is automatically assigned from your teacher profile.
+                  </p>
+                </div>
+                <div>
+                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                    Subject
+                  </span>
+                  <span className="text-sm font-medium text-emerald-900">
+                    {selectedSubject || "Not selected"}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                    Term
+                  </span>
+                  <span className="text-sm font-medium text-emerald-900">
+                    {mapTermKeyToLabel(selectedTerm) || "Not selected"}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                    Session
+                  </span>
+                  <span className="text-sm font-medium text-emerald-900">
+                    {selectedSession || "Not selected"}
+                  </span>
+                </div>
               </div>
-              <div>
-                <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
-                  Subject
-                </span>
-                <span className="text-sm font-medium text-emerald-900">
-                  {selectedSubject || "Not selected"}
-                </span>
-              </div>
-              <div>
-                <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
-                  Term
-                </span>
-                <span className="text-sm font-medium text-emerald-900">
-                  {mapTermKeyToLabel(selectedTerm) || "Not selected"}
-                </span>
-              </div>
-              <div>
-                <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
-                  Session
-                </span>
-                <span className="text-sm font-medium text-emerald-900">
-                  {selectedSession || "Not selected"}
-                </span>
-              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Choose subject for this grade entry
+              </Label>
+              <Select
+                value={selectedSubject}
+                onValueChange={handleSelectSubject}
+                disabled={isSubjectSelectDisabled}
+              >
+                <SelectTrigger className="w-full text-sm">
+                  <SelectValue placeholder="Select subject" />
+                </SelectTrigger>
+                <SelectContent>
+                  {isSubjectSelectDisabled && availableSubjects.length === 0 ? (
+                    <SelectItem value="__no_subjects__" disabled>
+                      No subjects assigned. Please contact the admin.
+                    </SelectItem>
+                  ) : (
+                    availableSubjects.map((subject) => (
+                      <SelectItem key={subject} value={subject}>
+                        {subject}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-gray-500">
+                Pick from your existing subjects to ensure scores are added to the correct grade sheet.
+              </p>
             </div>
           </div>
           <div className="space-y-4">
