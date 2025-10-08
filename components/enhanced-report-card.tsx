@@ -19,6 +19,7 @@ import { deriveGradeFromScore } from "@/lib/grade-utils"
 import { getHtmlToImage } from "@/lib/html-to-image-loader"
 import { getJsPdf } from "@/lib/jspdf-loader"
 import { safeStorage } from "@/lib/safe-storage"
+import { resolveStudentPassportFromCache } from "@/lib/student-passport"
 
 interface SubjectScore {
   name: string
@@ -55,6 +56,7 @@ interface NormalizedReportCard {
     gender?: string
     age?: number
     passportUrl?: string | null
+    photoUrl?: string | null
   }
   subjects: SubjectScore[]
   summary: {
@@ -513,9 +515,12 @@ const normalizeReportCard = (
     return trimmed.length > 0 ? trimmed : null
   }
 
-  let passportUrl =
-    extractPassportCandidate((source.student as { passportUrl?: unknown }).passportUrl) ??
-    extractPassportCandidate((source.student as { photoUrl?: unknown }).photoUrl)
+  const directPassportCandidate = extractPassportCandidate(
+    (source.student as { passportUrl?: unknown }).passportUrl,
+  )
+  const directPhotoCandidate = extractPassportCandidate((source.student as { photoUrl?: unknown }).photoUrl)
+
+  let passportUrl = directPassportCandidate ?? directPhotoCandidate ?? null
 
   if (!passportUrl) {
     const storedStudentsRaw = safeStorage.getItem("students")
@@ -553,6 +558,29 @@ const normalizeReportCard = (
     }
   }
 
+  const fallbackPassportRecord: Record<string, unknown> = {}
+  if (passportUrl) {
+    fallbackPassportRecord.passportUrl = passportUrl
+  }
+  if (directPhotoCandidate) {
+    fallbackPassportRecord.photoUrl = directPhotoCandidate
+  }
+
+  const { passportUrl: cachedPassportUrl, photoUrl: cachedPhotoUrl } = resolveStudentPassportFromCache(
+    {
+      id: String(studentId),
+      admissionNumber: source.student.admissionNumber,
+      name: source.student.name,
+    },
+    Object.keys(fallbackPassportRecord).length > 0 ? fallbackPassportRecord : null,
+  )
+
+  if (!passportUrl && cachedPassportUrl) {
+    passportUrl = cachedPassportUrl
+  }
+
+  const resolvedPhotoUrl = cachedPhotoUrl ?? passportUrl ?? null
+
   return {
     student: {
       id: String(studentId),
@@ -568,6 +596,7 @@ const normalizeReportCard = (
       gender: source.student.gender ?? undefined,
       age: calculateAge(source.student.dateOfBirth),
       passportUrl,
+      photoUrl: resolvedPhotoUrl,
     },
     subjects: normalizedSubjects,
     summary: {
@@ -628,8 +657,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         return
       }
 
-      if (normalized.student.passportUrl) {
-        setStudentPhoto(normalized.student.passportUrl)
+      if (normalized.student.passportUrl || normalized.student.photoUrl) {
+        setStudentPhoto(normalized.student.passportUrl ?? normalized.student.photoUrl ?? "")
         return
       }
 
