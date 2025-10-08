@@ -287,19 +287,24 @@ export default function MathRacing() {
       const baseBoost = seconds <= 3 ? 26 : seconds <= 6 ? 18 : 12
       const boost = Math.max(8, baseBoost - (level - 1) * 2)
       const questionPoints = Math.max(20, Math.round(40 - seconds * 4)) * level
-      setPlayerProgress((previous) => clampProgress(previous + boost + streak * 4))
+      const totalBoost = boost + streak * 4
+      const adjustedBoost = Math.max(0, Math.round(totalBoost * 0.97 * 10) / 10)
+      const formattedBoost = Number.isInteger(adjustedBoost)
+        ? `${adjustedBoost}`
+        : adjustedBoost.toFixed(1)
+      setPlayerProgress((previous) => clampProgress(previous + adjustedBoost))
       setRaceLog((previous) =>
         [
           {
             id: `${Date.now()}`,
-            message: `${speedMessage} +${boost} progress (+${questionPoints} pts) for solving ${question.prompt}`,
+            message: `${speedMessage} +${formattedBoost} progress (+${questionPoints} pts) for solving ${question.prompt}`,
           },
           ...previous,
         ].slice(0, 6),
       )
       setRoundsCompleted((previous) => previous + 1)
       setStreak((previous) => previous + 1)
-      setBestBoost((previous) => (previous === null ? boost : Math.max(previous, boost)))
+      setBestBoost((previous) => (previous === null ? adjustedBoost : Math.max(previous, adjustedBoost)))
       setScore((previous) => {
         const updated = previous + questionPoints
         setHighScore((prevHigh) => Math.max(prevHigh, updated))
