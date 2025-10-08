@@ -701,7 +701,7 @@ export function NotificationCenter({ userRole, userId, studentIds }: Notificatio
   }
 
   return (
-    <Card className="border-[#2d682d]/20">
+    <Card className="mr-auto w-full max-w-3xl border-[#2d682d]/20">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

@@ -872,8 +872,8 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
     const isOwnMessage = message.senderId === currentUser.id
     const alignment = isOwnMessage ? "items-end" : "items-start"
     const bubbleColor = isOwnMessage
-      ? "bg-gradient-to-l from-emerald-500 via-emerald-600 to-emerald-700 text-white"
-      : "bg-white/90 text-slate-700 ring-1 ring-emerald-100/80 backdrop-blur"
+      ? "bg-gradient-to-l from-sky-500 via-indigo-500 to-violet-600 text-white"
+      : "bg-white/90 text-slate-700 ring-1 ring-indigo-100/80 backdrop-blur"
     const isDeleting = deletingMessages[message.id]
     const isCurrentlyEditing = editingMessageId === message.id
     const canEdit = isOwnMessage && !message.isDeleted && message.messageType === "text"
@@ -882,7 +882,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
       <div key={message.id} className={cn("flex flex-col gap-1", alignment)}>
         <div
           className={cn(
-            "flex items-center gap-2 text-[11px] font-medium text-emerald-950/70",
+            "flex items-center gap-2 text-[11px] font-medium text-indigo-950/70",
             isOwnMessage ? "justify-end" : "",
           )}
         >
@@ -901,7 +901,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
               {formatTime(message.createdAt)}
             </span>
             {message.isEdited && !message.isDeleted ? (
-              <span className="italic text-[10px] text-emerald-900/70">Edited</span>
+              <span className="italic text-[10px] text-indigo-900/70">Edited</span>
             ) : null}
           </div>
           {isOwnMessage && !message.isDeleted && (
@@ -911,8 +911,8 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                   size="icon"
                   variant="ghost"
                   className={cn(
-                    "h-7 w-7 rounded-full text-muted-foreground transition hover:bg-emerald-50 hover:text-emerald-700",
-                    isCurrentlyEditing ? "bg-emerald-100 text-emerald-700" : "",
+                    "h-7 w-7 rounded-full text-muted-foreground transition hover:bg-indigo-50 hover:text-indigo-700",
+                    isCurrentlyEditing ? "bg-indigo-100 text-indigo-700" : "",
                   )}
                   onClick={() => handleStartEditingMessage(message)}
                   aria-label={isCurrentlyEditing ? "Editing this message" : "Edit message"}
@@ -936,14 +936,14 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
         </div>
         <div
           className={cn(
-            "group flex w-full max-w-[85%] flex-col gap-3 rounded-3xl px-5 py-4 text-sm shadow-[0_18px_40px_-32px_rgba(15,118,110,0.65)] transition",
+            "group flex w-full max-w-[85%] flex-col gap-3 rounded-3xl px-5 py-4 text-sm shadow-[0_18px_40px_-32px_rgba(59,130,246,0.55)] transition",
             bubbleColor,
             isOwnMessage ? "rounded-br-md" : "rounded-bl-md",
             message.isDeleted ? "opacity-70" : "",
           )}
         >
           {message.isDeleted ? (
-            <p className="text-xs italic text-emerald-950/60">This message was deleted</p>
+            <p className="text-xs italic text-indigo-950/60">This message was deleted</p>
           ) : (
             <div className="space-y-3">
               {message.messageType === "media" && message.attachments.length > 0 ? (
@@ -956,7 +956,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                         key={attachment.id}
                         className={cn(
                           "flex flex-col gap-2 rounded-2xl border border-white/40 bg-white/15 p-3 text-xs backdrop-blur",
-                          isOwnMessage ? "text-emerald-50" : "text-slate-600",
+                          isOwnMessage ? "text-indigo-50" : "text-slate-600",
                         )}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -1008,7 +1008,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
             <div
               className={cn(
                 "flex items-center gap-2 text-[10px] uppercase tracking-wide",
-                isOwnMessage ? "text-emerald-50/80" : "text-muted-foreground",
+                isOwnMessage ? "text-indigo-50/80" : "text-muted-foreground",
               )}
             >
               {isOwnMessage && <span>Delivered</span>}
@@ -1019,7 +1019,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
           )}
         </div>
 
-        <div className="mt-1 flex items-center justify-end gap-1 text-[10px] uppercase tracking-wide text-emerald-900/50">
+        <div className="mt-1 flex items-center justify-end gap-1 text-[10px] uppercase tracking-wide text-indigo-900/50">
           {message.readBy.includes(currentUser.id) && <span>Seen</span>}
         </div>
       </div>
@@ -1027,24 +1027,24 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
   }
 
   return (
-    <Card className="relative mx-auto w-full max-w-6xl overflow-hidden rounded-[28px] border-none bg-gradient-to-br from-emerald-50 via-white to-slate-100 shadow-[0_35px_120px_-45px_rgba(15,118,110,0.85)]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.22),transparent_58%)]" />
+    <Card className="relative mr-auto w-full max-w-5xl overflow-hidden rounded-[28px] border-none bg-gradient-to-br from-sky-50 via-white to-indigo-50 shadow-[0_35px_120px_-45px_rgba(59,130,246,0.75)]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.2),transparent_58%)]" />
       <CardHeader className="relative z-10 flex flex-col gap-2 border-b border-white/60 bg-white/70 px-8 py-6 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <CardTitle className="flex items-center gap-2 text-xl font-semibold text-emerald-950">
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600">
+          <CardTitle className="flex items-center gap-2 text-xl font-semibold text-indigo-950">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-600">
               <UserCircle className="h-5 w-5" />
             </span>
             <span className="leading-tight">Internal Messaging</span>
           </CardTitle>
-          <p className="text-sm text-emerald-950/70">
+          <p className="text-sm text-indigo-950/70">
             Secure, real-time communication across administrators, teachers, parents and students.
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-full border border-white/70 bg-white/60 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground shadow-inner">
           {isConnected ? (
-            <span className="flex items-center gap-2 text-emerald-600">
-              <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(16,185,129,0.25)]" />
+            <span className="flex items-center gap-2 text-indigo-600">
+              <span className="flex h-2.5 w-2.5 rounded-full bg-indigo-400 shadow-[0_0_0_3px_rgba(59,130,246,0.25)]" />
               <Wifi className="h-4 w-4" /> Live
             </span>
           ) : (
@@ -1061,7 +1061,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
             <div className="space-y-2">
               <Label
                 htmlFor="search"
-                className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-900/70"
+                className="text-[11px] font-semibold uppercase tracking-[0.28em] text-indigo-900/70"
               >
                 Conversations
               </Label>
@@ -1070,12 +1070,12 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                 placeholder="Search people or roles"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                className="h-11 rounded-2xl border border-white/70 bg-white/80 px-4 text-sm text-emerald-950 shadow-inner transition focus:border-emerald-400/60 focus-visible:ring-emerald-500/30"
+                className="h-11 rounded-2xl border border-white/70 bg-white/80 px-4 text-sm text-indigo-950 shadow-inner transition focus:border-indigo-400/60 focus-visible:ring-indigo-500/30"
               />
             </div>
-            <div className="rounded-3xl border border-white/70 bg-white/70 p-4 shadow-[0_28px_80px_-48px_rgba(15,118,110,0.65)] backdrop-blur-sm">
+            <div className="rounded-3xl border border-white/70 bg-white/70 p-4 shadow-[0_28px_80px_-48px_rgba(59,130,246,0.55)] backdrop-blur-sm">
               <ScrollArea className="h-[360px] pr-2">
-                <div className="flex flex-col divide-y divide-emerald-100/70">
+                <div className="flex flex-col divide-y divide-indigo-100/70">
                   {filteredConversations.length === 0 && (
                     <p className="text-center text-sm text-muted-foreground">
                       No conversations yet. Start a chat below.
@@ -1094,20 +1094,20 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                           void markConversationAsRead(conversation.id)
                         }}
                         className={cn(
-                          "flex w-full flex-col gap-2 rounded-2xl border border-transparent bg-white/50 px-4 py-3 text-left transition-all duration-200 hover:-translate-y-[1px] hover:border-emerald-200 hover:bg-emerald-50/80 hover:shadow-sm",
+                          "flex w-full flex-col gap-2 rounded-2xl border border-transparent bg-white/50 px-4 py-3 text-left transition-all duration-200 hover:-translate-y-[1px] hover:border-indigo-200 hover:bg-indigo-50/80 hover:shadow-sm",
                           activeConversation === conversation.id &&
-                            "border-emerald-300/70 bg-emerald-50 shadow-[0_16px_50px_-35px_rgba(16,185,129,0.9)]",
+                            "border-indigo-300/70 bg-indigo-50 shadow-[0_16px_50px_-35px_rgba(79,70,229,0.85)]",
                         )}
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div className="space-y-1">
-                            <p className="truncate text-sm font-semibold text-emerald-950">{title}</p>
+                            <p className="truncate text-sm font-semibold text-indigo-950">{title}</p>
                             <p className="truncate text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{subtitle}</p>
                           </div>
                           {conversation.unreadCount > 0 && (
                             <Badge
                               variant="secondary"
-                              className="rounded-full border border-emerald-100 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-700"
+                              className="rounded-full border border-indigo-100 bg-indigo-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-indigo-700"
                             >
                               {conversation.unreadCount}
                             </Badge>
@@ -1128,12 +1128,12 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
           </div>
 
           <div className="flex min-h-[360px] flex-col gap-5">
-            <div className="rounded-3xl border border-white/70 bg-white/70 shadow-[0_28px_80px_-48px_rgba(15,118,110,0.65)] backdrop-blur-sm">
+            <div className="rounded-3xl border border-white/70 bg-white/70 shadow-[0_28px_80px_-48px_rgba(59,130,246,0.55)] backdrop-blur-sm">
               {hasComposerParticipants ? (
                 <>
                   <div className="flex items-center justify-between border-b border-white/60 px-6 py-4">
                     <div>
-                      <p className="text-base font-semibold text-emerald-950">
+                      <p className="text-base font-semibold text-indigo-950">
                         {composerParticipants.map((participant) => participant.name).join(", ")}
                       </p>
                       <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
@@ -1141,7 +1141,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                       </p>
                     </div>
                     {activeTypingIndicators.length > 0 && (
-                      <div className="flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50/70 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-emerald-700">
+                      <div className="flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50/70 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-indigo-700">
                         <Loader2 className="h-3 w-3 animate-spin" />
                         {activeTypingIndicators[0].senderName} is typing…
                       </div>
@@ -1150,7 +1150,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                   <ScrollArea className="h-[280px] px-6 py-4">
                     <div className="flex flex-col gap-4">
                       {activeConversationMessages.length === 0 && (
-                        <div className="space-y-1 text-center text-sm text-emerald-900/70">
+                        <div className="space-y-1 text-center text-sm text-indigo-900/70">
                           <p className="text-base font-semibold">No messages yet</p>
                           <p className="text-sm">Use the composer below to start chatting.</p>
                         </div>
@@ -1160,17 +1160,17 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                   </ScrollArea>
                 </>
               ) : (
-                <div className="px-6 py-12 text-center text-emerald-900/70">
+                <div className="px-6 py-12 text-center text-indigo-900/70">
                   <p className="text-base font-semibold">Select a recipient</p>
                   <p className="text-sm">Start a new conversation</p>
                 </div>
               )}
             </div>
 
-            <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-[0_28px_80px_-48px_rgba(15,118,110,0.65)] backdrop-blur-sm">
+            <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-[0_28px_80px_-48px_rgba(59,130,246,0.55)] backdrop-blur-sm">
               <div className="grid gap-5 md:grid-cols-[minmax(0,240px)_1fr] md:items-start">
                 <div className="space-y-2">
-                  <Label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-900/70">Send to</Label>
+                  <Label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-indigo-900/70">Send to</Label>
                   <Select
                     value={recipientId || composerParticipants[0]?.id || ""}
                     onValueChange={(value) => {
@@ -1178,18 +1178,18 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                       setActiveConversation(null)
                     }}
                   >
-                    <SelectTrigger className="h-11 rounded-2xl border border-white/70 bg-white/80 text-sm text-emerald-950 shadow-inner transition focus:ring-emerald-500/20">
+                    <SelectTrigger className="h-11 rounded-2xl border border-white/70 bg-white/80 text-sm text-indigo-950 shadow-inner transition focus:ring-indigo-500/20">
                       <SelectValue placeholder="Choose recipient" />
                     </SelectTrigger>
                     <SelectContent className="rounded-2xl border border-white/70 bg-white/80 shadow-xl">
                       {directory.map((participant) => (
                         <SelectItem key={participant.id} value={participant.id}>
                           <div className="flex items-center justify-between gap-3">
-                            <span className="text-sm font-medium text-emerald-950">{participant.name}</span>
+                            <span className="text-sm font-medium text-indigo-950">{participant.name}</span>
                             <Badge
                               variant="secondary"
                               className={cn(
-                                "rounded-full border border-white/60 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-700",
+                                "rounded-full border border-white/60 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-indigo-700",
                                 roleBadgeClass(participant.role),
                               )}
                             >
@@ -1204,11 +1204,11 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                 <div className="space-y-2">
                   <Label
                     htmlFor="message"
-                    className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-900/70"
+                    className="text-[11px] font-semibold uppercase tracking-[0.28em] text-indigo-900/70"
                   >
                     Message
                   </Label>
-                  <div className="relative rounded-3xl border border-white/70 bg-white/80 px-5 pb-14 pt-4 shadow-inner transition focus-within:border-emerald-300 focus-within:ring-2 focus-within:ring-emerald-500/20">
+                  <div className="relative rounded-3xl border border-white/70 bg-white/80 px-5 pb-14 pt-4 shadow-inner transition focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-500/20">
                     {isEditing && editingMessage && (
                       <div className="mb-3 flex items-center justify-between rounded-2xl border border-amber-100 bg-amber-50/80 px-3 py-2 text-xs text-amber-700">
                         <span>
@@ -1231,7 +1231,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                       value={messageText}
                       onChange={(event) => handleMessageChange(event.target.value)}
                       placeholder={isEditing ? "Update your message…" : "Type your message…"}
-                      className="min-h-[96px] w-full resize-none border-0 bg-transparent p-0 pr-32 text-sm text-emerald-950 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                      className="min-h-[96px] w-full resize-none border-0 bg-transparent p-0 pr-32 text-sm text-indigo-950 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                     />
                     <input
                       ref={fileInputRef}
@@ -1254,7 +1254,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                         size="icon"
                         disabled={isEditing || isSending}
                         onClick={() => fileInputRef.current?.click()}
-                        className="h-10 w-10 rounded-full bg-emerald-50 text-emerald-500 shadow-sm transition hover:bg-emerald-100 hover:text-emerald-700"
+                        className="h-10 w-10 rounded-full bg-indigo-50 text-indigo-500 shadow-sm transition hover:bg-indigo-100 hover:text-indigo-700"
                         aria-label="Attach files"
                       >
                         <Paperclip className="h-4 w-4" />
@@ -1275,7 +1275,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                           "h-10 w-10 rounded-full shadow-sm transition",
                           isRecording
                             ? "bg-rose-500 text-white hover:bg-rose-600"
-                            : "bg-emerald-50 text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700",
+                            : "bg-indigo-50 text-indigo-500 hover:bg-indigo-100 hover:text-indigo-700",
                         )}
                         aria-label={isRecording ? "Stop recording" : "Record voice note"}
                       >
@@ -1291,7 +1291,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
 
                 {attachments.length > 0 && (
                   <div className="mt-4 space-y-2">
-                    <Label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-900/70">
+                    <Label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-indigo-900/70">
                       Attachments
                     </Label>
                     <div className="flex flex-wrap gap-3">
@@ -1300,7 +1300,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                         return (
                           <div
                             key={attachment.id}
-                            className="group flex w-full max-w-xs flex-col gap-2 rounded-2xl border border-white/70 bg-white/80 px-3 py-2 text-xs text-emerald-950 shadow-sm backdrop-blur-sm"
+                            className="group flex w-full max-w-xs flex-col gap-2 rounded-2xl border border-white/70 bg-white/80 px-3 py-2 text-xs text-indigo-950 shadow-sm backdrop-blur-sm"
                           >
                             <div className="flex items-center justify-between gap-2">
                               <span className="truncate font-medium">{attachment.name}</span>
@@ -1315,7 +1315,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                                 href={attachment.dataUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center text-xs font-semibold text-emerald-600 underline"
+                                className="inline-flex items-center text-xs font-semibold text-indigo-600 underline"
                               >
                                 Preview attachment
                               </a>
@@ -1325,7 +1325,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => removeAttachment(attachment.id)}
-                                className="h-7 w-7 rounded-full bg-emerald-50 text-emerald-500 opacity-0 transition group-hover:opacity-100 hover:bg-rose-100 hover:text-rose-600"
+                                className="h-7 w-7 rounded-full bg-indigo-50 text-indigo-500 opacity-0 transition group-hover:opacity-100 hover:bg-rose-100 hover:text-rose-600"
                                 aria-label="Remove attachment"
                               >
                                 ×
@@ -1347,7 +1347,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
                   disabled={
                     isSending || (isEditing && messageText.trim().length === 0)
                   }
-                  className="flex items-center gap-2 rounded-full bg-emerald-500 px-6 py-2 text-sm font-semibold text-white shadow-[0_20px_40px_-24px_rgba(16,185,129,0.8)] transition hover:bg-emerald-600"
+                  className="flex items-center gap-2 rounded-full bg-indigo-500 px-6 py-2 text-sm font-semibold text-white shadow-[0_20px_40px_-24px_rgba(59,130,246,0.7)] transition hover:bg-indigo-600"
                 >
                   {isSending ? (
                     <>

@@ -1,20 +1,32 @@
 "use client"
 
+import Link from "next/link"
+
 import { StudentGameHub } from "@/components/student-game-hub"
 import CodingChallenge from "@/components/games/coding-challenge"
 import MathRacing from "@/components/games/math-racing"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 
 export default function StudentGamesPage() {
   return (
     <div className="space-y-8 px-4 py-6 sm:px-6 lg:px-8">
       <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 via-white to-amber-50">
-        <CardHeader>
-          <CardTitle className="text-3xl font-bold text-[#2d682d]">Student Game Arcade</CardTitle>
-          <CardDescription className="text-slate-600">
-            Boost your skills with quick coding builds and lightning-fast math races designed to power up your classroom
-            confidence.
-          </CardDescription>
+        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <CardTitle className="text-3xl font-bold text-[#2d682d]">Student Game Arcade</CardTitle>
+            <CardDescription className="text-slate-600">
+              Boost your skills with quick coding builds and lightning-fast math races designed to power up your classroom
+              confidence.
+            </CardDescription>
+          </div>
+          <Button
+            asChild
+            variant="outline"
+            className="w-full max-w-[180px] border-[#2d682d]/30 text-[#2d682d] hover:bg-[#2d682d]/10"
+          >
+            <Link href="/">Go to Dashboard</Link>
+          </Button>
         </CardHeader>
         <CardContent className="text-sm text-slate-600">
           <p>
