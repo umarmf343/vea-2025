@@ -18,11 +18,15 @@ import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 
+type RaceLevel = 1 | 2 | 3 | 4 | 5
+
+type Operation = "×" | "+" | "−" | "÷"
+
 interface MathQuestion {
   prompt: string
   answer: number
-  difficulty: "warm-up" | "speedster" | "pilot"
-  operation: "×" | "+" | "−" | "÷"
+  level: RaceLevel
+  operation: Operation
 }
 
 interface RaceLogEntry {
@@ -30,37 +34,70 @@ interface RaceLogEntry {
   message: string
 }
 
-const difficultyStyles: Record<MathQuestion["difficulty"], string> = {
-  "warm-up": "border-emerald-200 bg-emerald-50 text-emerald-700",
-  speedster: "border-amber-200 bg-amber-50 text-amber-700",
-  pilot: "border-purple-200 bg-purple-50 text-purple-700",
+const MAX_LEVEL: RaceLevel = 5
+
+const levelStyles: Record<RaceLevel, string> = {
+  1: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  2: "border-amber-200 bg-amber-50 text-amber-700",
+  3: "border-sky-200 bg-sky-50 text-sky-700",
+  4: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  5: "border-purple-200 bg-purple-50 text-purple-700",
 }
 
-const difficultyLabels: Record<MathQuestion["difficulty"], string> = {
-  "warm-up": "Warm-up lap",
-  speedster: "Speedster sprint",
-  pilot: "Pilot mode",
+const levelLabels: Record<RaceLevel, string> = {
+  1: "Rolling start",
+  2: "Turbo turns",
+  3: "Lightning loop",
+  4: "Hyper sprint",
+  5: "Galaxy circuit",
+}
+
+const levelSettings: Record<
+  RaceLevel,
+  {
+    range: [number, number]
+    operations: Operation[]
+    rivalSpeed: number
+    description: string
+  }
+> = {
+  1: { range: [1, 9], operations: ["+", "−"], rivalSpeed: 4.2, description: "Single-digit addition and subtraction." },
+  2: {
+    range: [2, 12],
+    operations: ["+", "−", "×"],
+    rivalSpeed: 4.8,
+    description: "Add small multiplication to keep you on your toes.",
+  },
+  3: {
+    range: [3, 15],
+    operations: ["+", "−", "×", "÷"],
+    rivalSpeed: 5.4,
+    description: "Mixed operations with mid-sized numbers.",
+  },
+  4: {
+    range: [4, 20],
+    operations: ["+", "−", "×", "÷"],
+    rivalSpeed: 6,
+    description: "Bigger values and quicker rivals.",
+  },
+  5: {
+    range: [6, 25],
+    operations: ["+", "−", "×", "÷"],
+    rivalSpeed: 6.7,
+    description: "Final circuit with demanding division laps.",
+  },
 }
 
 const defaultQuestion: MathQuestion = {
   prompt: "0 + 0",
   answer: 0,
-  difficulty: "warm-up",
+  level: 1,
   operation: "+",
 }
 
-const createQuestion = (): MathQuestion => {
-  const difficultyPool: MathQuestion["difficulty"][] = ["warm-up", "speedster", "pilot"]
-  const difficulty = difficultyPool[Math.floor(Math.random() * difficultyPool.length)]
-
-  const ranges: Record<MathQuestion["difficulty"], [number, number]> = {
-    "warm-up": [2, 9],
-    speedster: [6, 12],
-    pilot: [8, 18],
-  }
-
-  const [min, max] = ranges[difficulty]
-  const operations: Array<MathQuestion["operation"]> = ["×", "+", "−", "÷"]
+const createQuestion = (level: RaceLevel): MathQuestion => {
+  const { range, operations } = levelSettings[level]
+  const [min, max] = range
   const operation = operations[Math.floor(Math.random() * operations.length)]
 
   let left = Math.floor(Math.random() * (max - min + 1)) + min
@@ -87,7 +124,7 @@ const createQuestion = (): MathQuestion => {
   return {
     prompt: `${left} ${operation} ${right}`,
     answer,
-    difficulty,
+    level,
     operation,
   }
 }
@@ -120,11 +157,20 @@ export default function MathRacing() {
   const [penalties, setPenalties] = useState(0)
   const [raceOutcome, setRaceOutcome] = useState<"win" | "loss" | null>(null)
   const [outcomeMessage, setOutcomeMessage] = useState("")
+  const [level, setLevel] = useState<RaceLevel>(1)
+  const [wins, setWins] = useState(0)
+  const [score, setScore] = useState(0)
+  const [highScore, setHighScore] = useState(0)
+  const [bestLevel, setBestLevel] = useState<RaceLevel>(1)
 
   const rivalIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const questionStartRef = useRef<number | null>(null)
+  const lastOutcomeSessionRef = useRef<number | null>(null)
 
-  const raceDistance = useMemo(() => Math.round((playerProgress / 100) * 400), [playerProgress])
+  const raceDistance = useMemo(
+    () => Math.round((playerProgress / 100) * (400 + (level - 1) * 60)),
+    [playerProgress, level],
+  )
 
   const startRace = useCallback(() => {
     if (rivalIntervalRef.current) {
@@ -142,11 +188,12 @@ export default function MathRacing() {
     setBestBoost(null)
     setRaceOutcome(null)
     setOutcomeMessage("")
-    const initialQuestion = createQuestion()
+    const initialQuestion = createQuestion(level)
     setQuestion(initialQuestion)
     setAnswer("")
     questionStartRef.current = Date.now()
-  }, [])
+    lastOutcomeSessionRef.current = null
+  }, [level])
 
   const stopRace = useCallback(
     (message: string, outcome: "win" | "loss" | null = null) => {
@@ -170,8 +217,8 @@ export default function MathRacing() {
   }, [raceActive, stopRace])
 
   useEffect(() => {
-    setQuestion(createQuestion())
-  }, [])
+    setQuestion(createQuestion(level))
+  }, [level])
 
   useEffect(() => {
     if (!raceActive) {
@@ -182,7 +229,7 @@ export default function MathRacing() {
     const interval = setInterval(() => {
       setRivalProgress((previous) => {
         const baseIncrement = (3 + Math.random() * 4) / 10
-        const speedMultiplier = 5
+        const speedMultiplier = levelSettings[level].rivalSpeed
         const updated = clampProgress(previous + baseIncrement * speedMultiplier)
         if (updated >= 100) {
           stopRace("🏁 Rival championed the race. Try again!", "loss")
@@ -197,18 +244,27 @@ export default function MathRacing() {
       clearInterval(interval)
       rivalIntervalRef.current = null
     }
-  }, [raceActive, sessionId, stopRace])
+  }, [level, raceActive, sessionId, stopRace])
 
   useEffect(() => {
     if (!raceActive) {
       return
     }
     if (playerProgress >= 100) {
-      stopRace("🏆 You won the math grand prix!", "win")
+      const nextLevel = level >= MAX_LEVEL ? MAX_LEVEL : ((level + 1) as RaceLevel)
+      const victoryMessage =
+        level >= MAX_LEVEL
+          ? "🏆 Final lap mastered! You've conquered the entire circuit."
+          : `🏆 Level ${level} cleared! Gear up for Level ${nextLevel}.`
+      stopRace(victoryMessage, "win")
     } else if (rivalProgress >= 100) {
-      stopRace("🏁 Rival championed the race. Try again!", "loss")
+      const setbackMessage =
+        level > 1
+          ? "🏁 Rival caught you! Sliding back to Level 1 to rebuild momentum."
+          : "🏁 Rival championed the race. Try again!"
+      stopRace(setbackMessage, "loss")
     }
-  }, [playerProgress, raceActive, rivalProgress, stopRace])
+  }, [level, playerProgress, raceActive, rivalProgress, stopRace])
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -228,13 +284,15 @@ export default function MathRacing() {
 
     if (parsed === question.answer) {
       const speedMessage = formatSpeedMessage(seconds)
-      const boost = seconds <= 3 ? 26 : seconds <= 6 ? 18 : 12
+      const baseBoost = seconds <= 3 ? 26 : seconds <= 6 ? 18 : 12
+      const boost = Math.max(8, baseBoost - (level - 1) * 2)
+      const questionPoints = Math.max(20, Math.round(40 - seconds * 4)) * level
       setPlayerProgress((previous) => clampProgress(previous + boost + streak * 4))
       setRaceLog((previous) =>
         [
           {
             id: `${Date.now()}`,
-            message: `${speedMessage} +${boost} progress for solving ${question.prompt}`,
+            message: `${speedMessage} +${boost} progress (+${questionPoints} pts) for solving ${question.prompt}`,
           },
           ...previous,
         ].slice(0, 6),
@@ -242,10 +300,15 @@ export default function MathRacing() {
       setRoundsCompleted((previous) => previous + 1)
       setStreak((previous) => previous + 1)
       setBestBoost((previous) => (previous === null ? boost : Math.max(previous, boost)))
-      setQuestion(createQuestion())
+      setScore((previous) => {
+        const updated = previous + questionPoints
+        setHighScore((prevHigh) => Math.max(prevHigh, updated))
+        return updated
+      })
+      setQuestion(createQuestion(level))
       setAnswer("")
     } else {
-      const penalty = 10
+      const penalty = 10 + (level - 1) * 2
       setPlayerProgress((previous) => clampProgress(previous - penalty))
       setPenalties((previous) => previous + 1)
       setRaceLog((previous) =>
@@ -258,7 +321,7 @@ export default function MathRacing() {
         ].slice(0, 6),
       )
       setStreak(0)
-      setQuestion(createQuestion())
+      setQuestion(createQuestion(level))
       setAnswer("")
     }
   }
@@ -268,6 +331,38 @@ export default function MathRacing() {
       questionStartRef.current = null
     }
   }, [raceActive])
+
+  useEffect(() => {
+    if (!raceOutcome) {
+      return
+    }
+    if (lastOutcomeSessionRef.current === sessionId) {
+      return
+    }
+    lastOutcomeSessionRef.current = sessionId
+
+    if (raceOutcome === "win") {
+      const levelBonus = 150 + level * 25
+      setWins((previous) => previous + 1)
+      setScore((previous) => {
+        const updated = previous + levelBonus
+        setHighScore((prevHigh) => Math.max(prevHigh, updated))
+        return updated
+      })
+      setBestLevel((previous) => {
+        if (level >= MAX_LEVEL) {
+          return MAX_LEVEL
+        }
+        const upcoming = ((level + 1) as RaceLevel)
+        return upcoming > previous ? upcoming : previous
+      })
+      setLevel((previous) => (previous >= MAX_LEVEL ? previous : ((previous + 1) as RaceLevel)))
+    } else if (raceOutcome === "loss") {
+      setWins(0)
+      setScore(0)
+      setLevel(1)
+    }
+  }, [level, raceOutcome, sessionId])
 
   const statusBadge = useMemo(() => {
     if (!raceActive) {
@@ -287,16 +382,36 @@ export default function MathRacing() {
   return (
     <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-sky-50 shadow-xl">
       <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-2xl font-semibold text-slate-900">Math Racing</CardTitle>
-          <Badge variant="outline" className={statusBadge.variant}>
-            {statusBadge.label}
-          </Badge>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle className="text-2xl font-semibold text-slate-900">Math Racing</CardTitle>
+            <Badge variant="outline" className={statusBadge.variant}>
+              {statusBadge.label}
+            </Badge>
+          </div>
+          <CardDescription className="text-slate-600">
+            Solve equations to rocket your car down the neon track. Each correct answer pushes your racer forward, while
+            mistakes slow you down. Keep your streak alive to unlock turbo boosts and cross the finish line first!
+          </CardDescription>
+          <div className="flex flex-wrap gap-2 text-xs sm:text-sm">
+            <Badge variant="outline" className={cn("text-xs", levelStyles[level])}>
+              Level {level}: {levelLabels[level]}
+            </Badge>
+            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+              Score: {score}
+            </Badge>
+            <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-700">
+              High score: {highScore}
+            </Badge>
+            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+              Wins: {wins}
+            </Badge>
+            <Badge variant="outline" className="border-purple-200 bg-purple-50 text-purple-700">
+              Best level: {bestLevel}
+            </Badge>
+          </div>
+          <p className="text-xs text-slate-500 sm:text-sm">{levelSettings[level].description}</p>
         </div>
-        <CardDescription className="text-slate-600">
-          Solve equations to rocket your car down the neon track. Each correct answer pushes your racer forward, while
-          mistakes slow you down. Keep your streak alive to unlock turbo boosts and cross the finish line first!
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-8">
         <div className="grid gap-4 lg:grid-cols-2">
@@ -385,7 +500,7 @@ export default function MathRacing() {
             <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/60 p-4 text-sm text-emerald-700">
               <p>
                 Tip: Answer in under 3 seconds to earn the biggest boost. Each correct streak adds +4 extra progress to
-                the next answer!
+                the next answer! Clear Level {level} to unlock Level {level < MAX_LEVEL ? level + 1 : "5"} bonus points.
               </p>
             </div>
           </div>
@@ -396,8 +511,8 @@ export default function MathRacing() {
                 <h3 className="text-lg font-semibold text-slate-900">Solve to accelerate</h3>
                 <p className="text-sm text-slate-500">Solve as many as you can before the rival crosses the finish line.</p>
               </div>
-              <Badge variant="outline" className={cn("text-xs", difficultyStyles[question.difficulty])}>
-                {difficultyLabels[question.difficulty]}
+              <Badge variant="outline" className={cn("text-xs", levelStyles[question.level])}>
+                Level {question.level}: {levelLabels[question.level]}
               </Badge>
             </div>
 
@@ -457,6 +572,29 @@ export default function MathRacing() {
           <div className="space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm text-sm text-slate-600">
             <h4 className="text-sm font-semibold text-slate-700">Race stats</h4>
             <div className="flex items-center justify-between">
+              <span>Level progress</span>
+              <span>
+                Lv. {level} / {MAX_LEVEL}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Wins this run</span>
+              <span>{wins}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Score</span>
+              <span>{score}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>High score</span>
+              <span>{highScore}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Best level reached</span>
+              <span>{bestLevel}</span>
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
               <span>Correct boosts</span>
               <span>{roundsCompleted}</span>
             </div>
@@ -470,7 +608,7 @@ export default function MathRacing() {
             </div>
             <div className="flex items-center justify-between">
               <span>Race status</span>
-              <span>{raceActive ? "Racing" : "Pit stop"}</span>
+              <span>{raceActive ? `Racing Level ${level}` : "Pit stop"}</span>
             </div>
           </div>
         </div>
@@ -497,25 +635,32 @@ export default function MathRacing() {
                   ? "💀 Catastrophic Crash!"
                   : ""}
             </DialogTitle>
-            <DialogDescription className="text-base">
-              {raceOutcome === "win"
-                ? "You blitzed past the finish line like a legend. Bask in the confetti and queue up the next victory lap!"
-                : raceOutcome === "loss"
-                  ? "That was a face-plant into the guardrail. Shake off the slime, wipe off the tears, and fire those engines again!"
-                  : ""}
-            </DialogDescription>
-          </DialogHeader>
-          <p className="text-sm text-slate-600">{outcomeMessage}</p>
-          <DialogFooter className="mt-4 flex justify-center gap-3 sm:justify-center">
-            <Button
-              onClick={() => {
-                setRaceOutcome(null)
-                startRace()
-              }}
-            >
-              {raceOutcome === "win" ? "Race again" : raceOutcome === "loss" ? "Redeem yourself" : "Start a new race"}
-            </Button>
-          </DialogFooter>
+          <DialogDescription className="text-base">
+            {raceOutcome === "win"
+              ? "You blitzed past the finish line like a legend. Bask in the confetti and queue up the next victory lap!"
+              : raceOutcome === "loss"
+                ? "That was a face-plant into the guardrail. Shake off the slime, wipe off the tears, and fire those engines again!"
+                : ""}
+          </DialogDescription>
+        </DialogHeader>
+        <p className="text-sm text-slate-600">{outcomeMessage}</p>
+        <p className="text-xs text-slate-500">
+          Score: {score} • High score: {highScore} • Best level: {bestLevel}
+        </p>
+        <DialogFooter className="mt-4 flex justify-center gap-3 sm:justify-center">
+          <Button
+            onClick={() => {
+              setRaceOutcome(null)
+              startRace()
+            }}
+          >
+            {raceOutcome === "win"
+              ? `Start Level ${level}`
+              : raceOutcome === "loss"
+                ? "Redeem yourself"
+                : "Start a new race"}
+          </Button>
+        </DialogFooter>
         </DialogContent>
       </Dialog>
     </Card>
