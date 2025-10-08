@@ -5,7 +5,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { getUserByIdFromDb } from "@/lib/database"
 import { logger } from "@/lib/logger"
 import { verifyToken } from "@/lib/security"
-import { normalizeSubjectList } from "@/lib/subject-utils"
+import { summarizeTeacherAssignments } from "@/lib/teacher-assignment"
 
 const normalizeRole = (value: unknown): string => {
   if (typeof value !== "string") {
@@ -58,38 +58,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Teacher not found" }, { status: 404 })
     }
 
-    const assignments = Array.isArray(teacherRecord.teachingAssignments)
-      ? teacherRecord.teachingAssignments
-      : []
-
-    const normalizedClasses: Array<{ id: string; name: string; subjects: string[] }> = []
-    const subjectSet = new Set<string>()
-    const seenClassKeys = new Set<string>()
-
-    for (const assignment of assignments) {
-      const classId = normalizeIdentifier((assignment as { classId?: unknown }).classId)
-      const className = normalizeIdentifier((assignment as { className?: unknown }).className)
-      if (!classId && !className) {
-        continue
-      }
-
-      const key = `${classId.toLowerCase()}::${className.toLowerCase()}`
-      if (seenClassKeys.has(key)) {
-        continue
-      }
-      seenClassKeys.add(key)
-
-      const subjects = normalizeSubjectList((assignment as { subjects?: unknown }).subjects)
-      for (const subject of subjects) {
-        subjectSet.add(subject)
-      }
-
-      normalizedClasses.push({
-        id: classId || className || `class_${normalizedClasses.length}`,
-        name: className || classId || `Class ${normalizedClasses.length + 1}`,
-        subjects,
-      })
-    }
+    const { classes: normalizedClasses, subjects: normalizedSubjects } = summarizeTeacherAssignments(teacherRecord)
 
     if (normalizedClasses.length === 0) {
       logger.warn("Teacher context resolved without any class assignments", { teacherId: teacherRecord.id })
@@ -97,16 +66,8 @@ export async function GET(request: NextRequest) {
       logger.info("Teacher context resolved", {
         teacherId: teacherRecord.id,
         classCount: normalizedClasses.length,
-        subjectCount: subjectSet.size,
+        subjectCount: normalizedSubjects.length,
       })
-    }
-
-    if (Array.isArray(teacherRecord.subjects)) {
-      for (const subject of teacherRecord.subjects) {
-        if (typeof subject === "string" && subject.trim().length > 0) {
-          subjectSet.add(subject.trim())
-        }
-      }
     }
 
     return NextResponse.json({
@@ -116,7 +77,7 @@ export async function GET(request: NextRequest) {
         email: teacherRecord.email,
       },
       classes: normalizedClasses,
-      subjects: Array.from(subjectSet),
+      subjects: normalizedSubjects,
     })
   } catch (error) {
     logger.error("Teacher context endpoint failed", { error })
