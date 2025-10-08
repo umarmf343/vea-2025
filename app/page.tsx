@@ -297,25 +297,41 @@ const normalizeTeachingAssignments = (
     })
   }
 
-  const seen = new Set<string>()
+  const seen = new Map<string, { classId: string; className: string; subjects: string[] }>()
 
-  return assignments
-    .map((assignment, index) => {
-      const classId = assignment.classId.trim().length > 0 ? assignment.classId.trim() : `class_${index}`
-      const className = assignment.className.trim().length > 0 ? assignment.className.trim() : `Class ${index + 1}`
-      const subjects = Array.from(
-        new Set(assignment.subjects.map((subject) => subject.trim()).filter((subject) => subject.length > 0)),
-      )
-      const key = `${classId.toLowerCase()}::${className.toLowerCase()}`
+  assignments.forEach((assignment, index) => {
+    const classId = assignment.classId.trim().length > 0 ? assignment.classId.trim() : `class_${index}`
+    const className = assignment.className.trim().length > 0 ? assignment.className.trim() : `Class ${index + 1}`
+    const subjects = Array.from(
+      new Set(assignment.subjects.map((subject) => subject.trim()).filter((subject) => subject.length > 0)),
+    )
+    const key = classId.toLowerCase()
 
-      if (seen.has(key)) {
-        return null
-      }
+    if (!seen.has(key)) {
+      seen.set(key, { classId, className, subjects })
+      return
+    }
 
-      seen.add(key)
-      return { classId, className, subjects }
+    const existing = seen.get(key)
+    if (!existing) {
+      return
+    }
+
+    const mergedSubjects = Array.from(new Set([...existing.subjects, ...subjects]))
+
+    const isExistingPlaceholderName = existing.className.toLowerCase() === existing.classId.toLowerCase()
+    const isNewPlaceholderName = className.toLowerCase() === classId.toLowerCase()
+
+    const resolvedClassName = isExistingPlaceholderName && !isNewPlaceholderName ? className : existing.className
+
+    seen.set(key, {
+      classId: existing.classId,
+      className: resolvedClassName,
+      subjects: mergedSubjects,
     })
-    .filter((assignment): assignment is { classId: string; className: string; subjects: string[] } => assignment !== null)
+  })
+
+  return Array.from(seen.values())
 }
 
 interface BuildUserStateOptions {
