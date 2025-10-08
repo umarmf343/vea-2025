@@ -1,4 +1,5 @@
 "use client"
+/* eslint-disable @next/next/no-img-element */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Download, PrinterIcon as Print } from "lucide-react"
@@ -21,6 +22,12 @@ import { getJsPdf } from "@/lib/jspdf-loader"
 import { safeStorage } from "@/lib/safe-storage"
 import { resolveStudentPassportFromCache } from "@/lib/student-passport"
 import { dbManager } from "@/lib/database-manager"
+import {
+  applyLayoutDefaults,
+  DEFAULT_REPORT_CARD_LAYOUT_CONFIG,
+  type ReportCardLayoutConfig,
+} from "@/lib/report-card-layout-config"
+import { logger } from "@/lib/logger"
 
 interface SubjectScore {
   name: string
@@ -108,6 +115,63 @@ const STORAGE_KEYS_TO_WATCH = [
   "students",
 ]
 
+const LAYOUT_STORAGE_KEY = "reportCardLayoutConfig"
+const DEFAULT_LAYOUT_REFERENCE = applyLayoutDefaults(DEFAULT_REPORT_CARD_LAYOUT_CONFIG)
+
+const formatBehavioralLabel = (value: string) =>
+  value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
+    .join(" ")
+
+const getDefaultSectionById = (id: string) =>
+  DEFAULT_LAYOUT_REFERENCE.sections.find((section) => section.id === id)
+
+const getDefaultSectionTitle = (id: string) => {
+  const section = getDefaultSectionById(id)
+  if (section) {
+    const trimmed = section.title.trim()
+    if (trimmed.length > 0) {
+      return trimmed
+    }
+  }
+  return formatBehavioralLabel(id)
+}
+
+const getDefaultFieldLabel = (sectionId: string, fieldId: string) => {
+  const section = getDefaultSectionById(sectionId)
+  const field = section?.fields.find((entry) => entry.id === fieldId)
+  if (field) {
+    const trimmed = field.label.trim()
+    if (trimmed.length > 0) {
+      return trimmed
+    }
+  }
+
+  switch (sectionId) {
+    case "remarks":
+      return fieldId === "head_teacher_remark"
+        ? "Head Teacher's Remark"
+        : "Class Teacher Remarks"
+    case "signatures":
+      if (fieldId === "teacher_signature_label") {
+        return "Teacher's Signature:"
+      }
+      if (fieldId === "head_signature_label") {
+        return "Headmaster's Signature:"
+      }
+      if (fieldId === "head_name_label") {
+        return ""
+      }
+      return formatBehavioralLabel(fieldId)
+    default:
+      return formatBehavioralLabel(fieldId)
+  }
+}
+
 const PX_PER_MM = 96 / 25.4
 const convertPxToMm = (value: number) => value / PX_PER_MM
 
@@ -131,10 +195,27 @@ const removeNonPrintableNodes = (root: HTMLElement) => {
 }
 
 const createPrintableClone = (element: HTMLElement) => {
-  const doc = element.ownerDocument ?? document
   const referenceRect = element.getBoundingClientRect()
   const width = Math.max(Math.round(referenceRect.width), 0)
   const height = Math.max(Math.round(referenceRect.height), 0)
+
+  const clone = element.cloneNode(true) as HTMLElement
+  removeNonPrintableNodes(clone)
+
+  const defaultDocument =
+    typeof globalThis !== "undefined" && "document" in globalThis
+      ? (globalThis.document as Document)
+      : null
+  const doc = element.ownerDocument ?? defaultDocument
+
+  if (!doc) {
+    return {
+      clone,
+      cleanup: () => {},
+      width,
+      height,
+    }
+  }
 
   const wrapper = doc.createElement("div")
   wrapper.style.position = "fixed"
@@ -150,9 +231,6 @@ const createPrintableClone = (element: HTMLElement) => {
   if (height > 0) {
     wrapper.style.height = `${height}px`
   }
-
-  const clone = element.cloneNode(true) as HTMLElement
-  removeNonPrintableNodes(clone)
 
   const defaultView = element.ownerDocument?.defaultView
   const computedStyle = defaultView?.getComputedStyle(element)
@@ -384,6 +462,7 @@ const buildBehavioralDomain = (
 const normalizeReportCard = (
   source: RawReportCardData | undefined,
   defaultBranding: ReturnType<typeof useBranding>,
+  layoutConfig: ReportCardLayoutConfig,
 ): NormalizedReportCard | null => {
   if (!source || !source.student) {
     return null
@@ -461,8 +540,23 @@ const normalizeReportCard = (
   }
   const attendancePercentage = inferredTotal > 0 ? Math.round((attendanceStats.present / inferredTotal) * 100) : 0
 
-  const defaultAffectiveTraits = [...PRIMARY_AFFECTIVE_TRAITS, ...AFFECTIVE_TRAITS]
-  const defaultPsychomotorSkills = [...PRIMARY_PSYCHOMOTOR_SKILLS, ...PSYCHOMOTOR_SKILLS]
+  const normalizedLayout = applyLayoutDefaults(layoutConfig)
+
+  const layoutAffective = normalizedLayout.affectiveTraits
+    .filter((item) => item.enabled !== false && item.label.trim().length > 0)
+    .map((item) => ({ key: item.id, label: item.label.trim() }))
+
+  const layoutPsychomotor = normalizedLayout.psychomotorSkills
+    .filter((item) => item.enabled !== false && item.label.trim().length > 0)
+    .map((item) => ({ key: item.id, label: item.label.trim() }))
+
+  const defaultAffectiveTraits =
+    layoutAffective.length > 0 ? layoutAffective : [...PRIMARY_AFFECTIVE_TRAITS, ...AFFECTIVE_TRAITS]
+
+  const defaultPsychomotorSkills =
+    layoutPsychomotor.length > 0
+      ? layoutPsychomotor
+      : [...PRIMARY_PSYCHOMOTOR_SKILLS, ...PSYCHOMOTOR_SKILLS]
 
   const affectiveSelections = buildBehavioralDomain(
     "affective",
@@ -491,11 +585,11 @@ const normalizeReportCard = (
   }
 
   if (!resolvedBranding.logo) {
-    console.warn("Report card branding missing school logo; displaying placeholder.")
+    logger.warn("Report card branding missing school logo; displaying placeholder.")
   }
 
   if (!resolvedBranding.signature) {
-    console.warn("Report card branding missing headmaster signature; displaying placeholder.")
+    logger.warn("Report card branding missing headmaster signature; displaying placeholder.")
   }
 
   const termInfo = {
@@ -554,7 +648,7 @@ const normalizeReportCard = (
             passportUrl
         }
       } catch (error) {
-        console.warn("Unable to parse stored students for passport lookup", error)
+        logger.warn("Unable to parse stored students for passport lookup", { error })
       }
     }
   }
@@ -635,13 +729,71 @@ const normalizeReportCard = (
 export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   const branding = useBranding()
   const { toast } = useToast()
+  const [layoutConfig, setLayoutConfig] = useState<ReportCardLayoutConfig>(() => {
+    const stored = safeStorage.getItem(LAYOUT_STORAGE_KEY)
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as Partial<ReportCardLayoutConfig>
+        return applyLayoutDefaults(parsed)
+      } catch (error) {
+        logger.warn("Failed to parse stored report card layout configuration", { error })
+      }
+    }
+
+    return applyLayoutDefaults(DEFAULT_LAYOUT_REFERENCE)
+  })
   const [reportCardData, setReportCardData] = useState<NormalizedReportCard | null>(() =>
-    normalizeReportCard(data, branding),
+    normalizeReportCard(data, branding, layoutConfig),
   )
   const [studentPhoto, setStudentPhoto] = useState<string>("")
   const [isDownloading, setIsDownloading] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchLayout = async () => {
+      try {
+        const response = await fetch("/api/report-cards/layout")
+        if (!response.ok) {
+          return
+        }
+
+        const payload = (await response.json()) as { layout: ReportCardLayoutConfig }
+        if (!isMounted) {
+          return
+        }
+
+        const normalized = applyLayoutDefaults(payload.layout)
+        setLayoutConfig((previous) => {
+          const prevSerialized = JSON.stringify(previous)
+          const nextSerialized = JSON.stringify(normalized)
+          if (prevSerialized === nextSerialized) {
+            return previous
+          }
+          safeStorage.setItem(LAYOUT_STORAGE_KEY, nextSerialized)
+          return normalized
+        })
+      } catch (error) {
+        logger.warn("Unable to load report card layout configuration", { error })
+      }
+    }
+
+    void fetchLayout()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      safeStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layoutConfig))
+    } catch (error) {
+      logger.warn("Unable to persist report card layout configuration", { error })
+    }
+  }, [layoutConfig])
 
   useEffect(() => {
     const browserWindow = resolveBrowserWindow()
@@ -650,7 +802,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     }
 
     const updateData = () => {
-      const normalized = normalizeReportCard(data, branding)
+      const normalized = normalizeReportCard(data, branding, layoutConfig)
       setReportCardData(normalized)
 
       if (!normalized) {
@@ -688,59 +840,146 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     return () => {
       browserWindow.removeEventListener("storage", handleStorageChange)
     }
-  }, [data, branding])
+  }, [data, branding, layoutConfig])
 
   const affectiveTraits = useMemo(() => {
     if (!reportCardData) {
       return [] as Array<{ key: string; label: string }>
     }
 
+    const layoutOrdered = layoutConfig.affectiveTraits
+      .filter((trait) => trait.enabled !== false)
+      .map((trait) => ({
+        key: trait.id,
+        label:
+          trait.label.trim().length > 0
+            ? trait.label
+            : getAffectiveTraitLabel(trait.id) || formatBehavioralLabel(trait.id),
+      }))
+
+    const fallbackOrdered: Array<{ key: string; label: string }> = [
+      ...PRIMARY_AFFECTIVE_TRAITS,
+      ...AFFECTIVE_TRAITS,
+    ]
+
+    const baseOrder = layoutOrdered.length > 0 ? layoutOrdered : fallbackOrdered
     const seen = new Set<string>()
-    const ordered = [...PRIMARY_AFFECTIVE_TRAITS, ...AFFECTIVE_TRAITS]
     const traits: Array<{ key: string; label: string }> = []
 
-    ordered.forEach((trait) => {
-      if (!seen.has(trait.key)) {
-        traits.push({ key: trait.key, label: getAffectiveTraitLabel(trait.key) })
-        seen.add(trait.key)
+    baseOrder.forEach((trait) => {
+      const key = trait.key
+      if (seen.has(key)) {
+        return
       }
+      seen.add(key)
+      const label = trait.label.trim().length > 0 ? trait.label : formatBehavioralLabel(key)
+      traits.push({ key, label })
     })
 
     Object.keys(reportCardData.affectiveDomain).forEach((key) => {
-      if (!seen.has(key)) {
-        traits.push({ key, label: getAffectiveTraitLabel(key) })
-        seen.add(key)
+      if (seen.has(key)) {
+        return
       }
+      seen.add(key)
+      const fallbackLabel = getAffectiveTraitLabel(key)
+      const label = fallbackLabel && fallbackLabel.trim().length > 0 ? fallbackLabel : formatBehavioralLabel(key)
+      traits.push({ key, label })
     })
 
     return traits
-  }, [reportCardData])
+  }, [layoutConfig.affectiveTraits, reportCardData])
 
   const psychomotorSkills = useMemo(() => {
     if (!reportCardData) {
       return [] as Array<{ key: string; label: string }>
     }
 
+    const layoutOrdered = layoutConfig.psychomotorSkills
+      .filter((trait) => trait.enabled !== false)
+      .map((trait) => ({
+        key: trait.id,
+        label:
+          trait.label.trim().length > 0
+            ? trait.label
+            : getPsychomotorSkillLabel(trait.id) || formatBehavioralLabel(trait.id),
+      }))
+
+    const fallbackOrdered: Array<{ key: string; label: string }> = [
+      ...PRIMARY_PSYCHOMOTOR_SKILLS,
+      ...PSYCHOMOTOR_SKILLS,
+    ]
+
+    const baseOrder = layoutOrdered.length > 0 ? layoutOrdered : fallbackOrdered
     const seen = new Set<string>()
-    const ordered = [...PRIMARY_PSYCHOMOTOR_SKILLS, ...PSYCHOMOTOR_SKILLS]
     const traits: Array<{ key: string; label: string }> = []
 
-    ordered.forEach((trait) => {
-      if (!seen.has(trait.key)) {
-        traits.push({ key: trait.key, label: getPsychomotorSkillLabel(trait.key) })
-        seen.add(trait.key)
+    baseOrder.forEach((trait) => {
+      const key = trait.key
+      if (seen.has(key)) {
+        return
       }
+      seen.add(key)
+      const label = trait.label.trim().length > 0 ? trait.label : formatBehavioralLabel(key)
+      traits.push({ key, label })
     })
 
     Object.keys(reportCardData.psychomotorDomain).forEach((key) => {
-      if (!seen.has(key)) {
-        traits.push({ key, label: getPsychomotorSkillLabel(key) })
-        seen.add(key)
+      if (seen.has(key)) {
+        return
       }
+      seen.add(key)
+      const fallbackLabel = getPsychomotorSkillLabel(key)
+      const label = fallbackLabel && fallbackLabel.trim().length > 0 ? fallbackLabel : formatBehavioralLabel(key)
+      traits.push({ key, label })
     })
 
     return traits
-  }, [reportCardData])
+  }, [layoutConfig.psychomotorSkills, reportCardData])
+
+  const layoutSectionMap = useMemo(() => {
+    const map = new Map<string, ReportCardLayoutConfig["sections"][number]>()
+    layoutConfig.sections.forEach((section) => {
+      map.set(section.id, section)
+    })
+    return map
+  }, [layoutConfig.sections])
+
+  const getSectionConfig = (sectionId: string) => layoutSectionMap.get(sectionId)
+
+  const isSectionEnabled = (sectionId: string, fallback = true) => {
+    const section = getSectionConfig(sectionId)
+    return section ? section.enabled !== false : fallback
+  }
+
+  const getSectionTitleResolved = (sectionId: string, fallback: string) => {
+    const section = getSectionConfig(sectionId)
+    if (section) {
+      const trimmed = section.title.trim()
+      if (trimmed.length > 0) {
+        return trimmed
+      }
+    }
+    return fallback
+  }
+
+  const getFieldConfig = (sectionId: string, fieldId: string) =>
+    getSectionConfig(sectionId)?.fields.find((field) => field.id === fieldId)
+
+  const isFieldEnabled = (sectionId: string, fieldId: string, fallback = true) => {
+    const field = getFieldConfig(sectionId, fieldId)
+    return field ? field.enabled !== false : fallback
+  }
+
+  const getFieldLabelResolved = (sectionId: string, fieldId: string, fallback: string) => {
+    const field = getFieldConfig(sectionId, fieldId)
+    if (field) {
+      const trimmed = field.label.trim()
+      if (trimmed.length > 0) {
+        return trimmed
+      }
+    }
+    return fallback
+  }
 
   const formatScoreValue = (value: number | undefined) => {
     if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -886,7 +1125,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         browserWindow.URL.revokeObjectURL(blobUrl)
       }, 60000)
     } catch (error) {
-      console.error("Failed to prepare report card PDF", error)
+      logger.error("Failed to prepare report card PDF", { error })
       toast({
         title: "Print failed",
         description: "Unable to prepare the report card PDF. Please try again.",
@@ -915,7 +1154,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
       pdf.save(`${filename}.pdf`)
     } catch (error) {
-      console.error("Failed to export report card as PDF", error)
+      logger.error("Failed to export report card as PDF", { error })
       toast({
         title: "Download failed",
         description: "Unable to prepare the report card PDF. Please try again.",
@@ -925,21 +1164,6 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
       setIsDownloading(false)
     }
   }, [isDownloading, preparePdfDocument, reportCardData, toast])
-
-  if (!reportCardData) {
-    return (
-      <div className="mx-auto w-full max-w-5xl py-6">
-        <div className="rounded-lg border border-dashed border-[#2d5016] bg-white p-8 text-center text-[#2d5016] shadow-sm">
-          <h2 className="text-lg font-semibold">No report card data available</h2>
-          <p className="mt-2 text-sm">
-            Please select a student with recorded assessments to preview the enhanced report card.
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  const { student, summary, termInfo } = reportCardData
 
   const parsePositiveInteger = useCallback((value: unknown): number | null => {
     if (typeof value === "number" && Number.isFinite(value) && value > 0) {
@@ -973,35 +1197,51 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   }, [])
 
   const initialClassSize = useMemo(() => {
+    if (!reportCardData) {
+      return null
+    }
+
+    const { student, summary, termInfo } = reportCardData
+
     return (
       parsePositiveInteger(student.numberInClass) ??
       parsePositiveInteger(termInfo?.numberInClass) ??
       parsePositiveInteger(summary?.numberOfStudents) ??
       null
     )
-  }, [parsePositiveInteger, student.numberInClass, termInfo?.numberInClass, summary?.numberOfStudents])
+  }, [parsePositiveInteger, reportCardData])
 
   const initialAdmissionNumber = useMemo(() => {
+    if (!reportCardData) {
+      return null
+    }
+
+    const { student } = reportCardData
+    const studentRecord = student as Record<string, unknown>
+
     const candidate =
       extractAdmissionNumber(student.admissionNumber) ??
-      extractAdmissionNumber((student as Record<string, unknown>)["admission_number"]) ??
-      extractAdmissionNumber((student as Record<string, unknown>)["admissionNo"]) ??
-      extractAdmissionNumber((student as Record<string, unknown>)["admission_no"])
+      extractAdmissionNumber(studentRecord["admission_number"]) ??
+      extractAdmissionNumber(studentRecord["admissionNo"]) ??
+      extractAdmissionNumber(studentRecord["admission_no"])
 
     return candidate
-  }, [extractAdmissionNumber, student])
+  }, [extractAdmissionNumber, reportCardData])
 
   const normalizedStudentClass = useMemo(() => {
-    return typeof student.class === "string" ? student.class.trim() : ""
-  }, [student.class])
+    const classValue = reportCardData?.student?.class
+    return typeof classValue === "string" ? classValue.trim() : ""
+  }, [reportCardData?.student?.class])
 
   const normalizedStudentId = useMemo(() => {
-    return typeof student.id === "string" ? student.id.trim() : ""
-  }, [student.id])
+    const idValue = reportCardData?.student?.id
+    return typeof idValue === "string" ? idValue.trim() : ""
+  }, [reportCardData?.student?.id])
 
   const normalizedStudentName = useMemo(() => {
-    return typeof student.name === "string" ? student.name.trim() : ""
-  }, [student.name])
+    const nameValue = reportCardData?.student?.name
+    return typeof nameValue === "string" ? nameValue.trim() : ""
+  }, [reportCardData?.student?.name])
 
   const [resolvedClassSize, setResolvedClassSize] = useState<number | null>(initialClassSize)
   const [resolvedAdmissionNumber, setResolvedAdmissionNumber] = useState<string | null>(
@@ -1074,15 +1314,15 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             return metadata ? extractAdmissionNumber(readString(metadata, "admissionNumber")) : null
           })()
 
-        if (admissionCandidate && isSubscribed) {
-          setResolvedAdmissionNumber(admissionCandidate)
-        }
-      } catch (error) {
-        console.warn("Unable to resolve class roster details for report card", error)
+      if (admissionCandidate && isSubscribed) {
+        setResolvedAdmissionNumber(admissionCandidate)
       }
+    } catch (error) {
+      logger.warn("Unable to resolve class roster details for report card", { error })
     }
+  }
 
-    void fetchRosterDetails()
+  void fetchRosterDetails()
 
     return () => {
       isSubscribed = false
@@ -1095,6 +1335,21 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     normalizedStudentId,
     normalizedStudentName,
   ])
+
+  if (!reportCardData) {
+    return (
+      <div className="mx-auto w-full max-w-5xl py-6">
+        <div className="rounded-lg border border-dashed border-[#2d5016] bg-white p-8 text-center text-[#2d5016] shadow-sm">
+          <h2 className="text-lg font-semibold">No report card data available</h2>
+          <p className="mt-2 text-sm">
+            Please select a student with recorded assessments to preview the enhanced report card.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const { student, summary, termInfo } = reportCardData
   const resolveDisplayValue = (value: unknown) => {
     if (typeof value === "number" && Number.isFinite(value)) {
       return String(value)
@@ -1128,19 +1383,136 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   const averageScore = formatAverageValue(summary.averageScore)
   const positionLabel = resolveDisplayValue(summary.positionLabel)
 
+  const fallbackClassRemark = layoutConfig.defaultRemarks.classTeacher?.trim() ?? ""
+  const fallbackHeadRemark = layoutConfig.defaultRemarks.headTeacher?.trim() ?? ""
+  const brandingHeadRemark = reportCardData.branding?.defaultRemark?.trim() ?? ""
+
   const classTeacherRemark =
     reportCardData.remarks.classTeacher?.trim().length
       ? reportCardData.remarks.classTeacher
-      : "________________"
-  const defaultHeadRemark = reportCardData.branding?.defaultRemark?.trim() ?? ""
+      : fallbackClassRemark.length > 0
+        ? fallbackClassRemark
+        : "________________"
+
   const headTeacherRemark =
     reportCardData.remarks.headTeacher?.trim().length
       ? reportCardData.remarks.headTeacher
-      : defaultHeadRemark.length > 0
-        ? defaultHeadRemark
-        : "________________"
+      : fallbackHeadRemark.length > 0
+        ? fallbackHeadRemark
+        : brandingHeadRemark.length > 0
+          ? brandingHeadRemark
+          : "________________"
   const vacationDate = formatDateDisplay(reportCardData.termInfo.vacationEnds) ?? "________________"
   const resumptionDate = formatDateDisplay(reportCardData.termInfo.nextTermBegins) ?? "________________"
+  const studentFieldValues: Record<string, string> = {
+    student_name: studentName,
+    admission_number: admissionNumber,
+    class_name: classLabel,
+    number_in_class: numberInClass,
+    term: termLabel,
+    session: sessionLabel,
+    grade: gradeLabel,
+    total_obtainable: totalMarksObtainable,
+    total_obtained: totalMarksObtained,
+    average: averageScore,
+    position: positionLabel,
+  }
+
+  const attendanceValues: Record<string, string> = {
+    attendance_present: resolveDisplayValue(reportCardData.attendance.present),
+    attendance_absent: resolveDisplayValue(reportCardData.attendance.absent),
+    attendance_total: resolveDisplayValue(reportCardData.attendance.total),
+    attendance_percentage: formatAverageValue(reportCardData.attendance.percentage),
+  }
+
+  const termDateValues: Record<string, string> = {
+    vacation_date: vacationDate,
+    resumption_date: resumptionDate,
+  }
+
+  const feeValues: Record<string, string> = {
+    next_term_fees: resolveDisplayValue(reportCardData.termInfo.nextTermFees),
+    fees_balance: resolveDisplayValue(reportCardData.termInfo.feesBalance),
+  }
+
+  const teacherSignatureEnabled = isFieldEnabled("signatures", "teacher_signature_label", true)
+  const headSignatureEnabled = isFieldEnabled("signatures", "head_signature_label", true)
+  const teacherSignatureLabel = getFieldLabelResolved(
+    "signatures",
+    "teacher_signature_label",
+    getDefaultFieldLabel("signatures", "teacher_signature_label"),
+  )
+  const headSignatureLabel = getFieldLabelResolved(
+    "signatures",
+    "head_signature_label",
+    getDefaultFieldLabel("signatures", "head_signature_label"),
+  )
+  const headNameField = getFieldConfig("signatures", "head_name_label")
+  const headSignatureName =
+    headNameField && headNameField.label.trim().length > 0
+      ? headNameField.label.trim()
+      : reportCardData.branding.headmasterName?.trim() ?? ""
+  const showHeadSignatureName =
+    (headNameField ? headNameField.enabled !== false : true) && headSignatureName.trim().length > 0
+
+  const gradingTitle = getSectionTitleResolved(
+    "grading_key",
+    getDefaultSectionTitle("grading_key"),
+  )
+  const gradingLegend = getFieldLabelResolved(
+    "grading_key",
+    "grading_legend",
+    getDefaultFieldLabel("grading_key", "grading_legend"),
+  )
+
+  const studentFields = (getSectionConfig("student_overview")?.fields ?? []).filter(
+    (field) => field.enabled !== false,
+  )
+  const attendanceFields = (getSectionConfig("attendance")?.fields ?? []).filter(
+    (field) => field.enabled !== false,
+  )
+  const remarkFields = (getSectionConfig("remarks")?.fields ?? []).filter(
+    (field) => field.enabled !== false,
+  )
+  const classTeacherFieldEnabled = remarkFields.some(
+    (field) => field.id === "class_teacher_remark" && field.enabled !== false,
+  )
+  const headTeacherFieldEnabled = remarkFields.some(
+    (field) => field.id === "head_teacher_remark" && field.enabled !== false,
+  )
+  const termDateFields = (getSectionConfig("term_dates")?.fields ?? []).filter(
+    (field) => field.enabled !== false,
+  )
+  const feeFields = (getSectionConfig("fees")?.fields ?? []).filter((field) => field.enabled !== false)
+
+  const showRemarksBlock = isSectionEnabled("remarks") && (classTeacherFieldEnabled || headTeacherFieldEnabled)
+  const showPsychomotorBlock = isSectionEnabled("behavioral_psychomotor") && psychomotorSkills.length > 0
+  const showAffectiveBlock = isSectionEnabled("behavioral_affective") && affectiveTraits.length > 0
+  const attendanceTitle = getSectionTitleResolved(
+    "attendance",
+    getDefaultSectionTitle("attendance"),
+  )
+  const psychomotorTitle = getSectionTitleResolved(
+    "behavioral_psychomotor",
+    getDefaultSectionTitle("behavioral_psychomotor"),
+  )
+  const affectiveTitle = getSectionTitleResolved(
+    "behavioral_affective",
+    getDefaultSectionTitle("behavioral_affective"),
+  )
+  const feesTitle = getSectionTitleResolved("fees", getDefaultSectionTitle("fees"))
+  const classTeacherLabel = getFieldLabelResolved(
+    "remarks",
+    "class_teacher_remark",
+    getDefaultFieldLabel("remarks", "class_teacher_remark"),
+  )
+  const headTeacherLabel = getFieldLabelResolved(
+    "remarks",
+    "head_teacher_remark",
+    getDefaultFieldLabel("remarks", "head_teacher_remark"),
+  )
+  const gradingLegendDisplay = gradingLegend.trim()
+  const gradingTitleDisplay = gradingTitle.trim()
 
   return (
     <div className="victory-report-card-wrapper">
@@ -1205,36 +1577,44 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
           <div className="report-title">TERMINAL REPORT SHEET</div>
 
-          <div className="student-info">
-            <div className="student-row">
-              <div className="info-label">NAME OF STUDENT:</div>
-              <div className="info-value">{studentName}</div>
-              <div className="info-label">ADMISSION NUMBER:</div>
-              <div className="info-value">{admissionNumber}</div>
-              <div className="info-label">CLASS:</div>
-              <div className="info-value">{classLabel}</div>
+          {isSectionEnabled("student_overview") && studentFields.length > 0 && (
+            <div className="student-info">
+              <div className="student-grid">
+                {studentFields.map((field) => (
+                  <div key={field.id} className="student-field">
+                    <div className="info-label">
+                      {getFieldLabelResolved(
+                        "student_overview",
+                        field.id,
+                        getDefaultFieldLabel("student_overview", field.id),
+                      )}
+                    </div>
+                    <div className="info-value">{studentFieldValues[field.id] ?? "—"}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="student-row">
-              <div className="info-label">NUMBER IN CLASS:</div>
-              <div className="info-value">{numberInClass}</div>
-              <div className="info-label">TERM:</div>
-              <div className="info-value">{termLabel}</div>
-              <div className="info-label">SESSION:</div>
-              <div className="info-value">{sessionLabel}</div>
-              <div className="info-label">GRADE:</div>
-              <div className="info-value">{gradeLabel}</div>
+          )}
+
+          {isSectionEnabled("attendance") && attendanceFields.length > 0 && (
+            <div className="attendance-box">
+              <h4 className="attendance-title">{attendanceTitle}</h4>
+              <div className="attendance-grid">
+                {attendanceFields.map((field) => (
+                  <div key={field.id} className="attendance-item">
+                    <span className="attendance-label">
+                      {getFieldLabelResolved(
+                        "attendance",
+                        field.id,
+                        getDefaultFieldLabel("attendance", field.id),
+                      )}
+                    </span>
+                    <span className="attendance-value">{attendanceValues[field.id] ?? "—"}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="student-row">
-              <div className="info-label">TOTAL MARKS OBTAINABLE:</div>
-              <div className="info-value">{totalMarksObtainable}</div>
-              <div className="info-label">TOTAL MARKS OBTAINED</div>
-              <div className="info-value">{totalMarksObtained}</div>
-              <div className="info-label">AVERAGE:</div>
-              <div className="info-value">{averageScore}</div>
-              <div className="info-label">POSITION:</div>
-              <div className="info-value">{positionLabel}</div>
-            </div>
-          </div>
+          )}
 
           <table className="grades-table">
             <thead>
@@ -1298,120 +1678,161 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             </tbody>
           </table>
 
-          <div className="remark-section">
-            <div className="remarks-column">
-              <div className="teacher-remarks">
-                <strong>Class Teacher Remarks:</strong>
-                <br />
-                {classTeacherRemark}
-                <hr />
-                <strong>Head Master&apos;s Remark:</strong>
-                <br />
-                <em>{headTeacherRemark}</em>
-              </div>
-              <div className="domain-block psychomotor-block">
-                <strong>PSYCHOMOTOR DOMAIN</strong>
-                <table className="af-domain-table checkmark-table">
-                  <thead>
-                    <tr>
-                      <th>Skill</th>
-                      <th className="check-column">Demonstrated</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {psychomotorSkills.length > 0 ? (
-                      psychomotorSkills.map((skill) => (
-                        <tr key={skill.key}>
-                          <td>{skill.label}</td>
-                          <td className={reportCardData.psychomotorDomain[skill.key] ? "tick" : ""}>
-                            {reportCardData.psychomotorDomain[skill.key] ? "✓" : ""}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={2}>No psychomotor records available.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div className="domain-block affective-block">
-              <strong>AFFECTIVE DOMAIN</strong>
-              <table className="af-domain-table checkmark-table">
-                <thead>
-                  <tr>
-                    <th>Trait</th>
-                    <th className="check-column">Demonstrated</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {affectiveTraits.length > 0 ? (
-                    affectiveTraits.map((trait) => (
-                      <tr key={trait.key}>
-                        <td>{trait.label}</td>
-                        <td className={reportCardData.affectiveDomain[trait.key] ? "tick" : ""}>
-                          {reportCardData.affectiveDomain[trait.key] ? "✓" : ""}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={2}>No affective records available.</td>
-                    </tr>
+          {(showRemarksBlock || showPsychomotorBlock || showAffectiveBlock) && (
+            <div className="remark-section">
+              {(showRemarksBlock || showPsychomotorBlock) && (
+                <div className="remarks-column">
+                  {showRemarksBlock && (
+                    <div className="teacher-remarks">
+                      {classTeacherFieldEnabled && (
+                        <>
+                          <strong>{classTeacherLabel}</strong>
+                          <br />
+                          {classTeacherRemark}
+                        </>
+                      )}
+                      {classTeacherFieldEnabled && headTeacherFieldEnabled && <hr />}
+                      {headTeacherFieldEnabled && (
+                        <>
+                          <strong>{headTeacherLabel}</strong>
+                          <br />
+                          <em>{headTeacherRemark}</em>
+                        </>
+                      )}
+                    </div>
                   )}
-                </tbody>
-              </table>
-            </div>
-          </div>
 
-          <div className="vacation-box">
-            <div>
-              <strong>Vacation Date:</strong> {vacationDate}
-            </div>
-            <div>
-              <strong>Resumption Date:</strong> {resumptionDate}
-            </div>
-          </div>
-
-          <div className="signatures-box">
-            <div className="signature-item">
-              <span className="signature-label">Teacher&apos;s Signature:</span>
-              <div className="signature-line" />
-            </div>
-            <div className="signature-item headmaster-signature">
-              <span className="signature-label">Headmaster&apos;s Signature:</span>
-              {reportCardData.branding.signature ? (
-                <div className="signature-image">
-                  <img src={reportCardData.branding.signature} alt="Headmaster's signature" />
+                  {showPsychomotorBlock && (
+                    <div className="domain-block psychomotor-block">
+                      <strong>{psychomotorTitle}</strong>
+                      <table className="af-domain-table checkmark-table">
+                        <thead>
+                          <tr>
+                            <th>Skill</th>
+                            <th className="check-column">Demonstrated</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {psychomotorSkills.length > 0 ? (
+                            psychomotorSkills.map((skill) => (
+                              <tr key={skill.key}>
+                                <td>{skill.label}</td>
+                                <td className={reportCardData.psychomotorDomain[skill.key] ? "tick" : ""}>
+                                  {reportCardData.psychomotorDomain[skill.key] ? "✓" : ""}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={2}>No psychomotor records available.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="signature-placeholder">Signature Pending</div>
               )}
-              {reportCardData.branding.headmasterName ? (
-                <span className="signature-name">{reportCardData.branding.headmasterName}</span>
-              ) : null}
-            </div>
-          </div>
 
-          <div className="grading-key-container">
-            <div className="grading-key">
-              GRADING:
-              {" "}
-              75–100 A (Excellent) |
-              {" "}
-              60–74 B (V.Good) |
-              {" "}
-              50–59 C (Good) |
-              {" "}
-              40–49 D (Fair) |
-              {" "}
-              30–39 E (Poor) |
-              {" "}
-              0–29 F (FAIL)
+              {showAffectiveBlock && (
+                <div className="domain-block affective-block">
+                  <strong>{affectiveTitle}</strong>
+                  <table className="af-domain-table checkmark-table">
+                    <thead>
+                      <tr>
+                        <th>Trait</th>
+                        <th className="check-column">Demonstrated</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {affectiveTraits.length > 0 ? (
+                        affectiveTraits.map((trait) => (
+                          <tr key={trait.key}>
+                            <td>{trait.label}</td>
+                            <td className={reportCardData.affectiveDomain[trait.key] ? "tick" : ""}>
+                              {reportCardData.affectiveDomain[trait.key] ? "✓" : ""}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={2}>No affective records available.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          </div>
+          )}
+
+          {isSectionEnabled("term_dates") && termDateFields.length > 0 && (
+            <div className="vacation-box">
+              {termDateFields.map((field) => (
+                <div key={field.id}>
+                  <strong>
+                    {getFieldLabelResolved(
+                      "term_dates",
+                      field.id,
+                      getDefaultFieldLabel("term_dates", field.id),
+                    )}
+                    :
+                  </strong>{" "}
+                  {termDateValues[field.id] ?? "________________"}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {isSectionEnabled("fees") && feeFields.length > 0 && (
+            <div className="fees-box">
+              <h4 className="fees-title">{feesTitle}</h4>
+              <div className="fees-grid">
+                {feeFields.map((field) => (
+                  <div key={field.id} className="fees-item">
+                    <span className="fees-label">
+                      {getFieldLabelResolved("fees", field.id, getDefaultFieldLabel("fees", field.id))}
+                    </span>
+                    <span className="fees-value">{feeValues[field.id] ?? "—"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(teacherSignatureEnabled || headSignatureEnabled) && (
+            <div className="signatures-box">
+              {teacherSignatureEnabled && (
+                <div className="signature-item">
+                  <span className="signature-label">{teacherSignatureLabel}</span>
+                  <div className="signature-line" />
+                </div>
+              )}
+              {headSignatureEnabled && (
+                <div className="signature-item headmaster-signature">
+                  <span className="signature-label">{headSignatureLabel}</span>
+                  {reportCardData.branding.signature ? (
+                    <div className="signature-image">
+                      <img src={reportCardData.branding.signature} alt="Headmaster's signature" />
+                    </div>
+                  ) : (
+                    <div className="signature-placeholder">Signature Pending</div>
+                  )}
+                  {showHeadSignatureName ? (
+                    <span className="signature-name">{headSignatureName}</span>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          )}
+
+          {isSectionEnabled("grading_key") && gradingLegendDisplay.length > 0 && (
+            <div className="grading-key-container">
+              <div className="grading-key">
+                {gradingTitleDisplay.length > 0 ? gradingTitleDisplay.toUpperCase() : "GRADING"}: {gradingLegendDisplay}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1545,18 +1966,19 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
         .student-info {
           border: 2px solid #2e7d32;
-          padding: 0;
           margin: 10px 15px;
           font-size: 14px;
         }
 
-        .student-row {
-          display: flex;
-          border-bottom: 1px solid #2e7d32;
+        .student-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+          border-top: 1px solid #2e7d32;
+          border-left: 1px solid #2e7d32;
         }
 
-        .student-row:last-of-type {
-          border-bottom: none;
+        .student-field {
+          display: contents;
         }
 
         .info-label {
@@ -1564,17 +1986,101 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           color: #2e7d32;
           padding: 6px 8px;
           border-right: 1px solid #2e7d32;
-          width: 20%;
-          font-size: 14px;
+          border-bottom: 1px solid #2e7d32;
+          font-size: 13px;
           background-color: #fafafa;
+          letter-spacing: 0.04em;
         }
 
         .info-value {
           padding: 6px 8px;
-          width: 80%;
-          font-size: 16px;
+          border-right: 1px solid #2e7d32;
+          border-bottom: 1px solid #2e7d32;
+          font-size: 15px;
           font-weight: bold;
           background-color: #fff;
+        }
+
+        .attendance-box {
+          margin: 10px 15px;
+          padding: 12px;
+          border: 2px dashed #2e7d32;
+          background-color: #f5fbf5;
+        }
+
+        .attendance-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #2e7d32;
+          margin-bottom: 8px;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .attendance-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+          gap: 10px;
+        }
+
+        .attendance-item {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .attendance-label {
+          font-size: 11px;
+          text-transform: uppercase;
+          color: #1f4a1f;
+          letter-spacing: 0.05em;
+        }
+
+        .attendance-value {
+          font-size: 16px;
+          font-weight: 600;
+          color: #2e7d32;
+        }
+
+        .fees-box {
+          margin: 10px 15px;
+          padding: 12px 14px;
+          border: 2px solid #b29032;
+          background-color: #fffaf0;
+        }
+
+        .fees-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #9a7c2a;
+          margin-bottom: 8px;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .fees-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 10px;
+        }
+
+        .fees-item {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .fees-label {
+          font-size: 11px;
+          text-transform: uppercase;
+          color: #6b5800;
+          letter-spacing: 0.05em;
+        }
+
+        .fees-value {
+          font-size: 16px;
+          font-weight: 600;
+          color: #2e7d32;
         }
 
         .grades-table {

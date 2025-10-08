@@ -12,6 +12,11 @@ import { safeStorage } from "./safe-storage"
 import { logger } from "./logger"
 import { deriveGradeFromScore } from "./grade-utils"
 import { normalizeSubjectList } from "./subject-utils"
+import {
+  applyLayoutDefaults,
+  DEFAULT_REPORT_CARD_LAYOUT_CONFIG,
+  type ReportCardLayoutConfig,
+} from "./report-card-layout-config"
 
 interface CollectionRecord {
   id: string
@@ -1478,6 +1483,7 @@ function createDefaultStudents(): StudentRecord[] {
 
 interface ReportCardConfigState extends CollectionRecord {
   columns: ReportCardColumnRecord[]
+  layout: ReportCardLayoutConfig
 }
 
 function createDefaultReportCardConfigRecord(): ReportCardConfigState {
@@ -1490,6 +1496,7 @@ function createDefaultReportCardConfigRecord(): ReportCardConfigState {
       { id: "column_ca2", name: "2nd Test", type: "test", maxScore: 20, weight: 20, isRequired: true, order: 2 },
       { id: "column_exam", name: "Exam", type: "exam", maxScore: 60, weight: 60, isRequired: true, order: 3 },
     ],
+    layout: applyLayoutDefaults(DEFAULT_REPORT_CARD_LAYOUT_CONFIG),
     createdAt: timestamp,
     updatedAt: timestamp,
   }
@@ -3244,14 +3251,61 @@ export async function updateReportCardConfigColumns(
     .sort((a, b) => a.order - b.order)
     .map((column, index) => ({ ...column, order: index + 1 }))
 
+  const normalizedLayout = applyLayoutDefaults(existing.layout, generateId)
+
   const updated: ReportCardConfigState = {
     ...existing,
     columns: normalized,
+    layout: normalizedLayout,
     updatedAt: timestamp,
   }
 
   persistCollection(STORAGE_KEYS.REPORT_CARD_CONFIG, [updated])
   return deepClone(updated.columns)
+}
+
+export async function getReportCardLayoutConfig(): Promise<ReportCardLayoutConfig> {
+  const existing = ensureSingletonRecord<ReportCardConfigState>(
+    STORAGE_KEYS.REPORT_CARD_CONFIG,
+    createDefaultReportCardConfigRecord,
+  )
+
+  const normalizedLayout = applyLayoutDefaults(existing.layout, generateId)
+
+  if (JSON.stringify(existing.layout) !== JSON.stringify(normalizedLayout)) {
+    const timestamp = new Date().toISOString()
+    const updated: ReportCardConfigState = {
+      ...existing,
+      layout: normalizedLayout,
+      updatedAt: timestamp,
+    }
+
+    persistCollection(STORAGE_KEYS.REPORT_CARD_CONFIG, [updated])
+    return deepClone(updated.layout)
+  }
+
+  return deepClone(existing.layout)
+}
+
+export async function updateReportCardLayoutConfig(
+  layout: Partial<ReportCardLayoutConfig>,
+): Promise<ReportCardLayoutConfig> {
+  const existing = ensureSingletonRecord<ReportCardConfigState>(
+    STORAGE_KEYS.REPORT_CARD_CONFIG,
+    createDefaultReportCardConfigRecord,
+  )
+
+  const timestamp = new Date().toISOString()
+  const normalizedLayout = applyLayoutDefaults(layout, generateId)
+
+  const updated: ReportCardConfigState = {
+    ...existing,
+    layout: normalizedLayout,
+    updatedAt: timestamp,
+  }
+
+  persistCollection(STORAGE_KEYS.REPORT_CARD_CONFIG, [updated])
+  return deepClone(updated.layout)
 }
 
 // Branding helpers
