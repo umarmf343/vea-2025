@@ -1485,6 +1485,37 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   )
   const feeFields = (getSectionConfig("fees")?.fields ?? []).filter((field) => field.enabled !== false)
 
+  const hasAttendanceData =
+    (typeof reportCardData.attendance.present === "number" && reportCardData.attendance.present > 0) ||
+    (typeof reportCardData.attendance.absent === "number" && reportCardData.attendance.absent > 0) ||
+    (typeof reportCardData.attendance.total === "number" && reportCardData.attendance.total > 0) ||
+    (typeof reportCardData.attendance.percentage === "number" && reportCardData.attendance.percentage > 0)
+
+  const hasFeeData = [termInfo?.nextTermFees, termInfo?.feesBalance].some((value) => {
+    if (typeof value === "number") {
+      return Number.isFinite(value)
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim()
+      if (trimmed.length === 0) {
+        return false
+      }
+
+      if (/^[-—]+$/.test(trimmed)) {
+        return false
+      }
+
+      return true
+    }
+
+    return false
+  })
+
+  const shouldShowAttendanceSection =
+    isSectionEnabled("attendance") && attendanceFields.length > 0 && hasAttendanceData
+  const shouldShowFeeSection = isSectionEnabled("fees") && feeFields.length > 0 && hasFeeData
+
   const showRemarksBlock = isSectionEnabled("remarks") && (classTeacherFieldEnabled || headTeacherFieldEnabled)
   const showPsychomotorBlock = isSectionEnabled("behavioral_psychomotor") && psychomotorSkills.length > 0
   const showAffectiveBlock = isSectionEnabled("behavioral_affective") && affectiveTraits.length > 0
@@ -1596,7 +1627,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             </div>
           )}
 
-          {isSectionEnabled("attendance") && attendanceFields.length > 0 && (
+          {shouldShowAttendanceSection && (
             <div className="attendance-box">
               <h4 className="attendance-title">{attendanceTitle}</h4>
               <div className="attendance-grid">
@@ -1784,7 +1815,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             </div>
           )}
 
-          {isSectionEnabled("fees") && feeFields.length > 0 && (
+          {shouldShowFeeSection && (
             <div className="fees-box">
               <h4 className="fees-title">{feesTitle}</h4>
               <div className="fees-grid">
