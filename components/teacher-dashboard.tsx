@@ -858,6 +858,20 @@ export function TeacherDashboard({
     [normalizeClassName, selectedClass, teacherClasses],
   )
 
+  const handleSelectSubject = useCallback(
+    (value: string) => {
+      const normalizedValue = typeof value === "string" ? value.trim() : ""
+
+      if (normalizedValue === selectedSubject.trim()) {
+        return
+      }
+
+      setMarksData([])
+      setSelectedSubject(normalizedValue)
+    },
+    [selectedSubject, setMarksData],
+  )
+
   const subjectsForSelectedClass = useMemo(() => {
     const subjectSet = new Set<string>()
     const normalizedName = normalizeClassName(selectedClass)
@@ -4601,8 +4615,12 @@ export function TeacherDashboard({
                     <Label>Subject</Label>
                     <Select
                       value={selectedSubject}
-                      onValueChange={setSelectedSubject}
-                      disabled={isContextLoading || isClassSubjectsLoading}
+                      onValueChange={handleSelectSubject}
+                      disabled={
+                        !selectedClass ||
+                        isContextLoading ||
+                        (isClassSubjectsLoading && availableSubjects.length === 0)
+                      }
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select Subject" />
