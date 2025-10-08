@@ -1463,10 +1463,7 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                           >
                             <div>
                               <p className="text-sm font-medium text-[#2d682d]">{teacher.teacherName}</p>
-                              <p className="text-xs text-gray-500">
-                                {teacher.role}
-                                {teacher.teacherEmail ? ` • ${teacher.teacherEmail}` : ""}
-                              </p>
+                              <p className="text-xs text-gray-500">{teacher.role}</p>
                             </div>
                           </li>
                         ))}
@@ -1493,9 +1490,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                             <p className="text-sm font-medium text-[#2d682d]">
                               {entry.teacherName ?? "Not Assigned"}
                             </p>
-                            {entry.teacherEmail ? (
-                              <p className="text-xs text-gray-500">{entry.teacherEmail}</p>
-                            ) : null}
                           </div>
                         ))}
                       </div>
@@ -1531,7 +1525,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                     : undefined
                   const teacherName =
                     assignedTeacher?.teacherName || subject.teacherName || "Not Assigned"
-                  const teacherEmail = assignedTeacher?.teacherEmail ?? null
 
                   return (
                     <div key={index} className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1541,9 +1534,6 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
                           <User className="mt-0.5 h-4 w-4 text-[#2d682d]" />
                           <div>
                             <p className="text-sm font-medium text-[#2d682d]">Teacher: {teacherName}</p>
-                            {teacherEmail ? (
-                              <p className="text-xs text-gray-500">{teacherEmail}</p>
-                            ) : null}
                           </div>
                         </div>
                         <div className="mt-3">
