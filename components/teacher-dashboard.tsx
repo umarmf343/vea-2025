@@ -5080,76 +5080,86 @@ export function TeacherDashboard({
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <Users className="h-8 w-8 text-[#2d682d]" />
-              <div>
-                <div className="flex items-center gap-2 text-[#2d682d]">
-                  {isTeacherStudentsLoading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <span className="text-2xl font-bold">{teacherStudents.length}</span>
-                  )}
+      {selectedTab === "overview" ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Card className="relative overflow-hidden border border-green-100/60 bg-gradient-to-br from-white via-white to-green-50 shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Students</p>
+                  <div className="mt-2 flex items-center gap-2 text-3xl font-semibold text-[#2d682d]">
+                    {isTeacherStudentsLoading ? (
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    ) : (
+                      <span>{teacherStudents.length}</span>
+                    )}
+                  </div>
                 </div>
-                <p className="text-sm text-gray-600">Students</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <BookOpen className="h-8 w-8 text-[#b29032]" />
-              <div>
-                <div className="flex items-center gap-2 text-[#b29032]">
-                  {isTeacherSubjectsLoading && teacherSubjects.length === 0 ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <span className="text-2xl font-bold">{teacherSubjects.length}</span>
-                  )}
+                <div className="rounded-full bg-[#2d682d]/10 p-3 text-[#2d682d]">
+                  <Users className="h-6 w-6" />
                 </div>
-                <p className="text-sm text-gray-600">Subjects</p>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <GraduationCap className="h-8 w-8 text-[#2d682d]" />
-              <div>
-                <div className="flex items-center gap-2 text-[#2d682d]">
-                  {isContextLoading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <span className="text-2xl font-bold">{teacherClasses.length}</span>
-                  )}
+            </CardContent>
+          </Card>
+          <Card className="relative overflow-hidden border border-amber-100/60 bg-gradient-to-br from-white via-white to-amber-50 shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Subjects</p>
+                  <div className="mt-2 flex items-center gap-2 text-3xl font-semibold text-[#b29032]">
+                    {isTeacherSubjectsLoading && teacherSubjects.length === 0 ? (
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    ) : (
+                      <span>{teacherSubjects.length}</span>
+                    )}
+                  </div>
                 </div>
-                <p className="text-sm text-gray-600">Classes</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <FileText className="h-8 w-8 text-[#b29032]" />
-              <div>
-                <div className="flex items-center gap-2 text-[#b29032]">
-                  {isExamLoading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <span className="text-2xl font-bold">{teacherExams.length}</span>
-                  )}
+                <div className="rounded-full bg-[#b29032]/10 p-3 text-[#b29032]">
+                  <BookOpen className="h-6 w-6" />
                 </div>
-                <p className="text-sm text-gray-600">Exams</p>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
+          <Card className="relative overflow-hidden border border-green-100/60 bg-gradient-to-br from-white via-white to-green-50 shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Classes</p>
+                  <div className="mt-2 flex items-center gap-2 text-3xl font-semibold text-[#2d682d]">
+                    {isContextLoading ? (
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    ) : (
+                      <span>{teacherClasses.length}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-full bg-[#2d682d]/10 p-3 text-[#2d682d]">
+                  <GraduationCap className="h-6 w-6" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="relative overflow-hidden border border-amber-100/60 bg-gradient-to-br from-white via-white to-amber-50 shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Exams</p>
+                  <div className="mt-2 flex items-center gap-2 text-3xl font-semibold text-[#b29032]">
+                    {isExamLoading ? (
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    ) : (
+                      <span>{teacherExams.length}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-full bg-[#b29032]/10 p-3 text-[#b29032]">
+                  <FileText className="h-6 w-6" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
 
       {/* Main Content */}
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
