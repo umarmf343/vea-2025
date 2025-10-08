@@ -25,6 +25,14 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
 import {
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import {
   BookOpen,
   Users,
   FileText,
@@ -46,6 +54,8 @@ import {
   RefreshCw,
   AlertTriangle,
   UserPlus,
+  ArrowRightLeft,
+  Check,
 } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
@@ -417,6 +427,7 @@ export function TeacherDashboard({
   const [selectedSubject, setSelectedSubject] = useState(
     () => firstTeacherClass?.subjects[0] ?? teacher.subjects[0] ?? "",
   )
+  const [isSubjectSwitcherOpen, setIsSubjectSwitcherOpen] = useState(false)
   const rememberedSubjectByClassRef = useRef(new Map<string, string>())
   const [classSubjectsMap, setClassSubjectsMap] = useState<Record<string, string[]>>({})
   const [isClassSubjectsLoading, setIsClassSubjectsLoading] = useState(false)
@@ -912,6 +923,14 @@ export function TeacherDashboard({
       setSelectedSubject(normalizedValue)
     },
     [selectedSubject, setMarksData],
+  )
+
+  const handleSubjectSwitch = useCallback(
+    (value: string) => {
+      setIsSubjectSwitcherOpen(false)
+      handleSelectSubject(value)
+    },
+    [handleSelectSubject],
   )
 
   const subjectsForSelectedClass = useMemo(() => {
@@ -4688,6 +4707,17 @@ export function TeacherDashboard({
                         )}
                       </SelectContent>
                     </Select>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2 h-8 justify-start px-2 text-xs text-[#2d682d] hover:bg-[#2d682d]/10"
+                      onClick={() => setIsSubjectSwitcherOpen(true)}
+                      disabled={isSubjectSelectDisabled || !hasAvailableSubjects}
+                    >
+                      <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+                      Switch subject
+                    </Button>
                     {classSubjectsError ? (
                       <p className="mt-2 text-xs text-red-600">{classSubjectsError}</p>
                     ) : classSubjectsNotice ? (
@@ -5796,6 +5826,37 @@ export function TeacherDashboard({
           <InternalMessaging currentUser={{ id: teacher.id, name: teacher.name, role: "teacher" }} />
         </TabsContent>
       </Tabs>
+
+      <CommandDialog
+        open={isSubjectSwitcherOpen}
+        onOpenChange={setIsSubjectSwitcherOpen}
+        title="Switch subject"
+        description="Quickly change the subject you're entering marks for"
+      >
+        <CommandInput placeholder="Search subjects..." />
+        <CommandList>
+          <CommandEmpty>No matching subjects found.</CommandEmpty>
+          <CommandGroup heading="Available subjects">
+            {availableSubjects.map((subject) => {
+              const normalized = subject.trim().toLowerCase()
+              const isActive = normalized === selectedSubject.trim().toLowerCase()
+
+              return (
+                <CommandItem
+                  key={subject}
+                  value={normalized}
+                  onSelect={() => handleSubjectSwitch(subject)}
+                >
+                  <div className="flex w-full items-center justify-between">
+                    <span>{subject}</span>
+                    {isActive ? <Check className="h-4 w-4 text-[#2d682d]" /> : null}
+                  </div>
+                </CommandItem>
+              )
+            })}
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
 
       <Dialog
         open={isAddStudentDialogOpen}
