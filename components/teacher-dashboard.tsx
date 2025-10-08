@@ -434,6 +434,7 @@ type TeacherScopedStudent = {
   id: string
   name: string
   className: string
+  classId: string | null
   subjects: string[]
   status: string
 }
@@ -1238,22 +1239,54 @@ export function TeacherDashboard({
             normalizeStudentString(source.name) ||
             `Student ${id.slice(-4)}`
 
-          const classCandidate =
+          const classNameCandidate =
             normalizeStudentString(source.class) ||
             normalizeStudentString((source as { className?: unknown }).className) ||
             normalizeStudentString(
               ((source as { metadata?: { assignedClassName?: unknown } }).metadata ?? {}).assignedClassName,
+            )
+          const classIdCandidate =
+            normalizeStudentString((source as { classId?: unknown }).classId) ||
+            normalizeStudentString((source as { class_id?: unknown }).class_id) ||
+            normalizeStudentString(
+              ((source as { metadata?: { classId?: unknown; class_id?: unknown } }).metadata ?? {}).classId,
             ) ||
-            fallbackClassName
+            normalizeStudentString(
+              ((source as { metadata?: { classId?: unknown; class_id?: unknown } }).metadata ?? {}).class_id,
+            )
 
-          const normalizedToken = normalizeClassToken(classCandidate)
+          const resolvedClassName = classNameCandidate || classIdCandidate || fallbackClassName
 
-          if (tokenSet.size > 0 && normalizedToken && !tokenSet.has(normalizedToken)) {
-            return null
+          const candidateTokens = new Set<string>()
+          const classNameToken = normalizeClassToken(classNameCandidate)
+          const classIdToken = normalizeClassToken(classIdCandidate)
+
+          if (classNameToken) {
+            candidateTokens.add(classNameToken)
           }
 
-          if (tokenSet.size > 0 && normalizedToken === "" && teacherHasAssignedClasses) {
-            return null
+          if (classIdToken) {
+            candidateTokens.add(classIdToken)
+          }
+
+          if (tokenSet.size > 0) {
+            if (candidateTokens.size === 0) {
+              if (teacherHasAssignedClasses) {
+                return null
+              }
+            } else {
+              let matchesToken = false
+              for (const token of candidateTokens) {
+                if (token && tokenSet.has(token)) {
+                  matchesToken = true
+                  break
+                }
+              }
+
+              if (!matchesToken) {
+                return null
+              }
+            }
           }
 
           const rawSubjects = (source as { subjects?: unknown }).subjects
@@ -1268,7 +1301,8 @@ export function TeacherDashboard({
           return {
             id,
             name,
-            className: classCandidate || fallbackClassName || "",
+            className: resolvedClassName || fallbackClassName || "",
+            classId: classIdCandidate || null,
             subjects,
             status,
           }
@@ -1310,13 +1344,13 @@ export function TeacherDashboard({
     }
   }, [normalizeTeacherStudentRecords])
 
-  const refreshTeacherStudents = useCallback(async () => {
+  const refreshTeacherStudents = useCallback(async (): Promise<TeacherScopedStudent[]> => {
     if (!teacherHasAssignedClasses) {
       setIsTeacherStudentsLoading(false)
       setTeacherStudents([])
       setTeacherStudentsError(null)
       setTeacherStudentsMessage("You are not assigned to any students. Contact your administrator.")
-      return
+      return []
     }
 
     const token = safeStorage.getItem("vea_auth_token")
@@ -1325,7 +1359,7 @@ export function TeacherDashboard({
       setTeacherStudentsError("Your session has expired. Please log in again.")
       setTeacherStudentsMessage(null)
       setIsTeacherStudentsLoading(false)
-      return
+      return []
     }
 
     setIsTeacherStudentsLoading(true)
@@ -1336,6 +1370,7 @@ export function TeacherDashboard({
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        cache: "no-store",
       })
 
       const payload = await response.json().catch(() => ({}))
@@ -1355,17 +1390,17 @@ export function TeacherDashboard({
             setTeacherStudents(cachedStudents)
             setTeacherStudentsError(null)
             setTeacherStudentsMessage(TEACHER_STUDENTS_CACHE_NOTICE)
-          } else {
-            logger.warn("Student endpoint returned 404 for teacher scope", {
-              teacherId: teacher.id,
-            })
-
-            setTeacherStudents([])
-            setTeacherStudentsError(null)
-            setTeacherStudentsMessage(fallbackMessage)
+            return cachedStudents
           }
 
-          return
+          logger.warn("Student endpoint returned 404 for teacher scope", {
+            teacherId: teacher.id,
+          })
+
+          setTeacherStudents([])
+          setTeacherStudentsError(null)
+          setTeacherStudentsMessage(fallbackMessage)
+          return []
         }
 
         const message =
@@ -1390,6 +1425,8 @@ export function TeacherDashboard({
       } else {
         setTeacherStudentsMessage(null)
       }
+
+      return normalizedRecords
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to load students"
       logger.error("Failed to load teacher students", { error: message, teacherId: teacher.id })
@@ -1399,10 +1436,12 @@ export function TeacherDashboard({
         setTeacherStudents(cachedStudents)
         setTeacherStudentsError(null)
         setTeacherStudentsMessage(TEACHER_STUDENTS_CACHE_NOTICE)
-      } else {
-        setTeacherStudentsError(message)
-        setTeacherStudents([])
+        return cachedStudents
       }
+
+      setTeacherStudentsError(message)
+      setTeacherStudents([])
+      return []
     } finally {
       setIsTeacherStudentsLoading(false)
     }
@@ -1436,6 +1475,16 @@ export function TeacherDashboard({
     teacherSubjects.length > 0 ? teacherSubjects.join(", ") : "No subjects assigned yet"
   const classSummary =
     teacherClassNames.length > 0 ? teacherClassNames.join(", ") : "No classes assigned yet"
+  const studentSummary = isTeacherStudentsLoading
+    ? "Loading students..."
+    : teacherStudents.length > 0
+      ? `${teacherStudents.length} assigned ${teacherStudents.length === 1 ? "student" : "students"}`
+      : teacherStudentsMessage ?? "No students assigned yet"
+  const examSummary = isExamLoading
+    ? "Loading exams..."
+    : teacherExams.length > 0
+      ? `${teacherExams.length} scheduled ${teacherExams.length === 1 ? "exam" : "exams"}`
+      : "No exams scheduled yet"
 
   const handleSelectClass = useCallback(
     (value: string) => {
@@ -1710,15 +1759,6 @@ export function TeacherDashboard({
     teacherClasses,
   ])
 
-  const mockStudents = useMemo(
-    () => [
-      { id: "student_john_doe", name: "John Doe", class: "JSS 1A", subjects: ["Mathematics", "English"] },
-      { id: "student_alice_smith", name: "Alice Smith", class: "JSS 1A", subjects: ["Mathematics"] },
-      { id: "student_mike_johnson", name: "Mike Johnson", class: "JSS 2B", subjects: ["English"] },
-    ],
-    [],
-  )
-
   const formatExamDate = (value: string) => {
     try {
       return new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short" }).format(new Date(value))
@@ -1941,17 +1981,49 @@ export function TeacherDashboard({
         }
       }
 
-      if (roster.size === 0) {
-        mockStudents
+      if (roster.size === 0 && teacherStudents.length > 0) {
+        const normalizedLabelTokens = new Set<string>()
+        const normalizedLabelName = normalizeClassName(classLabel)
+        const normalizedLabelDisplay = normalizeClassToken(classLabel)
+
+        if (normalizedLabelName) {
+          normalizedLabelTokens.add(normalizedLabelName)
+        }
+        if (normalizedLabelDisplay) {
+          normalizedLabelTokens.add(normalizedLabelDisplay)
+        }
+        if (classLabel) {
+          normalizedLabelTokens.add(classLabel.trim().toLowerCase())
+        }
+
+        teacherStudents
           .filter((student) => {
-            if (!classLabel) {
+            if (normalizedLabelTokens.size === 0) {
               return true
             }
-            return normalizeClassName(student.class) === normalizeClassName(classLabel)
+
+            const studentTokens = new Set<string>()
+            if (student.className) {
+              studentTokens.add(normalizeClassName(student.className))
+              studentTokens.add(normalizeClassToken(student.className))
+              studentTokens.add(student.className.trim().toLowerCase())
+            }
+            if (student.classId) {
+              studentTokens.add(normalizeClassToken(student.classId))
+              studentTokens.add(student.classId.trim().toLowerCase())
+            }
+
+            return Array.from(studentTokens).some(
+              (token) => token && normalizedLabelTokens.has(token),
+            )
           })
           .forEach((student) => {
             if (assignedIds.size === 0 || assignedIds.has(student.id)) {
-              addStudent({ id: student.id, name: student.name, className: student.class })
+              addStudent({
+                id: student.id,
+                name: student.name,
+                className: student.className ?? assignment.className ?? null,
+              })
             }
           })
       }
@@ -1963,8 +2035,8 @@ export function TeacherDashboard({
       })
 
       return Object.fromEntries(roster.entries())
-    },
-    [mockStudents],
+  },
+    [normalizeClassName, teacherStudents],
   )
 
   const combinedSubmissionRecords = useMemo(() => {
@@ -2176,8 +2248,10 @@ export function TeacherDashboard({
   const suppressMarksRefreshRef = useRef(false)
 
   const loadRosterCandidates = useCallback(async () => {
-    if (!selectedClass) {
+    if (!selectedClass && !selectedClassId) {
       setRosterCandidates([])
+      setSelectedRosterId(null)
+      setRosterNotice("Select a class to load the roster.")
       return
     }
 
@@ -2187,75 +2261,173 @@ export function TeacherDashboard({
     const existingIds = new Set(marksData.map((student) => String(student.studentId)))
     const candidateMap = new Map<string, AssignmentStudentInfo>()
 
-    try {
-      const roster = await dbManager.getStudentsByClass(selectedClass)
-      if (Array.isArray(roster)) {
-        roster.forEach((entry: any) => {
-          const rawId = typeof entry?.id === "string" ? entry.id : String(entry?.id ?? "")
-          const normalizedId = rawId.trim()
-          if (!normalizedId || existingIds.has(normalizedId)) {
-            return
+    const selectedTokens = new Set<string>()
+    const normalizedSelectedName = selectedClass ? normalizeClassName(selectedClass) : ""
+    const normalizedSelectedDisplay = selectedClass ? normalizeClassToken(selectedClass) : ""
+    const normalizedSelectedId = selectedClassId ? normalizeClassToken(selectedClassId) : ""
+
+    if (normalizedSelectedName) {
+      selectedTokens.add(normalizedSelectedName)
+    }
+    if (normalizedSelectedDisplay) {
+      selectedTokens.add(normalizedSelectedDisplay)
+    }
+    if (normalizedSelectedId) {
+      selectedTokens.add(normalizedSelectedId)
+    }
+    if (selectedClass) {
+      selectedTokens.add(selectedClass.trim().toLowerCase())
+    }
+    if (selectedClassId) {
+      selectedTokens.add(selectedClassId.trim().toLowerCase())
+    }
+
+    const registerCandidates = (records: TeacherScopedStudent[]) => {
+      records.forEach((student) => {
+        const normalizedId = normalizeStudentString(student.id)
+        if (!normalizedId || existingIds.has(normalizedId) || candidateMap.has(normalizedId)) {
+          return
+        }
+
+        const candidateClassName = student.className || selectedClass || ""
+        const candidateClassId = student.classId || null
+
+        const candidateTokens = new Set<string>()
+        const normalizedCandidateName = candidateClassName ? normalizeClassName(candidateClassName) : ""
+        const normalizedCandidateDisplay = candidateClassName ? normalizeClassToken(candidateClassName) : ""
+        const normalizedCandidateId = candidateClassId ? normalizeClassToken(candidateClassId) : ""
+
+        if (normalizedCandidateName) {
+          candidateTokens.add(normalizedCandidateName)
+        }
+        if (normalizedCandidateDisplay) {
+          candidateTokens.add(normalizedCandidateDisplay)
+        }
+        if (normalizedCandidateId) {
+          candidateTokens.add(normalizedCandidateId)
+        }
+        if (candidateClassName) {
+          candidateTokens.add(candidateClassName.trim().toLowerCase())
+        }
+        if (candidateClassId) {
+          candidateTokens.add(candidateClassId.trim().toLowerCase())
+        }
+
+        const matchesSelection =
+          selectedTokens.size === 0 ||
+          Array.from(candidateTokens).some((token) => token && selectedTokens.has(token))
+
+        if (!matchesSelection) {
+          return
+        }
+
+        candidateMap.set(normalizedId, {
+          id: normalizedId,
+          name: student.name,
+          className: candidateClassName || selectedClass || null,
+        })
+      })
+    }
+
+    registerCandidates(teacherStudents)
+
+    if (teacherStudents.length === 0) {
+      const refreshed = await refreshTeacherStudents()
+      if (Array.isArray(refreshed) && refreshed.length > 0) {
+        registerCandidates(refreshed)
+      }
+    }
+
+    let nextNotice: string | null = null
+    const token = safeStorage.getItem("vea_auth_token")
+
+    if (!token) {
+      nextNotice = "Your session has expired. Please log in again."
+    } else {
+      try {
+        const searchParams = new URLSearchParams()
+        const classQuery = selectedClassId || selectedClass
+        if (classQuery) {
+          searchParams.set("class", classQuery)
+        }
+
+        const response = await fetch(
+          `/api/students${searchParams.size > 0 ? `?${searchParams.toString()}` : ""}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            cache: "no-store",
+          },
+        )
+        const payload = await response.json().catch(() => ({}))
+
+        if (response.ok) {
+          const normalized = normalizeTeacherStudentRecords((payload as { students?: unknown }).students ?? [])
+          registerCandidates(normalized)
+
+          if (candidateMap.size === 0) {
+            nextNotice =
+              normalizeStudentString((payload as { message?: unknown }).message) ||
+              "No students available for this class."
+          } else {
+            const infoMessage = normalizeStudentString((payload as { message?: unknown }).message)
+            if (infoMessage) {
+              nextNotice = infoMessage
+            }
+          }
+        } else {
+          let message =
+            typeof (payload as { error?: unknown }).error === "string"
+              ? (payload as { error?: string }).error
+              : null
+
+          if (response.status === 401) {
+            message = "Your session has expired. Please log in again."
+          } else if (response.status === 403) {
+            message = "You do not have permission to view this class roster."
+          } else if (response.status === 404) {
+            message =
+              normalizeStudentString((payload as { message?: unknown }).message) ||
+              "No students available for this class."
+          } else if (!message) {
+            message = "Unable to load the class roster. Please try again."
           }
 
-          const nameCandidate =
-            typeof entry?.name === "string"
-              ? entry.name
-              : typeof entry?.fullName === "string"
-                ? entry.fullName
-                : null
-          const classCandidate =
-            typeof entry?.class === "string"
-              ? entry.class
-              : typeof entry?.className === "string"
-                ? entry.className
-                : selectedClass
-
-          candidateMap.set(normalizedId, {
-            id: normalizedId,
-            name: nameCandidate,
-            className: classCandidate ?? selectedClass,
-          })
-        })
-      }
-    } catch (error) {
-      logger.warn("Unable to load class roster for grade entry", { error })
-      setRosterNotice(
-        "We couldn't load the class roster from the database. Please refresh or try again shortly.",
-      )
-    }
-
-    if (candidateMap.size === 0) {
-      const fallback = mockStudents
-        .filter((student) =>
-          selectedClass
-            ? normalizeClassName(student.class) === normalizeClassName(selectedClass)
-            : true,
-        )
-        .filter((student) => !existingIds.has(student.id))
-
-      if (fallback.length > 0) {
-        fallback.forEach((student) => {
-          candidateMap.set(student.id, {
-            id: student.id,
-            name: student.name,
-            className: student.class,
-          })
-        })
-
-        setRosterNotice(
-          "No school roster records were found. Showing sample students instead.",
-        )
+          nextNotice = message
+        }
+      } catch (error) {
+        logger.warn("Unable to load class roster for grade entry", { error })
+        nextNotice =
+          candidateMap.size === 0
+            ? "We couldn't load the class roster from the database. Please refresh or try again shortly."
+            : "Some students may be missing because the roster could not be fully loaded."
       }
     }
 
-    if (candidateMap.size === 0) {
-      setRosterNotice("No available students for this class.")
+    const nextCandidates = Array.from(candidateMap.values()).sort((a, b) => {
+      const left = a.name ?? a.id
+      const right = b.name ?? b.id
+      return left.localeCompare(right, undefined, { sensitivity: "base" })
+    })
+
+    if (nextCandidates.length === 0 && !nextNotice) {
+      nextNotice = "No students available for this class."
     }
 
-    setRosterCandidates(Array.from(candidateMap.values()))
+    setRosterCandidates(nextCandidates)
     setSelectedRosterId(null)
+    setRosterNotice(nextNotice)
     setIsRosterLoading(false)
-  }, [marksData, mockStudents, normalizeClassName, selectedClass])
+  }, [
+    marksData,
+    normalizeClassName,
+    normalizeTeacherStudentRecords,
+    refreshTeacherStudents,
+    selectedClass,
+    selectedClassId,
+    teacherStudents,
+  ])
 
   useEffect(() => {
     if (!isAddStudentDialogOpen) {
@@ -4861,6 +5033,8 @@ export function TeacherDashboard({
             <div className="text-green-100 text-sm sm:text-base space-y-1">
               <p>Subjects: {subjectSummary}</p>
               <p>Classes: {classSummary}</p>
+              <p>Students: {studentSummary}</p>
+              <p>Exams: {examSummary}</p>
             </div>
           </div>
           <div className="flex flex-col items-start gap-2 sm:items-end">
@@ -4891,7 +5065,13 @@ export function TeacherDashboard({
             <div className="flex items-center space-x-2">
               <Users className="h-8 w-8 text-[#2d682d]" />
               <div>
-                <p className="text-2xl font-bold text-[#2d682d]">{mockStudents.length}</p>
+                <div className="flex items-center gap-2 text-[#2d682d]">
+                  {isTeacherStudentsLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <span className="text-2xl font-bold">{teacherStudents.length}</span>
+                  )}
+                </div>
                 <p className="text-sm text-gray-600">Students</p>
               </div>
             </div>
@@ -4902,7 +5082,13 @@ export function TeacherDashboard({
             <div className="flex items-center space-x-2">
               <BookOpen className="h-8 w-8 text-[#b29032]" />
               <div>
-                <p className="text-2xl font-bold text-[#b29032]">{teacherSubjects.length}</p>
+                <div className="flex items-center gap-2 text-[#b29032]">
+                  {isTeacherSubjectsLoading && teacherSubjects.length === 0 ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <span className="text-2xl font-bold">{teacherSubjects.length}</span>
+                  )}
+                </div>
                 <p className="text-sm text-gray-600">Subjects</p>
               </div>
             </div>
@@ -4913,7 +5099,13 @@ export function TeacherDashboard({
             <div className="flex items-center space-x-2">
               <GraduationCap className="h-8 w-8 text-[#2d682d]" />
               <div>
-                <p className="text-2xl font-bold text-[#2d682d]">{teacherClasses.length}</p>
+                <div className="flex items-center gap-2 text-[#2d682d]">
+                  {isContextLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <span className="text-2xl font-bold">{teacherClasses.length}</span>
+                  )}
+                </div>
                 <p className="text-sm text-gray-600">Classes</p>
               </div>
             </div>
@@ -4924,9 +5116,13 @@ export function TeacherDashboard({
             <div className="flex items-center space-x-2">
               <FileText className="h-8 w-8 text-[#b29032]" />
               <div>
-                <p className="text-2xl font-bold text-[#b29032]">
-                  {isExamLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : teacherExams.length}
-                </p>
+                <div className="flex items-center gap-2 text-[#b29032]">
+                  {isExamLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <span className="text-2xl font-bold">{teacherExams.length}</span>
+                  )}
+                </div>
                 <p className="text-sm text-gray-600">Exams</p>
               </div>
             </div>
