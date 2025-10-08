@@ -942,6 +942,24 @@ export function TeacherDashboard({
     teacherClasses,
   ])
 
+  const availableSubjects = useMemo(() => {
+    const merged = new Set<string>()
+
+    subjectsForSelectedClass.forEach((subject) => {
+      if (typeof subject === "string" && subject.trim().length > 0) {
+        merged.add(subject.trim())
+      }
+    })
+
+    teacher.subjects.forEach((subject) => {
+      if (typeof subject === "string" && subject.trim().length > 0) {
+        merged.add(subject.trim())
+      }
+    })
+
+    return Array.from(merged).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+  }, [subjectsForSelectedClass, teacher.subjects])
+
   useEffect(() => {
     if (teacherClasses.length === 0) {
       if (selectedClass || selectedClassId) {
@@ -977,6 +995,23 @@ export function TeacherDashboard({
   ])
 
   useEffect(() => {
+    if (availableSubjects.length === 0) {
+      setSelectedSubject("")
+      return
+    }
+
+    setSelectedSubject((prev) => {
+      const normalizedPrev = prev.trim().toLowerCase()
+      const normalizedOptions = availableSubjects.map((subject) => subject.trim().toLowerCase())
+      if (normalizedPrev && normalizedOptions.includes(normalizedPrev)) {
+        return prev
+      }
+
+      return availableSubjects[0] ?? ""
+    })
+  }, [availableSubjects])
+
+  useEffect(() => {
     setAssignmentForm((prev) => {
       const normalizedSelection = normalizeClassName(selectedClass)
       const defaultClass =
@@ -984,11 +1019,11 @@ export function TeacherDashboard({
         teacherClasses.find((cls) => normalizeClassName(cls.name) === normalizedSelection)
       const fallbackClass = defaultClass ?? teacherClasses[0] ?? null
       const normalizedPrevSubject = typeof prev.subject === "string" ? prev.subject.trim().toLowerCase() : ""
-      const normalizedOptions = subjectsForSelectedClass.map((subject) => subject.trim().toLowerCase())
+      const normalizedOptions = availableSubjects.map((subject) => subject.trim().toLowerCase())
       const nextSubject =
         normalizedPrevSubject && normalizedOptions.includes(normalizedPrevSubject)
           ? prev.subject
-          : subjectsForSelectedClass[0] ?? ""
+          : availableSubjects[0] ?? ""
 
       return {
         ...prev,
@@ -998,10 +1033,10 @@ export function TeacherDashboard({
       }
     })
   }, [
+    availableSubjects,
     normalizeClassName,
     selectedClass,
     selectedClassId,
-    subjectsForSelectedClass,
     teacherClasses,
   ])
 
@@ -1117,23 +1152,6 @@ export function TeacherDashboard({
   }
 
   useEffect(() => {
-    if (subjectsForSelectedClass.length === 0) {
-      setSelectedSubject("")
-      return
-    }
-
-    setSelectedSubject((prev) => {
-      const normalizedPrev = prev.trim().toLowerCase()
-      const normalizedOptions = subjectsForSelectedClass.map((subject) => subject.trim().toLowerCase())
-      if (normalizedPrev && normalizedOptions.includes(normalizedPrev)) {
-        return prev
-      }
-
-      return subjectsForSelectedClass[0] ?? ""
-    })
-  }, [subjectsForSelectedClass])
-
-  useEffect(() => {
     if (!teacherHasAssignedClasses) {
       setTeacherStudents([])
       setTeacherStudentsError(null)
@@ -1144,6 +1162,12 @@ export function TeacherDashboard({
     setTeacherStudentsMessage(null)
     void refreshTeacherStudents()
   }, [refreshTeacherStudents, teacherHasAssignedClasses])
+
+  useEffect(() => {
+    if (selectedTab === "students") {
+      void refreshTeacherStudents()
+    }
+  }, [refreshTeacherStudents, selectedTab])
 
   useEffect(() => {
     const handleStudentsRefreshed = (payload?: unknown) => {
@@ -4258,7 +4282,7 @@ export function TeacherDashboard({
         </div>
 
         <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             <Card>
               <CardHeader>
                 <CardTitle className="text-[#2d682d]">My Classes</CardTitle>
@@ -4297,16 +4321,60 @@ export function TeacherDashboard({
               </CardContent>
             </Card>
 
-              <ExamScheduleOverview
-                role="teacher"
+            <ExamScheduleOverview
+              role="teacher"
                 title="Upcoming Exams"
                 description="Next scheduled assessments across your assigned classes."
                 classNames={teacherClassNames}
                 classIds={teacherClassIds}
                 className="h-full"
                 emptyState="No upcoming exams scheduled for your classes."
-                limit={4}
-              />
+              limit={4}
+            />
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-[#2d682d]">Assigned Students</CardTitle>
+                <CardDescription>Quick view of students linked to your classes</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {isTeacherStudentsLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading your students...
+                  </div>
+                ) : teacherStudentsError ? (
+                  <p className="text-sm text-red-600">{teacherStudentsError}</p>
+                ) : teacherStudents.length === 0 ? (
+                  <p className="text-sm text-gray-600">
+                    {teacherStudentsMessage ?? "No students found for your assigned classes yet."}
+                  </p>
+                ) : (
+                  <>
+                    <div>
+                      <p className="text-2xl font-semibold text-[#2d682d]">{teacherStudents.length}</p>
+                      <p className="text-sm text-gray-600">Students across your assigned classes</p>
+                    </div>
+                    <div className="space-y-2">
+                      {teacherStudents.slice(0, 3).map((student) => (
+                        <div key={student.id} className="flex flex-col text-sm text-gray-700">
+                          <span className="font-medium text-gray-900">{student.name}</span>
+                          <span className="text-gray-600">
+                            {student.className ? student.className : "Class not set"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <Button
+                  variant="outline"
+                  className="inline-flex items-center gap-2"
+                  onClick={() => setSelectedTab("students")}
+                >
+                  <Users className="h-4 w-4" /> View all students
+                </Button>
+              </CardContent>
+            </Card>
           </div>
 
           <SchoolCalendarViewer role="teacher" />
@@ -4486,12 +4554,7 @@ export function TeacherDashboard({
                     <Select
                       value={selectedSubject}
                       onValueChange={setSelectedSubject}
-                      disabled={
-                        noClassesAssigned ||
-                        subjectsForSelectedClass.length === 0 ||
-                        isContextLoading ||
-                        isClassSubjectsLoading
-                      }
+                      disabled={isContextLoading || isClassSubjectsLoading}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select Subject" />
@@ -4501,16 +4564,16 @@ export function TeacherDashboard({
                           <SelectItem value="__loading_subjects__" disabled>
                             Loading subjects...
                           </SelectItem>
-                        ) : subjectsForSelectedClass.length === 0 ? (
+                        ) : availableSubjects.length === 0 ? (
                           <SelectItem value="__no_subjects__" disabled>
-                            {noClassesAssigned
-                              ? "No class assigned"
-                              : classSubjectsError
-                                ? "Unable to load subjects"
+                            {classSubjectsError
+                              ? "Unable to load subjects"
+                              : noClassesAssigned
+                                ? "No class assigned"
                                 : "No subjects available"}
                           </SelectItem>
                         ) : (
-                          subjectsForSelectedClass.map((subject) => (
+                          availableSubjects.map((subject) => (
                             <SelectItem key={subject} value={subject}>
                               {subject}
                             </SelectItem>
@@ -4522,7 +4585,7 @@ export function TeacherDashboard({
                       <p className="mt-2 text-xs text-red-600">{classSubjectsError}</p>
                     ) : classSubjectsNotice ? (
                       <p className="mt-2 text-xs text-amber-600">{classSubjectsNotice}</p>
-                    ) : subjectsForSelectedClass.length === 0 && !isClassSubjectsLoading ? (
+                    ) : availableSubjects.length === 0 && !isClassSubjectsLoading ? (
                       <p className="mt-2 text-xs text-amber-600">
                         Select a class to view its assigned subjects.
                       </p>
