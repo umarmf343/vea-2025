@@ -2709,14 +2709,32 @@ export async function getAllClassesFromDb(): Promise<ClassRecord[]> {
   return deepClone(classes)
 }
 
+const normaliseClassIdentifier = (value: string): string =>
+  value.replace(/\s+/g, "").toLowerCase()
+
 export async function getClassRecordById(id: string): Promise<ClassRecord | null> {
   if (!id) {
     return null
   }
 
+  const trimmedId = id.trim()
+  if (!trimmedId) {
+    return null
+  }
+
   const classes = ensureCollection<ClassRecord>(STORAGE_KEYS.CLASSES, createDefaultClasses)
-  const match = classes.find((record) => record.id === id)
-  return match ? deepClone(match) : null
+  const exactMatch = classes.find((record) => record.id === trimmedId)
+  if (exactMatch) {
+    return deepClone(exactMatch)
+  }
+
+  const normalisedTarget = normaliseClassIdentifier(trimmedId)
+  const fallbackMatch =
+    classes.find((record) => normaliseClassIdentifier(record.id) === normalisedTarget) ??
+    classes.find((record) => normaliseClassIdentifier(record.name) === normalisedTarget) ??
+    null
+
+  return fallbackMatch ? deepClone(fallbackMatch) : null
 }
 
 export async function createClassRecord(payload: CreateClassPayload): Promise<ClassRecord> {
