@@ -163,6 +163,10 @@ type TeacherScopedStudent = {
   status: string
 }
 
+const TEACHER_STUDENTS_CACHE_KEY = "vea_teacher_students_cache"
+const TEACHER_STUDENTS_CACHE_NOTICE =
+  "Showing the last known student roster because the live student service is temporarily unavailable."
+
 interface TeacherDashboardProps {
   teacher: {
     id: string
@@ -666,6 +670,38 @@ export function TeacherDashboard({
     [teacherClasses, teacherClassTokenList, teacherHasAssignedClasses],
   )
 
+  const cacheTeacherStudentRoster = useCallback((records: TeacherScopedStudent[]) => {
+    try {
+      if (!Array.isArray(records) || records.length === 0) {
+        safeStorage.removeItem(TEACHER_STUDENTS_CACHE_KEY)
+        return
+      }
+
+      safeStorage.setItem(TEACHER_STUDENTS_CACHE_KEY, JSON.stringify(records))
+    } catch (error) {
+      logger.warn("Failed to cache teacher student roster", {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }, [])
+
+  const readTeacherStudentCache = useCallback((): TeacherScopedStudent[] => {
+    try {
+      const raw = safeStorage.getItem(TEACHER_STUDENTS_CACHE_KEY)
+      if (!raw) {
+        return []
+      }
+
+      const parsed = JSON.parse(raw) as unknown
+      return normalizeTeacherStudentRecords(parsed)
+    } catch (error) {
+      logger.warn("Failed to read cached teacher student roster", {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return []
+    }
+  }, [normalizeTeacherStudentRecords])
+
   const refreshTeacherStudents = useCallback(async () => {
     if (!teacherHasAssignedClasses) {
       setIsTeacherStudentsLoading(false)
@@ -701,14 +737,26 @@ export function TeacherDashboard({
           const fallbackMessage =
             normalizeStudentString((payload as { message?: unknown }).message) ||
             "Student records are not available right now. Please try again later."
+          const cachedStudents = readTeacherStudentCache()
 
-          logger.warn("Student endpoint returned 404 for teacher scope", {
-            teacherId: teacher.id,
-          })
+          if (cachedStudents.length > 0) {
+            logger.info("Student endpoint returned 404; using cached roster", {
+              teacherId: teacher.id,
+            })
 
-          setTeacherStudents([])
-          setTeacherStudentsError(null)
-          setTeacherStudentsMessage(fallbackMessage)
+            setTeacherStudents(cachedStudents)
+            setTeacherStudentsError(null)
+            setTeacherStudentsMessage(TEACHER_STUDENTS_CACHE_NOTICE)
+          } else {
+            logger.warn("Student endpoint returned 404 for teacher scope", {
+              teacherId: teacher.id,
+            })
+
+            setTeacherStudents([])
+            setTeacherStudentsError(null)
+            setTeacherStudentsMessage(fallbackMessage)
+          }
+
           return
         }
 
@@ -724,6 +772,7 @@ export function TeacherDashboard({
         : []
       const normalizedRecords = normalizeTeacherStudentRecords(rawStudents)
       setTeacherStudents(normalizedRecords)
+      cacheTeacherStudentRoster(normalizedRecords)
 
       const responseMessage = normalizeStudentString((payload as { message?: unknown }).message)
       if (responseMessage) {
@@ -736,12 +785,27 @@ export function TeacherDashboard({
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to load students"
       logger.error("Failed to load teacher students", { error: message, teacherId: teacher.id })
-      setTeacherStudentsError(message)
-      setTeacherStudents([])
+      const cachedStudents = readTeacherStudentCache()
+
+      if (cachedStudents.length > 0) {
+        setTeacherStudents(cachedStudents)
+        setTeacherStudentsError(null)
+        setTeacherStudentsMessage(TEACHER_STUDENTS_CACHE_NOTICE)
+      } else {
+        setTeacherStudentsError(message)
+        setTeacherStudents([])
+      }
     } finally {
       setIsTeacherStudentsLoading(false)
     }
-  }, [normalizeTeacherStudentRecords, teacher.id, teacherHasAssignedClasses, teacherClassTokenKey])
+  }, [
+    cacheTeacherStudentRoster,
+    normalizeTeacherStudentRecords,
+    readTeacherStudentCache,
+    teacher.id,
+    teacherHasAssignedClasses,
+    teacherClassTokenKey,
+  ])
 
   const [teacherExams, setTeacherExams] = useState<TeacherExamSummary[]>([])
   const [isExamLoading, setIsExamLoading] = useState(true)
