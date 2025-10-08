@@ -828,6 +828,7 @@ export function TeacherDashboard({
     const runtime = getBrowserRuntime()
     const abortController = typeof AbortController !== "undefined" ? new AbortController() : null
     let timeoutId: ReturnType<typeof setTimeout> | null = null
+    let shouldResetLoadingFlag = false
 
     if (abortController && runtime?.setTimeout) {
       timeoutId = runtime.setTimeout(() => {
@@ -837,16 +838,20 @@ export function TeacherDashboard({
 
     if (isComponentMountedRef.current) {
       console.log("📡 Fetching teacher subjects...")
-      setIsTeacherSubjectsLoading(true)
-      setTeacherSubjectsError(null)
     } else {
       console.log("📡 Fetching teacher subjects... (component not mounted)")
     }
 
     try {
+      if (isComponentMountedRef.current) {
+        setIsTeacherSubjectsLoading(true)
+        shouldResetLoadingFlag = true
+        setTeacherSubjectsError(null)
+      }
+
       const token = safeStorage.getItem("vea_auth_token")
       if (!token) {
-        console.log("❌ Failed to load subjects: Missing authentication token")
+        console.log("❌ Subject fetch failed: Missing authentication token")
         if (isComponentMountedRef.current) {
           const cached = readTeacherAssignmentsCache(teacher.id)
           if (cached) {
@@ -920,11 +925,6 @@ export function TeacherDashboard({
       console.log(`✅ Subjects loaded: ${normalizedSubjects.length} items`)
       return true
     } catch (error) {
-      console.log(
-        "❌ Failed to load subjects:",
-        error instanceof Error ? error.message : error,
-      )
-
       if (!isComponentMountedRef.current) {
         return false
       }
@@ -933,6 +933,14 @@ export function TeacherDashboard({
         typeof (error as { status?: number }).status === "number"
           ? ((error as { status?: number }).status as number)
           : null
+      const logDetails =
+        status !== null
+          ? `${status} ${error instanceof Error ? error.message : String(error)}`
+          : error instanceof Error
+            ? error.message
+            : String(error)
+
+      console.log(`❌ Subject fetch failed: ${logDetails}`)
 
       if (error instanceof DOMException && error.name === "AbortError") {
         const timeoutMessage =
@@ -960,6 +968,11 @@ export function TeacherDashboard({
             description: "Please log in again to continue working with your subjects.",
           })
           scheduleAuthRedirect()
+        } else if (status === null) {
+          toast({
+            title: "Offline mode: using last known data.",
+            description: "We couldn't reach the server. Showing the last known subjects.",
+          })
         } else {
           toast({
             variant: "destructive",
@@ -995,7 +1008,9 @@ export function TeacherDashboard({
       console.log("✅ Resetting isTeacherSubjectsLoading to false")
       if (isComponentMountedRef.current) {
         setHasCompletedSubjectFetch(true)
-        setIsTeacherSubjectsLoading(false)
+        if (shouldResetLoadingFlag) {
+          setIsTeacherSubjectsLoading(false)
+        }
       }
     }
   }, [cachedAssignmentStateRef, scheduleAuthRedirect, teacher.id, toast])
@@ -1518,12 +1533,16 @@ export function TeacherDashboard({
     (Array.isArray(cachedAssignmentStateRef.current.subjects) &&
       cachedAssignmentStateRef.current.subjects.length > 0)
   const shouldDisableSubjectSelectDueToSubjects =
-    !hasAvailableSubjects &&
     hasCompletedSubjectFetch &&
-    !hasCachedSubjectOptions &&
-    teacherSubjectsError === null
-  const isSubjectSelectDisabled =
-    isContextLoading || shouldDisableSubjectSelectDueToSubjects
+    !isTeacherSubjectsLoading &&
+    availableSubjectOptions.length === 0 &&
+    !hasCachedSubjectOptions
+  const isSubjectSelectDisabled = shouldDisableSubjectSelectDueToSubjects
+  const subjectSelectPlaceholder = isTeacherSubjectsLoading
+    ? "Loading subjects..."
+    : hasCompletedSubjectFetch && availableSubjectOptions.length === 0
+      ? "No subjects assigned"
+      : "Select subject"
 
   const selectedSubjectOption = selectedSubjectKey
     ? subjectOptionByKey.get(selectedSubjectKey) ?? null
@@ -5262,7 +5281,7 @@ export function TeacherDashboard({
                       disabled={isSubjectSelectDisabled}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select subject" />
+                        <SelectValue placeholder={subjectSelectPlaceholder} />
                       </SelectTrigger>
                       <SelectContent>
                         {isTeacherSubjectsLoading ? (
