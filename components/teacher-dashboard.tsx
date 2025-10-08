@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -222,7 +222,7 @@ interface TeacherDashboardProps {
   }
   isContextLoading?: boolean
   contextError?: string | null
-  onRefreshAssignments?: () => void
+  onRefreshAssignments?: () => void | Promise<void>
 }
 
 interface TeacherExamSummary {
@@ -360,6 +360,10 @@ export function TeacherDashboard({
   const [teacherSubjects, setTeacherSubjects] = useState<string[]>(() => normalizeSubjectArray(teacher.subjects))
   const [isTeacherSubjectsLoading, setIsTeacherSubjectsLoading] = useState(false)
   const [teacherSubjectsError, setTeacherSubjectsError] = useState<string | null>(null)
+  const cachedAssignmentStateRef = useRef({
+    subjects: normalizeSubjectArray(teacher.subjects),
+    classes: teacher.classes,
+  })
   const teacherClasses = useMemo(() => {
     const deduped: TeacherClassAssignment[] = []
     const idIndex = new Map<string, number>()
@@ -510,7 +514,6 @@ export function TeacherDashboard({
   const [selectedClassId, setSelectedClassId] = useState(() => firstTeacherClass?.id ?? "")
   const [selectedSubject, setSelectedSubject] = useState("")
   const [isSubjectSwitcherOpen, setIsSubjectSwitcherOpen] = useState(false)
-  const rememberedSubjectByClassRef = useRef(new Map<string, string>())
   const isComponentMountedRef = useRef(true)
   useEffect(() => {
     return () => {
@@ -526,7 +529,15 @@ export function TeacherDashboard({
     setTeacherSubjects(normalizeSubjectArray(teacher.subjects))
   }, [teacher.subjects])
 
+  useEffect(() => {
+    cachedAssignmentStateRef.current = {
+      subjects: teacherSubjects,
+      classes: teacherAssignmentSources,
+    }
+  }, [teacherAssignmentSources, teacherSubjects])
+
   const fetchAssignedSubjects = useCallback(async (): Promise<boolean> => {
+    const cachedAssignments = cachedAssignmentStateRef.current
     const token = safeStorage.getItem("vea_auth_token")
     if (!token) {
       if (isComponentMountedRef.current) {
@@ -606,13 +617,30 @@ export function TeacherDashboard({
         setTeacherSubjectsError(
           "The request to refresh your subjects took too long. Please check your connection and try again.",
         )
-        return false
+      } else {
+        const message =
+          error instanceof Error ? error.message : "Unable to load your subject assignments."
+        setTeacherSubjectsError(message)
+        logger.warn("Teacher subject refresh failed; using cached assignments", {
+          error: error instanceof Error ? error.message : error,
+          teacherId: teacher.id,
+        })
       }
 
-      const message =
-        error instanceof Error ? error.message : "Unable to load your subject assignments."
-      setTeacherSubjectsError(message)
-      throw error
+      const restoredSubjects = Array.isArray(cachedAssignments.subjects)
+        ? [...cachedAssignments.subjects]
+        : []
+      const restoredClasses = Array.isArray(cachedAssignments.classes)
+        ? cachedAssignments.classes.map((entry) => ({
+            ...entry,
+            subjects: Array.isArray(entry.subjects) ? [...entry.subjects] : [],
+          }))
+        : []
+
+      setTeacherSubjects(restoredSubjects)
+      setTeacherAssignmentSources(restoredClasses)
+
+      return false
     } finally {
       if (timeoutId !== null && runtime?.clearTimeout) {
         runtime.clearTimeout(timeoutId)
@@ -621,13 +649,16 @@ export function TeacherDashboard({
         setIsTeacherSubjectsLoading(false)
       }
     }
-  }, [teacher.id])
+  }, [cachedAssignmentStateRef, teacher.id])
 
   useEffect(() => {
-    void fetchAssignedSubjects().catch((error) => {
-      logger.warn("Initial subject assignment fetch failed", { error })
-    })
-  }, [fetchAssignedSubjects])
+    void (async () => {
+      const success = await fetchAssignedSubjects()
+      if (!success) {
+        logger.warn("Initial subject assignment fetch failed", { teacherId: teacher.id })
+      }
+    })()
+  }, [fetchAssignedSubjects, teacher.id])
 
   const [selectedTerm, setSelectedTerm] = useState("first")
   const [selectedSession, setSelectedSession] = useState("2024/2025")
@@ -712,6 +743,8 @@ export function TeacherDashboard({
   const [teacherStudentsMessage, setTeacherStudentsMessage] = useState<string | null>(null)
   const [marksData, setMarksData] = useState<MarksRecord[]>([])
   const [addStudentDialogSubject, setAddStudentDialogSubject] = useState<string>("")
+  const assignmentSubjectFieldId = useId()
+  const assignmentClassFieldId = useId()
 
   const assignmentMaximum = defaultAssignmentMaximum
   const resolvedAssignmentMaximum = (() => {
@@ -1046,11 +1079,13 @@ export function TeacherDashboard({
         setSelectedClass("")
         setSelectedClassId("")
         setSelectedSubject("")
+        setMarksData((prev) => (prev.length > 0 ? [] : prev))
         return
       }
 
       if (value !== selectedClass) {
         setSelectedSubject("")
+        setMarksData((prev) => (prev.length > 0 ? [] : prev))
       }
 
       setSelectedClass(value)
@@ -1163,51 +1198,35 @@ export function TeacherDashboard({
   ])
 
   useEffect(() => {
-    const normalizedOptions = availableSubjects.map((subject) => subject.trim().toLowerCase())
+    if (selectedSubject.trim().length === 0) {
+      setMarksData((prev) => (prev.length > 0 ? [] : prev))
+    }
+  }, [selectedSubject])
+
+  useEffect(() => {
+    if (availableSubjects.length === 0) {
+      setSelectedSubject((prev) => (prev ? "" : prev))
+      return
+    }
+
+    const normalizedOptions = new Set(
+      availableSubjects.map((subject) => subject.trim().toLowerCase()),
+    )
 
     setSelectedSubject((prev) => {
       const normalizedPrev = prev.trim().toLowerCase()
 
-      if (normalizedPrev && normalizedOptions.includes(normalizedPrev)) {
+      if (!normalizedPrev) {
+        return ""
+      }
+
+      if (normalizedOptions.has(normalizedPrev)) {
         return prev
       }
 
-      const classKey = selectedClassId || normalizeClassName(selectedClass)
-      if (classKey) {
-        const remembered = rememberedSubjectByClassRef.current.get(classKey)
-        if (remembered) {
-          const normalizedRemembered = remembered.trim().toLowerCase()
-          if (normalizedRemembered && normalizedOptions.includes(normalizedRemembered)) {
-            const matchedSubject = availableSubjects.find(
-              (subject) => subject.trim().toLowerCase() === normalizedRemembered,
-            )
-            if (matchedSubject) {
-              return matchedSubject
-            }
-          }
-        }
-      }
-
-      return normalizedPrev ? "" : prev
+      return ""
     })
-
-    if (availableSubjects.length === 0 && selectedSubject) {
-      setSelectedSubject("")
-    }
-  }, [availableSubjects, normalizeClassName, selectedClass, selectedClassId, selectedSubject])
-
-  useEffect(() => {
-    if (!selectedSubject) {
-      return
-    }
-
-    const key = selectedClassId || normalizeClassName(selectedClass)
-    if (!key) {
-      return
-    }
-
-    rememberedSubjectByClassRef.current.set(key, selectedSubject)
-  }, [normalizeClassName, selectedClass, selectedClassId, selectedSubject])
+  }, [availableSubjects])
 
   useEffect(() => {
     setAssignmentForm((prev) => {
@@ -1875,6 +1894,20 @@ export function TeacherDashboard({
       return
     }
 
+    const normalizedEffectiveSubject = effectiveSubject.toLowerCase()
+    const normalizedAvailableSubjects = new Set(
+      availableSubjects.map((subject) => subject.trim().toLowerCase()),
+    )
+
+    if (!normalizedAvailableSubjects.has(normalizedEffectiveSubject)) {
+      toast({
+        variant: "destructive",
+        title: "Subject not assigned",
+        description: "Choose a subject from your assignment list before adding a learner.",
+      })
+      return
+    }
+
     if (!selectedRosterId) {
       toast({
         variant: "destructive",
@@ -1990,6 +2023,7 @@ export function TeacherDashboard({
     handleCloseAddStudentDialog()
   }, [
     addStudentDialogSubject,
+    availableSubjects,
     calculatePositionsAndAverages,
     handleCloseAddStudentDialog,
     marksData,
@@ -4305,7 +4339,7 @@ export function TeacherDashboard({
     try {
       if (typeof onRefreshAssignments === "function") {
         try {
-          onRefreshAssignments()
+          await onRefreshAssignments()
         } catch (callbackError) {
           logger.warn("Teacher assignment refresh callback failed", { error: callbackError })
         }
@@ -4319,7 +4353,11 @@ export function TeacherDashboard({
         loadTimetable(),
       ])
 
-      const failures = results.filter((result) => result.status === "rejected")
+      const failures = results.filter(
+        (result) =>
+          result.status === "rejected" ||
+          (result.status === "fulfilled" && result.value === false),
+      )
 
       if (failures.length > 0) {
         failures.forEach((failure) => {
@@ -6195,12 +6233,12 @@ export function TeacherDashboard({
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <Label htmlFor="subject">Subject</Label>
+                    <Label htmlFor={assignmentSubjectFieldId}>Subject</Label>
                     <Select
                       value={assignmentForm.subject}
                       onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, subject: value }))}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger id={assignmentSubjectFieldId} aria-label="Assignment subject">
                         <SelectValue placeholder="Select subject" />
                       </SelectTrigger>
                       <SelectContent>
@@ -6213,7 +6251,7 @@ export function TeacherDashboard({
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="class">Class</Label>
+                    <Label htmlFor={assignmentClassFieldId}>Class</Label>
                     <Select
                       value={assignmentForm.classId || ""}
                       onValueChange={(value) =>
@@ -6227,7 +6265,7 @@ export function TeacherDashboard({
                         })
                       }
                     >
-                      <SelectTrigger>
+                      <SelectTrigger id={assignmentClassFieldId} aria-label="Assignment class">
                         <SelectValue placeholder={assignmentForm.className || "Select class"} />
                       </SelectTrigger>
                       <SelectContent>
