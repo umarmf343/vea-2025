@@ -454,6 +454,49 @@ export function TeacherDashboard({
   const teacherClassTokenKey = useMemo(() => teacherClassTokenList.join("|"), [teacherClassTokenList])
   const teacherHasAssignedClasses = teacherClassTokenList.length > 0
   const normalizeClassName = useCallback((value: string) => value.replace(/\s+/g, "").toLowerCase(), [])
+  const classSubjectsMap = useMemo<Record<string, string[]>>(() => {
+    const map: Record<string, string[]> = {}
+
+    teacherClasses.forEach((cls) => {
+      const canonicalSubjects = Array.from(
+        new Set(
+          (cls.subjects ?? [])
+            .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+            .filter((subject) => subject.length > 0),
+        ),
+      )
+
+      if (canonicalSubjects.length === 0) {
+        return
+      }
+
+      const keys = [typeof cls.id === "string" ? cls.id.trim() : "", normalizeClassName(cls.name)]
+        .map((key) => key ?? "")
+        .filter((key) => key.length > 0)
+
+      keys.forEach((key) => {
+        if (!key) {
+          return
+        }
+
+        const existing = map[key] ?? []
+        const normalizedExisting = new Set(existing.map((entry) => entry.toLowerCase()))
+        const merged = existing.length > 0 ? [...existing] : []
+
+        canonicalSubjects.forEach((subject) => {
+          const normalized = subject.toLowerCase()
+          if (!normalizedExisting.has(normalized)) {
+            normalizedExisting.add(normalized)
+            merged.push(subject)
+          }
+        })
+
+        map[key] = merged
+      })
+    })
+
+    return map
+  }, [normalizeClassName, teacherClasses])
   const [selectedTab, setSelectedTab] = useState("overview")
   const [showCreateAssignment, setShowCreateAssignment] = useState(false)
   const [assignmentDialogMode, setAssignmentDialogMode] = useState<"create" | "edit">("create")
@@ -561,47 +604,6 @@ export function TeacherDashboard({
     }
   }, [teacher.id])
 
-  useEffect(() => {
-    setClassSubjectsMap((previous) => {
-      let hasChanges = false
-      const updated = { ...previous }
-
-      teacherClasses.forEach((cls) => {
-        const canonicalSubjects = Array.from(
-          new Set(
-            (cls.subjects ?? [])
-              .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
-              .filter((subject) => subject.length > 0),
-          ),
-        )
-
-        if (canonicalSubjects.length === 0) {
-          return
-        }
-
-        const keys = [typeof cls.id === "string" ? cls.id.trim() : "", normalizeClassName(cls.name)]
-          .map((key) => key ?? "")
-          .filter((key) => key.length > 0)
-
-        keys.forEach((key) => {
-          const existing = updated[key] ?? []
-          const sameLength = existing.length === canonicalSubjects.length
-          const sameValues =
-            sameLength &&
-            canonicalSubjects.every((subject) =>
-              existing.some((entry) => entry.toLowerCase() === subject.toLowerCase()),
-            )
-
-          if (!sameValues) {
-            updated[key] = canonicalSubjects
-            hasChanges = true
-          }
-        })
-      })
-
-      return hasChanges ? updated : previous
-    })
-  }, [normalizeClassName, teacherClasses])
   const [selectedTerm, setSelectedTerm] = useState("first")
   const [selectedSession, setSelectedSession] = useState("2024/2025")
   const [workflowRecords, setWorkflowRecords] = useState<ReportCardWorkflowRecord[]>([])
@@ -1072,9 +1074,29 @@ export function TeacherDashboard({
     [teacherSubjects],
   )
 
+  const classSpecificSubjects = useMemo(() => {
+    const key = selectedClassId || normalizeClassName(selectedClass)
+    if (!key) {
+      return [] as string[]
+    }
+
+    const subjects = classSubjectsMap[key] ?? []
+    if (subjects.length === 0) {
+      return [] as string[]
+    }
+
+    return Array.from(
+      new Set(
+        subjects
+          .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+          .filter((subject) => subject.length > 0),
+      ),
+    ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+  }, [classSubjectsMap, normalizeClassName, selectedClass, selectedClassId])
+
   const availableSubjects = useMemo(
-    () => normalizedTeacherSubjects,
-    [normalizedTeacherSubjects],
+    () => (classSpecificSubjects.length > 0 ? classSpecificSubjects : normalizedTeacherSubjects),
+    [classSpecificSubjects, normalizedTeacherSubjects],
   )
 
   const hasAvailableSubjects = availableSubjects.length > 0
