@@ -18,7 +18,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { BookOpen, Calendar, FileText, User, Clock, Trophy, Upload, CheckCircle, AlertCircle, Award, Download, Sparkles } from "lucide-react"
+import {
+  BookOpen,
+  Calendar,
+  FileText,
+  User,
+  Clock,
+  Trophy,
+  Upload,
+  CheckCircle,
+  AlertCircle,
+  Award,
+  Download,
+  Sparkles,
+  Loader2,
+  UserCheck,
+  Users,
+} from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
 import { NotificationCenter } from "@/components/notification-center"
@@ -45,6 +61,20 @@ interface UpcomingEventSummary {
   source: UpcomingEventSource
   location?: string | null
   category?: string | null
+}
+
+type AssignedClassTeacher = {
+  teacherId: string | null
+  teacherName: string
+  role: string
+  teacherEmail: string | null
+}
+
+type AssignedSubjectTeacher = {
+  subject: string
+  teacherId: string | null
+  teacherName: string | null
+  teacherEmail: string | null
 }
 
 const UPCOMING_EVENT_SOURCE_STYLES: Record<UpcomingEventSource, { label: string; badgeClass: string }> = {
@@ -376,6 +406,11 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
   const [effectiveStudentId, setEffectiveStudentId] = useState(initialStudentId)
   const [effectiveClassName, setEffectiveClassName] = useState(initialStudentClass)
   const [studentTeachers, setStudentTeachers] = useState<string[]>([])
+  const [assignedClassTeachers, setAssignedClassTeachers] = useState<AssignedClassTeacher[]>([])
+  const [assignedSubjectTeachers, setAssignedSubjectTeachers] = useState<AssignedSubjectTeacher[]>([])
+  const [teacherLookupMessage, setTeacherLookupMessage] = useState<string | null>(null)
+  const [teacherLookupError, setTeacherLookupError] = useState<string | null>(null)
+  const [isTeacherLookupLoading, setIsTeacherLookupLoading] = useState(false)
   const [subjects, setSubjects] = useState<IdentifiedRecord[]>([])
   const [timetable, setTimetable] = useState<TimetableSlotSummary[]>([])
   const [assignments, setAssignments] = useState<IdentifiedRecord[]>([])
@@ -757,6 +792,190 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
     initialStudentName,
   ])
 
+  useEffect(() => {
+    const studentIdCandidate =
+      normalizeString(effectiveStudentId) ||
+      normalizeString(studentProfile.id) ||
+      normalizeString(student.id)
+    const classHint =
+      normalizeString(studentProfile.class) ||
+      normalizeString(effectiveClassName) ||
+      normalizeString(student.class)
+
+    if (!studentIdCandidate && !classHint) {
+      setAssignedClassTeachers([])
+      setAssignedSubjectTeachers([])
+      setTeacherLookupMessage("Class information is not available yet.")
+      setTeacherLookupError(null)
+      setIsTeacherLookupLoading(false)
+      return
+    }
+
+    let isActive = true
+    setIsTeacherLookupLoading(true)
+    setTeacherLookupError(null)
+    setTeacherLookupMessage(null)
+
+    const params = new URLSearchParams()
+    if (classHint) {
+      params.set("className", classHint)
+    }
+
+    const targetId = studentIdCandidate || "__unknown__"
+
+    const fetchAssignments = async () => {
+      try {
+        const response = await fetch(
+          `/api/students/${encodeURIComponent(targetId)}/teachers${
+            params.toString() ? `?${params.toString()}` : ""
+          }`,
+          { cache: "no-store" },
+        )
+        const payload = await response.json().catch(() => ({}))
+
+        if (!isActive) {
+          return
+        }
+
+        if (!response.ok) {
+          const message =
+            typeof (payload as { error?: unknown }).error === "string"
+              ? (payload as { error?: string }).error
+              : "Unable to load assigned teachers."
+          throw new Error(message)
+        }
+
+        const rawClassTeachers = Array.isArray((payload as { classTeachers?: unknown }).classTeachers)
+          ? ((payload as { classTeachers?: unknown[] }).classTeachers ?? [])
+          : []
+        const normalizedClassTeachers = rawClassTeachers
+          .map((entry) => {
+            const record = entry as Record<string, unknown>
+            const teacherName =
+              normalizeString(record.teacherName) ||
+              normalizeString(record.name) ||
+              normalizeString(record.teacher)
+            if (!teacherName) {
+              return null
+            }
+
+            const teacherId =
+              normalizeString(record.teacherId) ||
+              normalizeString(record.id) ||
+              null
+            const role = normalizeString(record.role) || "Class Teacher"
+            const teacherEmail = normalizeString(record.teacherEmail) || normalizeString(record.email) || null
+
+            return {
+              teacherId,
+              teacherName,
+              role,
+              teacherEmail,
+            }
+          })
+          .filter((entry): entry is AssignedClassTeacher => entry !== null)
+
+        const rawSubjectTeachers = Array.isArray((payload as { subjectTeachers?: unknown }).subjectTeachers)
+          ? ((payload as { subjectTeachers?: unknown[] }).subjectTeachers ?? [])
+          : []
+
+        const subjectTeacherMap = new Map<string, AssignedSubjectTeacher>()
+        rawSubjectTeachers.forEach((entry) => {
+          const record = entry as Record<string, unknown>
+          const subjectName =
+            normalizeString(record.subject) ||
+            normalizeString(record.subjectName) ||
+            normalizeString(record.name)
+
+          if (!subjectName) {
+            return
+          }
+
+          const key = subjectName.toLowerCase()
+          const teacherName =
+            normalizeString(record.teacherName) ||
+            normalizeString(record.teacher) ||
+            normalizeString(record.name) ||
+            null
+          const teacherId =
+            normalizeString(record.teacherId) ||
+            normalizeString(record.id) ||
+            null
+          const teacherEmail = normalizeString(record.teacherEmail) || normalizeString(record.email) || null
+
+          const assignment: AssignedSubjectTeacher = {
+            subject: subjectName,
+            teacherId,
+            teacherName,
+            teacherEmail,
+          }
+
+          if (!subjectTeacherMap.has(key) || !subjectTeacherMap.get(key)?.teacherName) {
+            subjectTeacherMap.set(key, assignment)
+          }
+        })
+
+        const subjectAssignments = Array.from(subjectTeacherMap.values()).sort((a, b) =>
+          a.subject.localeCompare(b.subject),
+        )
+
+        setAssignedClassTeachers(normalizedClassTeachers)
+        setAssignedSubjectTeachers(subjectAssignments)
+        setTeacherLookupError(null)
+
+        const payloadMessage =
+          typeof (payload as { message?: unknown }).message === "string"
+            ? ((payload as { message?: string }).message as string)
+            : null
+        setTeacherLookupMessage(payloadMessage)
+
+        setStudentTeachers((previous) => {
+          const names = new Set(previous)
+          normalizedClassTeachers.forEach((teacher) => {
+            if (teacher.teacherName) {
+              names.add(teacher.teacherName)
+            }
+          })
+          subjectAssignments.forEach((entry) => {
+            if (entry.teacherName) {
+              names.add(entry.teacherName)
+            }
+          })
+          const next = Array.from(names)
+          return haveSameStringMembers(previous, next) ? previous : next
+        })
+      } catch (error) {
+        if (!isActive) {
+          return
+        }
+
+        const message =
+          error instanceof Error ? error.message : "Unable to load assigned teachers."
+        setAssignedClassTeachers([])
+        setAssignedSubjectTeachers([])
+        setTeacherLookupError(message)
+        setTeacherLookupMessage(null)
+      } finally {
+        if (isActive) {
+          setIsTeacherLookupLoading(false)
+        }
+      }
+    }
+
+    void fetchAssignments()
+
+    return () => {
+      isActive = false
+    }
+  }, [
+    effectiveClassName,
+    effectiveStudentId,
+    student.class,
+    student.id,
+    studentProfile.class,
+    studentProfile.id,
+  ])
+
   const getAssignmentStatusMeta = (status: unknown) => {
     const normalized = typeof status === "string" ? status : "sent"
 
@@ -964,6 +1183,17 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
 
     return Array.from(orderedUnique.values())
   }, [assignments, calendar.events, calendar.status])
+
+  const subjectTeacherDetailMap = useMemo(() => {
+    const map = new Map<string, AssignedSubjectTeacher>()
+    assignedSubjectTeachers.forEach((entry) => {
+      const key = entry.subject.toLowerCase()
+      if (!map.has(key) || !map.get(key)?.teacherName) {
+        map.set(key, entry)
+      }
+    })
+    return map
+  }, [assignedSubjectTeachers])
 
   if (loading) {
     return (
@@ -1200,36 +1430,138 @@ export function StudentDashboard({ student }: StudentDashboardProps) {
         <TabsContent value="subjects" className="space-y-4">
           <Card>
             <CardHeader>
+              <CardTitle className="text-[#2d682d]">Assigned Teachers</CardTitle>
+              <CardDescription>Meet the teachers guiding your class this term</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isTeacherLookupLoading ? (
+                <div className="flex items-center text-sm text-gray-500">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading assigned teachers...
+                </div>
+              ) : teacherLookupError ? (
+                <p className="text-sm text-red-600">{teacherLookupError}</p>
+              ) : (
+                <div className="space-y-5">
+                  <div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <UserCheck className="h-4 w-4 text-[#2d682d]" />
+                        <h3 className="text-sm font-semibold text-gray-700">Class Teachers</h3>
+                      </div>
+                      {studentProfile.class || effectiveClassName ? (
+                        <Badge variant="outline" className="border-[#2d682d]/30 text-[#2d682d]">
+                          {(studentProfile.class || effectiveClassName) ?? "Unassigned"}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    {assignedClassTeachers.length > 0 ? (
+                      <ul className="mt-3 space-y-2">
+                        {assignedClassTeachers.map((teacher) => (
+                          <li
+                            key={`${teacher.teacherId ?? teacher.teacherName}`}
+                            className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-3 py-2"
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-[#2d682d]">{teacher.teacherName}</p>
+                              <p className="text-xs text-gray-500">
+                                {teacher.role}
+                                {teacher.teacherEmail ? ` • ${teacher.teacherEmail}` : ""}
+                              </p>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-3 text-sm text-gray-500">
+                        {teacherLookupMessage ?? "No class teacher has been assigned yet."}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-[#b29032]" />
+                      <h3 className="text-sm font-semibold text-gray-700">Subject Teachers</h3>
+                    </div>
+                    {assignedSubjectTeachers.length > 0 ? (
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {assignedSubjectTeachers.map((entry) => (
+                          <div
+                            key={entry.subject.toLowerCase()}
+                            className="rounded-lg border border-gray-100 bg-white px-3 py-2 shadow-sm"
+                          >
+                            <p className="text-xs uppercase text-gray-500">{entry.subject}</p>
+                            <p className="text-sm font-medium text-[#2d682d]">
+                              {entry.teacherName ?? "Not Assigned"}
+                            </p>
+                            {entry.teacherEmail ? (
+                              <p className="text-xs text-gray-500">{entry.teacherEmail}</p>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-sm text-gray-500">
+                        {teacherLookupMessage
+                          ? teacherLookupMessage
+                          : "Subject teachers will appear once your school assigns them."}
+                      </p>
+                    )}
+                  </div>
+                  {teacherLookupMessage &&
+                  (assignedClassTeachers.length > 0 || assignedSubjectTeachers.length > 0) ? (
+                    <p className="text-xs text-gray-500">{teacherLookupMessage}</p>
+                  ) : null}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle className="text-[#2d682d]">My Subjects</CardTitle>
               <CardDescription>View your subjects and assigned teachers</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {subjects.map((subject, index) => (
-                  <div key={index} className="flex justify-between items-center p-4 border rounded-lg">
-                    <div className="flex-1">
-                      <h3 className="font-medium text-lg">{subject.subject}</h3>
-                      <div className="flex items-center space-x-2 mt-1">
-                        <User className="w-4 h-4 text-[#2d682d]" />
-                        <p className="text-sm font-medium text-[#2d682d]">
-                          Teacher: {subject.teacherName || "Not Assigned"}
-                        </p>
-                      </div>
-                      <div className="mt-3">
-                        <div className="flex justify-between text-sm mb-1">
-                          <span>Performance</span>
-                          <span className="font-medium">{subject.total || 0}%</span>
+                {subjects.map((subject, index) => {
+                  const normalizedSubject =
+                    typeof subject.subject === "string" ? subject.subject.toLowerCase() : ""
+                  const assignedTeacher = normalizedSubject
+                    ? subjectTeacherDetailMap.get(normalizedSubject)
+                    : undefined
+                  const teacherName =
+                    assignedTeacher?.teacherName || subject.teacherName || "Not Assigned"
+                  const teacherEmail = assignedTeacher?.teacherEmail ?? null
+
+                  return (
+                    <div key={index} className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex-1">
+                        <h3 className="font-medium text-lg">{subject.subject}</h3>
+                        <div className="mt-1 flex items-start gap-2">
+                          <User className="mt-0.5 h-4 w-4 text-[#2d682d]" />
+                          <div>
+                            <p className="text-sm font-medium text-[#2d682d]">Teacher: {teacherName}</p>
+                            {teacherEmail ? (
+                              <p className="text-xs text-gray-500">{teacherEmail}</p>
+                            ) : null}
+                          </div>
                         </div>
-                        <Progress value={subject.total || 0} className="h-2" />
+                        <div className="mt-3">
+                          <div className="flex justify-between text-sm mb-1">
+                            <span>Performance</span>
+                            <span className="font-medium">{subject.total || 0}%</span>
+                          </div>
+                          <Progress value={subject.total || 0} className="h-2" />
+                        </div>
+                      </div>
+                      <div className="text-center sm:ml-4">
+                        <Badge variant="outline" className="text-[#b29032] border-[#b29032] font-bold text-lg px-3 py-1">
+                          {subject.grade || "N/A"}
+                        </Badge>
                       </div>
                     </div>
-                    <div className="ml-4 text-center">
-                      <Badge variant="outline" className="text-[#b29032] border-[#b29032] font-bold text-lg px-3 py-1">
-                        {subject.grade || "N/A"}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </CardContent>
           </Card>

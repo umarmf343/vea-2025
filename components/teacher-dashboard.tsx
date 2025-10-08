@@ -334,9 +334,14 @@ export function TeacherDashboard({
   const [previewAssignment, setPreviewAssignment] = useState<TeacherAssignmentSummary | null>(null)
   const [assignmentRoster, setAssignmentRoster] = useState<Record<string, AssignmentStudentInfo>>({})
   const [selectedClass, setSelectedClass] = useState(() => firstTeacherClass?.name ?? "")
+  const [selectedClassId, setSelectedClassId] = useState(() => firstTeacherClass?.id ?? "")
   const [selectedSubject, setSelectedSubject] = useState(
     () => firstTeacherClass?.subjects[0] ?? teacher.subjects[0] ?? "",
   )
+  const [classSubjectsMap, setClassSubjectsMap] = useState<Record<string, string[]>>({})
+  const [isClassSubjectsLoading, setIsClassSubjectsLoading] = useState(false)
+  const [classSubjectsError, setClassSubjectsError] = useState<string | null>(null)
+  const [classSubjectsNotice, setClassSubjectsNotice] = useState<string | null>(null)
   const [selectedTerm, setSelectedTerm] = useState("first")
   const [selectedSession, setSelectedSession] = useState("2024/2025")
   const [workflowRecords, setWorkflowRecords] = useState<ReportCardWorkflowRecord[]>([])
@@ -673,34 +678,116 @@ export function TeacherDashboard({
 
   const normalizeClassName = useCallback((value: string) => value.replace(/\s+/g, "").toLowerCase(), [])
 
+  const handleSelectClass = useCallback(
+    (value: string) => {
+      if (value === "__no_classes__") {
+        setSelectedClass("")
+        setSelectedClassId("")
+        return
+      }
+
+      setSelectedClass(value)
+
+      const normalizedValue = normalizeClassName(value)
+      const match = teacher.classes.find((cls) => {
+        const normalizedName = normalizeClassName(cls.name)
+        return normalizedName === normalizedValue || cls.id === value
+      })
+
+      setSelectedClassId(match?.id ?? "")
+    },
+    [normalizeClassName, teacher.classes],
+  )
+
   const subjectsForSelectedClass = useMemo(() => {
+    const normalizedName = normalizeClassName(selectedClass)
+    const candidateKeys = [selectedClassId, normalizedName].filter((key) => key)
+    const aggregatedSubjects = candidateKeys.flatMap((key) => classSubjectsMap[key] ?? [])
+
+    if (aggregatedSubjects.length > 0) {
+      const unique = Array.from(
+        new Set(
+          aggregatedSubjects
+            .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+            .filter((subject) => subject.length > 0),
+        ),
+      )
+      if (unique.length > 0) {
+        return unique
+      }
+    }
+
     if (teacher.classes.length === 0) {
       return teacher.subjects
     }
 
-    const normalized = normalizeClassName(selectedClass)
-    if (!normalized) {
-      return teacher.classes[0]?.subjects.length ? teacher.classes[0]?.subjects : teacher.subjects
-    }
+    const match = teacher.classes.find((cls) => {
+      if (cls.id && cls.id === selectedClassId) {
+        return true
+      }
+      return normalizeClassName(cls.name) === normalizedName
+    })
 
-    const match = teacher.classes.find((cls) => normalizeClassName(cls.name) === normalized)
-    if (match && match.subjects.length > 0) {
-      return match.subjects
+    if (match && Array.isArray(match.subjects) && match.subjects.length > 0) {
+      return Array.from(
+        new Set(
+          match.subjects
+            .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+            .filter((subject) => subject.length > 0),
+        ),
+      )
     }
 
     return teacher.subjects
-  }, [normalizeClassName, selectedClass, teacher.classes, teacher.subjects])
+  }, [
+    classSubjectsMap,
+    normalizeClassName,
+    selectedClass,
+    selectedClassId,
+    teacher.classes,
+    teacher.subjects,
+  ])
 
   useEffect(() => {
-    setSelectedClass(teacherClassNames[0] ?? "")
-  }, [teacherClassNames])
+    if (teacher.classes.length === 0) {
+      if (selectedClass || selectedClassId) {
+        setSelectedClass("")
+        setSelectedClassId("")
+      }
+      return
+    }
+
+    const normalizedCurrent = normalizeClassName(selectedClass)
+    const matchById = teacher.classes.find((cls) => cls.id === selectedClassId)
+    const matchByName = teacher.classes.find(
+      (cls) => normalizeClassName(cls.name) === normalizedCurrent,
+    )
+    const resolved = matchById ?? matchByName ?? teacher.classes[0] ?? null
+
+    if (!resolved) {
+      return
+    }
+
+    if (selectedClass !== resolved.name) {
+      setSelectedClass(resolved.name)
+    }
+
+    if (selectedClassId !== (resolved.id ?? "")) {
+      setSelectedClassId(resolved.id ?? "")
+    }
+  }, [
+    normalizeClassName,
+    selectedClass,
+    selectedClassId,
+    teacher.classes,
+  ])
 
   useEffect(() => {
     setAssignmentForm((prev) => {
       const normalizedSelection = normalizeClassName(selectedClass)
-      const defaultClass = teacher.classes.find(
-        (cls) => normalizeClassName(cls.name) === normalizedSelection,
-      )
+      const defaultClass =
+        teacher.classes.find((cls) => cls.id === selectedClassId) ??
+        teacher.classes.find((cls) => normalizeClassName(cls.name) === normalizedSelection)
       const fallbackClass = defaultClass ?? teacher.classes[0] ?? null
       const normalizedPrevSubject = typeof prev.subject === "string" ? prev.subject.trim().toLowerCase() : ""
       const normalizedOptions = subjectsForSelectedClass.map((subject) => subject.trim().toLowerCase())
@@ -716,7 +803,13 @@ export function TeacherDashboard({
         className: prev.className || (fallbackClass?.name ?? ""),
       }
     })
-  }, [normalizeClassName, selectedClass, subjectsForSelectedClass, teacher.classes])
+  }, [
+    normalizeClassName,
+    selectedClass,
+    selectedClassId,
+    subjectsForSelectedClass,
+    teacher.classes,
+  ])
 
   const mockStudents = useMemo(
     () => [
@@ -726,6 +819,100 @@ export function TeacherDashboard({
     ],
     [],
   )
+
+  useEffect(() => {
+    let isActive = true
+    const identifier = selectedClassId || normalizeClassName(selectedClass)
+
+    if (!identifier) {
+      setIsClassSubjectsLoading(false)
+      setClassSubjectsError(null)
+      setClassSubjectsNotice(null)
+      return
+    }
+
+    if (classSubjectsMap[identifier]) {
+      setIsClassSubjectsLoading(false)
+      setClassSubjectsError(null)
+      return
+    }
+
+    setIsClassSubjectsLoading(true)
+    setClassSubjectsError(null)
+    setClassSubjectsNotice(null)
+
+    const fetchSubjects = async () => {
+      try {
+        const params = new URLSearchParams()
+        if (selectedClass) {
+          params.set("name", selectedClass)
+        }
+
+        const response = await fetch(
+          `/api/classes/${encodeURIComponent(identifier)}/subjects${params.toString() ? `?${params.toString()}` : ""}`,
+        )
+        const payload = await response.json().catch(() => ({}))
+
+        if (!response.ok) {
+          const message =
+            typeof (payload as { error?: unknown }).error === "string"
+              ? (payload as { error?: string }).error
+              : "Unable to load subjects for the selected class."
+          throw new Error(message)
+        }
+
+        const subjects = Array.isArray((payload as { subjects?: unknown }).subjects)
+          ? ((payload as { subjects?: unknown[] }).subjects ?? [])
+              .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+              .filter((entry) => entry.length > 0)
+          : []
+
+        if (!isActive) {
+          return
+        }
+
+        setClassSubjectsMap((prev) => {
+          const next = { ...prev }
+          next[identifier] = subjects
+          const normalizedNameKey = normalizeClassName(selectedClass)
+          if (normalizedNameKey) {
+            next[normalizedNameKey] = subjects
+          }
+          return next
+        })
+
+        const notice =
+          typeof (payload as { message?: unknown }).message === "string"
+            ? ((payload as { message?: string }).message as string)
+            : null
+        setClassSubjectsNotice(notice)
+        setClassSubjectsError(null)
+      } catch (error) {
+        if (!isActive) {
+          return
+        }
+        const message =
+          error instanceof Error ? error.message : "Unable to load subjects for the selected class."
+        setClassSubjectsError(message)
+        setClassSubjectsNotice(null)
+      } finally {
+        if (isActive) {
+          setIsClassSubjectsLoading(false)
+        }
+      }
+    }
+
+    void fetchSubjects()
+
+    return () => {
+      isActive = false
+    }
+  }, [
+    classSubjectsMap,
+    normalizeClassName,
+    selectedClass,
+    selectedClassId,
+  ])
 
   const formatExamDate = (value: string) => {
     try {
@@ -4074,7 +4261,7 @@ export function TeacherDashboard({
                     <Label>Class</Label>
                     <Select
                       value={selectedClass}
-                      onValueChange={setSelectedClass}
+                      onValueChange={handleSelectClass}
                       disabled={noClassesAssigned || isContextLoading}
                     >
                       <SelectTrigger>
@@ -4106,16 +4293,27 @@ export function TeacherDashboard({
                       value={selectedSubject}
                       onValueChange={setSelectedSubject}
                       disabled={
-                        noClassesAssigned || subjectsForSelectedClass.length === 0 || isContextLoading
+                        noClassesAssigned ||
+                        subjectsForSelectedClass.length === 0 ||
+                        isContextLoading ||
+                        isClassSubjectsLoading
                       }
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select Subject" />
                       </SelectTrigger>
                       <SelectContent>
-                        {subjectsForSelectedClass.length === 0 ? (
+                        {isClassSubjectsLoading ? (
+                          <SelectItem value="__loading_subjects__" disabled>
+                            Loading subjects...
+                          </SelectItem>
+                        ) : subjectsForSelectedClass.length === 0 ? (
                           <SelectItem value="__no_subjects__" disabled>
-                            {noClassesAssigned ? "No class assigned" : "No subjects available"}
+                            {noClassesAssigned
+                              ? "No class assigned"
+                              : classSubjectsError
+                                ? "Unable to load subjects"
+                                : "No subjects available"}
                           </SelectItem>
                         ) : (
                           subjectsForSelectedClass.map((subject) => (
@@ -4126,6 +4324,15 @@ export function TeacherDashboard({
                         )}
                       </SelectContent>
                     </Select>
+                    {classSubjectsError ? (
+                      <p className="mt-2 text-xs text-red-600">{classSubjectsError}</p>
+                    ) : classSubjectsNotice ? (
+                      <p className="mt-2 text-xs text-amber-600">{classSubjectsNotice}</p>
+                    ) : subjectsForSelectedClass.length === 0 && !isClassSubjectsLoading ? (
+                      <p className="mt-2 text-xs text-amber-600">
+                        Select a class to view its assigned subjects.
+                      </p>
+                    ) : null}
                   </div>
                   <div>
                     <Label>Term</Label>
