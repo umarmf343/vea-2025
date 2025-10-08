@@ -600,6 +600,14 @@ export function TeacherDashboard({
 
     return cachedAssignments?.subjects ?? []
   })
+  const [hasCompletedSubjectFetch, setHasCompletedSubjectFetch] = useState(() => {
+    const normalizedSubjects = normalizeSubjectArray(teacher.subjects)
+    if (normalizedSubjects.length > 0) {
+      return true
+    }
+
+    return Boolean(cachedAssignments?.subjects?.length)
+  })
   const [isTeacherSubjectsLoading, setIsTeacherSubjectsLoading] = useState(false)
   const [teacherSubjectsError, setTeacherSubjectsError] = useState<string | null>(null)
   const cachedAssignmentStateRef = useRef<TeacherAssignmentsCacheEntry>({
@@ -817,43 +825,47 @@ export function TeacherDashboard({
 
   const fetchAssignedSubjects = useCallback(async (): Promise<boolean> => {
     const cachedAssignments = cachedAssignmentStateRef.current
-    const token = safeStorage.getItem("vea_auth_token")
-    if (!token) {
-      if (isComponentMountedRef.current) {
-        const cached = readTeacherAssignmentsCache(teacher.id)
-        if (cached) {
-          setTeacherSubjects(cached.subjects)
-          setTeacherAssignmentSources(cached.classes)
-        }
-        const sessionExpiredMessage =
-          "Your session has expired. Please log in again to refresh your subject assignments."
-        setTeacherSubjectsError(sessionExpiredMessage)
-        toast({
-          variant: "destructive",
-          title: "Session expired",
-          description: sessionExpiredMessage,
-        })
-        setIsTeacherSubjectsLoading(false)
-        scheduleAuthRedirect()
-      }
-      return false
+    const runtime = getBrowserRuntime()
+    const abortController = typeof AbortController !== "undefined" ? new AbortController() : null
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+    if (abortController && runtime?.setTimeout) {
+      timeoutId = runtime.setTimeout(() => {
+        abortController.abort()
+      }, SUBJECT_REFRESH_TIMEOUT_MS)
     }
 
     if (isComponentMountedRef.current) {
+      console.log("📡 Fetching teacher subjects...")
       setIsTeacherSubjectsLoading(true)
       setTeacherSubjectsError(null)
+    } else {
+      console.log("📡 Fetching teacher subjects... (component not mounted)")
     }
 
-    const runtime = getBrowserRuntime()
-    const abortController = typeof AbortController !== "undefined" ? new AbortController() : null
-    const timeoutId =
-      abortController && runtime?.setTimeout
-        ? runtime.setTimeout(() => {
-            abortController.abort()
-          }, SUBJECT_REFRESH_TIMEOUT_MS)
-        : null
-
     try {
+      const token = safeStorage.getItem("vea_auth_token")
+      if (!token) {
+        console.log("❌ Failed to load subjects: Missing authentication token")
+        if (isComponentMountedRef.current) {
+          const cached = readTeacherAssignmentsCache(teacher.id)
+          if (cached) {
+            setTeacherSubjects(cached.subjects)
+            setTeacherAssignmentSources(cached.classes)
+          }
+          const sessionExpiredMessage =
+            "Your session has expired. Please log in again to refresh your subject assignments."
+          setTeacherSubjectsError(sessionExpiredMessage)
+          toast({
+            variant: "destructive",
+            title: "Session expired",
+            description: sessionExpiredMessage,
+          })
+          scheduleAuthRedirect()
+        }
+        return false
+      }
+
       const response = await fetch(`/api/teachers/${encodeURIComponent(teacher.id)}/subjects`, {
         method: "GET",
         headers: {
@@ -881,12 +893,13 @@ export function TeacherDashboard({
         throw errorWithStatus
       }
 
-      if (!isComponentMountedRef.current) {
-        return false
-      }
-
       const normalizedSubjects = normalizeSubjectArray((payload as { subjects?: unknown }).subjects)
       const normalizedClasses = normalizeTeacherClassAssignments((payload as { classes?: unknown }).classes)
+
+      if (!isComponentMountedRef.current) {
+        console.log("✅ Subjects loaded: component unmounted before state update")
+        return false
+      }
 
       setTeacherSubjects(normalizedSubjects)
       setTeacherAssignmentSources(normalizedClasses)
@@ -904,8 +917,14 @@ export function TeacherDashboard({
         setTeacherSubjectsError(null)
       }
 
+      console.log(`✅ Subjects loaded: ${normalizedSubjects.length} items`)
       return true
     } catch (error) {
+      console.log(
+        "❌ Failed to load subjects:",
+        error instanceof Error ? error.message : error,
+      )
+
       if (!isComponentMountedRef.current) {
         return false
       }
@@ -973,7 +992,9 @@ export function TeacherDashboard({
       if (timeoutId !== null && runtime?.clearTimeout) {
         runtime.clearTimeout(timeoutId)
       }
+      console.log("✅ Resetting isTeacherSubjectsLoading to false")
       if (isComponentMountedRef.current) {
+        setHasCompletedSubjectFetch(true)
         setIsTeacherSubjectsLoading(false)
       }
     }
@@ -1496,8 +1517,13 @@ export function TeacherDashboard({
     hasAvailableSubjects ||
     (Array.isArray(cachedAssignmentStateRef.current.subjects) &&
       cachedAssignmentStateRef.current.subjects.length > 0)
+  const shouldDisableSubjectSelectDueToSubjects =
+    !hasAvailableSubjects &&
+    hasCompletedSubjectFetch &&
+    !hasCachedSubjectOptions &&
+    teacherSubjectsError === null
   const isSubjectSelectDisabled =
-    isContextLoading || (isTeacherSubjectsLoading && !hasCachedSubjectOptions)
+    isContextLoading || shouldDisableSubjectSelectDueToSubjects
 
   const selectedSubjectOption = selectedSubjectKey
     ? subjectOptionByKey.get(selectedSubjectKey) ?? null
@@ -5107,7 +5133,7 @@ export function TeacherDashboard({
                 <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                   {teacherSubjectsError}
                 </div>
-              ) : !isTeacherSubjectsLoading && !hasAvailableSubjects ? (
+              ) : hasCompletedSubjectFetch && !hasAvailableSubjects ? (
                 <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                   <p className="font-semibold">No subjects available for marking.</p>
                   <p>Please contact the admin to assign subjects before entering marks.</p>
@@ -5249,9 +5275,13 @@ export function TeacherDashboard({
                               {option.label}
                             </SelectItem>
                           ))
-                        ) : (
+                        ) : hasCompletedSubjectFetch ? (
                           <SelectItem value="__no_subjects__" disabled>
                             No subjects assigned. Please contact the admin.
+                          </SelectItem>
+                        ) : (
+                          <SelectItem value="__pending_subjects__" disabled>
+                            Loading subjects...
                           </SelectItem>
                         )}
                       </SelectContent>
@@ -5273,7 +5303,7 @@ export function TeacherDashboard({
                       </p>
                     ) : teacherSubjectsError ? (
                       <p className="mt-2 text-xs text-amber-600">{teacherSubjectsError}</p>
-                    ) : !hasAvailableSubjects ? (
+                    ) : !hasAvailableSubjects && hasCompletedSubjectFetch ? (
                       <p className="mt-2 text-xs text-amber-600">
                         No subjects assigned. Please contact the admin.
                       </p>
@@ -6499,9 +6529,13 @@ export function TeacherDashboard({
                         {option.label}
                       </SelectItem>
                     ))
-                  ) : (
+                  ) : hasCompletedSubjectFetch ? (
                     <SelectItem value="__no_subjects__" disabled>
                       No subjects assigned. Please contact the admin.
+                    </SelectItem>
+                  ) : (
+                    <SelectItem value="__pending_subjects__" disabled>
+                      Loading subjects...
                     </SelectItem>
                   )}
                 </SelectContent>
