@@ -502,6 +502,7 @@ export function TeacherDashboard({
   const [isTeacherStudentsLoading, setIsTeacherStudentsLoading] = useState(false)
   const [teacherStudentsError, setTeacherStudentsError] = useState<string | null>(null)
   const [teacherStudentsMessage, setTeacherStudentsMessage] = useState<string | null>(null)
+  const [marksData, setMarksData] = useState<MarksRecord[]>([])
 
   const assignmentMaximum = defaultAssignmentMaximum
   const resolvedAssignmentMaximum = (() => {
@@ -1654,7 +1655,6 @@ export function TeacherDashboard({
     }
   }, [selectedClass])
 
-  const [marksData, setMarksData] = useState<MarksRecord[]>([])
   const lastPersistedSelectionRef = useRef<string | null>(null)
   const suppressMarksRefreshRef = useRef(false)
 
