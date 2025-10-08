@@ -12,6 +12,51 @@ import {
 } from "@/lib/database"
 import { hashPassword, sanitizeInput } from "@/lib/security"
 
+function sanitizeTeachingAssignments(
+  input: unknown,
+): { classId: string; subjects: string[] }[] | undefined {
+  if (!Array.isArray(input)) {
+    return undefined
+  }
+
+  const assignments: { classId: string; subjects: string[] }[] = []
+  const seen = new Map<string, Set<string>>()
+
+  input.forEach((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return
+    }
+
+    const record = entry as { classId?: unknown; className?: unknown; subjects?: unknown }
+    const classIdentifier =
+      typeof record.classId === "string"
+        ? sanitizeInput(record.classId).trim()
+        : typeof record.className === "string"
+          ? sanitizeInput(record.className).trim()
+          : ""
+
+    if (!classIdentifier) {
+      return
+    }
+
+    const normalizedSubjects = Array.isArray(record.subjects)
+      ? record.subjects
+          .map((subject) => (typeof subject === "string" ? sanitizeInput(subject).trim() : ""))
+          .filter((subject) => subject.length > 0)
+      : []
+
+    const subjectSet = seen.get(classIdentifier) ?? new Set<string>()
+    normalizedSubjects.forEach((subject) => subjectSet.add(subject))
+    seen.set(classIdentifier, subjectSet)
+  })
+
+  seen.forEach((subjectSet, classId) => {
+    assignments.push({ classId, subjects: Array.from(subjectSet) })
+  })
+
+  return assignments
+}
+
 function normalizeUserStatus(status: unknown): StoredUserStatus {
   if (typeof status !== "string") {
     return "active"
@@ -118,13 +163,14 @@ export async function POST(request: NextRequest) {
     const sanitizedClassIds = Array.isArray(classIds)
       ? classIds.map((id: string) => sanitizeInput(String(id)))
       : undefined
+    const sanitizedTeachingAssignments = sanitizeTeachingAssignments(body.teachingAssignments)
 
     const newUser = await createUserRecord({
       name: sanitizeInput(name),
       email: sanitizeInput(email),
       role: resolvedRole,
       passwordHash: hashedPassword,
-      classId: resolvedRole === "teacher" ? undefined : classId ? String(classId) : undefined,
+      classId: resolvedRole === "teacher" ? undefined : classId ? sanitizeInput(String(classId)) : undefined,
       classIds: resolvedRole === "teacher" ? sanitizedClassIds : undefined,
       studentId: studentId ? String(studentId) : undefined,
       studentIds: sanitizedStudentIds,
@@ -134,6 +180,7 @@ export async function POST(request: NextRequest) {
           : Array.isArray(subjects)
             ? subjects.map((subject: string) => sanitizeInput(subject))
             : undefined,
+      teachingAssignments: resolvedRole === "teacher" ? sanitizedTeachingAssignments : undefined,
       status: statusValue,
       isActive: isActiveValue,
       metadata: sanitizedMetadata ?? null,
@@ -198,6 +245,11 @@ export async function PUT(request: NextRequest) {
       sanitizedUpdate.classIds = Array.isArray(classIds)
         ? classIds.map((value: string) => sanitizeInput(String(value)))
         : []
+    }
+
+    const sanitizedTeachingAssignments = sanitizeTeachingAssignments(body.teachingAssignments)
+    if (sanitizedTeachingAssignments !== undefined) {
+      sanitizedUpdate.teachingAssignments = sanitizedTeachingAssignments
     }
 
     if (studentId !== undefined) {
