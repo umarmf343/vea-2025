@@ -20,6 +20,7 @@ import { getHtmlToImage } from "@/lib/html-to-image-loader"
 import { getJsPdf } from "@/lib/jspdf-loader"
 import { safeStorage } from "@/lib/safe-storage"
 import { resolveStudentPassportFromCache } from "@/lib/student-passport"
+import { dbManager } from "@/lib/database-manager"
 
 interface SubjectScore {
   name: string
@@ -939,6 +940,161 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   }
 
   const { student, summary, termInfo } = reportCardData
+
+  const parsePositiveInteger = useCallback((value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      return Math.floor(value)
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim()
+      if (!trimmed) {
+        return null
+      }
+
+      const parsed = Number.parseInt(trimmed, 10)
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed
+      }
+    }
+
+    return null
+  }, [])
+
+  const extractAdmissionNumber = useCallback((value: unknown): string | null => {
+    if (typeof value === "string") {
+      const trimmed = value.trim()
+      if (trimmed.length > 0) {
+        return trimmed
+      }
+    }
+
+    return null
+  }, [])
+
+  const initialClassSize = useMemo(() => {
+    return (
+      parsePositiveInteger(student.numberInClass) ??
+      parsePositiveInteger(termInfo?.numberInClass) ??
+      parsePositiveInteger(summary?.numberOfStudents) ??
+      null
+    )
+  }, [parsePositiveInteger, student.numberInClass, termInfo?.numberInClass, summary?.numberOfStudents])
+
+  const initialAdmissionNumber = useMemo(() => {
+    const candidate =
+      extractAdmissionNumber(student.admissionNumber) ??
+      extractAdmissionNumber((student as Record<string, unknown>)["admission_number"]) ??
+      extractAdmissionNumber((student as Record<string, unknown>)["admissionNo"]) ??
+      extractAdmissionNumber((student as Record<string, unknown>)["admission_no"])
+
+    return candidate
+  }, [extractAdmissionNumber, student])
+
+  const normalizedStudentClass = useMemo(() => {
+    return typeof student.class === "string" ? student.class.trim() : ""
+  }, [student.class])
+
+  const normalizedStudentId = useMemo(() => {
+    return typeof student.id === "string" ? student.id.trim() : ""
+  }, [student.id])
+
+  const normalizedStudentName = useMemo(() => {
+    return typeof student.name === "string" ? student.name.trim() : ""
+  }, [student.name])
+
+  const [resolvedClassSize, setResolvedClassSize] = useState<number | null>(initialClassSize)
+  const [resolvedAdmissionNumber, setResolvedAdmissionNumber] = useState<string | null>(
+    initialAdmissionNumber,
+  )
+
+  useEffect(() => {
+    setResolvedClassSize(initialClassSize)
+  }, [initialClassSize])
+
+  useEffect(() => {
+    setResolvedAdmissionNumber(initialAdmissionNumber)
+  }, [initialAdmissionNumber])
+
+  useEffect(() => {
+    if (!normalizedStudentClass) {
+      return
+    }
+
+    let isSubscribed = true
+
+    const fetchRosterDetails = async () => {
+      try {
+        const roster = await dbManager.getStudentsByClass(normalizedStudentClass)
+        if (!isSubscribed || !Array.isArray(roster)) {
+          return
+        }
+
+        const rosterEntries = roster as Array<Record<string, unknown>>
+        const rosterSize = rosterEntries.length
+        if (rosterSize > 0 && rosterSize !== resolvedClassSize) {
+          setResolvedClassSize(rosterSize)
+        }
+
+        if (resolvedAdmissionNumber) {
+          return
+        }
+
+        const readString = (source: Record<string, unknown>, key: string) => {
+          const value = source[key]
+          return typeof value === "string" ? value.trim() : ""
+        }
+
+        const rosterNameMatch = (candidate: Record<string, unknown>) => {
+          const rosterName = readString(candidate, "name").toLowerCase()
+          const studentName = normalizedStudentName.toLowerCase()
+          return rosterName && studentName ? rosterName === studentName : false
+        }
+
+        const matchingEntry = rosterEntries.find((entry) => {
+          const entryId = readString(entry, "id")
+          if (normalizedStudentId && entryId) {
+            return entryId === normalizedStudentId
+          }
+
+          return rosterNameMatch(entry)
+        })
+
+        if (!matchingEntry) {
+          return
+        }
+
+        const admissionCandidate =
+          extractAdmissionNumber(readString(matchingEntry, "admissionNumber")) ??
+          extractAdmissionNumber(readString(matchingEntry, "admission_number")) ??
+          extractAdmissionNumber(readString(matchingEntry, "admissionNo")) ??
+          extractAdmissionNumber(readString(matchingEntry, "admission_no")) ??
+          (() => {
+            const metadata = (matchingEntry.metadata as Record<string, unknown> | undefined) ?? undefined
+            return metadata ? extractAdmissionNumber(readString(metadata, "admissionNumber")) : null
+          })()
+
+        if (admissionCandidate && isSubscribed) {
+          setResolvedAdmissionNumber(admissionCandidate)
+        }
+      } catch (error) {
+        console.warn("Unable to resolve class roster details for report card", error)
+      }
+    }
+
+    void fetchRosterDetails()
+
+    return () => {
+      isSubscribed = false
+    }
+  }, [
+    extractAdmissionNumber,
+    resolvedAdmissionNumber,
+    resolvedClassSize,
+    normalizedStudentClass,
+    normalizedStudentId,
+    normalizedStudentName,
+  ])
   const resolveDisplayValue = (value: unknown) => {
     if (typeof value === "number" && Number.isFinite(value)) {
       return String(value)
@@ -955,11 +1111,13 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   }
 
   const numberInClass = resolveDisplayValue(
-    student.numberInClass ?? termInfo?.numberInClass ?? "—",
+    resolvedClassSize ?? student.numberInClass ?? termInfo?.numberInClass ?? summary?.numberOfStudents ?? "—",
   )
   const termLabel = resolveDisplayValue(student.term)
   const sessionLabel = resolveDisplayValue(student.session)
-  const admissionNumber = resolveDisplayValue(student.admissionNumber)
+  const admissionNumber = resolveDisplayValue(
+    resolvedAdmissionNumber ?? student.admissionNumber ?? student.id ?? "—",
+  )
   const studentName = resolveDisplayValue(student.name)
   const classLabel = resolveDisplayValue(student.class)
   const gradeLabel = resolveDisplayValue(
