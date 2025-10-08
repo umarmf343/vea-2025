@@ -11,6 +11,7 @@ import mysql, {
 import { safeStorage } from "./safe-storage"
 import { logger } from "./logger"
 import { deriveGradeFromScore } from "./grade-utils"
+import { normalizeSubjectList } from "./subject-utils"
 
 interface CollectionRecord {
   id: string
@@ -1699,9 +1700,7 @@ function buildTeacherAssignmentAugmentorFromCollections(
 
       seenClassIds.add(classRecord.id)
 
-      const classSubjects = Array.isArray(classRecord.subjects)
-        ? classRecord.subjects.filter((subject): subject is string => typeof subject === "string" && subject.trim().length > 0)
-        : []
+      const classSubjects = normalizeSubjectList(classRecord.subjects)
 
       for (const subject of classSubjects) {
         addSubject(subject)
@@ -1738,9 +1737,7 @@ function buildTeacherAssignmentAugmentorFromCollections(
 
         seenClassIds.add(classRecord.id)
 
-        const classSubjects = Array.isArray(classRecord.subjects)
-          ? classRecord.subjects.filter((subject): subject is string => typeof subject === "string" && subject.trim().length > 0)
-          : []
+        const classSubjects = normalizeSubjectList(classRecord.subjects)
 
         for (const subject of classSubjects) {
           addSubject(subject)
@@ -1850,9 +1847,7 @@ function resolveTeacherClassesForIdentifiers(identifiers: string[], classes: Cla
       throw new Error(`Class not found for identifier: ${identifier}`)
     }
 
-    const classSubjects = Array.isArray(classRecord.subjects)
-      ? classRecord.subjects.filter((subject): subject is string => typeof subject === "string" && subject.trim().length > 0)
-      : []
+    const classSubjects = normalizeSubjectList(classRecord.subjects)
 
     if (classSubjects.length === 0) {
       throw new Error(`Cannot assign teacher to ${classRecord.name} because it has no subjects`)

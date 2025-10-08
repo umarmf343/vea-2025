@@ -5,6 +5,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { getUserByIdFromDb } from "@/lib/database"
 import { logger } from "@/lib/logger"
 import { verifyToken } from "@/lib/security"
+import { normalizeSubjectList } from "@/lib/subject-utils"
 
 const normalizeRole = (value: unknown): string => {
   if (typeof value !== "string") {
@@ -21,27 +22,6 @@ const normalizeIdentifier = (value: unknown): string => {
 
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : ""
-}
-
-const normalizeSubjects = (value: unknown): string[] => {
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  const seen = new Set<string>()
-  for (const entry of value) {
-    if (typeof entry !== "string") {
-      continue
-    }
-
-    const trimmed = entry.trim()
-    if (trimmed.length === 0 || seen.has(trimmed)) {
-      continue
-    }
-    seen.add(trimmed)
-  }
-
-  return Array.from(seen)
 }
 
 export async function GET(request: NextRequest) {
@@ -99,7 +79,7 @@ export async function GET(request: NextRequest) {
       }
       seenClassKeys.add(key)
 
-      const subjects = normalizeSubjects((assignment as { subjects?: unknown }).subjects)
+      const subjects = normalizeSubjectList((assignment as { subjects?: unknown }).subjects)
       for (const subject of subjects) {
         subjectSet.add(subject)
       }
