@@ -6499,8 +6499,7 @@ export function TeacherDashboard({
                     Subject
                   </span>
                   <span className="text-sm font-medium text-emerald-900">
-                    {addStudentDialogOption?.label || selectedSubjectOption?.label || selectedSubject ||
-                      "Not selected"}
+                    {addStudentDialogOption?.label || selectedSubjectOption?.label || selectedSubject || "Not selected"}
                   </span>
                 </div>
                 <div>
@@ -6521,50 +6520,6 @@ export function TeacherDashboard({
                 </div>
               </div>
             </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Choose subject for this grade entry
-              </Label>
-              <Select
-                value={addStudentDialogSubjectKey}
-                onValueChange={(value) => {
-                  setAddStudentDialogSubjectKey(value)
-                  handleSelectSubject(value)
-                }}
-                disabled={isSubjectSelectDisabled}
-              >
-                <SelectTrigger className="w-full text-sm">
-                  <SelectValue placeholder="Select subject" />
-                </SelectTrigger>
-                <SelectContent>
-                  {isSubjectSelectDisabled && availableSubjectOptions.length === 0 ? (
-                    <SelectItem value="__no_subjects__" disabled>
-                      No subjects assigned. Please contact the admin.
-                    </SelectItem>
-                  ) : hasAvailableSubjects ? (
-                    availableSubjectOptions.map((option) => (
-                      <SelectItem key={option.key} value={option.key}>
-                        {option.label}
-                      </SelectItem>
-                    ))
-                  ) : hasCompletedSubjectFetch ? (
-                    <SelectItem value="__no_subjects__" disabled>
-                      No subjects assigned. Please contact the admin.
-                    </SelectItem>
-                  ) : (
-                    <SelectItem value="__pending_subjects__" disabled>
-                      Loading subjects...
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-gray-500">
-                Pick from your existing subjects to ensure scores are added to the correct grade sheet.
-              </p>
-            </div>
-          </div>
-          <div className="space-y-4">
             {rosterNotice && (
               <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
