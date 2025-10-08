@@ -194,6 +194,156 @@ type TeacherClassAssignment = {
   subjects: string[]
 }
 
+type TeacherAssignmentsCacheEntry = {
+  subjects: string[]
+  classes: TeacherClassAssignment[]
+  updatedAt: string
+}
+
+type TeacherAssignmentsCacheStore = Record<string, TeacherAssignmentsCacheEntry>
+
+const TEACHER_ASSIGNMENTS_CACHE_KEY = "vea_teacher_assignments_cache_v1"
+
+const areSubjectListsEqual = (left: string[], right: string[]): boolean => {
+  if (left === right) {
+    return true
+  }
+
+  if (left.length !== right.length) {
+    return false
+  }
+
+  const normalize = (subjects: string[]) =>
+    subjects
+      .map((subject) => (typeof subject === "string" ? subject.trim().toLowerCase() : ""))
+      .filter((subject) => subject.length > 0)
+      .sort()
+
+  const normalizedLeft = normalize(left)
+  const normalizedRight = normalize(right)
+
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return false
+  }
+
+  return normalizedLeft.every((subject, index) => subject === normalizedRight[index])
+}
+
+const areClassAssignmentsEqual = (
+  left: TeacherClassAssignment[],
+  right: TeacherClassAssignment[],
+): boolean => {
+  if (left === right) {
+    return true
+  }
+
+  if (left.length !== right.length) {
+    return false
+  }
+
+  const serializeAssignments = (assignments: TeacherClassAssignment[]) =>
+    assignments
+      .map((assignment) => {
+        const idToken = normalizeClassToken(assignment.id)
+        const nameToken = normalizeClassToken(assignment.name)
+        const subjects = normalizeSubjectArray(assignment.subjects)
+          .map((subject) => subject.toLowerCase())
+          .sort()
+          .join(",")
+
+        return `${idToken}|${nameToken}|${subjects}`
+      })
+      .sort()
+
+  const leftSerialized = serializeAssignments(left)
+  const rightSerialized = serializeAssignments(right)
+
+  if (leftSerialized.length !== rightSerialized.length) {
+    return false
+  }
+
+  return leftSerialized.every((entry, index) => entry === rightSerialized[index])
+}
+
+const readTeacherAssignmentsCache = (teacherId: string): TeacherAssignmentsCacheEntry | null => {
+  if (!teacherId) {
+    return null
+  }
+
+  const raw = safeStorage.getItem(TEACHER_ASSIGNMENTS_CACHE_KEY)
+  if (!raw) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as TeacherAssignmentsCacheStore
+    if (!parsed || typeof parsed !== "object") {
+      return null
+    }
+
+    const entry = parsed[teacherId]
+    if (!entry || typeof entry !== "object") {
+      return null
+    }
+
+    const subjects = normalizeSubjectArray((entry as { subjects?: unknown }).subjects)
+    const classes = normalizeTeacherClassAssignments((entry as { classes?: unknown }).classes)
+
+    if (subjects.length === 0 && classes.length === 0) {
+      return null
+    }
+
+    const updatedAt =
+      typeof (entry as { updatedAt?: unknown }).updatedAt === "string"
+        ? ((entry as { updatedAt: string }).updatedAt as string)
+        : new Date(0).toISOString()
+
+    return { subjects, classes, updatedAt }
+  } catch (error) {
+    logger.warn("Failed to read teacher assignments cache", { error })
+    return null
+  }
+}
+
+const persistTeacherAssignmentsCache = (
+  teacherId: string,
+  subjects: string[],
+  classes: TeacherClassAssignment[],
+) => {
+  if (!teacherId) {
+    return
+  }
+
+  try {
+    const normalizedSubjects = normalizeSubjectArray(subjects)
+    const normalizedClasses = normalizeTeacherClassAssignments(classes)
+
+    const raw = safeStorage.getItem(TEACHER_ASSIGNMENTS_CACHE_KEY)
+    let store: TeacherAssignmentsCacheStore = {}
+
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as TeacherAssignmentsCacheStore
+        if (parsed && typeof parsed === "object") {
+          store = parsed
+        }
+      } catch (parseError) {
+        logger.warn("Failed to parse existing teacher assignments cache", { error: parseError })
+      }
+    }
+
+    store[teacherId] = {
+      subjects: normalizedSubjects,
+      classes: normalizedClasses,
+      updatedAt: new Date().toISOString(),
+    }
+
+    safeStorage.setItem(TEACHER_ASSIGNMENTS_CACHE_KEY, JSON.stringify(store))
+  } catch (error) {
+    logger.warn("Failed to persist teacher assignments cache", { error })
+  }
+}
+
 type AssignmentStudentInfo = {
   id: string
   name: string | null
@@ -354,15 +504,28 @@ export function TeacherDashboard({
   onRefreshAssignments,
 }: TeacherDashboardProps) {
   const { toast } = useToast()
-  const [teacherAssignmentSources, setTeacherAssignmentSources] = useState<TeacherClassAssignment[]>(
-    () => teacher.classes,
-  )
-  const [teacherSubjects, setTeacherSubjects] = useState<string[]>(() => normalizeSubjectArray(teacher.subjects))
+  const cachedAssignments = useMemo(() => readTeacherAssignmentsCache(teacher.id), [teacher.id])
+  const [teacherAssignmentSources, setTeacherAssignmentSources] = useState<TeacherClassAssignment[]>(() => {
+    if (Array.isArray(teacher.classes) && teacher.classes.length > 0) {
+      return teacher.classes
+    }
+
+    return cachedAssignments?.classes ?? []
+  })
+  const [teacherSubjects, setTeacherSubjects] = useState<string[]>(() => {
+    const normalizedSubjects = normalizeSubjectArray(teacher.subjects)
+    if (normalizedSubjects.length > 0) {
+      return normalizedSubjects
+    }
+
+    return cachedAssignments?.subjects ?? []
+  })
   const [isTeacherSubjectsLoading, setIsTeacherSubjectsLoading] = useState(false)
   const [teacherSubjectsError, setTeacherSubjectsError] = useState<string | null>(null)
-  const cachedAssignmentStateRef = useRef({
-    subjects: normalizeSubjectArray(teacher.subjects),
-    classes: teacher.classes,
+  const cachedAssignmentStateRef = useRef<TeacherAssignmentsCacheEntry>({
+    subjects: cachedAssignments?.subjects ?? normalizeSubjectArray(teacher.subjects),
+    classes: cachedAssignments?.classes ?? teacher.classes,
+    updatedAt: cachedAssignments?.updatedAt ?? new Date(0).toISOString(),
   })
   const teacherClasses = useMemo(() => {
     const deduped: TeacherClassAssignment[] = []
@@ -522,25 +685,63 @@ export function TeacherDashboard({
   }, [])
 
   useEffect(() => {
-    setTeacherAssignmentSources(teacher.classes)
+    const normalizedClasses = normalizeTeacherClassAssignments(teacher.classes)
+
+    setTeacherAssignmentSources((previous) => {
+      if (normalizedClasses.length === 0 && previous.length > 0) {
+        return previous
+      }
+
+      if (areClassAssignmentsEqual(previous, normalizedClasses)) {
+        return previous
+      }
+
+      return normalizedClasses
+    })
   }, [teacher.classes])
 
   useEffect(() => {
-    setTeacherSubjects(normalizeSubjectArray(teacher.subjects))
+    const normalizedSubjects = normalizeSubjectArray(teacher.subjects)
+
+    setTeacherSubjects((previous) => {
+      if (normalizedSubjects.length === 0 && previous.length > 0) {
+        return previous
+      }
+
+      if (areSubjectListsEqual(previous, normalizedSubjects)) {
+        return previous
+      }
+
+      return normalizedSubjects
+    })
   }, [teacher.subjects])
 
   useEffect(() => {
     cachedAssignmentStateRef.current = {
       subjects: teacherSubjects,
       classes: teacherAssignmentSources,
+      updatedAt: new Date().toISOString(),
     }
   }, [teacherAssignmentSources, teacherSubjects])
+
+  useEffect(() => {
+    if (teacherSubjects.length === 0 && teacherAssignmentSources.length === 0) {
+      return
+    }
+
+    persistTeacherAssignmentsCache(teacher.id, teacherSubjects, teacherAssignmentSources)
+  }, [teacher.id, teacherAssignmentSources, teacherSubjects])
 
   const fetchAssignedSubjects = useCallback(async (): Promise<boolean> => {
     const cachedAssignments = cachedAssignmentStateRef.current
     const token = safeStorage.getItem("vea_auth_token")
     if (!token) {
       if (isComponentMountedRef.current) {
+        const cached = readTeacherAssignmentsCache(teacher.id)
+        if (cached) {
+          setTeacherSubjects(cached.subjects)
+          setTeacherAssignmentSources(cached.classes)
+        }
         setTeacherSubjectsError(
           "Your session has expired. Please log in again to refresh your subject assignments.",
         )
@@ -594,6 +795,7 @@ export function TeacherDashboard({
 
       setTeacherSubjects(normalizedSubjects)
       setTeacherAssignmentSources(normalizedClasses)
+      persistTeacherAssignmentsCache(teacher.id, normalizedSubjects, normalizedClasses)
 
       if (normalizedSubjects.length === 0) {
         const message =
@@ -627,15 +829,20 @@ export function TeacherDashboard({
         })
       }
 
-      const restoredSubjects = Array.isArray(cachedAssignments.subjects)
-        ? [...cachedAssignments.subjects]
-        : []
-      const restoredClasses = Array.isArray(cachedAssignments.classes)
-        ? cachedAssignments.classes.map((entry) => ({
-            ...entry,
-            subjects: Array.isArray(entry.subjects) ? [...entry.subjects] : [],
-          }))
-        : []
+      const storedAssignments = readTeacherAssignmentsCache(teacher.id)
+      const restoredSubjects = storedAssignments?.subjects?.length
+        ? storedAssignments.subjects
+        : Array.isArray(cachedAssignments.subjects)
+          ? [...cachedAssignments.subjects]
+          : []
+      const restoredClasses = storedAssignments?.classes?.length
+        ? storedAssignments.classes
+        : Array.isArray(cachedAssignments.classes)
+          ? cachedAssignments.classes.map((entry) => ({
+              ...entry,
+              subjects: Array.isArray(entry.subjects) ? [...entry.subjects] : [],
+            }))
+          : []
 
       setTeacherSubjects(restoredSubjects)
       setTeacherAssignmentSources(restoredClasses)
