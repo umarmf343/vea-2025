@@ -1022,6 +1022,10 @@ export function TeacherDashboard({
     return Array.from(merged).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
   }, [subjectsForSelectedClass, teacher.subjects])
 
+  const hasAvailableSubjects = availableSubjects.length > 0
+  const isSubjectSelectDisabled =
+    isContextLoading || (!hasAvailableSubjects && !isClassSubjectsLoading)
+
   useEffect(() => {
     if (teacherClasses.length === 0) {
       if (selectedClass || selectedClassId) {
@@ -4657,34 +4661,30 @@ export function TeacherDashboard({
                     <Select
                       value={selectedSubject}
                       onValueChange={handleSelectSubject}
-                      disabled={
-                        !selectedClass ||
-                        isContextLoading ||
-                        (isClassSubjectsLoading && availableSubjects.length === 0)
-                      }
+                      disabled={isSubjectSelectDisabled}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select Subject" />
+                        <SelectValue placeholder="Select subject for mark entry" />
                       </SelectTrigger>
                       <SelectContent>
-                        {isClassSubjectsLoading ? (
+                        {isClassSubjectsLoading && !hasAvailableSubjects ? (
                           <SelectItem value="__loading_subjects__" disabled>
                             Loading subjects...
                           </SelectItem>
-                        ) : availableSubjects.length === 0 ? (
-                          <SelectItem value="__no_subjects__" disabled>
-                            {classSubjectsError
-                              ? "Unable to load subjects"
-                              : noClassesAssigned
-                                ? "No class assigned"
-                                : "No subjects available"}
-                          </SelectItem>
-                        ) : (
+                        ) : hasAvailableSubjects ? (
                           availableSubjects.map((subject) => (
                             <SelectItem key={subject} value={subject}>
                               {subject}
                             </SelectItem>
                           ))
+                        ) : (
+                          <SelectItem value="__no_subjects__" disabled>
+                            {classSubjectsError
+                              ? "Unable to load subjects"
+                              : noClassesAssigned
+                                ? "No class assigned"
+                                : "No subjects assigned. Please contact your administrator."}
+                          </SelectItem>
                         )}
                       </SelectContent>
                     </Select>
@@ -4692,9 +4692,11 @@ export function TeacherDashboard({
                       <p className="mt-2 text-xs text-red-600">{classSubjectsError}</p>
                     ) : classSubjectsNotice ? (
                       <p className="mt-2 text-xs text-amber-600">{classSubjectsNotice}</p>
-                    ) : availableSubjects.length === 0 && !isClassSubjectsLoading ? (
+                    ) : !hasAvailableSubjects && !isClassSubjectsLoading ? (
                       <p className="mt-2 text-xs text-amber-600">
-                        Select a class to view its assigned subjects.
+                        {selectedClass
+                          ? "No subjects have been assigned to this class yet. Please contact your administrator."
+                          : "No subjects have been assigned to you yet. Please contact your administrator."}
                       </p>
                     ) : null}
                   </div>
