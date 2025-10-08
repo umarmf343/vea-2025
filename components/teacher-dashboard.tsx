@@ -105,6 +105,7 @@ import {
   markAssignmentReminderSent,
   shouldSendAssignmentReminder,
 } from "@/lib/assignment-reminders"
+import { resolveStudentPassportFromCache } from "@/lib/student-passport"
 
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
@@ -1481,6 +1482,15 @@ export function TeacherDashboard({
         grade: summaryGrade,
       }
 
+      const { passportUrl, photoUrl } = resolveStudentPassportFromCache(
+        {
+          id: String(student.studentId),
+          admissionNumber: aggregatedRaw?.student?.admissionNumber ?? `VEA/${student.studentId}`,
+          name: aggregatedRaw?.student?.name ?? student.studentName,
+        },
+        aggregatedRaw?.student ?? null,
+      )
+
       const basePreview: RawReportCardData = {
         student: {
           id: String(student.studentId),
@@ -1491,6 +1501,8 @@ export function TeacherDashboard({
           session: selectedSession,
           numberInClass: additionalData.termInfo.numberInClass,
           status: additionalData.studentStatus[student.studentId],
+          passportUrl,
+          photoUrl,
         },
         subjects: [
           {

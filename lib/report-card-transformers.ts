@@ -1,5 +1,6 @@
 import type { ReportCardRecord, ReportCardSubjectRecord } from "@/lib/database"
 import { deriveGradeFromScore } from "@/lib/grade-utils"
+import { resolveStudentPassportFromCache } from "./student-passport"
 import {
   AFFECTIVE_TRAITS,
   PSYCHOMOTOR_SKILLS,
@@ -86,6 +87,20 @@ export const mapReportCardRecordToRaw = (record: ReportCardRecord): RawReportCar
     grade: deriveGradeFromScore(averageScore),
   }
 
+  const metadataRaw = extractRawFromMetadata(record.metadata)
+  const metadataStudentRecord =
+    metadataRaw && isRecord(metadataRaw.student) ? metadataRaw.student : undefined
+
+  const { passportUrl, photoUrl } = resolveStudentPassportFromCache(
+    {
+      id: record.studentId,
+      admissionNumber:
+        (metadataStudentRecord?.admissionNumber as string | undefined) ?? record.studentId,
+      name: (metadataStudentRecord?.name as string | undefined) ?? record.studentName,
+    },
+    metadataStudentRecord ?? null,
+  )
+
   const base: RawReportCardData = {
     student: {
       id: record.studentId,
@@ -94,6 +109,8 @@ export const mapReportCardRecordToRaw = (record: ReportCardRecord): RawReportCar
       class: record.className,
       term: record.term,
       session: record.session,
+      passportUrl,
+      photoUrl,
     },
     subjects,
     summary: baseSummary,
@@ -110,12 +127,11 @@ export const mapReportCardRecordToRaw = (record: ReportCardRecord): RawReportCar
     },
   }
 
-  const metadataRaw = extractRawFromMetadata(record.metadata)
   if (!metadataRaw) {
     return base
   }
 
-  const metadataStudent = isRecord(metadataRaw.student) ? metadataRaw.student : {}
+  const metadataStudent = metadataStudentRecord ?? {}
   const metadataSummary = metadataRaw.summary
     ? { ...baseSummary, ...metadataRaw.summary }
     : baseSummary
