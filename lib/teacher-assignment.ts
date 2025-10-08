@@ -1,5 +1,12 @@
 import { normalizeSubjectList } from "./subject-utils"
-import type { StoredUser, TeacherAssignmentSummary } from "./database"
+import {
+  type ClassRecord,
+  type StoredUser,
+  type SubjectRecord,
+  type TeacherAssignmentSummary,
+  getAllClassesFromDb,
+  listSubjectRecords,
+} from "./database"
 
 export type NormalizedTeacherClassAssignment = {
   id: string
@@ -7,9 +14,17 @@ export type NormalizedTeacherClassAssignment = {
   subjects: string[]
 }
 
+export type TeacherSubjectAssignmentDetail = {
+  subjectId: string
+  subjectName: string
+  classId: string
+  className: string
+}
+
 export type TeacherAssignmentSnapshot = {
   classes: NormalizedTeacherClassAssignment[]
   subjects: string[]
+  subjectAssignments: TeacherSubjectAssignmentDetail[]
 }
 
 const normalizeString = (value: unknown): string => {
@@ -96,9 +111,144 @@ const registerClassAssignment = (
   }
 }
 
-export const summarizeTeacherAssignments = (
+const normalizeAssignmentSubjects = (subjects: string[]): string[] =>
+  Array.from(
+    new Set(
+      subjects
+        .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+        .filter((subject) => subject.length > 0),
+    ),
+  ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+
+const toToken = (value: string): string => value.trim().toLowerCase()
+
+const toCollapsedToken = (value: string): string => toToken(value).replace(/\s+/g, "")
+
+const buildClassIndex = (classes: ClassRecord[]) => {
+  const byId = new Map<string, ClassRecord>()
+  const byName = new Map<string, ClassRecord>()
+  const byCollapsed = new Map<string, ClassRecord>()
+
+  classes.forEach((cls) => {
+    const idToken = toToken(cls.id)
+    const nameToken = cls.name ? toToken(cls.name) : ""
+    const collapsedId = idToken ? toCollapsedToken(cls.id) : ""
+    const collapsedName = cls.name ? toCollapsedToken(cls.name) : ""
+
+    if (idToken) {
+      byId.set(idToken, cls)
+    }
+
+    if (nameToken) {
+      byName.set(nameToken, cls)
+    }
+
+    if (collapsedId) {
+      byCollapsed.set(collapsedId, cls)
+    }
+
+    if (collapsedName) {
+      byCollapsed.set(collapsedName, cls)
+    }
+  })
+
+  return { byId, byName, byCollapsed }
+}
+
+const buildSubjectIndex = (subjects: SubjectRecord[]) => {
+  const byName = new Map<string, SubjectRecord[]>()
+
+  subjects.forEach((subject) => {
+    const nameToken = toToken(subject.name)
+    if (!nameToken) {
+      return
+    }
+
+    const existing = byName.get(nameToken)
+    if (existing) {
+      existing.push(subject)
+      return
+    }
+
+    byName.set(nameToken, [subject])
+  })
+
+  return byName
+}
+
+const resolveClassRecord = (
+  assignment: NormalizedTeacherClassAssignment,
+  classIndex: ReturnType<typeof buildClassIndex>,
+): ClassRecord | null => {
+  const idToken = toToken(assignment.id)
+  const collapsedId = toCollapsedToken(assignment.id)
+  const nameToken = assignment.name ? toToken(assignment.name) : ""
+  const collapsedName = assignment.name ? toCollapsedToken(assignment.name) : ""
+
+  return (
+    classIndex.byId.get(idToken) ??
+    (nameToken ? classIndex.byName.get(nameToken) : undefined) ??
+    classIndex.byCollapsed.get(collapsedId) ??
+    (collapsedName ? classIndex.byCollapsed.get(collapsedName) : undefined) ??
+    null
+  )
+}
+
+const resolveSubjectRecord = (
+  subjectName: string,
+  assignment: NormalizedTeacherClassAssignment,
+  subjectIndex: Map<string, SubjectRecord[]>,
+): SubjectRecord | null => {
+  const normalizedSubject = subjectName.trim()
+  if (!normalizedSubject) {
+    return null
+  }
+
+  const candidates = subjectIndex.get(toToken(normalizedSubject))
+  if (!candidates || candidates.length === 0) {
+    return null
+  }
+
+  const classTokens = new Set<string>()
+  const idToken = toToken(assignment.id)
+  const collapsedId = toCollapsedToken(assignment.id)
+  const nameToken = assignment.name ? toToken(assignment.name) : ""
+  const collapsedName = assignment.name ? toCollapsedToken(assignment.name) : ""
+
+  if (idToken) {
+    classTokens.add(idToken)
+  }
+
+  if (collapsedId) {
+    classTokens.add(collapsedId)
+  }
+
+  if (nameToken) {
+    classTokens.add(nameToken)
+  }
+
+  if (collapsedName) {
+    classTokens.add(collapsedName)
+  }
+
+  const match = candidates.find((candidate) => {
+    if (!Array.isArray(candidate.classes)) {
+      return false
+    }
+
+    return candidate.classes.some((classRef) => {
+      const token = toToken(String(classRef))
+      const collapsedToken = toCollapsedToken(String(classRef))
+      return classTokens.has(token) || classTokens.has(collapsedToken)
+    })
+  })
+
+  return match ?? candidates[0] ?? null
+}
+
+export const summarizeTeacherAssignments = async (
   teacher: Partial<StoredUser> & Record<string, unknown>,
-): TeacherAssignmentSnapshot => {
+): Promise<TeacherAssignmentSnapshot> => {
   const registry: NormalizedTeacherClassAssignment[] = []
   const indexById = new Map<string, number>()
   const indexByName = new Map<string, number>()
@@ -188,8 +338,51 @@ export const summarizeTeacherAssignments = (
 
   normalizeSubjectList(teacher.subjects).forEach((subject) => subjectSet.add(subject))
 
+  const classesFromStore = await getAllClassesFromDb().catch(() => [])
+  const subjectRecords = await listSubjectRecords().catch(() => [])
+  const classIndex = buildClassIndex(classesFromStore)
+  const subjectIndex = buildSubjectIndex(subjectRecords)
+
+  const enrichedClasses = registry.map((assignment) => {
+    const classRecord = resolveClassRecord(assignment, classIndex)
+    const normalizedSubjects = normalizeAssignmentSubjects([
+      ...assignment.subjects,
+      ...normalizeSubjectList(classRecord?.subjects),
+    ])
+
+    normalizedSubjects.forEach((subject) => subjectSet.add(subject))
+
+    return {
+      ...assignment,
+      id: assignment.id,
+      name: assignment.name,
+      subjects: normalizedSubjects,
+    }
+  })
+
+  const subjectAssignments: TeacherSubjectAssignmentDetail[] = enrichedClasses.flatMap((assignment) => {
+    if (!assignment.subjects || assignment.subjects.length === 0) {
+      return []
+    }
+
+    return assignment.subjects.map((subjectName) => {
+      const subjectRecord = resolveSubjectRecord(subjectName, assignment, subjectIndex)
+      const subjectId = subjectRecord?.id
+        ? String(subjectRecord.id)
+        : `subject_${toCollapsedToken(`${assignment.id}_${subjectName}`)}`
+
+      return {
+        subjectId,
+        subjectName,
+        classId: assignment.id,
+        className: assignment.name,
+      }
+    })
+  })
+
   return {
-    classes: registry,
-    subjects: Array.from(subjectSet),
+    classes: enrichedClasses,
+    subjects: Array.from(subjectSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
+    subjectAssignments,
   }
 }

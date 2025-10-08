@@ -607,6 +607,50 @@ export function TeacherDashboard({
     classes: cachedAssignments?.classes ?? teacher.classes,
     updatedAt: cachedAssignments?.updatedAt ?? new Date(0).toISOString(),
   })
+  const hasScheduledAuthRedirectRef = useRef(false)
+
+  const scheduleAuthRedirect = useCallback(() => {
+    if (hasScheduledAuthRedirectRef.current) {
+      return
+    }
+
+    hasScheduledAuthRedirectRef.current = true
+
+    const runtimeInstance = getBrowserRuntime()
+
+    try {
+      safeStorage.removeItem("vea_auth_token")
+    } catch (storageError) {
+      logger.warn("Failed to clear auth token after unauthorized response", {
+        error: storageError instanceof Error ? storageError.message : storageError,
+      })
+    }
+
+    const performRedirect = () => {
+      const runtimeLocation = runtimeInstance?.location
+      if (!runtimeLocation) {
+        return
+      }
+
+      try {
+        if (typeof runtimeLocation.replace === "function") {
+          runtimeLocation.replace("/")
+        } else {
+          runtimeLocation.href = "/"
+        }
+      } catch (navigationError) {
+        logger.warn("Failed to navigate after auth expiry", {
+          error: navigationError instanceof Error ? navigationError.message : navigationError,
+        })
+      }
+    }
+
+    if (runtimeInstance && typeof runtimeInstance.setTimeout === "function") {
+      runtimeInstance.setTimeout(performRedirect, 400)
+    } else {
+      performRedirect()
+    }
+  }, [])
   const teacherClasses = useMemo(() => {
     const deduped: TeacherClassAssignment[] = []
     const idIndex = new Map<string, number>()
@@ -781,10 +825,16 @@ export function TeacherDashboard({
           setTeacherSubjects(cached.subjects)
           setTeacherAssignmentSources(cached.classes)
         }
-        setTeacherSubjectsError(
-          "Your session has expired. Please log in again to refresh your subject assignments.",
-        )
+        const sessionExpiredMessage =
+          "Your session has expired. Please log in again to refresh your subject assignments."
+        setTeacherSubjectsError(sessionExpiredMessage)
+        toast({
+          variant: "destructive",
+          title: "Session expired",
+          description: sessionExpiredMessage,
+        })
         setIsTeacherSubjectsLoading(false)
+        scheduleAuthRedirect()
       }
       return false
     }
@@ -816,13 +866,19 @@ export function TeacherDashboard({
       const payload = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        const message =
-          typeof (payload as { error?: unknown }).error === "string"
-            ? ((payload as { error?: string }).error as string)
+        const fallbackMessage =
+          response.status === 401
+            ? "Your session has expired. Please log in again to refresh your subject assignments."
             : response.status === 403
               ? "You do not have permission to load subject assignments."
               : "Unable to load your subject assignments."
-        throw new Error(message)
+        const message =
+          typeof (payload as { error?: unknown }).error === "string"
+            ? ((payload as { error?: string }).error as string)
+            : fallbackMessage
+        const errorWithStatus = new Error(message) as Error & { status?: number }
+        errorWithStatus.status = response.status
+        throw errorWithStatus
       }
 
       if (!isComponentMountedRef.current) {
@@ -854,10 +910,20 @@ export function TeacherDashboard({
         return false
       }
 
+      const status =
+        typeof (error as { status?: number }).status === "number"
+          ? ((error as { status?: number }).status as number)
+          : null
+
       if (error instanceof DOMException && error.name === "AbortError") {
-        setTeacherSubjectsError(
-          "The request to refresh your subjects took too long. Please check your connection and try again.",
-        )
+        const timeoutMessage =
+          "The request to refresh your subjects took too long. Please check your connection and try again."
+        setTeacherSubjectsError(timeoutMessage)
+        toast({
+          variant: "destructive",
+          title: "Subject refresh timed out",
+          description: timeoutMessage,
+        })
       } else {
         const message =
           error instanceof Error ? error.message : "Unable to load your subject assignments."
@@ -865,7 +931,23 @@ export function TeacherDashboard({
         logger.warn("Teacher subject refresh failed; using cached assignments", {
           error: error instanceof Error ? error.message : error,
           teacherId: teacher.id,
+          status,
         })
+
+        if (status === 401 || status === 403) {
+          toast({
+            variant: "destructive",
+            title: "Session expired",
+            description: "Please log in again to continue working with your subjects.",
+          })
+          scheduleAuthRedirect()
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Failed to refresh subjects",
+            description: message,
+          })
+        }
       }
 
       const storedAssignments = readTeacherAssignmentsCache(teacher.id)
@@ -895,7 +977,7 @@ export function TeacherDashboard({
         setIsTeacherSubjectsLoading(false)
       }
     }
-  }, [cachedAssignmentStateRef, teacher.id])
+  }, [cachedAssignmentStateRef, scheduleAuthRedirect, teacher.id, toast])
 
   useEffect(() => {
     void (async () => {
@@ -1410,7 +1492,12 @@ export function TeacherDashboard({
   )
 
   const hasAvailableSubjects = availableSubjectOptions.length > 0
-  const isSubjectSelectDisabled = isContextLoading || isTeacherSubjectsLoading
+  const hasCachedSubjectOptions =
+    hasAvailableSubjects ||
+    (Array.isArray(cachedAssignmentStateRef.current.subjects) &&
+      cachedAssignmentStateRef.current.subjects.length > 0)
+  const isSubjectSelectDisabled =
+    isContextLoading || (isTeacherSubjectsLoading && !hasCachedSubjectOptions)
 
   const selectedSubjectOption = selectedSubjectKey
     ? subjectOptionByKey.get(selectedSubjectKey) ?? null
@@ -5184,7 +5271,9 @@ export function TeacherDashboard({
                       <p className="mt-2 flex items-center gap-2 text-xs text-gray-500">
                         <Loader2 className="h-3 w-3 animate-spin" /> Updating your subject list…
                       </p>
-                    ) : teacherSubjectsError ? null : !hasAvailableSubjects ? (
+                    ) : teacherSubjectsError ? (
+                      <p className="mt-2 text-xs text-amber-600">{teacherSubjectsError}</p>
+                    ) : !hasAvailableSubjects ? (
                       <p className="mt-2 text-xs text-amber-600">
                         No subjects assigned. Please contact the admin.
                       </p>

@@ -83,32 +83,11 @@ export async function GET(
       return NextResponse.json({ error: "Teacher not found" }, { status: 404 })
     }
 
-    const { classes, subjects } = summarizeTeacherAssignments(teacherRecord)
-
-    const subjectAssignments = classes.flatMap((assignment) => {
-      if (!assignment || typeof assignment !== "object") {
-        return [] as Array<{ subject: string; classId: string; className: string }>
-      }
-
-      const classId =
-        typeof assignment.id === "string" && assignment.id.trim().length > 0
-          ? assignment.id
-          : ""
-      const className =
-        typeof assignment.name === "string" && assignment.name.trim().length > 0
-          ? assignment.name
-          : ""
-      const subjectsForClass = Array.isArray(assignment.subjects) ? assignment.subjects : []
-
-      return subjectsForClass
-        .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
-        .filter((subject) => subject.length > 0)
-        .map((subject) => ({ subject, classId, className }))
-    })
+    const { classes, subjects, subjectAssignments } = await summarizeTeacherAssignments(teacherRecord)
 
     logger.info("Teacher subject assignments resolved", {
       teacherId: teacherRecord.id,
-      subjectCount: subjects.length,
+      subjectCount: subjectAssignments.length,
       classCount: classes.length,
     })
 

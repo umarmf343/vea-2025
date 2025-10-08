@@ -58,7 +58,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Teacher not found" }, { status: 404 })
     }
 
-    const { classes: normalizedClasses, subjects: normalizedSubjects } = summarizeTeacherAssignments(teacherRecord)
+    const {
+      classes: normalizedClasses,
+      subjects: normalizedSubjects,
+      subjectAssignments,
+    } = await summarizeTeacherAssignments(teacherRecord)
 
     if (normalizedClasses.length === 0) {
       logger.warn("Teacher context resolved without any class assignments", { teacherId: teacherRecord.id })
@@ -66,7 +70,7 @@ export async function GET(request: NextRequest) {
       logger.info("Teacher context resolved", {
         teacherId: teacherRecord.id,
         classCount: normalizedClasses.length,
-        subjectCount: normalizedSubjects.length,
+        subjectCount: subjectAssignments.length,
       })
     }
 
@@ -78,6 +82,7 @@ export async function GET(request: NextRequest) {
       },
       classes: normalizedClasses,
       subjects: normalizedSubjects,
+      subjectAssignments,
     })
   } catch (error) {
     logger.error("Teacher context endpoint failed", { error })
