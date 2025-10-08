@@ -711,6 +711,7 @@ export function TeacherDashboard({
   const [teacherStudentsError, setTeacherStudentsError] = useState<string | null>(null)
   const [teacherStudentsMessage, setTeacherStudentsMessage] = useState<string | null>(null)
   const [marksData, setMarksData] = useState<MarksRecord[]>([])
+  const [addStudentDialogSubject, setAddStudentDialogSubject] = useState<string>("")
 
   const assignmentMaximum = defaultAssignmentMaximum
   const resolvedAssignmentMaximum = (() => {
@@ -1792,18 +1793,35 @@ export function TeacherDashboard({
     void loadRosterCandidates()
   }, [isAddStudentDialogOpen, loadRosterCandidates])
 
+  useEffect(() => {
+    if (isAddStudentDialogOpen) {
+      setAddStudentDialogSubject(selectedSubject)
+    } else {
+      setAddStudentDialogSubject("")
+    }
+  }, [isAddStudentDialogOpen, selectedSubject])
+
   const handleOpenAddStudentDialog = useCallback(() => {
-    if (!selectedClass || !selectedSubject) {
+    if (!selectedClass) {
       toast({
         variant: "destructive",
-        title: "Select class & subject",
-        description: "Choose a class and subject before adding students to the grade sheet.",
+        title: "Select a class",
+        description: "Choose one of your assigned classes before adding students to the grade sheet.",
+      })
+      return
+    }
+
+    if (!hasAvailableSubjects) {
+      toast({
+        variant: "destructive",
+        title: "No subjects available",
+        description: "You do not have any subjects assigned for this class. Contact your administrator.",
       })
       return
     }
 
     setIsAddStudentDialogOpen(true)
-  }, [selectedClass, selectedSubject, toast])
+  }, [hasAvailableSubjects, selectedClass, toast])
 
   const handleCloseAddStudentDialog = useCallback(() => {
     setIsAddStudentDialogOpen(false)
@@ -1846,6 +1864,17 @@ export function TeacherDashboard({
   const calculateGrade = (total: number) => deriveGradeFromScore(total)
 
   const handleConfirmAddStudents = useCallback(() => {
+    const effectiveSubject = (addStudentDialogSubject || selectedSubject).trim()
+
+    if (!effectiveSubject) {
+      toast({
+        variant: "destructive",
+        title: "Select a subject",
+        description: "Pick one of your assigned subjects before adding a learner to the grade sheet.",
+      })
+      return
+    }
+
     if (!selectedRosterId) {
       toast({
         variant: "destructive",
@@ -1874,11 +1903,12 @@ export function TeacherDashboard({
       return
     }
 
-    const storedRecord = selectedSubject
-      ? getStoredStudentMarksRecord(String(candidate.id), normalizedTermLabel, selectedSession)
-      : null
-    const storedSubject =
-      storedRecord && selectedSubject ? storedRecord.subjects?.[selectedSubject] : null
+    const storedRecord = getStoredStudentMarksRecord(
+      String(candidate.id),
+      normalizedTermLabel,
+      selectedSession,
+    )
+    const storedSubject = storedRecord ? storedRecord.subjects?.[effectiveSubject] : null
 
     const initialFirstCA = storedSubject?.ca1 ?? 0
     const initialSecondCA = storedSubject?.ca2 ?? 0
@@ -1959,6 +1989,7 @@ export function TeacherDashboard({
 
     handleCloseAddStudentDialog()
   }, [
+    addStudentDialogSubject,
     calculatePositionsAndAverages,
     handleCloseAddStudentDialog,
     marksData,
@@ -4859,7 +4890,7 @@ export function TeacherDashboard({
                           variant="outline"
                           className="border-dashed border-[#2d682d] text-[#2d682d] hover:bg-[#2d682d]/10"
                           onClick={handleOpenAddStudentDialog}
-                          disabled={!selectedClass || !selectedSubject}
+                          disabled={!selectedClass || !hasAvailableSubjects}
                         >
                           <UserPlus className="mr-2 h-4 w-4" />
                           Add Student Entry
@@ -5959,7 +5990,7 @@ export function TeacherDashboard({
                     Subject
                   </span>
                   <span className="text-sm font-medium text-emerald-900">
-                    {selectedSubject || "Not selected"}
+                    {addStudentDialogSubject || selectedSubject || "Not selected"}
                   </span>
                 </div>
                 <div>
@@ -5986,8 +6017,11 @@ export function TeacherDashboard({
                 Choose subject for this grade entry
               </Label>
               <Select
-                value={selectedSubject}
-                onValueChange={handleSelectSubject}
+                value={addStudentDialogSubject}
+                onValueChange={(value) => {
+                  setAddStudentDialogSubject(value)
+                  handleSelectSubject(value)
+                }}
                 disabled={isSubjectSelectDisabled}
               >
                 <SelectTrigger className="w-full text-sm">
