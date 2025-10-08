@@ -677,8 +677,9 @@ export function TeacherDashboard({
   const [selectedClassId, setSelectedClassId] = useState(() => firstTeacherClass?.id ?? "")
   const [selectedSubject, setSelectedSubject] = useState("")
   const [isSubjectSwitcherOpen, setIsSubjectSwitcherOpen] = useState(false)
-  const isComponentMountedRef = useRef(true)
+  const isComponentMountedRef = useRef(false)
   useEffect(() => {
+    isComponentMountedRef.current = true
     return () => {
       isComponentMountedRef.current = false
     }
