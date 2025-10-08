@@ -153,6 +153,40 @@ const normalizeStudentString = (value: unknown): string => {
   return trimmed.length > 0 ? trimmed : ""
 }
 
+const normalizeSubjectArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const normalized = value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0)
+
+  return Array.from(new Set(normalized))
+}
+
+const normalizeTeacherClassAssignments = (input: unknown): TeacherClassAssignment[] => {
+  if (!Array.isArray(input)) {
+    return []
+  }
+
+  return (input as Array<{ id?: unknown; name?: unknown; subjects?: unknown }>)
+    .map((entry, index) => {
+      if (!entry || typeof entry !== "object") {
+        return null
+      }
+
+      const rawId = typeof entry.id === "string" ? entry.id.trim() : ""
+      const rawName = typeof entry.name === "string" ? entry.name.trim() : ""
+      const subjects = normalizeSubjectArray(entry.subjects)
+      const fallbackId = rawId || rawName || `class_${index + 1}`
+      const fallbackName = rawName || rawId || `Class ${index + 1}`
+
+      return { id: fallbackId, name: fallbackName, subjects }
+    })
+    .filter((entry): entry is TeacherClassAssignment => entry !== null)
+}
+
 type TeacherClassAssignment = {
   id: string
   name: string
@@ -319,12 +353,18 @@ export function TeacherDashboard({
   onRefreshAssignments,
 }: TeacherDashboardProps) {
   const { toast } = useToast()
+  const [teacherAssignmentSources, setTeacherAssignmentSources] = useState<TeacherClassAssignment[]>(
+    () => teacher.classes,
+  )
+  const [teacherSubjects, setTeacherSubjects] = useState<string[]>(() => normalizeSubjectArray(teacher.subjects))
+  const [isTeacherSubjectsLoading, setIsTeacherSubjectsLoading] = useState(false)
+  const [teacherSubjectsError, setTeacherSubjectsError] = useState<string | null>(null)
   const teacherClasses = useMemo(() => {
     const deduped: TeacherClassAssignment[] = []
     const idIndex = new Map<string, number>()
     const nameIndex = new Map<string, number>()
 
-    teacher.classes.forEach((cls, index) => {
+    teacherAssignmentSources.forEach((cls, index) => {
       if (!cls) {
         return
       }
@@ -392,7 +432,7 @@ export function TeacherDashboard({
     })
 
     return deduped
-  }, [teacher.classes])
+  }, [teacherAssignmentSources])
   const firstTeacherClass = teacherClasses[0] ?? null
   const teacherClassNames = useMemo(() => teacherClasses.map((cls) => cls.name), [teacherClasses])
   const teacherClassIds = useMemo(() => teacherClasses.map((cls) => cls.id), [teacherClasses])
@@ -425,7 +465,7 @@ export function TeacherDashboard({
   const [selectedClass, setSelectedClass] = useState(() => firstTeacherClass?.name ?? "")
   const [selectedClassId, setSelectedClassId] = useState(() => firstTeacherClass?.id ?? "")
   const [selectedSubject, setSelectedSubject] = useState(
-    () => firstTeacherClass?.subjects[0] ?? teacher.subjects[0] ?? "",
+    () => firstTeacherClass?.subjects[0] ?? teacherSubjects[0] ?? "",
   )
   const [isSubjectSwitcherOpen, setIsSubjectSwitcherOpen] = useState(false)
   const rememberedSubjectByClassRef = useRef(new Map<string, string>())
@@ -433,6 +473,97 @@ export function TeacherDashboard({
   const [isClassSubjectsLoading, setIsClassSubjectsLoading] = useState(false)
   const [classSubjectsError, setClassSubjectsError] = useState<string | null>(null)
   const [classSubjectsNotice, setClassSubjectsNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    setTeacherAssignmentSources(teacher.classes)
+  }, [teacher.classes])
+
+  useEffect(() => {
+    setTeacherSubjects(normalizeSubjectArray(teacher.subjects))
+  }, [teacher.subjects])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchAssignedSubjects = async () => {
+      const token = safeStorage.getItem("vea_auth_token")
+      if (!token) {
+        if (isMounted) {
+          setTeacherSubjectsError(
+            "Your session has expired. Please log in again to refresh your subject assignments.",
+          )
+        }
+        return
+      }
+
+      if (isMounted) {
+        setIsTeacherSubjectsLoading(true)
+        setTeacherSubjectsError(null)
+      }
+
+      try {
+        const response = await fetch(`/api/teachers/${encodeURIComponent(teacher.id)}/subjects`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        })
+
+        const payload = await response.json().catch(() => ({}))
+
+        if (!response.ok) {
+          const message =
+            typeof (payload as { error?: unknown }).error === "string"
+              ? ((payload as { error?: string }).error as string)
+              : response.status === 403
+                ? "You do not have permission to load subject assignments."
+                : "Unable to load your subject assignments."
+          throw new Error(message)
+        }
+
+        if (!isMounted) {
+          return
+        }
+
+        const normalizedSubjects = normalizeSubjectArray((payload as { subjects?: unknown }).subjects)
+        const normalizedClasses = normalizeTeacherClassAssignments((payload as { classes?: unknown }).classes)
+
+        setTeacherSubjects(normalizedSubjects)
+        setTeacherAssignmentSources(normalizedClasses)
+
+        if (normalizedSubjects.length === 0) {
+          const message =
+            typeof (payload as { message?: unknown }).message === "string"
+              ? ((payload as { message?: string }).message as string)
+              : null
+          setTeacherSubjectsError(
+            message ?? "No subjects have been assigned to you yet. Please contact your administrator.",
+          )
+        } else {
+          setTeacherSubjectsError(null)
+        }
+      } catch (error) {
+        if (!isMounted) {
+          return
+        }
+
+        const message =
+          error instanceof Error ? error.message : "Unable to load your subject assignments."
+        setTeacherSubjectsError(message)
+      } finally {
+        if (isMounted) {
+          setIsTeacherSubjectsLoading(false)
+        }
+      }
+    }
+
+    void fetchAssignedSubjects()
+
+    return () => {
+      isMounted = false
+    }
+  }, [teacher.id])
 
   useEffect(() => {
     setClassSubjectsMap((previous) => {
@@ -534,7 +665,7 @@ export function TeacherDashboard({
     title: "",
     description: "",
     dueDate: "",
-    subject: firstTeacherClass?.subjects[0] ?? teacher.subjects[0] ?? "",
+    subject: firstTeacherClass?.subjects[0] ?? teacherSubjects[0] ?? "",
     classId: firstTeacherClass?.id ?? "",
     className: firstTeacherClass?.name ?? "",
     maximumScore: String(defaultAssignmentMaximum),
@@ -881,7 +1012,7 @@ export function TeacherDashboard({
   const normalizedTermLabel = useMemo(() => mapTermKeyToLabel(selectedTerm), [selectedTerm])
 
   const subjectSummary =
-    teacher.subjects.length > 0 ? teacher.subjects.join(", ") : "No subjects assigned yet"
+    teacherSubjects.length > 0 ? teacherSubjects.join(", ") : "No subjects assigned yet"
   const classSummary =
     teacherClassNames.length > 0 ? teacherClassNames.join(", ") : "No classes assigned yet"
 
@@ -933,15 +1064,36 @@ export function TeacherDashboard({
     [handleSelectSubject],
   )
 
+  const normalizedTeacherSubjects = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          teacherSubjects
+            .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+            .filter((subject) => subject.length > 0),
+        ),
+      ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
+    [teacherSubjects],
+  )
+
+  const teacherSubjectTokenSet = useMemo(
+    () => new Set(normalizedTeacherSubjects.map((subject) => subject.toLowerCase())),
+    [normalizedTeacherSubjects],
+  )
+
   const subjectsForSelectedClass = useMemo(() => {
-    const subjectSet = new Set<string>()
+    if (teacherSubjectTokenSet.size === 0) {
+      return []
+    }
+
+    const subjectSet = new Set<string>(normalizedTeacherSubjects)
     const normalizedName = normalizeClassName(selectedClass)
     const candidateKeys = [selectedClassId, normalizedName].filter((key) => key)
 
     const registerSubjects = (entries: unknown[]) => {
       entries
         .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
-        .filter((subject) => subject.length > 0)
+        .filter((subject) => subject.length > 0 && teacherSubjectTokenSet.has(subject.toLowerCase()))
         .forEach((subject) => subjectSet.add(subject))
     }
 
@@ -962,10 +1114,6 @@ export function TeacherDashboard({
         registerSubjects(classSubjects)
       }
     })
-
-    if (teacher.subjects.length > 0) {
-      registerSubjects(teacher.subjects)
-    }
 
     const storedRecords = readStudentMarksStore()
     Object.values(storedRecords).forEach((record) => {
@@ -1008,42 +1156,27 @@ export function TeacherDashboard({
       registerSubjects([selectedSubject])
     }
 
-    const subjectList = Array.from(subjectSet)
-
-    return subjectList.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+    return Array.from(subjectSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
   }, [
     classSubjectsMap,
     normalizeClassName,
+    normalizedTeacherSubjects,
     normalizedTermLabel,
     selectedClass,
     selectedClassId,
     selectedSession,
     selectedSubject,
-    teacher.subjects,
     teacherClasses,
+    teacherSubjectTokenSet,
   ])
 
-  const availableSubjects = useMemo(() => {
-    const merged = new Set<string>()
-
-    subjectsForSelectedClass.forEach((subject) => {
-      if (typeof subject === "string" && subject.trim().length > 0) {
-        merged.add(subject.trim())
-      }
-    })
-
-    teacher.subjects.forEach((subject) => {
-      if (typeof subject === "string" && subject.trim().length > 0) {
-        merged.add(subject.trim())
-      }
-    })
-
-    return Array.from(merged).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
-  }, [subjectsForSelectedClass, teacher.subjects])
+  const availableSubjects = useMemo(() => subjectsForSelectedClass, [subjectsForSelectedClass])
 
   const hasAvailableSubjects = availableSubjects.length > 0
   const isSubjectSelectDisabled =
-    isContextLoading || (!hasAvailableSubjects && !isClassSubjectsLoading)
+    isContextLoading ||
+    isTeacherSubjectsLoading ||
+    (!hasAvailableSubjects && !isClassSubjectsLoading)
 
   useEffect(() => {
     if (teacherClasses.length === 0) {
@@ -3300,7 +3433,7 @@ export function TeacherDashboard({
       title: "",
       description: "",
       dueDate: "",
-      subject: teacherClasses[0]?.subjects[0] ?? teacher.subjects[0] ?? "",
+      subject: teacherClasses[0]?.subjects[0] ?? teacherSubjects[0] ?? "",
       classId: teacherClasses[0]?.id ?? "",
       className: teacherClasses[0]?.name ?? "",
       maximumScore: String(defaultAssignmentMaximum),
@@ -3312,7 +3445,7 @@ export function TeacherDashboard({
     })
     setEditingAssignmentId(null)
     setAssignmentDialogMode("create")
-  }, [defaultAssignmentMaximum, teacherClasses, teacher.subjects])
+  }, [defaultAssignmentMaximum, teacherClasses, teacherSubjects])
 
   const openCreateAssignmentDialog = () => {
     resetAssignmentForm()
@@ -4314,7 +4447,7 @@ export function TeacherDashboard({
             <div className="flex items-center space-x-2">
               <BookOpen className="h-8 w-8 text-[#b29032]" />
               <div>
-                <p className="text-2xl font-bold text-[#b29032]">{teacher.subjects.length}</p>
+                <p className="text-2xl font-bold text-[#b29032]">{teacherSubjects.length}</p>
                 <p className="text-sm text-gray-600">Subjects</p>
               </div>
             </div>
@@ -4532,7 +4665,7 @@ export function TeacherDashboard({
                   <div>
                     <label className="text-sm font-medium text-gray-700">Subjects</label>
                     <div className="flex gap-1 mt-1">
-                      {teacher.subjects.map((subject, index) => (
+                      {teacherSubjects.map((subject, index) => (
                         <Badge key={index} variant="secondary">
                           {subject}
                         </Badge>
@@ -4560,6 +4693,16 @@ export function TeacherDashboard({
             <CardHeader>
               <CardTitle className="text-[#2d682d]">Enter Student Marks & Report Card Details</CardTitle>
               <CardDescription>Enter comprehensive assessment data that will appear on report cards</CardDescription>
+              {teacherSubjectsError ? (
+                <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {teacherSubjectsError}
+                </div>
+              ) : !isTeacherSubjectsLoading && !hasAvailableSubjects ? (
+                <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <p className="font-semibold">No subjects available for marking.</p>
+                  <p>Please contact your administrator to assign subjects before entering marks.</p>
+                </div>
+              ) : null}
               {selectedClass && selectedSubject && (
                 <div className="mt-2">
                   <Badge
@@ -4718,7 +4861,11 @@ export function TeacherDashboard({
                       <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
                       Switch subject
                     </Button>
-                    {classSubjectsError ? (
+                    {isTeacherSubjectsLoading ? (
+                      <p className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Updating your subject list…
+                      </p>
+                    ) : teacherSubjectsError ? null : classSubjectsError ? (
                       <p className="mt-2 text-xs text-red-600">{classSubjectsError}</p>
                     ) : classSubjectsNotice ? (
                       <p className="mt-2 text-xs text-amber-600">{classSubjectsNotice}</p>
@@ -5811,7 +5958,7 @@ export function TeacherDashboard({
                 userRole="teacher"
                 teacherName={teacher.name}
                 teacherId={teacher.id}
-                availableSubjects={teacher.subjects}
+                availableSubjects={teacherSubjects}
                 availableClasses={teacherClassNames}
               />
             </CardContent>
@@ -6071,7 +6218,7 @@ export function TeacherDashboard({
                         <SelectValue placeholder="Select subject" />
                       </SelectTrigger>
                       <SelectContent>
-                        {teacher.subjects.map((subject) => (
+                        {teacherSubjects.map((subject) => (
                           <SelectItem key={subject} value={subject}>
                             {subject}
                           </SelectItem>
