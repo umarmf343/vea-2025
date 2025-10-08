@@ -853,52 +853,47 @@ export function TeacherDashboard({
   )
 
   const subjectsForSelectedClass = useMemo(() => {
+    const subjectSet = new Set<string>()
     const normalizedName = normalizeClassName(selectedClass)
     const candidateKeys = [selectedClassId, normalizedName].filter((key) => key)
-    const aggregatedSubjects = candidateKeys.flatMap((key) => classSubjectsMap[key] ?? [])
 
-    if (aggregatedSubjects.length > 0) {
-      const unique = Array.from(
-        new Set(
-          aggregatedSubjects
-            .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
-            .filter((subject) => subject.length > 0),
-        ),
-      )
-      if (unique.length > 0) {
-        return unique
-      }
+    const registerSubjects = (entries: unknown[]) => {
+      entries
+        .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+        .filter((subject) => subject.length > 0)
+        .forEach((subject) => subjectSet.add(subject))
     }
 
-    if (teacherClasses.length === 0) {
-      return teacher.subjects
-    }
-
-    const match = teacherClasses.find((cls) => {
+    const matchedClass = teacherClasses.find((cls) => {
       if (cls.id && cls.id === selectedClassId) {
         return true
       }
       return normalizeClassName(cls.name) === normalizedName
     })
 
-    if (match && Array.isArray(match.subjects) && match.subjects.length > 0) {
-      return Array.from(
-        new Set(
-          match.subjects
-            .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
-            .filter((subject) => subject.length > 0),
-        ),
-      )
+    if (matchedClass && Array.isArray(matchedClass.subjects) && matchedClass.subjects.length > 0) {
+      registerSubjects(matchedClass.subjects)
     }
 
-    return teacher.subjects
+    candidateKeys.forEach((key) => {
+      const classSubjects = classSubjectsMap[key]
+      if (Array.isArray(classSubjects) && classSubjects.length > 0) {
+        registerSubjects(classSubjects)
+      }
+    })
+
+    if (subjectSet.size === 0 && teacher.subjects.length > 0) {
+      registerSubjects(teacher.subjects)
+    }
+
+    return Array.from(subjectSet)
   }, [
     classSubjectsMap,
     normalizeClassName,
     selectedClass,
     selectedClassId,
-    teacherClasses,
     teacher.subjects,
+    teacherClasses,
   ])
 
   useEffect(() => {
