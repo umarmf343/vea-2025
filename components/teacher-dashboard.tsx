@@ -142,8 +142,13 @@ const normalizeClassToken = (value: unknown): string => {
     return ""
   }
 
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed.toLowerCase() : ""
+  const trimmed = value.trim().toLowerCase()
+  if (!trimmed) {
+    return ""
+  }
+
+  const collapsed = trimmed.replace(/[^a-z0-9]/g, "")
+  return collapsed || trimmed
 }
 
 const normalizeStudentString = (value: unknown): string => {

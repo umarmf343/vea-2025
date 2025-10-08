@@ -41,8 +41,13 @@ const normalizeString = (value: unknown): string => {
 }
 
 const normalizeClassToken = (value: unknown): string => {
-  const normalized = normalizeString(value)
-  return normalized ? normalized.toLowerCase() : ""
+  const normalized = normalizeString(value).toLowerCase()
+  if (!normalized) {
+    return ""
+  }
+
+  const collapsed = normalized.replace(/[^a-z0-9]/g, "")
+  return collapsed || normalized
 }
 
 const normalizeStatusValue = (value: unknown): "active" | "inactive" | "" => {
