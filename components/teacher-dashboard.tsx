@@ -8697,9 +8697,6 @@ export function TeacherDashboard({
                     </Card>
                     <Card>
                       <CardHeader>
-                        <CardTitle className="text-sm">
-                          Class Teacher General Remarks
-                        </CardTitle>
                         <CardDescription>
                           Share a brief written comment for each student. The
                           text you enter will appear on their report card.

@@ -440,8 +440,8 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           color: #1b4332;
         }
         .affective-signature-item.head {
-          text-align: right;
-          align-items: flex-end;
+          text-align: left;
+          align-items: flex-start;
         }
         .affective-signature-label {
           font-size: 14px;
