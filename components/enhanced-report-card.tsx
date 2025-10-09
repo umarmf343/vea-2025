@@ -3256,16 +3256,16 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
         .affective-signatures {
           padding-top: 12px;
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
           gap: 20px;
-          flex-wrap: wrap;
+          align-items: end;
+          justify-items: start;
           border-top: 1px dashed #27613d;
         }
 
         .affective-signatures .signature-item {
-          flex: 1 1 220px;
+          width: 100%;
         }
 
         .affective-placeholder {
@@ -3295,7 +3295,6 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           color: #27613d;
           align-items: flex-start;
           text-align: left;
-          flex: 1 1 0;
           min-width: 220px;
         }
 
@@ -3311,9 +3310,9 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           }
 
           .affective-signatures {
-            flex-direction: column;
+            grid-template-columns: 1fr;
             align-items: stretch;
-            justify-content: flex-start;
+            justify-items: start;
             gap: 16px;
           }
 
