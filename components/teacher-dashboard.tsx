@@ -7942,7 +7942,7 @@ export function TeacherDashboard({
                           ? `Assessment weighting: ${assessmentWeightingSummary}.`
                           : "Assessment columns will appear once your administrator configures them."}
                       </p>
-                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                      <div className="mt-3 flex flex-col gap-2 sm:mt-0 sm:flex-row sm:flex-wrap sm:items-center">
                         <Button
                           variant="outline"
                           className="w-full justify-center border-dashed border-[#2d682d] text-[#2d682d] hover:bg-[#2d682d]/10 sm:w-auto sm:justify-start"
