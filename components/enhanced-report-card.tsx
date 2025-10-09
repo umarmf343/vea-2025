@@ -2478,13 +2478,18 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
         .student-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
           border-top: 1px solid #2e7d32;
           border-left: 1px solid #2e7d32;
         }
 
         .student-field {
-          display: contents;
+          display: grid;
+          grid-template-columns: minmax(130px, max-content) 1fr;
+          align-items: stretch;
+          border-right: 1px solid #2e7d32;
+          border-bottom: 1px solid #2e7d32;
+          background-color: #fff;
         }
 
         .info-label {
@@ -2492,19 +2497,20 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           color: #2e7d32;
           padding: 6px 8px;
           border-right: 1px solid #2e7d32;
-          border-bottom: 1px solid #2e7d32;
           font-size: 13px;
           background-color: #fafafa;
           letter-spacing: 0.04em;
+          display: flex;
+          align-items: center;
         }
 
         .info-value {
           padding: 6px 8px;
-          border-right: 1px solid #2e7d32;
-          border-bottom: 1px solid #2e7d32;
           font-size: 15px;
           font-weight: bold;
           background-color: #fff;
+          display: flex;
+          align-items: center;
         }
 
         .attendance-box {
