@@ -596,6 +596,21 @@ const buildTeacherSubjectOptions = (
   return options;
 };
 
+const isClassTeacherGeneralRemarkSubject = (subject: string): boolean => {
+  if (typeof subject !== "string") {
+    return false;
+  }
+
+  const normalized = subject.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    normalized.includes("general remark") && normalized.includes("class teacher")
+  );
+};
+
 type TeacherAssignmentsCacheStore = Record<
   string,
   TeacherAssignmentsCacheEntry
@@ -2654,36 +2669,56 @@ export function TeacherDashboard({
     const normalizedIdToken = normalizeClassToken(selectedClassId);
     const normalizedNameToken = normalizeClassName(selectedClass);
 
-    if (!normalizedIdToken && !normalizedNameToken) {
-      return teacherSubjectOptions;
+    const resolvedOptions = (!normalizedIdToken && !normalizedNameToken)
+      ? teacherSubjectOptions
+      : teacherSubjectOptions.filter((option) => {
+          const optionIdToken = normalizeClassToken(option.classId);
+          const optionNameToken = normalizeClassName(option.className);
+
+          if (
+            normalizedIdToken &&
+            optionIdToken &&
+            optionIdToken === normalizedIdToken
+          ) {
+            return true;
+          }
+
+          if (
+            normalizedNameToken &&
+            optionNameToken &&
+            optionNameToken === normalizedNameToken
+          ) {
+            return true;
+          }
+
+          if (!optionIdToken && !optionNameToken) {
+            return true;
+          }
+
+          return false;
+        });
+
+    if (resolvedOptions.length === 0) {
+      return [] as TeacherSubjectOption[];
     }
 
-    return teacherSubjectOptions.filter((option) => {
-      const optionIdToken = normalizeClassToken(option.classId);
-      const optionNameToken = normalizeClassName(option.className);
+    const deduped: TeacherSubjectOption[] = [];
+    const seenGeneralSubjects = new Set<string>();
 
-      if (
-        normalizedIdToken &&
-        optionIdToken &&
-        optionIdToken === normalizedIdToken
-      ) {
-        return true;
+    resolvedOptions.forEach((option) => {
+      if (isClassTeacherGeneralRemarkSubject(option.subject)) {
+        const key = option.subject.trim().toLowerCase();
+        if (seenGeneralSubjects.has(key)) {
+          return;
+        }
+
+        seenGeneralSubjects.add(key);
       }
 
-      if (
-        normalizedNameToken &&
-        optionNameToken &&
-        optionNameToken === normalizedNameToken
-      ) {
-        return true;
-      }
-
-      if (!optionIdToken && !optionNameToken) {
-        return true;
-      }
-
-      return false;
+      deduped.push(option);
     });
+
+    return deduped;
   }, [
     normalizeClassName,
     selectedClass,
