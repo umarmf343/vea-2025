@@ -11,7 +11,7 @@ export const PSYCHOMOTOR_SKILLS = [
   { key: "sport", label: "Sport" },
   { key: "handwriting", label: "Handwriting" },
   { key: "creativeArts", label: "Creative Arts" },
-  { key: "musicalSkills", label: "Musical Skills" },
+  { key: "musicalSkills", label: "Computer Skills" },
   { key: "practicalProjects", label: "Practical Projects" },
   { key: "verbalFluency", label: "Verbal Fluency" },
 ] as const
