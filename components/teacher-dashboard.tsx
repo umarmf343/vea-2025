@@ -127,39 +127,61 @@ type BrowserRuntime = typeof globalThis & Partial<Window>
 
 const SUBJECT_REMARK_OPTIONS = ["Excellent", "V. Good", "Good", "Poor"] as const
 
-const SUBJECT_REMARK_VISUAL_STYLES: Record<
-  (typeof SUBJECT_REMARK_OPTIONS)[number],
+type RemarkStyleKey = "excellent" | "vgood" | "good" | "poor"
+
+const REMARK_STYLE_MAP: Record<
+  RemarkStyleKey,
   {
     container: string
     label: string
     radio: string
   }
 > = {
-  Excellent: {
+  excellent: {
     container: "border-[#16a34a] bg-[#dcfce7]",
     label: "text-[#166534]",
     radio:
       "data-[state=checked]:border-[#16a34a] data-[state=checked]:bg-[#16a34a]/15 data-[state=checked]:text-[#16a34a] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#16a34a]",
   },
-  "V. Good": {
+  vgood: {
     container: "border-[#0d9488] bg-[#ccfbf1]",
     label: "text-[#0f766e]",
     radio:
       "data-[state=checked]:border-[#0d9488] data-[state=checked]:bg-[#0d9488]/15 data-[state=checked]:text-[#0d9488] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#0d9488]",
   },
-  Good: {
+  good: {
     container: "border-[#2563eb] bg-[#dbeafe]",
     label: "text-[#1d4ed8]",
     radio:
       "data-[state=checked]:border-[#2563eb] data-[state=checked]:bg-[#2563eb]/15 data-[state=checked]:text-[#2563eb] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#2563eb]",
   },
-  Poor: {
+  poor: {
     container: "border-[#dc2626] bg-[#fee2e2]",
     label: "text-[#b91c1c]",
     radio:
       "data-[state=checked]:border-[#dc2626] data-[state=checked]:bg-[#dc2626]/15 data-[state=checked]:text-[#dc2626] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#dc2626]",
   },
 }
+
+const normalizeRemarkStyleKey = (value: string): RemarkStyleKey => {
+  const normalized = value.toLowerCase().replace(/[^a-z]/g, "")
+
+  if (normalized.includes("excellent")) {
+    return "excellent"
+  }
+
+  if (normalized.includes("vgood") || normalized.includes("verygood")) {
+    return "vgood"
+  }
+
+  if (normalized.includes("poor")) {
+    return "poor"
+  }
+
+  return "good"
+}
+
+const getRemarkStyles = (value: string) => REMARK_STYLE_MAP[normalizeRemarkStyleKey(value)]
 
 const CLASS_TEACHER_REMARK_LABELS: Record<ClassTeacherSubjectRemark, string> = {
   Excellent: "Excellent",
@@ -172,21 +194,29 @@ const CLASS_TEACHER_REMARK_OPTIONS = [
   {
     value: "Excellent" as ClassTeacherSubjectRemark,
     label: CLASS_TEACHER_REMARK_LABELS.Excellent,
+    display: "Excellent",
+    styleKey: "excellent" as RemarkStyleKey,
     badgeClass: "border-[#16a34a]/40 bg-[#16a34a]/10 text-[#166534]",
   },
   {
     value: "V.Good" as ClassTeacherSubjectRemark,
     label: CLASS_TEACHER_REMARK_LABELS["V.Good"],
+    display: "V.Good",
+    styleKey: "vgood" as RemarkStyleKey,
     badgeClass: "border-[#0d9488]/40 bg-[#0d9488]/10 text-[#0f766e]",
   },
   {
     value: "Good" as ClassTeacherSubjectRemark,
     label: CLASS_TEACHER_REMARK_LABELS.Good,
+    display: "Good",
+    styleKey: "good" as RemarkStyleKey,
     badgeClass: "border-[#2563eb]/40 bg-[#2563eb]/10 text-[#1d4ed8]",
   },
   {
     value: "Poor" as ClassTeacherSubjectRemark,
     label: CLASS_TEACHER_REMARK_LABELS.Poor,
+    display: "Poor",
+    styleKey: "poor" as RemarkStyleKey,
     badgeClass: "border-[#dc2626]/40 bg-[#dc2626]/10 text-[#b91c1c]",
   },
 ] as const
@@ -230,6 +260,85 @@ const CLASS_TEACHER_REMARK_OPTION_MAP = CLASS_TEACHER_REMARK_OPTIONS.reduce(
   },
   {} as Record<ClassTeacherRemarkValue, (typeof CLASS_TEACHER_REMARK_OPTIONS)[number]>,
 )
+
+type RemarkChoiceOption<Value extends string> = {
+  value: Value
+  display: string
+}
+
+interface RemarkChoiceGroupProps<Value extends string> {
+  idPrefix: string
+  options: readonly RemarkChoiceOption<Value>[]
+  value: Value | undefined | null
+  onChange: (value: Value) => void
+  disabled?: boolean
+  className?: string
+}
+
+const buildOptionId = (prefix: string, value: string) =>
+  `${prefix}-${value.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+
+function RemarkChoiceGroup<Value extends string>({
+  idPrefix,
+  options,
+  value,
+  onChange,
+  disabled = false,
+  className,
+}: RemarkChoiceGroupProps<Value>) {
+  return (
+    <RadioGroup
+      value={(value ?? undefined) as string | undefined}
+      onValueChange={(nextValue) => onChange(nextValue as Value)}
+      className={cn("flex flex-wrap gap-2", className)}
+    >
+      {options.map((option) => {
+        const optionId = buildOptionId(idPrefix, option.value)
+        const isSelected = value === option.value
+        const styles = getRemarkStyles(option.display)
+
+        return (
+          <div
+            key={option.value}
+            className={cn(
+              "flex items-center gap-2 rounded-md border px-3 py-2 text-xs transition-colors",
+              isSelected ? styles.container : "border-slate-300 bg-white text-slate-500",
+              disabled && !isSelected && "opacity-60",
+              disabled && "cursor-not-allowed",
+            )}
+          >
+            <RadioGroupItem
+              value={option.value}
+              id={optionId}
+              disabled={disabled}
+              className={cn(
+                "border-slate-300 text-slate-400 transition-colors",
+                styles.radio,
+                disabled && "cursor-not-allowed",
+              )}
+            />
+            <Label
+              htmlFor={optionId}
+              className={cn(
+                "cursor-pointer text-xs font-semibold transition-colors",
+                isSelected ? styles.label : "text-slate-500",
+                disabled && "cursor-not-allowed",
+              )}
+            >
+              {option.display}
+            </Label>
+          </div>
+        )
+      })}
+    </RadioGroup>
+  )
+}
+
+const SUBJECT_REMARK_CHOICES: readonly RemarkChoiceOption<(typeof SUBJECT_REMARK_OPTIONS)[number]>[] =
+  SUBJECT_REMARK_OPTIONS.map((value) => ({ value, display: value }))
+
+const CLASS_TEACHER_REMARK_CHOICES: readonly RemarkChoiceOption<ClassTeacherRemarkValue>[] =
+  CLASS_TEACHER_REMARK_OPTIONS.map((option) => ({ value: option.value, display: option.display }))
 
 const REMARK_KEY_SEPARATOR = "::"
 
@@ -6968,56 +7077,17 @@ export function TeacherDashboard({
                                 </Badge>
                               </TableCell>
                               <TableCell className="min-w-[200px]">
-                                <RadioGroup
+                                <RemarkChoiceGroup
+                                  idPrefix={`${student.studentId}-subject-remark`}
+                                  options={SUBJECT_REMARK_CHOICES}
                                   value={student.teacherRemark}
-                                  onValueChange={(value) => handleMarksUpdate(student.studentId, "teacherRemark", value)}
-                                  className="flex flex-wrap gap-2"
-                                >
-                                  {SUBJECT_REMARK_OPTIONS.map((option) => {
-                                    const optionId = `${student.studentId}-subject-remark-${option
-                                      .toLowerCase()
-                                      .replace(/[^a-z0-9]+/g, "-")}`
-                                    const isDisabled =
-                                      currentStatus.status === "pending" || currentStatus.status === "approved"
-                                    const isSelected = student.teacherRemark === option
-                                    const styles = SUBJECT_REMARK_VISUAL_STYLES[option]
-
-                                    return (
-                                      <div
-                                        key={option}
-                                        className={cn(
-                                          "flex items-center gap-2 rounded-md border px-3 py-2 text-xs transition-colors",
-                                          isSelected
-                                            ? styles.container
-                                            : "border-slate-300 bg-white text-slate-500",
-                                          isDisabled && !isSelected && "opacity-60",
-                                          isDisabled && "cursor-not-allowed",
-                                        )}
-                                      >
-                                        <RadioGroupItem
-                                          value={option}
-                                          id={optionId}
-                                          disabled={isDisabled}
-                                          className={cn(
-                                            "border-slate-300 text-slate-400 transition-colors",
-                                            styles.radio,
-                                            isDisabled && "cursor-not-allowed",
-                                          )}
-                                        />
-                                        <Label
-                                          htmlFor={optionId}
-                                          className={cn(
-                                            "cursor-pointer text-xs font-semibold transition-colors",
-                                            isSelected ? styles.label : "text-slate-500",
-                                            isDisabled && "cursor-not-allowed",
-                                          )}
-                                        >
-                                          {option}
-                                        </Label>
-                                      </div>
-                                    )
-                                  })}
-                                </RadioGroup>
+                                  onChange={(value) =>
+                                    handleMarksUpdate(student.studentId, "teacherRemark", value)
+                                  }
+                                  disabled={
+                                    currentStatus.status === "pending" || currentStatus.status === "approved"
+                                  }
+                                />
                               </TableCell>
                               <TableCell className="text-center">
                                 <Button
@@ -7500,37 +7570,19 @@ export function TeacherDashboard({
                                   </span>
                                   .
                                 </p>
-                                <RadioGroup
+                                <RemarkChoiceGroup<ClassTeacherRemarkValue>
+                                  idPrefix={`${selectedRemarkStudent.studentId}-${selectedSubjectKey}-class-remark`}
+                                  options={CLASS_TEACHER_REMARK_CHOICES}
                                   value={selectedRemarkValue}
-                                  onValueChange={(value) =>
+                                  onChange={(value) =>
                                     handleClassTeacherRemarkSelection(
                                       selectedRemarkStudent.studentId,
                                       selectedSubjectKey,
-                                      value as ClassTeacherRemarkValue,
+                                      value,
                                     )
                                   }
                                   className="mt-4 flex flex-wrap gap-3"
-                                >
-                                  {CLASS_TEACHER_REMARK_OPTIONS.map((option) => {
-                                    const optionId = `${selectedRemarkStudent.studentId}-${selectedSubjectKey}-${option.value}`
-                                    return (
-                                      <Label
-                                        key={option.value}
-                                        htmlFor={optionId}
-                                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold shadow-sm transition ${
-                                          option.badgeClass
-                                        } hover:shadow-md`}
-                                      >
-                                        <RadioGroupItem
-                                          value={option.value}
-                                          id={optionId}
-                                          className="border-muted-foreground text-[#2d682d] focus-visible:ring-[#2d682d]"
-                                        />
-                                        <span>{option.label}</span>
-                                      </Label>
-                                    )
-                                  })}
-                                </RadioGroup>
+                                />
                               </>
                             ) : (
                               <div className="flex items-center justify-between gap-3 text-sm text-emerald-800">

@@ -2008,6 +2008,14 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   const showHeadSignatureName =
     (headNameField ? headNameField.enabled !== false : true) && headSignatureName.trim().length > 0
 
+  const affectiveSignatureBlock =
+    teacherSignatureEnabled || headSignatureEnabled ? (
+      <div className="affective-signatures">
+        {renderTeacherSignature()}
+        {renderHeadSignature()}
+      </div>
+    ) : null
+
   const gradingTitle = getSectionTitleResolved(
     "grading_key",
     getDefaultSectionTitle("grading_key"),
@@ -2385,38 +2393,40 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                 <div className="domain-block affective-block">
                   <strong>{affectiveTitle}</strong>
                   {showAffectiveBlock ? (
-                    <table className="af-domain-table checkmark-table">
-                      <thead>
-                        <tr>
-                          <th>Trait</th>
-                          <th className="check-column">Demonstrated</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {affectiveTraits.length > 0 ? (
-                          affectiveTraits.map((trait) => (
-                            <tr key={trait.key}>
-                              <td>{trait.label}</td>
-                              <td className={reportCardData.affectiveDomain[trait.key] ? "tick" : ""}>
-                                {reportCardData.affectiveDomain[trait.key] ? "✓" : ""}
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
+                    <>
+                      <table className="af-domain-table checkmark-table">
+                        <thead>
                           <tr>
-                            <td colSpan={2}>No affective records available.</td>
+                            <th>Trait</th>
+                            <th className="check-column">Demonstrated</th>
                           </tr>
-                        )}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {affectiveTraits.length > 0 ? (
+                            affectiveTraits.map((trait) => (
+                              <tr key={trait.key}>
+                                <td>{trait.label}</td>
+                                <td className={reportCardData.affectiveDomain[trait.key] ? "tick" : ""}>
+                                  {reportCardData.affectiveDomain[trait.key] ? "✓" : ""}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={2}>No affective records available.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                      {affectiveSignatureBlock}
+                    </>
                   ) : (
-                    <div className="affective-placeholder">Affective domain records are not enabled for this layout.</div>
-                  )}
-                  {(teacherSignatureEnabled || headSignatureEnabled) && (
-                    <div className="affective-signatures">
-                      {renderTeacherSignature()}
-                      {renderHeadSignature()}
-                    </div>
+                    <>
+                      <div className="affective-placeholder">
+                        Affective domain records are not enabled for this layout.
+                      </div>
+                      {affectiveSignatureBlock}
+                    </>
                   )}
                 </div>
               )}
