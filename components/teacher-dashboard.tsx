@@ -1,19 +1,47 @@
-"use client"
+"use client";
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Progress } from "@/components/ui/progress"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Checkbox } from "@/components/ui/checkbox"
+import {
+  ChangeEvent,
+  FormEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -21,9 +49,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { Separator } from "@/components/ui/separator"
+} from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
 import {
   CommandDialog,
   CommandEmpty,
@@ -31,7 +63,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command"
+} from "@/components/ui/command";
 import {
   BookOpen,
   Users,
@@ -57,32 +89,39 @@ import {
   ArrowRightLeft,
   Check,
   UploadCloud,
-} from "lucide-react"
-import { StudyMaterials } from "@/components/study-materials"
-import { Noticeboard } from "@/components/noticeboard"
-import { NotificationCenter } from "@/components/notification-center"
-import { InternalMessaging } from "@/components/internal-messaging"
-import { TutorialLink } from "@/components/tutorial-link"
-import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
-import { EnhancedReportCard } from "@/components/enhanced-report-card"
-import { ReportCardPreviewOverlay } from "@/components/report-card-preview-overlay"
-import { CONTINUOUS_ASSESSMENT_MAXIMUMS, deriveGradeFromScore, mapTermKeyToLabel } from "@/lib/grade-utils"
-import { safeStorage } from "@/lib/safe-storage"
-import { dbManager } from "@/lib/database-manager"
-import { logger } from "@/lib/logger"
-import { normalizeTimetableCollection } from "@/lib/timetable"
-import { useToast } from "@/hooks/use-toast"
-import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
-import { TimetableWeeklyView, type TimetableWeeklyViewSlot } from "@/components/timetable-weekly-view"
-import { cn } from "@/lib/utils"
+} from "lucide-react";
+import { StudyMaterials } from "@/components/study-materials";
+import { Noticeboard } from "@/components/noticeboard";
+import { NotificationCenter } from "@/components/notification-center";
+import { InternalMessaging } from "@/components/internal-messaging";
+import { TutorialLink } from "@/components/tutorial-link";
+import { ExamScheduleOverview } from "@/components/exam-schedule-overview";
+import { EnhancedReportCard } from "@/components/enhanced-report-card";
+import { ReportCardPreviewOverlay } from "@/components/report-card-preview-overlay";
+import {
+  CONTINUOUS_ASSESSMENT_MAXIMUMS,
+  deriveGradeFromScore,
+  mapTermKeyToLabel,
+} from "@/lib/grade-utils";
+import { safeStorage } from "@/lib/safe-storage";
+import { dbManager } from "@/lib/database-manager";
+import { logger } from "@/lib/logger";
+import { normalizeTimetableCollection } from "@/lib/timetable";
+import { useToast } from "@/hooks/use-toast";
+import { SchoolCalendarViewer } from "@/components/school-calendar-viewer";
+import {
+  TimetableWeeklyView,
+  type TimetableWeeklyViewSlot,
+} from "@/components/timetable-weekly-view";
+import { cn } from "@/lib/utils";
 import {
   STUDENT_MARKS_STORAGE_KEY,
   buildRawReportCardFromStoredRecord,
   getStoredStudentMarksRecord,
   readStudentMarksStore,
-} from "@/lib/report-card-data"
-import { mapReportCardRecordToRaw } from "@/lib/report-card-transformers"
-import { buildReportCardHtml } from "@/lib/report-card-html"
+} from "@/lib/report-card-data";
+import { mapReportCardRecordToRaw } from "@/lib/report-card-transformers";
+import { buildReportCardHtml } from "@/lib/report-card-html";
 import {
   REPORT_CARD_WORKFLOW_EVENT,
   getWorkflowRecords,
@@ -91,29 +130,29 @@ import {
   submitReportCardsForApproval,
   type ReportCardCumulativeSummary,
   type ReportCardWorkflowRecord,
-} from "@/lib/report-card-workflow"
-import type { ReportCardRecord, ReportCardSubjectRecord } from "@/lib/database"
+} from "@/lib/report-card-workflow";
+import type { ReportCardRecord, ReportCardSubjectRecord } from "@/lib/database";
 import {
   AFFECTIVE_TRAITS,
   createBehavioralRecordSkeleton,
   PSYCHOMOTOR_SKILLS,
   interpretBehavioralSelection,
   normalizeBehavioralDomainKey,
-} from "@/lib/report-card-constants"
+} from "@/lib/report-card-constants";
 import type {
   ClassTeacherRemarkEntry,
   ClassTeacherSubjectRemark,
   RawReportCardData,
   StoredStudentMarkRecord,
   StoredSubjectRecord,
-} from "@/lib/report-card-types"
+} from "@/lib/report-card-types";
 import {
   clearAssignmentReminderHistory,
   markAssignmentReminderSent,
   shouldSendAssignmentReminder,
-} from "@/lib/assignment-reminders"
-import { resolveStudentPassportFromCache } from "@/lib/student-passport"
-import { resolveCachedAdmissionNumber } from "@/lib/student-cache"
+} from "@/lib/assignment-reminders";
+import { resolveStudentPassportFromCache } from "@/lib/student-passport";
+import { resolveCachedAdmissionNumber } from "@/lib/student-cache";
 import {
   DEFAULT_REPORT_CARD_COLUMNS,
   buildResolvedColumns,
@@ -121,20 +160,25 @@ import {
   normalizeColumnType,
   normalizeColumnsFromResponse,
   type ReportCardColumnConfig,
-} from "@/lib/report-card-columns"
+} from "@/lib/report-card-columns";
 
-type BrowserRuntime = typeof globalThis & Partial<Window>
+type BrowserRuntime = typeof globalThis & Partial<Window>;
 
-const SUBJECT_REMARK_OPTIONS = ["Excellent", "V. Good", "Good", "Poor"] as const
+const SUBJECT_REMARK_OPTIONS = [
+  "Excellent",
+  "V. Good",
+  "Good",
+  "Poor",
+] as const;
 
-type RemarkStyleKey = "excellent" | "vgood" | "good" | "poor"
+type RemarkStyleKey = "excellent" | "vgood" | "good" | "poor";
 
 const REMARK_STYLE_MAP: Record<
   RemarkStyleKey,
   {
-    container: string
-    label: string
-    radio: string
+    container: string;
+    label: string;
+    radio: string;
   }
 > = {
   excellent: {
@@ -161,34 +205,35 @@ const REMARK_STYLE_MAP: Record<
     radio:
       "data-[state=checked]:border-[#dc2626] data-[state=checked]:bg-[#dc2626]/15 data-[state=checked]:text-[#dc2626] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#dc2626]",
   },
-}
+};
 
 const normalizeRemarkStyleKey = (value: string): RemarkStyleKey => {
-  const normalized = value.toLowerCase().replace(/[^a-z]/g, "")
+  const normalized = value.toLowerCase().replace(/[^a-z]/g, "");
 
   if (normalized.includes("excellent")) {
-    return "excellent"
+    return "excellent";
   }
 
   if (normalized.includes("vgood") || normalized.includes("verygood")) {
-    return "vgood"
+    return "vgood";
   }
 
   if (normalized.includes("poor")) {
-    return "poor"
+    return "poor";
   }
 
-  return "good"
-}
+  return "good";
+};
 
-const getRemarkStyles = (value: string) => REMARK_STYLE_MAP[normalizeRemarkStyleKey(value)]
+const getRemarkStyles = (value: string) =>
+  REMARK_STYLE_MAP[normalizeRemarkStyleKey(value)];
 
 const CLASS_TEACHER_REMARK_LABELS: Record<ClassTeacherSubjectRemark, string> = {
   Excellent: "Excellent",
   "V.Good": "Very Good",
   Good: "Good",
   Poor: "Poor",
-}
+};
 
 const CLASS_TEACHER_REMARK_OPTIONS = [
   {
@@ -219,64 +264,71 @@ const CLASS_TEACHER_REMARK_OPTIONS = [
     styleKey: "poor" as RemarkStyleKey,
     badgeClass: "border-[#dc2626]/40 bg-[#dc2626]/10 text-[#b91c1c]",
   },
-] as const
+] as const;
 
-type ClassTeacherRemarkValue = ClassTeacherSubjectRemark
+type ClassTeacherRemarkValue = ClassTeacherSubjectRemark;
 
-const interpretClassTeacherRemark = (value: unknown): ClassTeacherRemarkValue | null => {
+const interpretClassTeacherRemark = (
+  value: unknown,
+): ClassTeacherRemarkValue | null => {
   if (typeof value !== "string") {
-    return null
+    return null;
   }
 
-  const trimmed = value.trim()
+  const trimmed = value.trim();
   if (!trimmed) {
-    return null
+    return null;
   }
 
-  const normalized = trimmed.toLowerCase().replace(/\s+/g, "")
+  const normalized = trimmed.toLowerCase().replace(/\s+/g, "");
 
-  if (normalized === "vgood" || normalized === "v.good" || normalized === "verygood") {
-    return "V.Good"
+  if (
+    normalized === "vgood" ||
+    normalized === "v.good" ||
+    normalized === "verygood"
+  ) {
+    return "V.Good";
   }
 
   const directMatch = CLASS_TEACHER_REMARK_OPTIONS.find(
     (option) => option.value.toLowerCase().replace(/\s+/g, "") === normalized,
-  )
+  );
 
-  return directMatch ? directMatch.value : null
-}
+  return directMatch ? directMatch.value : null;
+};
 
-const mapClassTeacherRemarkToSubjectRemark = (value: ClassTeacherRemarkValue): string =>
-  CLASS_TEACHER_REMARK_LABELS[value] ?? value
-const SUBJECT_REFRESH_TIMEOUT_MS = 15000
+const mapClassTeacherRemarkToSubjectRemark = (
+  value: ClassTeacherRemarkValue,
+): string => CLASS_TEACHER_REMARK_LABELS[value] ?? value;
+const SUBJECT_REFRESH_TIMEOUT_MS = 15000;
 
 const CLASS_TEACHER_REMARK_OPTION_MAP = CLASS_TEACHER_REMARK_OPTIONS.reduce(
-  (
-    acc,
-    option,
-  ) => {
-    acc[option.value] = option
-    return acc
+  (acc, option) => {
+    acc[option.value] = option;
+    return acc;
   },
-  {} as Record<ClassTeacherRemarkValue, (typeof CLASS_TEACHER_REMARK_OPTIONS)[number]>,
-)
+  {} as Record<
+    ClassTeacherRemarkValue,
+    (typeof CLASS_TEACHER_REMARK_OPTIONS)[number]
+  >,
+);
 
 type RemarkChoiceOption<Value extends string> = {
-  value: Value
-  display: string
-}
+  value: Value;
+  display: string;
+};
 
 interface RemarkChoiceGroupProps<Value extends string> {
-  idPrefix: string
-  options: readonly RemarkChoiceOption<Value>[]
-  value: Value | undefined | null
-  onChange: (value: Value) => void
-  disabled?: boolean
-  className?: string
+  idPrefix: string;
+  options: readonly RemarkChoiceOption<Value>[];
+  value: Value | undefined | null;
+  onChange: (value: Value) => void;
+  disabled?: boolean;
+  className?: string;
 }
 
 const buildOptionId = (prefix: string, value: string) =>
-  `${prefix}-${value.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+  `${prefix}-${value.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
 function RemarkChoiceGroup<Value extends string>({
   idPrefix,
@@ -293,16 +345,18 @@ function RemarkChoiceGroup<Value extends string>({
       className={cn("flex flex-wrap gap-2", className)}
     >
       {options.map((option) => {
-        const optionId = buildOptionId(idPrefix, option.value)
-        const isSelected = value === option.value
-        const styles = getRemarkStyles(option.display)
+        const optionId = buildOptionId(idPrefix, option.value);
+        const isSelected = value === option.value;
+        const styles = getRemarkStyles(option.display);
 
         return (
           <div
             key={option.value}
             className={cn(
               "flex items-center gap-2 rounded-md border px-3 py-2 text-xs transition-colors",
-              isSelected ? styles.container : "border-slate-300 bg-white text-slate-500",
+              isSelected
+                ? styles.container
+                : "border-slate-300 bg-white text-slate-500",
               disabled && !isSelected && "opacity-60",
               disabled && "cursor-not-allowed",
             )}
@@ -328,132 +382,143 @@ function RemarkChoiceGroup<Value extends string>({
               {option.display}
             </Label>
           </div>
-        )
+        );
       })}
     </RadioGroup>
-  )
+  );
 }
 
-const SUBJECT_REMARK_CHOICES: readonly RemarkChoiceOption<(typeof SUBJECT_REMARK_OPTIONS)[number]>[] =
-  SUBJECT_REMARK_OPTIONS.map((value) => ({ value, display: value }))
+const SUBJECT_REMARK_CHOICES: readonly RemarkChoiceOption<
+  (typeof SUBJECT_REMARK_OPTIONS)[number]
+>[] = SUBJECT_REMARK_OPTIONS.map((value) => ({ value, display: value }));
 
 const CLASS_TEACHER_REMARK_CHOICES: readonly RemarkChoiceOption<ClassTeacherRemarkValue>[] =
-  CLASS_TEACHER_REMARK_OPTIONS.map((option) => ({ value: option.value, display: option.display }))
+  CLASS_TEACHER_REMARK_OPTIONS.map((option) => ({
+    value: option.value,
+    display: option.display,
+  }));
 
-const REMARK_KEY_SEPARATOR = "::"
+const REMARK_KEY_SEPARATOR = "::";
 
 const buildRemarkKey = (subjectKey: string, studentId: string) =>
-  `${subjectKey}${REMARK_KEY_SEPARATOR}${studentId}`
+  `${subjectKey}${REMARK_KEY_SEPARATOR}${studentId}`;
 
-const parseRemarkKey = (key: string): { subjectKey: string; studentId: string } => {
-  const separatorIndex = key.lastIndexOf(REMARK_KEY_SEPARATOR)
+const parseRemarkKey = (
+  key: string,
+): { subjectKey: string; studentId: string } => {
+  const separatorIndex = key.lastIndexOf(REMARK_KEY_SEPARATOR);
   if (separatorIndex === -1) {
-    return { subjectKey: key, studentId: "" }
+    return { subjectKey: key, studentId: "" };
   }
 
   return {
     subjectKey: key.slice(0, separatorIndex),
     studentId: key.slice(separatorIndex + REMARK_KEY_SEPARATOR.length),
-  }
-}
+  };
+};
 
 const getBrowserRuntime = (): BrowserRuntime | null => {
   if (typeof globalThis === "undefined") {
-    return null
+    return null;
   }
 
-  return globalThis as BrowserRuntime
-}
+  return globalThis as BrowserRuntime;
+};
 
 const sanitizeFileName = (value: string) => {
-  const trimmed = value.trim().toLowerCase()
-  const sanitized = trimmed.replace(/[^a-z0-9\-_.]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "")
-  return sanitized.length > 0 ? sanitized : "report-card"
-}
+  const trimmed = value.trim().toLowerCase();
+  const sanitized = trimmed
+    .replace(/[^a-z0-9\-_.]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return sanitized.length > 0 ? sanitized : "report-card";
+};
 
 const normalizeClassToken = (value: unknown): string => {
   if (typeof value !== "string") {
-    return ""
+    return "";
   }
 
-  const trimmed = value.trim().toLowerCase()
+  const trimmed = value.trim().toLowerCase();
   if (!trimmed) {
-    return ""
+    return "";
   }
 
-  const collapsed = trimmed.replace(/[^a-z0-9]/g, "")
-  return collapsed || trimmed
-}
+  const collapsed = trimmed.replace(/[^a-z0-9]/g, "");
+  return collapsed || trimmed;
+};
 
 const normalizeStudentString = (value: unknown): string => {
   if (typeof value !== "string") {
-    return ""
+    return "";
   }
 
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : ""
-}
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : "";
+};
 
 const normalizeSubjectArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
-    return []
+    return [];
   }
 
   const normalized = value
     .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
-    .filter((entry) => entry.length > 0)
+    .filter((entry) => entry.length > 0);
 
-  return Array.from(new Set(normalized))
-}
+  return Array.from(new Set(normalized));
+};
 
-const normalizeTeacherClassAssignments = (input: unknown): TeacherClassAssignment[] => {
+const normalizeTeacherClassAssignments = (
+  input: unknown,
+): TeacherClassAssignment[] => {
   if (!Array.isArray(input)) {
-    return []
+    return [];
   }
 
   return (input as Array<{ id?: unknown; name?: unknown; subjects?: unknown }>)
     .map((entry, index) => {
       if (!entry || typeof entry !== "object") {
-        return null
+        return null;
       }
 
-      const rawId = typeof entry.id === "string" ? entry.id.trim() : ""
-      const rawName = typeof entry.name === "string" ? entry.name.trim() : ""
-      const subjects = normalizeSubjectArray(entry.subjects)
-      const fallbackId = rawId || rawName || `class_${index + 1}`
-      const fallbackName = rawName || rawId || `Class ${index + 1}`
+      const rawId = typeof entry.id === "string" ? entry.id.trim() : "";
+      const rawName = typeof entry.name === "string" ? entry.name.trim() : "";
+      const subjects = normalizeSubjectArray(entry.subjects);
+      const fallbackId = rawId || rawName || `class_${index + 1}`;
+      const fallbackName = rawName || rawId || `Class ${index + 1}`;
 
-      return { id: fallbackId, name: fallbackName, subjects }
+      return { id: fallbackId, name: fallbackName, subjects };
     })
-    .filter((entry): entry is TeacherClassAssignment => entry !== null)
-}
+    .filter((entry): entry is TeacherClassAssignment => entry !== null);
+};
 
 type TeacherClassAssignment = {
-  id: string
-  name: string
-  subjects: string[]
-}
+  id: string;
+  name: string;
+  subjects: string[];
+};
 
 type TeacherAssignmentsCacheEntry = {
-  subjects: string[]
-  classes: TeacherClassAssignment[]
-  updatedAt: string
-}
+  subjects: string[];
+  classes: TeacherClassAssignment[];
+  updatedAt: string;
+};
 
 type TeacherSubjectOption = {
-  key: string
-  subject: string
-  classId: string
-  className: string
-  label: string
-}
+  key: string;
+  subject: string;
+  classId: string;
+  className: string;
+  label: string;
+};
 
 const buildTeacherSubjectOptions = (
   classes: TeacherClassAssignment[],
   fallbackSubjects: string[],
 ): TeacherSubjectOption[] => {
-  const options: TeacherSubjectOption[] = []
-  const seenKeys = new Set<string>()
+  const options: TeacherSubjectOption[] = [];
+  const seenKeys = new Set<string>();
 
   const registerOption = (
     subjectName: string,
@@ -461,169 +526,195 @@ const buildTeacherSubjectOptions = (
     className: string,
     baseToken: string,
   ) => {
-    const normalizedSubject = subjectName.trim()
+    const normalizedSubject = subjectName.trim();
     if (!normalizedSubject) {
-      return
+      return;
     }
 
-    const baseKey = `${normalizedSubject.toLowerCase()}::${baseToken}`
-    let key = baseKey
-    let attempt = 1
+    const baseKey = `${normalizedSubject.toLowerCase()}::${baseToken}`;
+    let key = baseKey;
+    let attempt = 1;
     while (seenKeys.has(key)) {
-      key = `${baseKey}::${attempt}`
-      attempt += 1
+      key = `${baseKey}::${attempt}`;
+      attempt += 1;
     }
 
-    seenKeys.add(key)
+    seenKeys.add(key);
     options.push({
       key,
       subject: normalizedSubject,
       classId,
       className,
       label: normalizedSubject,
-    })
-  }
+    });
+  };
 
   classes.forEach((cls, classIndex) => {
     if (!cls) {
-      return
+      return;
     }
 
-    const rawClassId = typeof cls.id === "string" ? cls.id.trim() : ""
-    const rawClassName = typeof cls.name === "string" ? cls.name.trim() : ""
-    const normalizedClassNameToken = rawClassName.replace(/\s+/g, "").toLowerCase()
+    const rawClassId = typeof cls.id === "string" ? cls.id.trim() : "";
+    const rawClassName = typeof cls.name === "string" ? cls.name.trim() : "";
+    const normalizedClassNameToken = rawClassName
+      .replace(/\s+/g, "")
+      .toLowerCase();
     const classToken =
-      normalizeClassToken(rawClassId) || normalizedClassNameToken || `class_${classIndex + 1}`
+      normalizeClassToken(rawClassId) ||
+      normalizedClassNameToken ||
+      `class_${classIndex + 1}`;
     const classId =
       rawClassId ||
-      (normalizedClassNameToken ? `class_${normalizedClassNameToken}` : `class_${classIndex + 1}`)
-    const className = rawClassName || rawClassId || `Class ${classIndex + 1}`
+      (normalizedClassNameToken
+        ? `class_${normalizedClassNameToken}`
+        : `class_${classIndex + 1}`);
+    const className = rawClassName || rawClassId || `Class ${classIndex + 1}`;
 
     const subjects = Array.isArray(cls.subjects)
-      ? cls.subjects.filter((subject): subject is string => typeof subject === "string")
-      : []
+      ? cls.subjects.filter(
+          (subject): subject is string => typeof subject === "string",
+        )
+      : [];
 
     subjects.forEach((subject, subjectIndex) => {
-      const token = `${classToken || "class"}_${subjectIndex}`
-      registerOption(subject, classId, className, token)
-    })
-  })
+      const token = `${classToken || "class"}_${subjectIndex}`;
+      registerOption(subject, classId, className, token);
+    });
+  });
 
   if (options.length === 0) {
     fallbackSubjects
-      .filter((subject): subject is string => typeof subject === "string" && subject.trim().length > 0)
+      .filter(
+        (subject): subject is string =>
+          typeof subject === "string" && subject.trim().length > 0,
+      )
       .forEach((subject, index) => {
-        registerOption(subject, "", "", `subject_${index}`)
-      })
+        registerOption(subject, "", "", `subject_${index}`);
+      });
   }
 
-  return options
-}
+  return options;
+};
 
-type TeacherAssignmentsCacheStore = Record<string, TeacherAssignmentsCacheEntry>
+type TeacherAssignmentsCacheStore = Record<
+  string,
+  TeacherAssignmentsCacheEntry
+>;
 
-const TEACHER_ASSIGNMENTS_CACHE_KEY = "vea_teacher_assignments_cache_v1"
+const TEACHER_ASSIGNMENTS_CACHE_KEY = "vea_teacher_assignments_cache_v1";
 
 const areSubjectListsEqual = (left: string[], right: string[]): boolean => {
   if (left === right) {
-    return true
+    return true;
   }
 
   if (left.length !== right.length) {
-    return false
+    return false;
   }
 
   const normalize = (subjects: string[]) =>
     subjects
-      .map((subject) => (typeof subject === "string" ? subject.trim().toLowerCase() : ""))
+      .map((subject) =>
+        typeof subject === "string" ? subject.trim().toLowerCase() : "",
+      )
       .filter((subject) => subject.length > 0)
-      .sort()
+      .sort();
 
-  const normalizedLeft = normalize(left)
-  const normalizedRight = normalize(right)
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
 
   if (normalizedLeft.length !== normalizedRight.length) {
-    return false
+    return false;
   }
 
-  return normalizedLeft.every((subject, index) => subject === normalizedRight[index])
-}
+  return normalizedLeft.every(
+    (subject, index) => subject === normalizedRight[index],
+  );
+};
 
 const areClassAssignmentsEqual = (
   left: TeacherClassAssignment[],
   right: TeacherClassAssignment[],
 ): boolean => {
   if (left === right) {
-    return true
+    return true;
   }
 
   if (left.length !== right.length) {
-    return false
+    return false;
   }
 
   const serializeAssignments = (assignments: TeacherClassAssignment[]) =>
     assignments
       .map((assignment) => {
-        const idToken = normalizeClassToken(assignment.id)
-        const nameToken = normalizeClassToken(assignment.name)
+        const idToken = normalizeClassToken(assignment.id);
+        const nameToken = normalizeClassToken(assignment.name);
         const subjects = normalizeSubjectArray(assignment.subjects)
           .map((subject) => subject.toLowerCase())
           .sort()
-          .join(",")
+          .join(",");
 
-        return `${idToken}|${nameToken}|${subjects}`
+        return `${idToken}|${nameToken}|${subjects}`;
       })
-      .sort()
+      .sort();
 
-  const leftSerialized = serializeAssignments(left)
-  const rightSerialized = serializeAssignments(right)
+  const leftSerialized = serializeAssignments(left);
+  const rightSerialized = serializeAssignments(right);
 
   if (leftSerialized.length !== rightSerialized.length) {
-    return false
+    return false;
   }
 
-  return leftSerialized.every((entry, index) => entry === rightSerialized[index])
-}
+  return leftSerialized.every(
+    (entry, index) => entry === rightSerialized[index],
+  );
+};
 
-const readTeacherAssignmentsCache = (teacherId: string): TeacherAssignmentsCacheEntry | null => {
+const readTeacherAssignmentsCache = (
+  teacherId: string,
+): TeacherAssignmentsCacheEntry | null => {
   if (!teacherId) {
-    return null
+    return null;
   }
 
-  const raw = safeStorage.getItem(TEACHER_ASSIGNMENTS_CACHE_KEY)
+  const raw = safeStorage.getItem(TEACHER_ASSIGNMENTS_CACHE_KEY);
   if (!raw) {
-    return null
+    return null;
   }
 
   try {
-    const parsed = JSON.parse(raw) as TeacherAssignmentsCacheStore
+    const parsed = JSON.parse(raw) as TeacherAssignmentsCacheStore;
     if (!parsed || typeof parsed !== "object") {
-      return null
+      return null;
     }
 
-    const entry = parsed[teacherId]
+    const entry = parsed[teacherId];
     if (!entry || typeof entry !== "object") {
-      return null
+      return null;
     }
 
-    const subjects = normalizeSubjectArray((entry as { subjects?: unknown }).subjects)
-    const classes = normalizeTeacherClassAssignments((entry as { classes?: unknown }).classes)
+    const subjects = normalizeSubjectArray(
+      (entry as { subjects?: unknown }).subjects,
+    );
+    const classes = normalizeTeacherClassAssignments(
+      (entry as { classes?: unknown }).classes,
+    );
 
     if (subjects.length === 0 && classes.length === 0) {
-      return null
+      return null;
     }
 
     const updatedAt =
       typeof (entry as { updatedAt?: unknown }).updatedAt === "string"
         ? ((entry as { updatedAt: string }).updatedAt as string)
-        : new Date(0).toISOString()
+        : new Date(0).toISOString();
 
-    return { subjects, classes, updatedAt }
+    return { subjects, classes, updatedAt };
   } catch (error) {
-    logger.warn("Failed to read teacher assignments cache", { error })
-    return null
+    logger.warn("Failed to read teacher assignments cache", { error });
+    return null;
   }
-}
+};
 
 const persistTeacherAssignmentsCache = (
   teacherId: string,
@@ -631,24 +722,26 @@ const persistTeacherAssignmentsCache = (
   classes: TeacherClassAssignment[],
 ) => {
   if (!teacherId) {
-    return
+    return;
   }
 
   try {
-    const normalizedSubjects = normalizeSubjectArray(subjects)
-    const normalizedClasses = normalizeTeacherClassAssignments(classes)
+    const normalizedSubjects = normalizeSubjectArray(subjects);
+    const normalizedClasses = normalizeTeacherClassAssignments(classes);
 
-    const raw = safeStorage.getItem(TEACHER_ASSIGNMENTS_CACHE_KEY)
-    let store: TeacherAssignmentsCacheStore = {}
+    const raw = safeStorage.getItem(TEACHER_ASSIGNMENTS_CACHE_KEY);
+    let store: TeacherAssignmentsCacheStore = {};
 
     if (raw) {
       try {
-        const parsed = JSON.parse(raw) as TeacherAssignmentsCacheStore
+        const parsed = JSON.parse(raw) as TeacherAssignmentsCacheStore;
         if (parsed && typeof parsed === "object") {
-          store = parsed
+          store = parsed;
         }
       } catch (parseError) {
-        logger.warn("Failed to parse existing teacher assignments cache", { error: parseError })
+        logger.warn("Failed to parse existing teacher assignments cache", {
+          error: parseError,
+        });
       }
     }
 
@@ -656,107 +749,118 @@ const persistTeacherAssignmentsCache = (
       subjects: normalizedSubjects,
       classes: normalizedClasses,
       updatedAt: new Date().toISOString(),
-    }
+    };
 
-    safeStorage.setItem(TEACHER_ASSIGNMENTS_CACHE_KEY, JSON.stringify(store))
+    safeStorage.setItem(TEACHER_ASSIGNMENTS_CACHE_KEY, JSON.stringify(store));
   } catch (error) {
-    logger.warn("Failed to persist teacher assignments cache", { error })
+    logger.warn("Failed to persist teacher assignments cache", { error });
   }
-}
+};
 
 type AssignmentStudentInfo = {
-  id: string
-  name: string | null
-  className: string | null
-}
+  id: string;
+  name: string | null;
+  className: string | null;
+};
 
 type TeacherScopedStudent = {
-  id: string
-  name: string
-  className: string
-  classId: string | null
-  subjects: string[]
-  status: string
-}
+  id: string;
+  name: string;
+  className: string;
+  classId: string | null;
+  subjects: string[];
+  status: string;
+};
 
-const TEACHER_STUDENTS_CACHE_KEY = "vea_teacher_students_cache"
+const TEACHER_STUDENTS_CACHE_KEY = "vea_teacher_students_cache";
 const TEACHER_STUDENTS_CACHE_NOTICE =
-  "Showing the last known student roster because the live student service is temporarily unavailable."
-const TEACHER_SIGNATURE_STORAGE_KEY = "teacherSignatures"
-const TEACHER_SIGNATURE_EVENT = "teacherSignatureUpdated"
+  "Showing the last known student roster because the live student service is temporarily unavailable.";
+const TEACHER_SIGNATURE_STORAGE_KEY = "teacherSignatures";
+const TEACHER_SIGNATURE_EVENT = "teacherSignatureUpdated";
 
 interface TeacherSignatureStoreEntry {
-  url: string
-  fileName?: string
-  uploadedAt?: string
+  url: string;
+  fileName?: string;
+  uploadedAt?: string;
 }
 
-const readTeacherSignatureStore = (): Record<string, TeacherSignatureStoreEntry> => {
-  const raw = safeStorage.getItem(TEACHER_SIGNATURE_STORAGE_KEY)
+const readTeacherSignatureStore = (): Record<
+  string,
+  TeacherSignatureStoreEntry
+> => {
+  const raw = safeStorage.getItem(TEACHER_SIGNATURE_STORAGE_KEY);
   if (!raw) {
-    return {}
+    return {};
   }
 
   try {
-    const parsed = JSON.parse(raw) as Record<string, TeacherSignatureStoreEntry>
+    const parsed = JSON.parse(raw) as Record<
+      string,
+      TeacherSignatureStoreEntry
+    >;
     if (!parsed || typeof parsed !== "object") {
-      return {}
+      return {};
     }
 
-    return parsed
+    return parsed;
   } catch (error) {
-    logger.warn("Failed to parse teacher signature store", { error })
-    return {}
+    logger.warn("Failed to parse teacher signature store", { error });
+    return {};
   }
-}
+};
 
-const persistTeacherSignatureStore = (store: Record<string, TeacherSignatureStoreEntry>) => {
+const persistTeacherSignatureStore = (
+  store: Record<string, TeacherSignatureStoreEntry>,
+) => {
   try {
-    safeStorage.setItem(TEACHER_SIGNATURE_STORAGE_KEY, JSON.stringify(store))
+    safeStorage.setItem(TEACHER_SIGNATURE_STORAGE_KEY, JSON.stringify(store));
   } catch (error) {
-    logger.warn("Failed to persist teacher signature store", { error })
+    logger.warn("Failed to persist teacher signature store", { error });
   }
-}
+};
 
 interface TeacherDashboardProps {
   teacher: {
-    id: string
-    name: string
-    email: string
-    subjects: string[]
-    classes: TeacherClassAssignment[]
-  }
-  isContextLoading?: boolean
-  contextError?: string | null
-  onRefreshAssignments?: () => void | Promise<void>
+    id: string;
+    name: string;
+    email: string;
+    subjects: string[];
+    classes: TeacherClassAssignment[];
+  };
+  isContextLoading?: boolean;
+  contextError?: string | null;
+  onRefreshAssignments?: () => void | Promise<void>;
 }
 
 interface TeacherExamSummary {
-  id: string
-  subject: string
-  className: string
-  examDate: string
-  startTime: string
-  endTime: string
-  term: string
-  session: string
-  status: "scheduled" | "completed" | "cancelled"
+  id: string;
+  subject: string;
+  className: string;
+  examDate: string;
+  startTime: string;
+  endTime: string;
+  term: string;
+  session: string;
+  status: "scheduled" | "completed" | "cancelled";
 }
 
-type TeacherTimetableSlot = TimetableWeeklyViewSlot
+type TeacherTimetableSlot = TimetableWeeklyViewSlot;
 
-type BehavioralDomainState = Record<string, Record<string, boolean>>
-type AttendanceState = Record<string, { present: number; absent: number; total: number }>
-type StudentStatusState = Record<string, string>
-type ClassTeacherRemarksState = Record<string, ClassTeacherRemarkEntry>
+type BehavioralDomainState = Record<string, Record<string, boolean>>;
+type AttendanceState = Record<
+  string,
+  { present: number; absent: number; total: number }
+>;
+type StudentStatusState = Record<string, string>;
+type ClassTeacherRemarksState = Record<string, ClassTeacherRemarkEntry>;
 
 type TermInfoState = {
-  numberInClass: string
-  nextTermBegins: string
-  vacationEnds: string
-  nextTermFees: string
-  feesBalance: string
-}
+  numberInClass: string;
+  nextTermBegins: string;
+  vacationEnds: string;
+  nextTermFees: string;
+  feesBalance: string;
+};
 
 const createEmptyTermInfo = (): TermInfoState => ({
   numberInClass: "",
@@ -764,66 +868,73 @@ const createEmptyTermInfo = (): TermInfoState => ({
   vacationEnds: "",
   nextTermFees: "",
   feesBalance: "",
-})
+});
 
 interface MarksRecord {
-  studentId: string
-  studentName: string
-  firstCA: number
-  secondCA: number
-  noteAssignment: number
-  caTotal: number
-  exam: number
-  grandTotal: number
-  totalMarksObtainable: number
-  totalMarksObtained: number
-  averageScore: number
-  position: number
-  grade: string
-  teacherRemark: string
+  studentId: string;
+  studentName: string;
+  firstCA: number;
+  secondCA: number;
+  noteAssignment: number;
+  caTotal: number;
+  exam: number;
+  grandTotal: number;
+  totalMarksObtainable: number;
+  totalMarksObtained: number;
+  averageScore: number;
+  position: number;
+  grade: string;
+  teacherRemark: string;
 }
 
 interface RemarkStudentOption {
-  studentId: string
-  studentName: string
-  classId: string | null
-  className: string | null
+  studentId: string;
+  studentName: string;
+  classId: string | null;
+  className: string | null;
 }
 
-type TeacherAssignmentStatus = "draft" | "sent" | "submitted" | "graded" | "overdue"
+type TeacherAssignmentStatus =
+  | "draft"
+  | "sent"
+  | "submitted"
+  | "graded"
+  | "overdue";
 
 interface AssignmentSubmissionRecord {
-  id: string
-  studentId: string
-  status: "pending" | "submitted" | "graded"
-  submittedAt: string | null
-  files?: { id: string; name: string; url?: string | null }[]
-  comment?: string | null
-  grade?: string | null
-  score?: number | null
+  id: string;
+  studentId: string;
+  status: "pending" | "submitted" | "graded";
+  submittedAt: string | null;
+  files?: { id: string; name: string; url?: string | null }[];
+  comment?: string | null;
+  grade?: string | null;
+  score?: number | null;
 }
 
 interface TeacherAssignmentSummary {
-  id: string
-  title: string
-  description: string
-  subject: string
-  className: string
-  classId?: string | null
-  dueDate: string
-  status: TeacherAssignmentStatus
-  maximumScore: number | null
-  submissions: AssignmentSubmissionRecord[]
-  assignedStudentIds: string[]
-  resourceName?: string | null
-  resourceType?: string | null
-  resourceUrl?: string | null
-  resourceSize?: number | null
-  createdAt?: string | null
-  updatedAt?: string
+  id: string;
+  title: string;
+  description: string;
+  subject: string;
+  className: string;
+  classId?: string | null;
+  dueDate: string;
+  status: TeacherAssignmentStatus;
+  maximumScore: number | null;
+  submissions: AssignmentSubmissionRecord[];
+  assignedStudentIds: string[];
+  resourceName?: string | null;
+  resourceType?: string | null;
+  resourceUrl?: string | null;
+  resourceSize?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string;
 }
 
-type RawAssignmentRecord = Awaited<ReturnType<typeof dbManager.getAssignments>>[number]
+type RawAssignmentRecord = Awaited<
+  ReturnType<typeof dbManager.getAssignments>
+>[number];
 
 const ASSIGNMENT_STATUS_META: Record<
   TeacherAssignmentStatus,
@@ -859,7 +970,7 @@ const ASSIGNMENT_STATUS_META: Record<
     accent: "from-red-100/70",
     glow: "shadow-[0_0_30px_-12px_rgba(248,113,113,0.8)]",
   },
-}
+};
 
 export function TeacherDashboard({
   teacher,
@@ -867,122 +978,163 @@ export function TeacherDashboard({
   contextError = null,
   onRefreshAssignments,
 }: TeacherDashboardProps) {
-  const { toast } = useToast()
-  const cachedAssignments = useMemo(() => readTeacherAssignmentsCache(teacher.id), [teacher.id])
-  const [teacherAssignmentSources, setTeacherAssignmentSources] = useState<TeacherClassAssignment[]>(() => {
+  const { toast } = useToast();
+  const cachedAssignments = useMemo(
+    () => readTeacherAssignmentsCache(teacher.id),
+    [teacher.id],
+  );
+  const [teacherAssignmentSources, setTeacherAssignmentSources] = useState<
+    TeacherClassAssignment[]
+  >(() => {
     if (Array.isArray(teacher.classes) && teacher.classes.length > 0) {
-      return teacher.classes
+      return teacher.classes;
     }
 
-    return cachedAssignments?.classes ?? []
-  })
+    return cachedAssignments?.classes ?? [];
+  });
   const [teacherSubjects, setTeacherSubjects] = useState<string[]>(() => {
-    const normalizedSubjects = normalizeSubjectArray(teacher.subjects)
+    const normalizedSubjects = normalizeSubjectArray(teacher.subjects);
     if (normalizedSubjects.length > 0) {
-      return normalizedSubjects
+      return normalizedSubjects;
     }
 
-    return cachedAssignments?.subjects ?? []
-  })
-  const [hasCompletedSubjectFetch, setHasCompletedSubjectFetch] = useState(() => {
-    const normalizedSubjects = normalizeSubjectArray(teacher.subjects)
-    if (normalizedSubjects.length > 0) {
-      return true
-    }
+    return cachedAssignments?.subjects ?? [];
+  });
+  const [hasCompletedSubjectFetch, setHasCompletedSubjectFetch] = useState(
+    () => {
+      const normalizedSubjects = normalizeSubjectArray(teacher.subjects);
+      if (normalizedSubjects.length > 0) {
+        return true;
+      }
 
-    return Boolean(cachedAssignments?.subjects?.length)
-  })
-  const [isTeacherSubjectsLoading, setIsTeacherSubjectsLoading] = useState(false)
-  const [teacherSubjectsError, setTeacherSubjectsError] = useState<string | null>(null)
+      return Boolean(cachedAssignments?.subjects?.length);
+    },
+  );
+  const [isTeacherSubjectsLoading, setIsTeacherSubjectsLoading] =
+    useState(false);
+  const [teacherSubjectsError, setTeacherSubjectsError] = useState<
+    string | null
+  >(null);
   const cachedAssignmentStateRef = useRef<TeacherAssignmentsCacheEntry>({
-    subjects: cachedAssignments?.subjects ?? normalizeSubjectArray(teacher.subjects),
+    subjects:
+      cachedAssignments?.subjects ?? normalizeSubjectArray(teacher.subjects),
     classes: cachedAssignments?.classes ?? teacher.classes,
     updatedAt: cachedAssignments?.updatedAt ?? new Date(0).toISOString(),
-  })
-  const [columnConfig, setColumnConfig] = useState<ReportCardColumnConfig[]>(DEFAULT_REPORT_CARD_COLUMNS)
-  const resolvedColumns = useMemo(() => buildResolvedColumns(columnConfig), [columnConfig])
+  });
+  const [columnConfig, setColumnConfig] = useState<ReportCardColumnConfig[]>(
+    DEFAULT_REPORT_CARD_COLUMNS,
+  );
+  const resolvedColumns = useMemo(
+    () => buildResolvedColumns(columnConfig),
+    [columnConfig],
+  );
   const [teacherSignature, setTeacherSignature] = useState(() => {
-    const store = readTeacherSignatureStore()
-    const entry = store[teacher.id]
+    const store = readTeacherSignatureStore();
+    const entry = store[teacher.id];
 
     return {
       url: entry?.url ?? null,
       fileName: entry?.fileName ?? null,
       uploadedAt: entry?.uploadedAt ?? null,
-    }
-  })
-  const [isUploadingSignature, setIsUploadingSignature] = useState(false)
-  const signatureFileInputRef = useRef<HTMLInputElement | null>(null)
-  const hasScheduledAuthRedirectRef = useRef(false)
+    };
+  });
+  const [isUploadingSignature, setIsUploadingSignature] = useState(false);
+  const signatureFileInputRef = useRef<HTMLInputElement | null>(null);
+  const hasScheduledAuthRedirectRef = useRef(false);
   const firstTestColumn = useMemo(() => {
     return (
       resolvedColumns.find(
-        (column) => !column.isExam && normalizeColumnType(column.config.type) === "test" && column.occurrence === 1,
+        (column) =>
+          !column.isExam &&
+          normalizeColumnType(column.config.type) === "test" &&
+          column.occurrence === 1,
       ) ?? null
-    )
-  }, [resolvedColumns])
+    );
+  }, [resolvedColumns]);
   const secondTestColumn = useMemo(() => {
     return (
       resolvedColumns.find(
-        (column) => !column.isExam && normalizeColumnType(column.config.type) === "test" && column.occurrence === 2,
+        (column) =>
+          !column.isExam &&
+          normalizeColumnType(column.config.type) === "test" &&
+          column.occurrence === 2,
       ) ?? null
-    )
-  }, [resolvedColumns])
+    );
+  }, [resolvedColumns]);
   const assignmentColumn = useMemo(() => {
     return (
       resolvedColumns.find(
-        (column) => !column.isExam && normalizeColumnType(column.config.type) === "assignment",
+        (column) =>
+          !column.isExam &&
+          normalizeColumnType(column.config.type) === "assignment",
       ) ?? null
-    )
-  }, [resolvedColumns])
-  const examColumn = useMemo(() => resolvedColumns.find((column) => column.isExam) ?? null, [resolvedColumns])
+    );
+  }, [resolvedColumns]);
+  const examColumn = useMemo(
+    () => resolvedColumns.find((column) => column.isExam) ?? null,
+    [resolvedColumns],
+  );
   const firstTestMaximum = useMemo(
     () => (firstTestColumn ? getColumnMaximum(firstTestColumn.config) : 0),
     [firstTestColumn],
-  )
+  );
   const secondTestMaximum = useMemo(
     () => (secondTestColumn ? getColumnMaximum(secondTestColumn.config) : 0),
     [secondTestColumn],
-  )
+  );
   const assignmentMaximum = useMemo(
     () => (assignmentColumn ? getColumnMaximum(assignmentColumn.config) : 0),
     [assignmentColumn],
-  )
-  const examMaximum = useMemo(() => (examColumn ? getColumnMaximum(examColumn.config) : 0), [examColumn])
-  const hasFirstTestColumn = firstTestMaximum > 0
-  const hasSecondTestColumn = secondTestMaximum > 0
-  const hasAssignmentColumn = assignmentMaximum > 0
-  const hasExamColumn = examMaximum > 0
-  const continuousAssessmentMaximum = firstTestMaximum + secondTestMaximum + assignmentMaximum
-  const hasContinuousColumns = hasFirstTestColumn || hasSecondTestColumn || hasAssignmentColumn
+  );
+  const examMaximum = useMemo(
+    () => (examColumn ? getColumnMaximum(examColumn.config) : 0),
+    [examColumn],
+  );
+  const hasFirstTestColumn = firstTestMaximum > 0;
+  const hasSecondTestColumn = secondTestMaximum > 0;
+  const hasAssignmentColumn = assignmentMaximum > 0;
+  const hasExamColumn = examMaximum > 0;
+  const continuousAssessmentMaximum =
+    firstTestMaximum + secondTestMaximum + assignmentMaximum;
+  const hasContinuousColumns =
+    hasFirstTestColumn || hasSecondTestColumn || hasAssignmentColumn;
   const fallbackTotalMaximum =
     CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1 +
     CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2 +
     CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment +
-    CONTINUOUS_ASSESSMENT_MAXIMUMS.exam
+    CONTINUOUS_ASSESSMENT_MAXIMUMS.exam;
   const defaultTotalMaximum = useMemo(() => {
-    const total = firstTestMaximum + secondTestMaximum + assignmentMaximum + examMaximum
-    return total > 0 ? total : fallbackTotalMaximum
-  }, [assignmentMaximum, examMaximum, fallbackTotalMaximum, firstTestMaximum, secondTestMaximum])
-  const firstTestLabel = firstTestColumn?.config.name ?? "1st Continuous Assessment"
-  const secondTestLabel = secondTestColumn?.config.name ?? "2nd Continuous Assessment"
-  const assignmentLabel = assignmentColumn?.config.name ?? "Note / Assignment"
-  const examLabel = examColumn?.config.name ?? "Exam"
+    const total =
+      firstTestMaximum + secondTestMaximum + assignmentMaximum + examMaximum;
+    return total > 0 ? total : fallbackTotalMaximum;
+  }, [
+    assignmentMaximum,
+    examMaximum,
+    fallbackTotalMaximum,
+    firstTestMaximum,
+    secondTestMaximum,
+  ]);
+  const firstTestLabel =
+    firstTestColumn?.config.name ?? "1st Continuous Assessment";
+  const secondTestLabel =
+    secondTestColumn?.config.name ?? "2nd Continuous Assessment";
+  const assignmentLabel = assignmentColumn?.config.name ?? "Note / Assignment";
+  const examLabel = examColumn?.config.name ?? "Exam";
   const assessmentWeightingSummary = useMemo(() => {
-    const segments: string[] = []
+    const segments: string[] = [];
     if (hasFirstTestColumn) {
-      segments.push(`${firstTestLabel} ${firstTestMaximum}`)
+      segments.push(`${firstTestLabel} ${firstTestMaximum}`);
     }
     if (hasSecondTestColumn) {
-      segments.push(`${secondTestLabel} ${secondTestMaximum}`)
+      segments.push(`${secondTestLabel} ${secondTestMaximum}`);
     }
     if (hasAssignmentColumn) {
-      segments.push(`${assignmentLabel} ${assignmentMaximum}`)
+      segments.push(`${assignmentLabel} ${assignmentMaximum}`);
     }
     if (hasExamColumn) {
-      segments.push(`${examLabel} ${examMaximum}`)
+      segments.push(`${examLabel} ${examMaximum}`);
     }
-    return segments.join(", ")
+    return segments.join(", ");
   }, [
     assignmentLabel,
     assignmentMaximum,
@@ -996,217 +1148,257 @@ export function TeacherDashboard({
     hasSecondTestColumn,
     secondTestLabel,
     secondTestMaximum,
-  ])
+  ]);
   const teacherSignatureUploadedAtLabel = useMemo(() => {
     if (!teacherSignature.uploadedAt) {
-      return null
+      return null;
     }
 
-    const parsed = new Date(teacherSignature.uploadedAt)
+    const parsed = new Date(teacherSignature.uploadedAt);
     if (Number.isNaN(parsed.getTime())) {
-      return null
+      return null;
     }
 
     return parsed.toLocaleString(undefined, {
       dateStyle: "medium",
       timeStyle: "short",
-    })
-  }, [teacherSignature.uploadedAt])
+    });
+  }, [teacherSignature.uploadedAt]);
   useEffect(() => {
-    let isMounted = true
+    let isMounted = true;
 
     const loadColumns = async () => {
       try {
-        const response = await fetch("/api/report-cards/config")
+        const response = await fetch("/api/report-cards/config");
         if (!response.ok) {
-          throw new Error("Unable to load report card configuration")
+          throw new Error("Unable to load report card configuration");
         }
 
-        const payload = (await response.json()) as { columns?: unknown }
+        const payload = (await response.json()) as { columns?: unknown };
         if (!isMounted) {
-          return
+          return;
         }
 
-        const normalized = normalizeColumnsFromResponse(payload.columns)
+        const normalized = normalizeColumnsFromResponse(payload.columns);
         setColumnConfig((previous) => {
-          const prevSerialized = JSON.stringify(previous)
-          const nextSerialized = JSON.stringify(normalized)
+          const prevSerialized = JSON.stringify(previous);
+          const nextSerialized = JSON.stringify(normalized);
           if (prevSerialized === nextSerialized) {
-            return previous
+            return previous;
           }
-          return normalized
-        })
+          return normalized;
+        });
       } catch (error) {
-        logger.warn("Unable to load report card columns configuration for teacher dashboard", { error })
+        logger.warn(
+          "Unable to load report card columns configuration for teacher dashboard",
+          { error },
+        );
         if (!isMounted) {
-          return
+          return;
         }
-        setColumnConfig(DEFAULT_REPORT_CARD_COLUMNS)
+        setColumnConfig(DEFAULT_REPORT_CARD_COLUMNS);
       }
-    }
+    };
 
-    void loadColumns()
+    void loadColumns();
 
     return () => {
-      isMounted = false
-    }
-  }, [])
+      isMounted = false;
+    };
+  }, []);
   useEffect(() => {
     const handleSignatureEvent = (payload: unknown) => {
       if (!payload || typeof payload !== "object") {
-        return
+        return;
       }
 
       const eventPayload = payload as {
-        teacherId?: string
-        signatureUrl?: string | null
-        fileName?: string | null
-        uploadedAt?: string | null
-      }
+        teacherId?: string;
+        signatureUrl?: string | null;
+        fileName?: string | null;
+        uploadedAt?: string | null;
+      };
 
       if (eventPayload.teacherId !== teacher.id) {
-        return
+        return;
       }
 
       setTeacherSignature({
         url: eventPayload.signatureUrl ?? null,
         fileName: eventPayload.fileName ?? null,
         uploadedAt: eventPayload.uploadedAt ?? null,
-      })
-    }
+      });
+    };
 
     const handleStorageEvent = (event: StorageEvent) => {
       if (event.key && event.key !== TEACHER_SIGNATURE_STORAGE_KEY) {
-        return
+        return;
       }
 
-      const store = readTeacherSignatureStore()
-      const entry = store[teacher.id]
+      const store = readTeacherSignatureStore();
+      const entry = store[teacher.id];
 
       setTeacherSignature({
         url: entry?.url ?? null,
         fileName: entry?.fileName ?? null,
         uploadedAt: entry?.uploadedAt ?? null,
-      })
-    }
+      });
+    };
 
-    dbManager.on(TEACHER_SIGNATURE_EVENT, handleSignatureEvent)
+    dbManager.on(TEACHER_SIGNATURE_EVENT, handleSignatureEvent);
 
     if (typeof window !== "undefined") {
-      window.addEventListener("storage", handleStorageEvent)
+      window.addEventListener("storage", handleStorageEvent);
     }
 
     return () => {
-      dbManager.off(TEACHER_SIGNATURE_EVENT, handleSignatureEvent)
+      dbManager.off(TEACHER_SIGNATURE_EVENT, handleSignatureEvent);
       if (typeof window !== "undefined") {
-        window.removeEventListener("storage", handleStorageEvent)
+        window.removeEventListener("storage", handleStorageEvent);
       }
-    }
-  }, [teacher.id])
+    };
+  }, [teacher.id]);
   const normalizeScores = useCallback(
-    (input: Partial<{ ca1: number; ca2: number; assignment: number; exam: number }>) => {
+    (
+      input: Partial<{
+        ca1: number;
+        ca2: number;
+        assignment: number;
+        exam: number;
+      }>,
+    ) => {
       const clampValue = (raw: unknown, max: number) => {
         if (!Number.isFinite(max) || max <= 0) {
-          return 0
+          return 0;
         }
 
-        const numeric = typeof raw === "number" ? raw : Number(raw)
+        const numeric = typeof raw === "number" ? raw : Number(raw);
         if (!Number.isFinite(numeric)) {
-          return 0
+          return 0;
         }
 
         if (numeric <= 0) {
-          return 0
+          return 0;
         }
 
         if (numeric >= max) {
-          return Math.round(max)
+          return Math.round(max);
         }
 
-        return Math.round(numeric)
-      }
+        return Math.round(numeric);
+      };
 
       return {
         ca1: hasFirstTestColumn ? clampValue(input.ca1, firstTestMaximum) : 0,
         ca2: hasSecondTestColumn ? clampValue(input.ca2, secondTestMaximum) : 0,
-        assignment: hasAssignmentColumn ? clampValue(input.assignment, assignmentMaximum) : 0,
+        assignment: hasAssignmentColumn
+          ? clampValue(input.assignment, assignmentMaximum)
+          : 0,
         exam: hasExamColumn ? clampValue(input.exam, examMaximum) : 0,
-      }
+      };
     },
-    [assignmentMaximum, examMaximum, firstTestMaximum, hasAssignmentColumn, hasExamColumn, hasFirstTestColumn, hasSecondTestColumn, secondTestMaximum],
-  )
+    [
+      assignmentMaximum,
+      examMaximum,
+      firstTestMaximum,
+      hasAssignmentColumn,
+      hasExamColumn,
+      hasFirstTestColumn,
+      hasSecondTestColumn,
+      secondTestMaximum,
+    ],
+  );
 
   const calculateScoreTotals = useCallback(
-    (input: Partial<{ ca1: number; ca2: number; assignment: number; exam: number }>) => {
-      const normalized = normalizeScores(input)
-      const caTotal = normalized.ca1 + normalized.ca2 + normalized.assignment
-      const grandTotal = caTotal + normalized.exam
+    (
+      input: Partial<{
+        ca1: number;
+        ca2: number;
+        assignment: number;
+        exam: number;
+      }>,
+    ) => {
+      const normalized = normalizeScores(input);
+      const caTotal = normalized.ca1 + normalized.ca2 + normalized.assignment;
+      const grandTotal = caTotal + normalized.exam;
 
-      return { normalized, caTotal, grandTotal }
+      return { normalized, caTotal, grandTotal };
     },
     [normalizeScores],
-  )
+  );
 
   const deriveGradeForTotals = useCallback(
     (total: number, obtainable: number) => {
-      const safeTotal = Number.isFinite(total) ? Math.max(0, Math.round(total)) : 0
-      const safeObtainable = Number.isFinite(obtainable) && obtainable > 0 ? Math.round(obtainable) : defaultTotalMaximum
+      const safeTotal = Number.isFinite(total)
+        ? Math.max(0, Math.round(total))
+        : 0;
+      const safeObtainable =
+        Number.isFinite(obtainable) && obtainable > 0
+          ? Math.round(obtainable)
+          : defaultTotalMaximum;
       if (safeObtainable <= 0) {
-        return deriveGradeFromScore(safeTotal)
+        return deriveGradeFromScore(safeTotal);
       }
 
-      const percentage = Math.max(0, Math.min(Math.round((safeTotal / safeObtainable) * 100), 100))
-      return deriveGradeFromScore(percentage)
+      const percentage = Math.max(
+        0,
+        Math.min(Math.round((safeTotal / safeObtainable) * 100), 100),
+      );
+      return deriveGradeFromScore(percentage);
     },
     [defaultTotalMaximum],
-  )
+  );
 
   const scheduleAuthRedirect = useCallback(() => {
     if (hasScheduledAuthRedirectRef.current) {
-      return
+      return;
     }
 
-    hasScheduledAuthRedirectRef.current = true
+    hasScheduledAuthRedirectRef.current = true;
 
-    const runtimeInstance = getBrowserRuntime()
+    const runtimeInstance = getBrowserRuntime();
 
     try {
-      safeStorage.removeItem("vea_auth_token")
+      safeStorage.removeItem("vea_auth_token");
     } catch (storageError) {
       logger.warn("Failed to clear auth token after unauthorized response", {
-        error: storageError instanceof Error ? storageError.message : storageError,
-      })
+        error:
+          storageError instanceof Error ? storageError.message : storageError,
+      });
     }
 
     const performRedirect = () => {
-      const runtimeLocation = runtimeInstance?.location
+      const runtimeLocation = runtimeInstance?.location;
       if (!runtimeLocation) {
-        return
+        return;
       }
 
       try {
         if (typeof runtimeLocation.replace === "function") {
-          runtimeLocation.replace("/")
+          runtimeLocation.replace("/");
         } else {
-          runtimeLocation.href = "/"
+          runtimeLocation.href = "/";
         }
       } catch (navigationError) {
         logger.warn("Failed to navigate after auth expiry", {
-          error: navigationError instanceof Error ? navigationError.message : navigationError,
-        })
+          error:
+            navigationError instanceof Error
+              ? navigationError.message
+              : navigationError,
+        });
       }
-    }
+    };
 
     if (runtimeInstance && typeof runtimeInstance.setTimeout === "function") {
-      runtimeInstance.setTimeout(performRedirect, 400)
+      runtimeInstance.setTimeout(performRedirect, 400);
     } else {
-      performRedirect()
+      performRedirect();
     }
-  }, [])
+  }, []);
   const handleTeacherSignatureUpload = useCallback(
     async (file: File | null) => {
       if (!file) {
-        return
+        return;
       }
 
       if (!file.type.startsWith("image/")) {
@@ -1214,59 +1406,61 @@ export function TeacherDashboard({
           variant: "destructive",
           title: "Unsupported file",
           description: "Please upload an image file (PNG, JPG, or SVG).",
-        })
-        return
+        });
+        return;
       }
 
-      const MAX_FILE_SIZE_BYTES = 1.5 * 1024 * 1024
+      const MAX_FILE_SIZE_BYTES = 1.5 * 1024 * 1024;
       if (file.size > MAX_FILE_SIZE_BYTES) {
         toast({
           variant: "destructive",
           title: "File too large",
           description: "Please upload a signature image smaller than 1.5MB.",
-        })
-        return
+        });
+        return;
       }
 
-      setIsUploadingSignature(true)
+      setIsUploadingSignature(true);
 
       try {
         const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
+          const reader = new FileReader();
           reader.onload = () => {
             if (typeof reader.result === "string") {
-              resolve(reader.result)
+              resolve(reader.result);
             } else {
-              reject(new Error("Unable to read the selected signature file."))
+              reject(new Error("Unable to read the selected signature file."));
             }
-          }
-          reader.onerror = () => reject(new Error("Unable to process the selected signature file."))
-          reader.readAsDataURL(file)
-        })
+          };
+          reader.onerror = () =>
+            reject(new Error("Unable to process the selected signature file."));
+          reader.readAsDataURL(file);
+        });
 
-        const uploadedAt = new Date().toISOString()
-        const store = readTeacherSignatureStore()
+        const uploadedAt = new Date().toISOString();
+        const store = readTeacherSignatureStore();
         store[teacher.id] = {
           url: dataUrl,
           fileName: file.name,
           uploadedAt,
-        }
-        persistTeacherSignatureStore(store)
+        };
+        persistTeacherSignatureStore(store);
 
-        setTeacherSignature({ url: dataUrl, fileName: file.name, uploadedAt })
+        setTeacherSignature({ url: dataUrl, fileName: file.name, uploadedAt });
         dbManager.triggerEvent(TEACHER_SIGNATURE_EVENT, {
           teacherId: teacher.id,
           signatureUrl: dataUrl,
           fileName: file.name,
           uploadedAt,
-        })
+        });
 
         toast({
           title: "Signature updated",
-          description: "Your digital signature will now appear on report cards and previews.",
-        })
+          description:
+            "Your digital signature will now appear on report cards and previews.",
+        });
       } catch (error) {
-        logger.warn("Failed to upload teacher signature", { error })
+        logger.warn("Failed to upload teacher signature", { error });
         toast({
           variant: "destructive",
           title: "Upload failed",
@@ -1274,269 +1468,310 @@ export function TeacherDashboard({
             error instanceof Error
               ? error.message
               : "We couldn't process this signature file. Please try again with a different image.",
-        })
+        });
       } finally {
-        setIsUploadingSignature(false)
+        setIsUploadingSignature(false);
       }
     },
     [teacher.id, toast],
-  )
+  );
 
   const handleRemoveTeacherSignature = useCallback(() => {
-    const store = readTeacherSignatureStore()
+    const store = readTeacherSignatureStore();
     if (store[teacher.id]) {
-      delete store[teacher.id]
-      persistTeacherSignatureStore(store)
+      delete store[teacher.id];
+      persistTeacherSignatureStore(store);
     }
 
-    setTeacherSignature({ url: null, fileName: null, uploadedAt: null })
+    setTeacherSignature({ url: null, fileName: null, uploadedAt: null });
     dbManager.triggerEvent(TEACHER_SIGNATURE_EVENT, {
       teacherId: teacher.id,
       signatureUrl: null,
       fileName: null,
       uploadedAt: null,
-    })
+    });
 
     if (signatureFileInputRef.current) {
-      signatureFileInputRef.current.value = ""
+      signatureFileInputRef.current.value = "";
     }
 
     toast({
       title: "Signature removed",
-      description: "Your report cards will no longer display a signature until you upload a new one.",
-    })
-  }, [teacher.id, toast])
+      description:
+        "Your report cards will no longer display a signature until you upload a new one.",
+    });
+  }, [teacher.id, toast]);
 
   const handleTeacherSignatureFileChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0] ?? null
-      void handleTeacherSignatureUpload(file ?? null)
-      event.target.value = ""
+      const file = event.target.files?.[0] ?? null;
+      void handleTeacherSignatureUpload(file ?? null);
+      event.target.value = "";
     },
     [handleTeacherSignatureUpload],
-  )
+  );
   const teacherClasses = useMemo(() => {
-    const deduped: TeacherClassAssignment[] = []
-    const idIndex = new Map<string, number>()
-    const nameIndex = new Map<string, number>()
+    const deduped: TeacherClassAssignment[] = [];
+    const idIndex = new Map<string, number>();
+    const nameIndex = new Map<string, number>();
 
     teacherAssignmentSources.forEach((cls, index) => {
       if (!cls) {
-        return
+        return;
       }
 
-      const rawId = typeof cls.id === "string" ? cls.id.trim() : ""
-      const rawName = typeof cls.name === "string" ? cls.name.trim() : ""
-      const idToken = normalizeClassToken(rawId)
-      const nameToken = normalizeClassToken(rawName)
+      const rawId = typeof cls.id === "string" ? cls.id.trim() : "";
+      const rawName = typeof cls.name === "string" ? cls.name.trim() : "";
+      const idToken = normalizeClassToken(rawId);
+      const nameToken = normalizeClassToken(rawName);
 
       const subjects = Array.isArray(cls.subjects)
         ? Array.from(
             new Set(
               cls.subjects
-                .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+                .map((subject) =>
+                  typeof subject === "string" ? subject.trim() : "",
+                )
                 .filter((subject) => subject.length > 0),
             ),
           )
-        : []
+        : [];
 
-      const resolvedId = rawId || (rawName ? `class_${normalizeClassToken(rawName)}` : `class_${index + 1}`)
-      const resolvedName = rawName || rawId || `Class ${index + 1}`
+      const resolvedId =
+        rawId ||
+        (rawName
+          ? `class_${normalizeClassToken(rawName)}`
+          : `class_${index + 1}`);
+      const resolvedName = rawName || rawId || `Class ${index + 1}`;
 
       const existingIndex =
         (idToken && idIndex.has(idToken) ? idIndex.get(idToken) : undefined) ??
-        (nameToken && nameIndex.has(nameToken) ? nameIndex.get(nameToken) : undefined) ??
-        -1
+        (nameToken && nameIndex.has(nameToken)
+          ? nameIndex.get(nameToken)
+          : undefined) ??
+        -1;
 
       if (existingIndex >= 0) {
-        const existing = deduped[existingIndex]
-        const mergedSubjects = new Set([...existing.subjects, ...subjects])
+        const existing = deduped[existingIndex];
+        const mergedSubjects = new Set([...existing.subjects, ...subjects]);
         const preferredName =
           existing.name && existing.name !== existing.id
             ? existing.name
             : resolvedName && resolvedName !== resolvedId
               ? resolvedName
-              : existing.name || resolvedName
+              : existing.name || resolvedName;
 
         deduped[existingIndex] = {
           id: existing.id || resolvedId,
           name: preferredName || existing.id || resolvedId,
           subjects: Array.from(mergedSubjects),
-        }
+        };
 
         if (idToken && !idIndex.has(idToken)) {
-          idIndex.set(idToken, existingIndex)
+          idIndex.set(idToken, existingIndex);
         }
 
         if (nameToken && !nameIndex.has(nameToken)) {
-          nameIndex.set(nameToken, existingIndex)
+          nameIndex.set(nameToken, existingIndex);
         }
 
-        return
+        return;
       }
 
-      const insertionIndex = deduped.length
-      deduped.push({ id: resolvedId, name: resolvedName, subjects })
+      const insertionIndex = deduped.length;
+      deduped.push({ id: resolvedId, name: resolvedName, subjects });
 
       if (idToken) {
-        idIndex.set(idToken, insertionIndex)
+        idIndex.set(idToken, insertionIndex);
       }
 
       if (nameToken) {
-        nameIndex.set(nameToken, insertionIndex)
+        nameIndex.set(nameToken, insertionIndex);
       }
-    })
+    });
 
-    return deduped
-  }, [teacherAssignmentSources])
-  const firstTeacherClass = teacherClasses[0] ?? null
-  const teacherClassNames = useMemo(() => teacherClasses.map((cls) => cls.name), [teacherClasses])
-  const teacherClassIds = useMemo(() => teacherClasses.map((cls) => cls.id), [teacherClasses])
-  const noClassesAssigned = teacherClasses.length === 0
+    return deduped;
+  }, [teacherAssignmentSources]);
+  const firstTeacherClass = teacherClasses[0] ?? null;
+  const teacherClassNames = useMemo(
+    () => teacherClasses.map((cls) => cls.name),
+    [teacherClasses],
+  );
+  const teacherClassIds = useMemo(
+    () => teacherClasses.map((cls) => cls.id),
+    [teacherClasses],
+  );
+  const noClassesAssigned = teacherClasses.length === 0;
   const teacherClassTokenList = useMemo(() => {
-    const tokens = new Set<string>()
+    const tokens = new Set<string>();
     teacherClasses.forEach((cls) => {
-      const idToken = normalizeClassToken(cls.id)
-      const nameToken = normalizeClassToken(cls.name)
+      const idToken = normalizeClassToken(cls.id);
+      const nameToken = normalizeClassToken(cls.name);
       if (idToken) {
-        tokens.add(idToken)
+        tokens.add(idToken);
       }
       if (nameToken) {
-        tokens.add(nameToken)
+        tokens.add(nameToken);
       }
-    })
-    return Array.from(tokens)
-  }, [teacherClasses])
-  const teacherClassTokenKey = useMemo(() => teacherClassTokenList.join("|"), [teacherClassTokenList])
-  const teacherHasAssignedClasses = teacherClassTokenList.length > 0
-  const normalizeClassName = useCallback((value: string) => value.replace(/\s+/g, "").toLowerCase(), [])
-  const [selectedTab, setSelectedTab] = useState("overview")
-  const [showCreateAssignment, setShowCreateAssignment] = useState(false)
-  const [assignmentDialogMode, setAssignmentDialogMode] = useState<"create" | "edit">("create")
-  const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null)
-  const [showSubmissions, setShowSubmissions] = useState(false)
-  const [selectedAssignment, setSelectedAssignment] = useState<TeacherAssignmentSummary | null>(null)
-  const [previewAssignment, setPreviewAssignment] = useState<TeacherAssignmentSummary | null>(null)
-  const [assignmentRoster, setAssignmentRoster] = useState<Record<string, AssignmentStudentInfo>>({})
-  const [selectedClass, setSelectedClass] = useState(() => firstTeacherClass?.name ?? "")
-  const [selectedClassId, setSelectedClassId] = useState(() => firstTeacherClass?.id ?? "")
-  const [selectedSubject, setSelectedSubject] = useState("")
-  const [selectedSubjectKey, setSelectedSubjectKey] = useState("")
-  const [isSubjectSwitcherOpen, setIsSubjectSwitcherOpen] = useState(false)
-  const isComponentMountedRef = useRef(false)
+    });
+    return Array.from(tokens);
+  }, [teacherClasses]);
+  const teacherClassTokenKey = useMemo(
+    () => teacherClassTokenList.join("|"),
+    [teacherClassTokenList],
+  );
+  const teacherHasAssignedClasses = teacherClassTokenList.length > 0;
+  const normalizeClassName = useCallback(
+    (value: string) => value.replace(/\s+/g, "").toLowerCase(),
+    [],
+  );
+  const [selectedTab, setSelectedTab] = useState("overview");
+  const [showCreateAssignment, setShowCreateAssignment] = useState(false);
+  const [assignmentDialogMode, setAssignmentDialogMode] = useState<
+    "create" | "edit"
+  >("create");
+  const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(
+    null,
+  );
+  const [showSubmissions, setShowSubmissions] = useState(false);
+  const [selectedAssignment, setSelectedAssignment] =
+    useState<TeacherAssignmentSummary | null>(null);
+  const [previewAssignment, setPreviewAssignment] =
+    useState<TeacherAssignmentSummary | null>(null);
+  const [assignmentRoster, setAssignmentRoster] = useState<
+    Record<string, AssignmentStudentInfo>
+  >({});
+  const [selectedClass, setSelectedClass] = useState(
+    () => firstTeacherClass?.name ?? "",
+  );
+  const [selectedClassId, setSelectedClassId] = useState(
+    () => firstTeacherClass?.id ?? "",
+  );
+  const [selectedSubject, setSelectedSubject] = useState("");
+  const [selectedSubjectKey, setSelectedSubjectKey] = useState("");
+  const [isSubjectSwitcherOpen, setIsSubjectSwitcherOpen] = useState(false);
+  const isComponentMountedRef = useRef(false);
   useEffect(() => {
-    isComponentMountedRef.current = true
+    isComponentMountedRef.current = true;
     return () => {
-      isComponentMountedRef.current = false
-    }
-  }, [])
+      isComponentMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
-    const normalizedClasses = normalizeTeacherClassAssignments(teacher.classes)
+    const normalizedClasses = normalizeTeacherClassAssignments(teacher.classes);
 
     setTeacherAssignmentSources((previous) => {
       if (normalizedClasses.length === 0 && previous.length > 0) {
-        return previous
+        return previous;
       }
 
       if (areClassAssignmentsEqual(previous, normalizedClasses)) {
-        return previous
+        return previous;
       }
 
-      return normalizedClasses
-    })
-  }, [teacher.classes])
+      return normalizedClasses;
+    });
+  }, [teacher.classes]);
 
   useEffect(() => {
-    const normalizedSubjects = normalizeSubjectArray(teacher.subjects)
+    const normalizedSubjects = normalizeSubjectArray(teacher.subjects);
 
     setTeacherSubjects((previous) => {
       if (normalizedSubjects.length === 0 && previous.length > 0) {
-        return previous
+        return previous;
       }
 
       if (areSubjectListsEqual(previous, normalizedSubjects)) {
-        return previous
+        return previous;
       }
 
-      return normalizedSubjects
-    })
-  }, [teacher.subjects])
+      return normalizedSubjects;
+    });
+  }, [teacher.subjects]);
 
   useEffect(() => {
     cachedAssignmentStateRef.current = {
       subjects: teacherSubjects,
       classes: teacherAssignmentSources,
       updatedAt: new Date().toISOString(),
-    }
-  }, [teacherAssignmentSources, teacherSubjects])
+    };
+  }, [teacherAssignmentSources, teacherSubjects]);
 
   useEffect(() => {
     if (teacherSubjects.length === 0 && teacherAssignmentSources.length === 0) {
-      return
+      return;
     }
 
-    persistTeacherAssignmentsCache(teacher.id, teacherSubjects, teacherAssignmentSources)
-  }, [teacher.id, teacherAssignmentSources, teacherSubjects])
+    persistTeacherAssignmentsCache(
+      teacher.id,
+      teacherSubjects,
+      teacherAssignmentSources,
+    );
+  }, [teacher.id, teacherAssignmentSources, teacherSubjects]);
 
   const fetchAssignedSubjects = useCallback(async (): Promise<boolean> => {
-    const cachedAssignments = cachedAssignmentStateRef.current
-    const runtime = getBrowserRuntime()
-    const abortController = typeof AbortController !== "undefined" ? new AbortController() : null
-    let timeoutId: ReturnType<typeof setTimeout> | null = null
-    let shouldResetLoadingFlag = false
+    const cachedAssignments = cachedAssignmentStateRef.current;
+    const runtime = getBrowserRuntime();
+    const abortController =
+      typeof AbortController !== "undefined" ? new AbortController() : null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let shouldResetLoadingFlag = false;
 
     if (abortController && runtime?.setTimeout) {
       timeoutId = runtime.setTimeout(() => {
-        abortController.abort()
-      }, SUBJECT_REFRESH_TIMEOUT_MS)
+        abortController.abort();
+      }, SUBJECT_REFRESH_TIMEOUT_MS);
     }
 
     if (isComponentMountedRef.current) {
-      console.log("📡 Fetching teacher subjects...")
+      console.log("📡 Fetching teacher subjects...");
     } else {
-      console.log("📡 Fetching teacher subjects... (component not mounted)")
+      console.log("📡 Fetching teacher subjects... (component not mounted)");
     }
 
     try {
       if (isComponentMountedRef.current) {
-        setIsTeacherSubjectsLoading(true)
-        shouldResetLoadingFlag = true
-        setTeacherSubjectsError(null)
+        setIsTeacherSubjectsLoading(true);
+        shouldResetLoadingFlag = true;
+        setTeacherSubjectsError(null);
       }
 
-      const token = safeStorage.getItem("vea_auth_token")
+      const token = safeStorage.getItem("vea_auth_token");
       if (!token) {
-        console.log("❌ Subject fetch failed: Missing authentication token")
+        console.log("❌ Subject fetch failed: Missing authentication token");
         if (isComponentMountedRef.current) {
-          const cached = readTeacherAssignmentsCache(teacher.id)
+          const cached = readTeacherAssignmentsCache(teacher.id);
           if (cached) {
-            setTeacherSubjects(cached.subjects)
-            setTeacherAssignmentSources(cached.classes)
+            setTeacherSubjects(cached.subjects);
+            setTeacherAssignmentSources(cached.classes);
           }
           const sessionExpiredMessage =
-            "Your session has expired. Please log in again to refresh your subject assignments."
-          setTeacherSubjectsError(sessionExpiredMessage)
+            "Your session has expired. Please log in again to refresh your subject assignments.";
+          setTeacherSubjectsError(sessionExpiredMessage);
           toast({
             variant: "destructive",
             title: "Session expired",
             description: sessionExpiredMessage,
-          })
-          scheduleAuthRedirect()
+          });
+          scheduleAuthRedirect();
         }
-        return false
+        return false;
       }
 
-      const response = await fetch(`/api/teachers/${encodeURIComponent(teacher.id)}/subjects`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
+      const response = await fetch(
+        `/api/teachers/${encodeURIComponent(teacher.id)}/subjects`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+          signal: abortController?.signal,
         },
-        cache: "no-store",
-        signal: abortController?.signal,
-      })
+      );
 
-      const payload = await response.json().catch(() => ({}))
+      const payload = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         const fallbackMessage =
@@ -1544,149 +1779,175 @@ export function TeacherDashboard({
             ? "Your session has expired. Please log in again to refresh your subject assignments."
             : response.status === 403
               ? "You do not have permission to load subject assignments."
-              : "Unable to load your subject assignments."
+              : "Unable to load your subject assignments.";
         const message =
           typeof (payload as { error?: unknown }).error === "string"
             ? ((payload as { error?: string }).error as string)
-            : fallbackMessage
-        const errorWithStatus = new Error(message) as Error & { status?: number }
-        errorWithStatus.status = response.status
-        throw errorWithStatus
+            : fallbackMessage;
+        const errorWithStatus = new Error(message) as Error & {
+          status?: number;
+        };
+        errorWithStatus.status = response.status;
+        throw errorWithStatus;
       }
 
-      const normalizedSubjects = normalizeSubjectArray((payload as { subjects?: unknown }).subjects)
-      const normalizedClasses = normalizeTeacherClassAssignments((payload as { classes?: unknown }).classes)
+      const normalizedSubjects = normalizeSubjectArray(
+        (payload as { subjects?: unknown }).subjects,
+      );
+      const normalizedClasses = normalizeTeacherClassAssignments(
+        (payload as { classes?: unknown }).classes,
+      );
 
       if (!isComponentMountedRef.current) {
-        console.log("✅ Subjects loaded: component unmounted before state update")
-        return false
+        console.log(
+          "✅ Subjects loaded: component unmounted before state update",
+        );
+        return false;
       }
 
-      setTeacherSubjects(normalizedSubjects)
-      setTeacherAssignmentSources(normalizedClasses)
-      persistTeacherAssignmentsCache(teacher.id, normalizedSubjects, normalizedClasses)
+      setTeacherSubjects(normalizedSubjects);
+      setTeacherAssignmentSources(normalizedClasses);
+      persistTeacherAssignmentsCache(
+        teacher.id,
+        normalizedSubjects,
+        normalizedClasses,
+      );
 
       if (normalizedSubjects.length === 0) {
         const message =
           typeof (payload as { message?: unknown }).message === "string"
             ? ((payload as { message?: string }).message as string)
-            : null
+            : null;
         setTeacherSubjectsError(
-          message ?? "No subjects have been assigned to you yet. Please contact your administrator.",
-        )
+          message ??
+            "No subjects have been assigned to you yet. Please contact your administrator.",
+        );
       } else {
-        setTeacherSubjectsError(null)
+        setTeacherSubjectsError(null);
       }
 
-      console.log(`✅ Subjects loaded: ${normalizedSubjects.length} items`)
-      return true
+      console.log(`✅ Subjects loaded: ${normalizedSubjects.length} items`);
+      return true;
     } catch (error) {
       if (!isComponentMountedRef.current) {
-        return false
+        return false;
       }
 
       const status =
         typeof (error as { status?: number }).status === "number"
           ? ((error as { status?: number }).status as number)
-          : null
+          : null;
       const logDetails =
         status !== null
           ? `${status} ${error instanceof Error ? error.message : String(error)}`
           : error instanceof Error
             ? error.message
-            : String(error)
+            : String(error);
 
-      console.log(`❌ Subject fetch failed: ${logDetails}`)
+      console.log(`❌ Subject fetch failed: ${logDetails}`);
 
       if (error instanceof DOMException && error.name === "AbortError") {
         const timeoutMessage =
-          "The request to refresh your subjects took too long. Please check your connection and try again."
-        setTeacherSubjectsError(timeoutMessage)
+          "The request to refresh your subjects took too long. Please check your connection and try again.";
+        setTeacherSubjectsError(timeoutMessage);
         toast({
           variant: "destructive",
           title: "Subject refresh timed out",
           description: timeoutMessage,
-        })
+        });
       } else {
         const message =
-          error instanceof Error ? error.message : "Unable to load your subject assignments."
-        setTeacherSubjectsError(message)
-        logger.warn("Teacher subject refresh failed; using cached assignments", {
-          error: error instanceof Error ? error.message : error,
-          teacherId: teacher.id,
-          status,
-        })
+          error instanceof Error
+            ? error.message
+            : "Unable to load your subject assignments.";
+        setTeacherSubjectsError(message);
+        logger.warn(
+          "Teacher subject refresh failed; using cached assignments",
+          {
+            error: error instanceof Error ? error.message : error,
+            teacherId: teacher.id,
+            status,
+          },
+        );
 
         if (status === 401 || status === 403) {
           toast({
             variant: "destructive",
             title: "Session expired",
-            description: "Please log in again to continue working with your subjects.",
-          })
-          scheduleAuthRedirect()
+            description:
+              "Please log in again to continue working with your subjects.",
+          });
+          scheduleAuthRedirect();
         } else if (status === null) {
           toast({
             title: "Offline mode: using last known data.",
-            description: "We couldn't reach the server. Showing the last known subjects.",
-          })
+            description:
+              "We couldn't reach the server. Showing the last known subjects.",
+          });
         } else {
           toast({
             variant: "destructive",
             title: "Failed to refresh subjects",
             description: message,
-          })
+          });
         }
       }
 
-      const storedAssignments = readTeacherAssignmentsCache(teacher.id)
+      const storedAssignments = readTeacherAssignmentsCache(teacher.id);
       const restoredSubjects = storedAssignments?.subjects?.length
         ? storedAssignments.subjects
         : Array.isArray(cachedAssignments.subjects)
           ? [...cachedAssignments.subjects]
-          : []
+          : [];
       const restoredClasses = storedAssignments?.classes?.length
         ? storedAssignments.classes
         : Array.isArray(cachedAssignments.classes)
           ? cachedAssignments.classes.map((entry) => ({
               ...entry,
-              subjects: Array.isArray(entry.subjects) ? [...entry.subjects] : [],
+              subjects: Array.isArray(entry.subjects)
+                ? [...entry.subjects]
+                : [],
             }))
-          : []
+          : [];
 
-      setTeacherSubjects(restoredSubjects)
-      setTeacherAssignmentSources(restoredClasses)
+      setTeacherSubjects(restoredSubjects);
+      setTeacherAssignmentSources(restoredClasses);
 
-      return false
+      return false;
     } finally {
       if (timeoutId !== null && runtime?.clearTimeout) {
-        runtime.clearTimeout(timeoutId)
+        runtime.clearTimeout(timeoutId);
       }
-      console.log("✅ Resetting isTeacherSubjectsLoading to false")
+      console.log("✅ Resetting isTeacherSubjectsLoading to false");
       if (isComponentMountedRef.current) {
-        setHasCompletedSubjectFetch(true)
+        setHasCompletedSubjectFetch(true);
         if (shouldResetLoadingFlag) {
-          setIsTeacherSubjectsLoading(false)
+          setIsTeacherSubjectsLoading(false);
         }
       }
     }
-  }, [cachedAssignmentStateRef, scheduleAuthRedirect, teacher.id, toast])
+  }, [cachedAssignmentStateRef, scheduleAuthRedirect, teacher.id, toast]);
 
   useEffect(() => {
     void (async () => {
-      const success = await fetchAssignedSubjects()
+      const success = await fetchAssignedSubjects();
       if (!success) {
-        logger.warn("Initial subject assignment fetch failed", { teacherId: teacher.id })
+        logger.warn("Initial subject assignment fetch failed", {
+          teacherId: teacher.id,
+        });
       }
-    })()
-  }, [fetchAssignedSubjects, teacher.id])
+    })();
+  }, [fetchAssignedSubjects, teacher.id]);
 
-  const [selectedTerm, setSelectedTerm] = useState("first")
-  const [selectedSession, setSelectedSession] = useState("2024/2025")
-  const [workflowRecords, setWorkflowRecords] = useState<ReportCardWorkflowRecord[]>([])
-  const [isSubmittingForApproval, setIsSubmittingForApproval] = useState(false)
-  const [isSavingDraft, setIsSavingDraft] = useState(false)
-  const [isSavingAcademicRecords, setIsSavingAcademicRecords] = useState(false)
-  const [isCancellingSubmission, setIsCancellingSubmission] = useState(false)
+  const [selectedTerm, setSelectedTerm] = useState("first");
+  const [selectedSession, setSelectedSession] = useState("2024/2025");
+  const [workflowRecords, setWorkflowRecords] = useState<
+    ReportCardWorkflowRecord[]
+  >([]);
+  const [isSubmittingForApproval, setIsSubmittingForApproval] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [isSavingAcademicRecords, setIsSavingAcademicRecords] = useState(false);
+  const [isCancellingSubmission, setIsCancellingSubmission] = useState(false);
   const [additionalData, setAdditionalData] = useState(() => ({
     affectiveDomain: {
       student_john_doe: {
@@ -1723,17 +1984,19 @@ export function TeacherDashboard({
       nextTermFees: "₦52,500",
       feesBalance: "₦0",
     },
-  }))
-  const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
-  const [previewStudentId, setPreviewStudentId] = useState<string | null>(null)
-  const [previewData, setPreviewData] = useState<RawReportCardData | null>(null)
-  const [isPreviewDownloading, setIsPreviewDownloading] = useState(false)
+  }));
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [previewStudentId, setPreviewStudentId] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<RawReportCardData | null>(
+    null,
+  );
+  const [isPreviewDownloading, setIsPreviewDownloading] = useState(false);
 
   const assignmentFormDefaultMaximum = useMemo(() => {
-    const fallback = CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment ?? 20
-    return assignmentMaximum > 0 ? assignmentMaximum : fallback
-  }, [assignmentMaximum])
-  const assignmentDefaultSyncRef = useRef(assignmentFormDefaultMaximum)
+    const fallback = CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment ?? 20;
+    return assignmentMaximum > 0 ? assignmentMaximum : fallback;
+  }, [assignmentMaximum]);
+  const assignmentDefaultSyncRef = useRef(assignmentFormDefaultMaximum);
 
   const [assignmentForm, setAssignmentForm] = useState(() => ({
     title: "",
@@ -1748,57 +2011,83 @@ export function TeacherDashboard({
     resourceType: "",
     resourceUrl: "",
     resourceSize: null as number | null,
-  }))
-  const [assignments, setAssignments] = useState<TeacherAssignmentSummary[]>([])
-  const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(true)
-  const [isSavingAssignment, setIsSavingAssignment] = useState(false)
-  const [assignmentActionId, setAssignmentActionId] = useState<string | null>(null)
-  const [deletingAssignmentId, setDeletingAssignmentId] = useState<string | null>(null)
-  const [gradingDrafts, setGradingDrafts] = useState<Record<string, { score: string; comment: string }>>({})
-  const [gradingSubmissionId, setGradingSubmissionId] = useState<string | null>(null)
-  const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false)
-  const [teacherStudents, setTeacherStudents] = useState<TeacherScopedStudent[]>([])
-  const [isTeacherStudentsLoading, setIsTeacherStudentsLoading] = useState(false)
-  const [teacherStudentsError, setTeacherStudentsError] = useState<string | null>(null)
-  const [teacherStudentsMessage, setTeacherStudentsMessage] = useState<string | null>(null)
-  const [marksData, setMarksData] = useState<MarksRecord[]>([])
-  const [selectedRemarkStudentId, setSelectedRemarkStudentId] = useState<string>("")
-  const [addStudentDialogSubjectKey, setAddStudentDialogSubjectKey] = useState<string>("")
-  const signatureInputId = useId()
-  const assignmentSubjectFieldId = useId()
-  const assignmentClassFieldId = useId()
+  }));
+  const [assignments, setAssignments] = useState<TeacherAssignmentSummary[]>(
+    [],
+  );
+  const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(true);
+  const [isSavingAssignment, setIsSavingAssignment] = useState(false);
+  const [assignmentActionId, setAssignmentActionId] = useState<string | null>(
+    null,
+  );
+  const [deletingAssignmentId, setDeletingAssignmentId] = useState<
+    string | null
+  >(null);
+  const [gradingDrafts, setGradingDrafts] = useState<
+    Record<string, { score: string; comment: string }>
+  >({});
+  const [gradingSubmissionId, setGradingSubmissionId] = useState<string | null>(
+    null,
+  );
+  const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
+  const [teacherStudents, setTeacherStudents] = useState<
+    TeacherScopedStudent[]
+  >([]);
+  const [isTeacherStudentsLoading, setIsTeacherStudentsLoading] =
+    useState(false);
+  const [teacherStudentsError, setTeacherStudentsError] = useState<
+    string | null
+  >(null);
+  const [teacherStudentsMessage, setTeacherStudentsMessage] = useState<
+    string | null
+  >(null);
+  const [marksData, setMarksData] = useState<MarksRecord[]>([]);
+  const [selectedRemarkStudentId, setSelectedRemarkStudentId] =
+    useState<string>("");
+  const [addStudentDialogSubjectKey, setAddStudentDialogSubjectKey] =
+    useState<string>("");
+  const signatureInputId = useId();
+  const assignmentSubjectFieldId = useId();
+  const assignmentClassFieldId = useId();
 
   const resolvedAssignmentMaximum = (() => {
-    const parsed = Number(assignmentForm.maximumScore)
+    const parsed = Number(assignmentForm.maximumScore);
     return Number.isFinite(parsed) && parsed > 0
       ? Math.round(parsed)
-      : assignmentFormDefaultMaximum
-  })()
+      : assignmentFormDefaultMaximum;
+  })();
   useEffect(() => {
     setAssignmentForm((prev) => {
-      const previousDefault = assignmentDefaultSyncRef.current
-      assignmentDefaultSyncRef.current = assignmentFormDefaultMaximum
+      const previousDefault = assignmentDefaultSyncRef.current;
+      assignmentDefaultSyncRef.current = assignmentFormDefaultMaximum;
 
       if (prev.maximumScore === String(assignmentFormDefaultMaximum)) {
-        return prev
+        return prev;
       }
 
-      const parsed = Number(prev.maximumScore)
-      if (prev.maximumScore && Number.isFinite(parsed) && parsed > 0 && Math.round(parsed) !== previousDefault) {
-        return prev
+      const parsed = Number(prev.maximumScore);
+      if (
+        prev.maximumScore &&
+        Number.isFinite(parsed) &&
+        parsed > 0 &&
+        Math.round(parsed) !== previousDefault
+      ) {
+        return prev;
       }
 
       return {
         ...prev,
         maximumScore: String(assignmentFormDefaultMaximum),
-      }
-    })
-  }, [assignmentFormDefaultMaximum])
-  const isEditingAssignment = assignmentDialogMode === "edit"
-  const assignmentDialogTitle = isEditingAssignment ? "Update Assignment" : "Create New Assignment"
+      };
+    });
+  }, [assignmentFormDefaultMaximum]);
+  const isEditingAssignment = assignmentDialogMode === "edit";
+  const assignmentDialogTitle = isEditingAssignment
+    ? "Update Assignment"
+    : "Create New Assignment";
   const assignmentDialogDescription = isEditingAssignment
     ? "Refresh the assignment details before you share or resend it to your class."
-    : "Design a rich assignment experience for your students with attachments and clear guidance."
+    : "Design a rich assignment experience for your students with attachments and clear guidance.";
 
   const assignmentInsights = useMemo(() => {
     if (assignments.length === 0) {
@@ -1815,67 +2104,74 @@ export function TeacherDashboard({
         submissionRate: 0,
         gradingRate: 0,
         averageScore: null as number | null,
-      }
+      };
     }
 
-    let draftCount = 0
-    let sentCount = 0
-    let overdueCount = 0
-    let totalCapacity = 0
-    let submissionCount = 0
-    let gradedCount = 0
-    let pendingGrading = 0
-    let scoreSum = 0
-    let scoreEntries = 0
+    let draftCount = 0;
+    let sentCount = 0;
+    let overdueCount = 0;
+    let totalCapacity = 0;
+    let submissionCount = 0;
+    let gradedCount = 0;
+    let pendingGrading = 0;
+    let scoreSum = 0;
+    let scoreEntries = 0;
 
     assignments.forEach((assignment) => {
-      const status = assignment.status
+      const status = assignment.status;
       if (status === "draft") {
-        draftCount += 1
+        draftCount += 1;
       } else if (status === "sent" || status === "submitted") {
-        sentCount += 1
+        sentCount += 1;
       } else if (status === "overdue") {
-        overdueCount += 1
+        overdueCount += 1;
       }
 
       const assignedStudents = Array.isArray(assignment.assignedStudentIds)
         ? assignment.assignedStudentIds.length
-        : 0
-      const capacity = assignedStudents || assignment.submissions.length
-      totalCapacity += capacity
+        : 0;
+      const capacity = assignedStudents || assignment.submissions.length;
+      totalCapacity += capacity;
 
       assignment.submissions.forEach((submission) => {
         if (["submitted", "graded"].includes(submission.status)) {
-          submissionCount += 1
+          submissionCount += 1;
         }
         if (submission.status === "graded") {
-          gradedCount += 1
+          gradedCount += 1;
         }
         if (submission.status === "submitted") {
-          pendingGrading += 1
+          pendingGrading += 1;
         }
         if (typeof submission.score === "number") {
-          scoreSum += submission.score
-          scoreEntries += 1
+          scoreSum += submission.score;
+          scoreEntries += 1;
         }
-      })
+      });
 
       if (status !== "draft" && status !== "graded" && status !== "overdue") {
-        const dueTimestamp = Date.parse(assignment.dueDate)
+        const dueTimestamp = Date.parse(assignment.dueDate);
         if (!Number.isNaN(dueTimestamp) && dueTimestamp < Date.now()) {
-          overdueCount += 1
+          overdueCount += 1;
         }
       }
-    })
+    });
 
-    const activeAssignments = Math.max(assignments.length - draftCount, 0)
-    const submissionRate = totalCapacity > 0
-      ? Math.round((submissionCount / totalCapacity) * 100)
-      : submissionCount > 0
-        ? 100
-        : 0
-    const gradingRate = submissionCount > 0 ? Math.round((gradedCount / submissionCount) * 100) : 0
-    const averageScore = scoreEntries > 0 ? Math.round((scoreSum / scoreEntries) * 100) / 100 : null
+    const activeAssignments = Math.max(assignments.length - draftCount, 0);
+    const submissionRate =
+      totalCapacity > 0
+        ? Math.round((submissionCount / totalCapacity) * 100)
+        : submissionCount > 0
+          ? 100
+          : 0;
+    const gradingRate =
+      submissionCount > 0
+        ? Math.round((gradedCount / submissionCount) * 100)
+        : 0;
+    const averageScore =
+      scoreEntries > 0
+        ? Math.round((scoreSum / scoreEntries) * 100) / 100
+        : null;
 
     return {
       total: assignments.length,
@@ -1890,91 +2186,120 @@ export function TeacherDashboard({
       submissionRate,
       gradingRate,
       averageScore,
-    }
-  }, [assignments])
+    };
+  }, [assignments]);
 
   const normalizeTeacherStudentRecords = useCallback(
     (records: unknown): TeacherScopedStudent[] => {
       if (!Array.isArray(records)) {
-        return []
+        return [];
       }
 
-      const tokenSet = new Set(teacherClassTokenList)
-      const fallbackClassName = teacherClasses[0]?.name ?? ""
+      const tokenSet = new Set(teacherClassTokenList);
+      const fallbackClassName = teacherClasses[0]?.name ?? "";
 
       return records
         .map((entry) => {
           if (!entry || typeof entry !== "object") {
-            return null
+            return null;
           }
 
-          const source = entry as Record<string, unknown>
-          const primaryId = normalizeStudentString(source.id)
-          const alternateId = normalizeStudentString((source as { studentId?: unknown }).studentId)
-          const id = primaryId || alternateId || `student_${Math.random().toString(36).slice(2)}`
+          const source = entry as Record<string, unknown>;
+          const primaryId = normalizeStudentString(source.id);
+          const alternateId = normalizeStudentString(
+            (source as { studentId?: unknown }).studentId,
+          );
+          const id =
+            primaryId ||
+            alternateId ||
+            `student_${Math.random().toString(36).slice(2)}`;
 
           const name =
-            normalizeStudentString(source.name) ||
-            `Student ${id.slice(-4)}`
+            normalizeStudentString(source.name) || `Student ${id.slice(-4)}`;
 
           const classNameCandidate =
             normalizeStudentString(source.class) ||
-            normalizeStudentString((source as { className?: unknown }).className) ||
             normalizeStudentString(
-              ((source as { metadata?: { assignedClassName?: unknown } }).metadata ?? {}).assignedClassName,
-            )
-          const classIdCandidate =
-            normalizeStudentString((source as { classId?: unknown }).classId) ||
-            normalizeStudentString((source as { class_id?: unknown }).class_id) ||
-            normalizeStudentString(
-              ((source as { metadata?: { classId?: unknown; class_id?: unknown } }).metadata ?? {}).classId,
+              (source as { className?: unknown }).className,
             ) ||
             normalizeStudentString(
-              ((source as { metadata?: { classId?: unknown; class_id?: unknown } }).metadata ?? {}).class_id,
-            )
+              (
+                (source as { metadata?: { assignedClassName?: unknown } })
+                  .metadata ?? {}
+              ).assignedClassName,
+            );
+          const classIdCandidate =
+            normalizeStudentString((source as { classId?: unknown }).classId) ||
+            normalizeStudentString(
+              (source as { class_id?: unknown }).class_id,
+            ) ||
+            normalizeStudentString(
+              (
+                (
+                  source as {
+                    metadata?: { classId?: unknown; class_id?: unknown };
+                  }
+                ).metadata ?? {}
+              ).classId,
+            ) ||
+            normalizeStudentString(
+              (
+                (
+                  source as {
+                    metadata?: { classId?: unknown; class_id?: unknown };
+                  }
+                ).metadata ?? {}
+              ).class_id,
+            );
 
-          const resolvedClassName = classNameCandidate || classIdCandidate || fallbackClassName
+          const resolvedClassName =
+            classNameCandidate || classIdCandidate || fallbackClassName;
 
-          const candidateTokens = new Set<string>()
-          const classNameToken = normalizeClassToken(classNameCandidate)
-          const classIdToken = normalizeClassToken(classIdCandidate)
+          const candidateTokens = new Set<string>();
+          const classNameToken = normalizeClassToken(classNameCandidate);
+          const classIdToken = normalizeClassToken(classIdCandidate);
 
           if (classNameToken) {
-            candidateTokens.add(classNameToken)
+            candidateTokens.add(classNameToken);
           }
 
           if (classIdToken) {
-            candidateTokens.add(classIdToken)
+            candidateTokens.add(classIdToken);
           }
 
           if (tokenSet.size > 0) {
             if (candidateTokens.size === 0) {
               if (teacherHasAssignedClasses) {
-                return null
+                return null;
               }
             } else {
-              let matchesToken = false
+              let matchesToken = false;
               for (const token of candidateTokens) {
                 if (token && tokenSet.has(token)) {
-                  matchesToken = true
-                  break
+                  matchesToken = true;
+                  break;
                 }
               }
 
               if (!matchesToken) {
-                return null
+                return null;
               }
             }
           }
 
-          const rawSubjects = (source as { subjects?: unknown }).subjects
+          const rawSubjects = (source as { subjects?: unknown }).subjects;
           const subjects = Array.isArray(rawSubjects)
             ? rawSubjects
-                .filter((subject): subject is string => typeof subject === "string" && subject.trim().length > 0)
+                .filter(
+                  (subject): subject is string =>
+                    typeof subject === "string" && subject.trim().length > 0,
+                )
                 .map((subject) => subject.trim())
-            : []
+            : [];
 
-          const status = normalizeStudentString((source as { status?: unknown }).status) || "active"
+          const status =
+            normalizeStudentString((source as { status?: unknown }).status) ||
+            "active";
 
           return {
             id,
@@ -1983,65 +2308,75 @@ export function TeacherDashboard({
             classId: classIdCandidate || null,
             subjects,
             status,
-          }
+          };
         })
-        .filter((student): student is TeacherScopedStudent => Boolean(student))
+        .filter((student): student is TeacherScopedStudent => Boolean(student));
     },
     [teacherClasses, teacherClassTokenList, teacherHasAssignedClasses],
-  )
+  );
 
-  const cacheTeacherStudentRoster = useCallback((records: TeacherScopedStudent[]) => {
-    try {
-      if (!Array.isArray(records) || records.length === 0) {
-        safeStorage.removeItem(TEACHER_STUDENTS_CACHE_KEY)
-        return
+  const cacheTeacherStudentRoster = useCallback(
+    (records: TeacherScopedStudent[]) => {
+      try {
+        if (!Array.isArray(records) || records.length === 0) {
+          safeStorage.removeItem(TEACHER_STUDENTS_CACHE_KEY);
+          return;
+        }
+
+        safeStorage.setItem(
+          TEACHER_STUDENTS_CACHE_KEY,
+          JSON.stringify(records),
+        );
+      } catch (error) {
+        logger.warn("Failed to cache teacher student roster", {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-
-      safeStorage.setItem(TEACHER_STUDENTS_CACHE_KEY, JSON.stringify(records))
-    } catch (error) {
-      logger.warn("Failed to cache teacher student roster", {
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }, [])
+    },
+    [],
+  );
 
   const readTeacherStudentCache = useCallback((): TeacherScopedStudent[] => {
     try {
-      const raw = safeStorage.getItem(TEACHER_STUDENTS_CACHE_KEY)
+      const raw = safeStorage.getItem(TEACHER_STUDENTS_CACHE_KEY);
       if (!raw) {
-        return []
+        return [];
       }
 
-      const parsed = JSON.parse(raw) as unknown
-      return normalizeTeacherStudentRecords(parsed)
+      const parsed = JSON.parse(raw) as unknown;
+      return normalizeTeacherStudentRecords(parsed);
     } catch (error) {
       logger.warn("Failed to read cached teacher student roster", {
         error: error instanceof Error ? error.message : String(error),
-      })
-      return []
+      });
+      return [];
     }
-  }, [normalizeTeacherStudentRecords])
+  }, [normalizeTeacherStudentRecords]);
 
-  const refreshTeacherStudents = useCallback(async (): Promise<TeacherScopedStudent[]> => {
+  const refreshTeacherStudents = useCallback(async (): Promise<
+    TeacherScopedStudent[]
+  > => {
     if (!teacherHasAssignedClasses) {
-      setIsTeacherStudentsLoading(false)
-      setTeacherStudents([])
-      setTeacherStudentsError(null)
-      setTeacherStudentsMessage("You are not assigned to any students. Contact your administrator.")
-      return []
+      setIsTeacherStudentsLoading(false);
+      setTeacherStudents([]);
+      setTeacherStudentsError(null);
+      setTeacherStudentsMessage(
+        "You are not assigned to any students. Contact your administrator.",
+      );
+      return [];
     }
 
-    const token = safeStorage.getItem("vea_auth_token")
+    const token = safeStorage.getItem("vea_auth_token");
     if (!token) {
-      setTeacherStudents([])
-      setTeacherStudentsError("Your session has expired. Please log in again.")
-      setTeacherStudentsMessage(null)
-      setIsTeacherStudentsLoading(false)
-      return []
+      setTeacherStudents([]);
+      setTeacherStudentsError("Your session has expired. Please log in again.");
+      setTeacherStudentsMessage(null);
+      setIsTeacherStudentsLoading(false);
+      return [];
     }
 
-    setIsTeacherStudentsLoading(true)
-    setTeacherStudentsError(null)
+    setIsTeacherStudentsLoading(true);
+    setTeacherStudentsError(null);
 
     try {
       const response = await fetch("/api/students", {
@@ -2049,79 +2384,91 @@ export function TeacherDashboard({
           Authorization: `Bearer ${token}`,
         },
         cache: "no-store",
-      })
+      });
 
-      const payload = await response.json().catch(() => ({}))
+      const payload = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         if (response.status === 404) {
           const fallbackMessage =
-            normalizeStudentString((payload as { message?: unknown }).message) ||
-            "Student records are not available right now. Please try again later."
-          const cachedStudents = readTeacherStudentCache()
+            normalizeStudentString(
+              (payload as { message?: unknown }).message,
+            ) ||
+            "Student records are not available right now. Please try again later.";
+          const cachedStudents = readTeacherStudentCache();
 
           if (cachedStudents.length > 0) {
             logger.info("Student endpoint returned 404; using cached roster", {
               teacherId: teacher.id,
-            })
+            });
 
-            setTeacherStudents(cachedStudents)
-            setTeacherStudentsError(null)
-            setTeacherStudentsMessage(TEACHER_STUDENTS_CACHE_NOTICE)
-            return cachedStudents
+            setTeacherStudents(cachedStudents);
+            setTeacherStudentsError(null);
+            setTeacherStudentsMessage(TEACHER_STUDENTS_CACHE_NOTICE);
+            return cachedStudents;
           }
 
           logger.warn("Student endpoint returned 404 for teacher scope", {
             teacherId: teacher.id,
-          })
+          });
 
-          setTeacherStudents([])
-          setTeacherStudentsError(null)
-          setTeacherStudentsMessage(fallbackMessage)
-          return []
+          setTeacherStudents([]);
+          setTeacherStudentsError(null);
+          setTeacherStudentsMessage(fallbackMessage);
+          return [];
         }
 
         const message =
           typeof (payload as { error?: unknown }).error === "string"
             ? (payload as { error?: string }).error
-            : "Unable to load students"
-        throw new Error(message)
+            : "Unable to load students";
+        throw new Error(message);
       }
 
-      const rawStudents = Array.isArray((payload as { students?: unknown }).students)
+      const rawStudents = Array.isArray(
+        (payload as { students?: unknown }).students,
+      )
         ? ((payload as { students?: unknown[] }).students ?? [])
-        : []
-      const normalizedRecords = normalizeTeacherStudentRecords(rawStudents)
-      setTeacherStudents(normalizedRecords)
-      cacheTeacherStudentRoster(normalizedRecords)
+        : [];
+      const normalizedRecords = normalizeTeacherStudentRecords(rawStudents);
+      setTeacherStudents(normalizedRecords);
+      cacheTeacherStudentRoster(normalizedRecords);
 
-      const responseMessage = normalizeStudentString((payload as { message?: unknown }).message)
+      const responseMessage = normalizeStudentString(
+        (payload as { message?: unknown }).message,
+      );
       if (responseMessage) {
-        setTeacherStudentsMessage(responseMessage)
+        setTeacherStudentsMessage(responseMessage);
       } else if (normalizedRecords.length === 0) {
-        setTeacherStudentsMessage("No students found for your assigned classes yet.")
+        setTeacherStudentsMessage(
+          "No students found for your assigned classes yet.",
+        );
       } else {
-        setTeacherStudentsMessage(null)
+        setTeacherStudentsMessage(null);
       }
 
-      return normalizedRecords
+      return normalizedRecords;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to load students"
-      logger.error("Failed to load teacher students", { error: message, teacherId: teacher.id })
-      const cachedStudents = readTeacherStudentCache()
+      const message =
+        error instanceof Error ? error.message : "Unable to load students";
+      logger.error("Failed to load teacher students", {
+        error: message,
+        teacherId: teacher.id,
+      });
+      const cachedStudents = readTeacherStudentCache();
 
       if (cachedStudents.length > 0) {
-        setTeacherStudents(cachedStudents)
-        setTeacherStudentsError(null)
-        setTeacherStudentsMessage(TEACHER_STUDENTS_CACHE_NOTICE)
-        return cachedStudents
+        setTeacherStudents(cachedStudents);
+        setTeacherStudentsError(null);
+        setTeacherStudentsMessage(TEACHER_STUDENTS_CACHE_NOTICE);
+        return cachedStudents;
       }
 
-      setTeacherStudentsError(message)
-      setTeacherStudents([])
-      return []
+      setTeacherStudentsError(message);
+      setTeacherStudents([]);
+      return [];
     } finally {
-      setIsTeacherStudentsLoading(false)
+      setIsTeacherStudentsLoading(false);
     }
   }, [
     cacheTeacherStudentRoster,
@@ -2130,92 +2477,106 @@ export function TeacherDashboard({
     teacher.id,
     teacherHasAssignedClasses,
     teacherClassTokenKey,
-  ])
+  ]);
 
-  const [teacherExams, setTeacherExams] = useState<TeacherExamSummary[]>([])
-  const [isExamLoading, setIsExamLoading] = useState(true)
-  const [teacherTimetable, setTeacherTimetable] = useState<TeacherTimetableSlot[]>([])
-  const [isTeacherTimetableLoading, setIsTeacherTimetableLoading] = useState(true)
-  const [isSyncingGrades, setIsSyncingGrades] = useState(false)
+  const [teacherExams, setTeacherExams] = useState<TeacherExamSummary[]>([]);
+  const [isExamLoading, setIsExamLoading] = useState(true);
+  const [teacherTimetable, setTeacherTimetable] = useState<
+    TeacherTimetableSlot[]
+  >([]);
+  const [isTeacherTimetableLoading, setIsTeacherTimetableLoading] =
+    useState(true);
+  const [isSyncingGrades, setIsSyncingGrades] = useState(false);
   const [cumulativeSummaries, setCumulativeSummaries] = useState<
     Record<string, ReportCardCumulativeSummary>
-  >({})
-  const [isGeneratingCumulative, setIsGeneratingCumulative] = useState(false)
-  const [isAddStudentDialogOpen, setIsAddStudentDialogOpen] = useState(false)
-  const [isRosterLoading, setIsRosterLoading] = useState(false)
-  const [rosterCandidates, setRosterCandidates] = useState<AssignmentStudentInfo[]>([])
-  const [selectedRosterId, setSelectedRosterId] = useState<string | null>(null)
-  const [rosterNotice, setRosterNotice] = useState<string | null>(null)
+  >({});
+  const [isGeneratingCumulative, setIsGeneratingCumulative] = useState(false);
+  const [isAddStudentDialogOpen, setIsAddStudentDialogOpen] = useState(false);
+  const [isRosterLoading, setIsRosterLoading] = useState(false);
+  const [rosterCandidates, setRosterCandidates] = useState<
+    AssignmentStudentInfo[]
+  >([]);
+  const [selectedRosterId, setSelectedRosterId] = useState<string | null>(null);
+  const [rosterNotice, setRosterNotice] = useState<string | null>(null);
 
-  const normalizedTermLabel = useMemo(() => mapTermKeyToLabel(selectedTerm), [selectedTerm])
+  const normalizedTermLabel = useMemo(
+    () => mapTermKeyToLabel(selectedTerm),
+    [selectedTerm],
+  );
 
   const subjectSummary =
-    teacherSubjects.length > 0 ? teacherSubjects.join(", ") : "No subjects assigned yet"
+    teacherSubjects.length > 0
+      ? teacherSubjects.join(", ")
+      : "No subjects assigned yet";
   const classSummary =
-    teacherClassNames.length > 0 ? teacherClassNames.join(", ") : "No classes assigned yet"
+    teacherClassNames.length > 0
+      ? teacherClassNames.join(", ")
+      : "No classes assigned yet";
   const studentSummary = isTeacherStudentsLoading
     ? "Loading students..."
     : teacherStudents.length > 0
       ? `${teacherStudents.length} assigned ${teacherStudents.length === 1 ? "student" : "students"}`
-      : teacherStudentsMessage ?? "No students assigned yet"
+      : (teacherStudentsMessage ?? "No students assigned yet");
   const examSummary = isExamLoading
     ? "Loading exams..."
     : teacherExams.length > 0
       ? `${teacherExams.length} scheduled ${teacherExams.length === 1 ? "exam" : "exams"}`
-      : "No exams scheduled yet"
+      : "No exams scheduled yet";
 
   const handleSelectClass = useCallback(
     (value: string) => {
       if (value === "__no_classes__") {
-        setSelectedClass("")
-        setSelectedClassId("")
-        setSelectedSubject("")
-        setMarksData((prev) => (prev.length > 0 ? [] : prev))
-        return
+        setSelectedClass("");
+        setSelectedClassId("");
+        setSelectedSubject("");
+        setMarksData((prev) => (prev.length > 0 ? [] : prev));
+        return;
       }
 
       if (value !== selectedClass) {
-        setSelectedSubject("")
-        setMarksData((prev) => (prev.length > 0 ? [] : prev))
+        setSelectedSubject("");
+        setMarksData((prev) => (prev.length > 0 ? [] : prev));
       }
 
-      setSelectedClass(value)
+      setSelectedClass(value);
 
-      const normalizedValue = normalizeClassName(value)
+      const normalizedValue = normalizeClassName(value);
       const match = teacherClasses.find((cls) => {
-        const normalizedName = normalizeClassName(cls.name)
-        return normalizedName === normalizedValue || cls.id === value
-      })
+        const normalizedName = normalizeClassName(cls.name);
+        return normalizedName === normalizedValue || cls.id === value;
+      });
 
-      setSelectedClassId(match?.id ?? "")
+      setSelectedClassId(match?.id ?? "");
     },
     [normalizeClassName, selectedClass, teacherClasses],
-  )
+  );
 
   const normalizedTeacherSubjects = useMemo(
     () =>
       Array.from(
         new Set(
           teacherSubjects
-            .map((subject) => (typeof subject === "string" ? subject.trim() : ""))
+            .map((subject) =>
+              typeof subject === "string" ? subject.trim() : "",
+            )
             .filter((subject) => subject.length > 0),
         ),
       ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
     [teacherSubjects],
-  )
+  );
 
   const teacherSubjectOptions = useMemo(
     () => buildTeacherSubjectOptions(teacherClasses, normalizedTeacherSubjects),
     [teacherClasses, normalizedTeacherSubjects],
-  )
+  );
 
   const subjectOptionByKey = useMemo(() => {
-    const map = new Map<string, TeacherSubjectOption>()
+    const map = new Map<string, TeacherSubjectOption>();
     teacherSubjectOptions.forEach((option) => {
-      map.set(option.key, option)
-    })
-    return map
-  }, [teacherSubjectOptions])
+      map.set(option.key, option);
+    });
+    return map;
+  }, [teacherSubjectOptions]);
 
   const buildClassTeacherRemarkSummary = useCallback(
     (
@@ -2224,226 +2585,259 @@ export function TeacherDashboard({
         | undefined,
     ) => {
       if (!entries || entries.length === 0) {
-        return ""
+        return "";
       }
 
       const formatted = entries
         .map(({ subjectKey, remark }) => {
-          const subjectOption = subjectOptionByKey.get(subjectKey)
-          const label = subjectOption?.subject ?? (subjectKey === "general" ? "General" : subjectKey)
-          const displayRemark = mapClassTeacherRemarkToSubjectRemark(remark)
+          const subjectOption = subjectOptionByKey.get(subjectKey);
+          const label =
+            subjectOption?.subject ??
+            (subjectKey === "general" ? "General" : subjectKey);
+          const displayRemark = mapClassTeacherRemarkToSubjectRemark(remark);
 
           if (!label || !displayRemark) {
-            return null
+            return null;
           }
 
-          return `${label}: ${displayRemark}`
+          return `${label}: ${displayRemark}`;
         })
-        .filter((entry): entry is string => Boolean(entry))
+        .filter((entry): entry is string => Boolean(entry));
 
-      return formatted.join(" • ")
+      return formatted.join(" • ");
     },
     [subjectOptionByKey],
-  )
+  );
 
   const getStudentRemarkEntries = useCallback(
     (studentId: string) => {
       if (!studentId) {
-        return [] as Array<{ key: string; subjectKey: string; remark: ClassTeacherRemarkValue }>
+        return [] as Array<{
+          key: string;
+          subjectKey: string;
+          remark: ClassTeacherRemarkValue;
+        }>;
       }
 
       return Object.entries(additionalData.classTeacherRemarks)
         .map(([compositeKey, entry]) => {
           if (!entry || typeof entry !== "object" || !entry.remark) {
-            return null
+            return null;
           }
 
-          const { subjectKey, studentId: entryStudentId } = parseRemarkKey(compositeKey)
+          const { subjectKey, studentId: entryStudentId } =
+            parseRemarkKey(compositeKey);
           if (!subjectKey || entryStudentId !== studentId) {
-            return null
+            return null;
           }
 
-          return { key: compositeKey, subjectKey, remark: entry.remark }
+          return { key: compositeKey, subjectKey, remark: entry.remark };
         })
         .filter(
           (
             entry,
-          ): entry is { key: string; subjectKey: string; remark: ClassTeacherRemarkValue } =>
-            entry !== null,
-        )
+          ): entry is {
+            key: string;
+            subjectKey: string;
+            remark: ClassTeacherRemarkValue;
+          } => entry !== null,
+        );
     },
     [additionalData.classTeacherRemarks],
-  )
+  );
 
   const availableSubjectOptions = useMemo(() => {
     if (teacherSubjectOptions.length === 0) {
-      return [] as TeacherSubjectOption[]
+      return [] as TeacherSubjectOption[];
     }
 
-    const normalizedIdToken = normalizeClassToken(selectedClassId)
-    const normalizedNameToken = normalizeClassName(selectedClass)
+    const normalizedIdToken = normalizeClassToken(selectedClassId);
+    const normalizedNameToken = normalizeClassName(selectedClass);
 
     if (!normalizedIdToken && !normalizedNameToken) {
-      return teacherSubjectOptions
+      return teacherSubjectOptions;
     }
 
     return teacherSubjectOptions.filter((option) => {
-      const optionIdToken = normalizeClassToken(option.classId)
-      const optionNameToken = normalizeClassName(option.className)
+      const optionIdToken = normalizeClassToken(option.classId);
+      const optionNameToken = normalizeClassName(option.className);
 
-      if (normalizedIdToken && optionIdToken && optionIdToken === normalizedIdToken) {
-        return true
+      if (
+        normalizedIdToken &&
+        optionIdToken &&
+        optionIdToken === normalizedIdToken
+      ) {
+        return true;
       }
 
-      if (normalizedNameToken && optionNameToken && optionNameToken === normalizedNameToken) {
-        return true
+      if (
+        normalizedNameToken &&
+        optionNameToken &&
+        optionNameToken === normalizedNameToken
+      ) {
+        return true;
       }
 
       if (!optionIdToken && !optionNameToken) {
-        return true
+        return true;
       }
 
-      return false
-    })
-  }, [normalizeClassName, selectedClass, selectedClassId, teacherSubjectOptions])
+      return false;
+    });
+  }, [
+    normalizeClassName,
+    selectedClass,
+    selectedClassId,
+    teacherSubjectOptions,
+  ]);
 
   const availableSubjects = useMemo(
     () => availableSubjectOptions.map((option) => option.subject),
     [availableSubjectOptions],
-  )
+  );
 
   const selectedSubjectOption = selectedSubjectKey
-    ? subjectOptionByKey.get(selectedSubjectKey) ?? null
-    : null
+    ? (subjectOptionByKey.get(selectedSubjectKey) ?? null)
+    : null;
   const selectedSubjectHasClassAssignment = Boolean(
     selectedSubjectOption &&
-      ((selectedSubjectOption.classId && selectedSubjectOption.classId.trim().length > 0) ||
-        (selectedSubjectOption.className && selectedSubjectOption.className.trim().length > 0)),
-  )
-  const hasRemarkSubjects = availableSubjectOptions.length > 0
+      ((selectedSubjectOption.classId &&
+        selectedSubjectOption.classId.trim().length > 0) ||
+        (selectedSubjectOption.className &&
+          selectedSubjectOption.className.trim().length > 0)),
+  );
+  const hasRemarkSubjects = availableSubjectOptions.length > 0;
   const remarkStudentOptions = useMemo(() => {
     if (!selectedSubjectKey) {
-      return [] as RemarkStudentOption[]
+      return [] as RemarkStudentOption[];
     }
 
-    const subjectOption = subjectOptionByKey.get(selectedSubjectKey) ?? null
+    const subjectOption = subjectOptionByKey.get(selectedSubjectKey) ?? null;
     if (subjectOption && !selectedSubjectHasClassAssignment) {
-      return [] as RemarkStudentOption[]
+      return [] as RemarkStudentOption[];
     }
-    const classTokens = new Set<string>()
+    const classTokens = new Set<string>();
 
     const registerClassToken = (value: string | null | undefined) => {
       if (!value || typeof value !== "string") {
-        return
+        return;
       }
 
-      const trimmed = value.trim()
+      const trimmed = value.trim();
       if (!trimmed) {
-        return
+        return;
       }
 
-      classTokens.add(trimmed.toLowerCase())
+      classTokens.add(trimmed.toLowerCase());
 
-      const normalizedIdToken = normalizeClassToken(trimmed)
+      const normalizedIdToken = normalizeClassToken(trimmed);
       if (normalizedIdToken) {
-        classTokens.add(normalizedIdToken)
+        classTokens.add(normalizedIdToken);
       }
 
-      const normalizedNameToken = normalizeClassName(trimmed)
+      const normalizedNameToken = normalizeClassName(trimmed);
       if (normalizedNameToken) {
-        classTokens.add(normalizedNameToken)
+        classTokens.add(normalizedNameToken);
       }
-    }
+    };
 
     if (subjectOption) {
-      registerClassToken(subjectOption.classId)
-      registerClassToken(subjectOption.className)
+      registerClassToken(subjectOption.classId);
+      registerClassToken(subjectOption.className);
     }
 
-    const shouldMatchClassTokens = classTokens.size > 0
-    const entries = new Map<string, RemarkStudentOption>()
+    const shouldMatchClassTokens = classTokens.size > 0;
+    const entries = new Map<string, RemarkStudentOption>();
 
     const registerStudent = (candidate: {
-      studentId: string | null | undefined
-      studentName: string | null | undefined
-      classId?: string | null
-      className?: string | null
+      studentId: string | null | undefined;
+      studentName: string | null | undefined;
+      classId?: string | null;
+      className?: string | null;
     }) => {
       const rawId =
         typeof candidate.studentId === "string"
           ? candidate.studentId.trim()
           : candidate.studentId
             ? String(candidate.studentId).trim()
-            : ""
+            : "";
 
       if (!rawId) {
-        return
+        return;
       }
 
       const sanitizedName =
-        typeof candidate.studentName === "string" && candidate.studentName.trim().length > 0
+        typeof candidate.studentName === "string" &&
+        candidate.studentName.trim().length > 0
           ? candidate.studentName.trim()
-          : ""
+          : "";
       const sanitizedClassId =
-        typeof candidate.classId === "string" && candidate.classId.trim().length > 0
+        typeof candidate.classId === "string" &&
+        candidate.classId.trim().length > 0
           ? candidate.classId.trim()
-          : null
+          : null;
       const sanitizedClassName =
-        typeof candidate.className === "string" && candidate.className.trim().length > 0
+        typeof candidate.className === "string" &&
+        candidate.className.trim().length > 0
           ? candidate.className.trim()
-          : null
+          : null;
 
-      const existing = entries.get(rawId)
-      const nextName = sanitizedName || existing?.studentName || rawId
-      const nextClassId = sanitizedClassId ?? existing?.classId ?? null
-      const nextClassName = sanitizedClassName ?? existing?.className ?? null
+      const existing = entries.get(rawId);
+      const nextName = sanitizedName || existing?.studentName || rawId;
+      const nextClassId = sanitizedClassId ?? existing?.classId ?? null;
+      const nextClassName = sanitizedClassName ?? existing?.className ?? null;
 
       entries.set(rawId, {
         studentId: rawId,
         studentName: nextName,
         classId: nextClassId,
         className: nextClassName,
-      })
-    }
+      });
+    };
 
-    const matchesSubjectClass = (classId: string | null, className: string | null) => {
+    const matchesSubjectClass = (
+      classId: string | null,
+      className: string | null,
+    ) => {
       if (!shouldMatchClassTokens) {
-        return true
+        return true;
       }
 
-      const tokens = new Set<string>()
+      const tokens = new Set<string>();
       const collectTokens = (value: string | null | undefined) => {
         if (!value || typeof value !== "string") {
-          return
+          return;
         }
 
-        const trimmed = value.trim()
+        const trimmed = value.trim();
         if (!trimmed) {
-          return
+          return;
         }
 
-        tokens.add(trimmed.toLowerCase())
+        tokens.add(trimmed.toLowerCase());
 
-        const normalizedIdToken = normalizeClassToken(trimmed)
+        const normalizedIdToken = normalizeClassToken(trimmed);
         if (normalizedIdToken) {
-          tokens.add(normalizedIdToken)
+          tokens.add(normalizedIdToken);
         }
 
-        const normalizedNameToken = normalizeClassName(trimmed)
+        const normalizedNameToken = normalizeClassName(trimmed);
         if (normalizedNameToken) {
-          tokens.add(normalizedNameToken)
+          tokens.add(normalizedNameToken);
         }
-      }
+      };
 
-      collectTokens(classId)
-      collectTokens(className)
+      collectTokens(classId);
+      collectTokens(className);
 
       if (tokens.size === 0) {
-        return false
+        return false;
       }
 
-      return Array.from(tokens).some((token) => token && classTokens.has(token))
-    }
+      return Array.from(tokens).some(
+        (token) => token && classTokens.has(token),
+      );
+    };
 
     teacherStudents.forEach((student) => {
       if (matchesSubjectClass(student.classId, student.className)) {
@@ -2452,9 +2846,9 @@ export function TeacherDashboard({
           studentName: student.name,
           classId: student.classId,
           className: student.className,
-        })
+        });
       }
-    })
+    });
 
     marksData.forEach((record) => {
       registerStudent({
@@ -2462,12 +2856,14 @@ export function TeacherDashboard({
         studentName: record.studentName,
         classId: subjectOption?.classId ?? null,
         className: subjectOption?.className ?? null,
-      })
-    })
+      });
+    });
 
     return Array.from(entries.values()).sort((left, right) =>
-      left.studentName.localeCompare(right.studentName, undefined, { sensitivity: "base" }),
-    )
+      left.studentName.localeCompare(right.studentName, undefined, {
+        sensitivity: "base",
+      }),
+    );
   }, [
     marksData,
     normalizeClassName,
@@ -2476,233 +2872,246 @@ export function TeacherDashboard({
     selectedSubjectKey,
     subjectOptionByKey,
     teacherStudents,
-  ])
+  ]);
 
   const remarkStudentOptionById = useMemo(() => {
-    const map = new Map<string, RemarkStudentOption>()
+    const map = new Map<string, RemarkStudentOption>();
     remarkStudentOptions.forEach((student) => {
-      map.set(student.studentId, student)
-    })
-    return map
-  }, [remarkStudentOptions])
+      map.set(student.studentId, student);
+    });
+    return map;
+  }, [remarkStudentOptions]);
 
   useEffect(() => {
     if (remarkStudentOptions.length === 0) {
       if (selectedRemarkStudentId) {
-        setSelectedRemarkStudentId("")
+        setSelectedRemarkStudentId("");
       }
-      return
+      return;
     }
 
     if (
       !selectedRemarkStudentId ||
-      !remarkStudentOptions.some((student) => student.studentId === selectedRemarkStudentId)
+      !remarkStudentOptions.some(
+        (student) => student.studentId === selectedRemarkStudentId,
+      )
     ) {
-      setSelectedRemarkStudentId(remarkStudentOptions[0].studentId)
+      setSelectedRemarkStudentId(remarkStudentOptions[0].studentId);
     }
-  }, [remarkStudentOptions, selectedRemarkStudentId])
+  }, [remarkStudentOptions, selectedRemarkStudentId]);
 
   const selectedRemarkStudent = useMemo(
     () =>
       selectedRemarkStudentId
-        ? remarkStudentOptionById.get(selectedRemarkStudentId) ?? null
+        ? (remarkStudentOptionById.get(selectedRemarkStudentId) ?? null)
         : null,
     [remarkStudentOptionById, selectedRemarkStudentId],
-  )
+  );
 
   const selectedRemarkKey =
     selectedRemarkStudent && selectedSubjectKey
       ? buildRemarkKey(selectedSubjectKey, selectedRemarkStudent.studentId)
-      : ""
+      : "";
   const selectedRemarkEntry = selectedRemarkKey
     ? additionalData.classTeacherRemarks[selectedRemarkKey]
-    : undefined
-  const selectedRemarkValue: ClassTeacherRemarkValue | "" = selectedRemarkEntry?.remark ?? ""
+    : undefined;
+  const selectedRemarkValue: ClassTeacherRemarkValue | "" =
+    selectedRemarkEntry?.remark ?? "";
   const currentRemarkOption = selectedRemarkValue
-    ? CLASS_TEACHER_REMARK_OPTION_MAP[selectedRemarkValue] ?? null
-    : null
+    ? (CLASS_TEACHER_REMARK_OPTION_MAP[selectedRemarkValue] ?? null)
+    : null;
 
-  const isStudentSelectDisabledForRemarks = !selectedSubjectKey || !selectedSubjectHasClassAssignment
-  const hasRemarkStudentsForSelection = remarkStudentOptions.length > 0
+  const isStudentSelectDisabledForRemarks =
+    !selectedSubjectKey || !selectedSubjectHasClassAssignment;
+  const hasRemarkStudentsForSelection = remarkStudentOptions.length > 0;
   const studentSelectPlaceholder = !selectedSubjectKey
     ? "Select a subject first"
     : !selectedSubjectHasClassAssignment
       ? "Subject has no class"
       : hasRemarkStudentsForSelection
-      ? "Select student"
-      : "No students available"
+        ? "Select student"
+        : "No students available";
   const studentDropdownStatusMessage = !selectedSubjectKey
     ? null
     : !selectedSubjectHasClassAssignment
       ? "This subject is not assigned to a class."
       : hasRemarkStudentsForSelection
         ? "Remarks are saved per student and subject."
-        : "No students found for the selected subject's class."
+        : "No students found for the selected subject's class.";
 
-  const hasAvailableSubjects = availableSubjectOptions.length > 0
+  const hasAvailableSubjects = availableSubjectOptions.length > 0;
   const hasCachedSubjectOptions =
     hasAvailableSubjects ||
     (Array.isArray(cachedAssignmentStateRef.current.subjects) &&
-      cachedAssignmentStateRef.current.subjects.length > 0)
+      cachedAssignmentStateRef.current.subjects.length > 0);
   const shouldDisableSubjectSelectDueToSubjects =
     hasCompletedSubjectFetch &&
     !isTeacherSubjectsLoading &&
     availableSubjectOptions.length === 0 &&
-    !hasCachedSubjectOptions
-  const isSubjectSelectDisabled = shouldDisableSubjectSelectDueToSubjects
+    !hasCachedSubjectOptions;
+  const isSubjectSelectDisabled = shouldDisableSubjectSelectDueToSubjects;
   const subjectSelectPlaceholder = isTeacherSubjectsLoading
     ? "Loading subjects..."
     : hasCompletedSubjectFetch && availableSubjectOptions.length === 0
       ? "No subjects assigned"
-      : "Select subject"
+      : "Select subject";
 
   const addStudentDialogOption = addStudentDialogSubjectKey
-    ? subjectOptionByKey.get(addStudentDialogSubjectKey) ?? null
-    : null
+    ? (subjectOptionByKey.get(addStudentDialogSubjectKey) ?? null)
+    : null;
 
   const handleSelectSubject = useCallback(
     (value: string) => {
-      const option = subjectOptionByKey.get(value)
+      const option = subjectOptionByKey.get(value);
 
       if (!option) {
-        setSelectedSubjectKey("")
-        setSelectedSubject("")
-        return
+        setSelectedSubjectKey("");
+        setSelectedSubject("");
+        return;
       }
 
       if (value === selectedSubjectKey) {
         if (option.classId && option.classId !== selectedClassId) {
-          setSelectedClassId(option.classId)
+          setSelectedClassId(option.classId);
         }
         if (option.className && option.className !== selectedClass) {
-          setSelectedClass(option.className)
+          setSelectedClass(option.className);
         }
-        return
+        return;
       }
 
-      setMarksData([])
-      setSelectedSubjectKey(value)
-      setSelectedSubject(option.subject)
+      setMarksData([]);
+      setSelectedSubjectKey(value);
+      setSelectedSubject(option.subject);
 
       if (option.classId && option.classId !== selectedClassId) {
-        setSelectedClassId(option.classId)
+        setSelectedClassId(option.classId);
       }
       if (option.className && option.className !== selectedClass) {
-        setSelectedClass(option.className)
+        setSelectedClass(option.className);
       }
     },
-    [selectedClass, selectedClassId, selectedSubjectKey, setMarksData, subjectOptionByKey],
-  )
+    [
+      selectedClass,
+      selectedClassId,
+      selectedSubjectKey,
+      setMarksData,
+      subjectOptionByKey,
+    ],
+  );
 
   const handleSubjectSwitch = useCallback(
     (value: string) => {
-      setIsSubjectSwitcherOpen(false)
-      handleSelectSubject(value)
+      setIsSubjectSwitcherOpen(false);
+      handleSelectSubject(value);
     },
     [handleSelectSubject],
-  )
+  );
 
   useEffect(() => {
     if (!selectedSubjectKey) {
-      return
+      return;
     }
 
-    const subjectOption = subjectOptionByKey.get(selectedSubjectKey)
+    const subjectOption = subjectOptionByKey.get(selectedSubjectKey);
     if (!subjectOption) {
-      return
+      return;
     }
 
-    const resolvedClassId = subjectOption.classId?.trim() ?? ""
-    const resolvedClassName = subjectOption.className?.trim() ?? ""
+    const resolvedClassId = subjectOption.classId?.trim() ?? "";
+    const resolvedClassName = subjectOption.className?.trim() ?? "";
 
     if (resolvedClassId !== selectedClassId) {
-      setSelectedClassId(resolvedClassId)
+      setSelectedClassId(resolvedClassId);
     }
 
     if (resolvedClassName && resolvedClassName !== selectedClass) {
-      setSelectedClass(resolvedClassName)
+      setSelectedClass(resolvedClassName);
     } else if (!resolvedClassName && selectedClass) {
-      setSelectedClass("")
+      setSelectedClass("");
     }
-  }, [selectedClass, selectedClassId, selectedSubjectKey, subjectOptionByKey])
+  }, [selectedClass, selectedClassId, selectedSubjectKey, subjectOptionByKey]);
 
   useEffect(() => {
     if (teacherClasses.length === 0) {
       if (selectedClass || selectedClassId) {
-        setSelectedClass("")
-        setSelectedClassId("")
+        setSelectedClass("");
+        setSelectedClassId("");
       }
-      return
+      return;
     }
 
-    const normalizedCurrent = normalizeClassName(selectedClass)
-    const matchById = teacherClasses.find((cls) => cls.id === selectedClassId)
+    const normalizedCurrent = normalizeClassName(selectedClass);
+    const matchById = teacherClasses.find((cls) => cls.id === selectedClassId);
     const matchByName = teacherClasses.find(
       (cls) => normalizeClassName(cls.name) === normalizedCurrent,
-    )
-    const resolved = matchById ?? matchByName ?? teacherClasses[0] ?? null
+    );
+    const resolved = matchById ?? matchByName ?? teacherClasses[0] ?? null;
 
     if (!resolved) {
-      return
+      return;
     }
 
     if (selectedClass !== resolved.name) {
-      setSelectedClass(resolved.name)
+      setSelectedClass(resolved.name);
     }
 
     if (selectedClassId !== (resolved.id ?? "")) {
-      setSelectedClassId(resolved.id ?? "")
+      setSelectedClassId(resolved.id ?? "");
     }
-  }, [
-    normalizeClassName,
-    selectedClass,
-    selectedClassId,
-    teacherClasses,
-  ])
+  }, [normalizeClassName, selectedClass, selectedClassId, teacherClasses]);
 
   useEffect(() => {
     if (selectedSubject.trim().length === 0) {
-      setMarksData((prev) => (prev.length > 0 ? [] : prev))
+      setMarksData((prev) => (prev.length > 0 ? [] : prev));
     }
-  }, [selectedSubject])
+  }, [selectedSubject]);
 
   useEffect(() => {
     if (availableSubjectOptions.length === 0) {
       if (selectedSubjectKey) {
-        setSelectedSubjectKey("")
+        setSelectedSubjectKey("");
       }
       if (selectedSubject) {
-        setSelectedSubject("")
+        setSelectedSubject("");
       }
-      return
+      return;
     }
 
-    const optionKeys = new Set(availableSubjectOptions.map((option) => option.key))
+    const optionKeys = new Set(
+      availableSubjectOptions.map((option) => option.key),
+    );
 
     if (selectedSubjectKey && optionKeys.has(selectedSubjectKey)) {
-      const currentOption = subjectOptionByKey.get(selectedSubjectKey)
+      const currentOption = subjectOptionByKey.get(selectedSubjectKey);
       if (currentOption) {
         if (selectedSubject !== currentOption.subject) {
-          setSelectedSubject(currentOption.subject)
+          setSelectedSubject(currentOption.subject);
         }
-        if (currentOption.classId && currentOption.classId !== selectedClassId) {
-          setSelectedClassId(currentOption.classId)
+        if (
+          currentOption.classId &&
+          currentOption.classId !== selectedClassId
+        ) {
+          setSelectedClassId(currentOption.classId);
         }
-        if (currentOption.className && currentOption.className !== selectedClass) {
-          setSelectedClass(currentOption.className)
+        if (
+          currentOption.className &&
+          currentOption.className !== selectedClass
+        ) {
+          setSelectedClass(currentOption.className);
         }
       }
-      return
+      return;
     }
 
-    const fallback = availableSubjectOptions[0]
-    setSelectedSubjectKey(fallback.key)
-    setSelectedSubject(fallback.subject)
+    const fallback = availableSubjectOptions[0];
+    setSelectedSubjectKey(fallback.key);
+    setSelectedSubject(fallback.subject);
     if (fallback.classId && fallback.classId !== selectedClassId) {
-      setSelectedClassId(fallback.classId)
+      setSelectedClassId(fallback.classId);
     }
     if (fallback.className && fallback.className !== selectedClass) {
-      setSelectedClass(fallback.className)
+      setSelectedClass(fallback.className);
     }
   }, [
     availableSubjectOptions,
@@ -2711,150 +3120,198 @@ export function TeacherDashboard({
     selectedSubject,
     selectedSubjectKey,
     subjectOptionByKey,
-  ])
+  ]);
 
   useEffect(() => {
     setAssignmentForm((prev) => {
-      const normalizedSelection = normalizeClassName(selectedClass)
+      const normalizedSelection = normalizeClassName(selectedClass);
       const defaultClass =
         teacherClasses.find((cls) => cls.id === selectedClassId) ??
-        teacherClasses.find((cls) => normalizeClassName(cls.name) === normalizedSelection)
-      const fallbackClass = defaultClass ?? teacherClasses[0] ?? null
-      const normalizedPrevSubject = typeof prev.subject === "string" ? prev.subject.trim().toLowerCase() : ""
-      const normalizedOptions = availableSubjectOptions.map((option) => option.subject.trim().toLowerCase())
-      const nextSubjectOption = availableSubjectOptions[0] ?? null
+        teacherClasses.find(
+          (cls) => normalizeClassName(cls.name) === normalizedSelection,
+        );
+      const fallbackClass = defaultClass ?? teacherClasses[0] ?? null;
+      const normalizedPrevSubject =
+        typeof prev.subject === "string"
+          ? prev.subject.trim().toLowerCase()
+          : "";
+      const normalizedOptions = availableSubjectOptions.map((option) =>
+        option.subject.trim().toLowerCase(),
+      );
+      const nextSubjectOption = availableSubjectOptions[0] ?? null;
       const nextSubject =
-        normalizedPrevSubject && normalizedOptions.includes(normalizedPrevSubject)
+        normalizedPrevSubject &&
+        normalizedOptions.includes(normalizedPrevSubject)
           ? prev.subject
-          : nextSubjectOption?.subject ?? ""
+          : (nextSubjectOption?.subject ?? "");
 
       return {
         ...prev,
         subject: nextSubject,
-        classId: prev.classId || nextSubjectOption?.classId || (fallbackClass?.id ?? ""),
-        className: prev.className || nextSubjectOption?.className || (fallbackClass?.name ?? ""),
-      }
-    })
+        classId:
+          prev.classId ||
+          nextSubjectOption?.classId ||
+          (fallbackClass?.id ?? ""),
+        className:
+          prev.className ||
+          nextSubjectOption?.className ||
+          (fallbackClass?.name ?? ""),
+      };
+    });
   }, [
     availableSubjectOptions,
     normalizeClassName,
     selectedClass,
     selectedClassId,
     teacherClasses,
-  ])
+  ]);
 
   const formatExamDate = (value: string) => {
     try {
-      return new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short" }).format(new Date(value))
+      return new Intl.DateTimeFormat("en-NG", {
+        day: "numeric",
+        month: "short",
+      }).format(new Date(value));
     } catch (error) {
-      return value
+      return value;
     }
-  }
+  };
 
   useEffect(() => {
     if (!teacherHasAssignedClasses) {
-      setTeacherStudents([])
-      setTeacherStudentsError(null)
-      setTeacherStudentsMessage("You are not assigned to any students. Contact your administrator.")
-      return
+      setTeacherStudents([]);
+      setTeacherStudentsError(null);
+      setTeacherStudentsMessage(
+        "You are not assigned to any students. Contact your administrator.",
+      );
+      return;
     }
 
-    setTeacherStudentsMessage(null)
-    void refreshTeacherStudents()
-  }, [refreshTeacherStudents, teacherHasAssignedClasses])
+    setTeacherStudentsMessage(null);
+    void refreshTeacherStudents();
+  }, [refreshTeacherStudents, teacherHasAssignedClasses]);
 
   useEffect(() => {
     if (selectedTab === "students") {
-      void refreshTeacherStudents()
+      void refreshTeacherStudents();
     }
-  }, [refreshTeacherStudents, selectedTab])
+  }, [refreshTeacherStudents, selectedTab]);
 
   useEffect(() => {
     const handleStudentsRefreshed = (payload?: unknown) => {
       if (!teacherHasAssignedClasses) {
-        return
+        return;
       }
 
       if (Array.isArray(payload)) {
-        const normalized = normalizeTeacherStudentRecords(payload)
-        setTeacherStudents(normalized)
-        setTeacherStudentsError(null)
+        const normalized = normalizeTeacherStudentRecords(payload);
+        setTeacherStudents(normalized);
+        setTeacherStudentsError(null);
         if (normalized.length === 0) {
-          setTeacherStudentsMessage("No students found for your assigned classes yet.")
+          setTeacherStudentsMessage(
+            "No students found for your assigned classes yet.",
+          );
         } else {
-          setTeacherStudentsMessage(null)
+          setTeacherStudentsMessage(null);
         }
-        return
+        return;
       }
 
-      void refreshTeacherStudents()
-    }
+      void refreshTeacherStudents();
+    };
 
-    dbManager.on("studentsRefreshed", handleStudentsRefreshed)
+    dbManager.on("studentsRefreshed", handleStudentsRefreshed);
     return () => {
-      dbManager.off("studentsRefreshed", handleStudentsRefreshed)
-    }
-  }, [normalizeTeacherStudentRecords, refreshTeacherStudents, teacherHasAssignedClasses])
+      dbManager.off("studentsRefreshed", handleStudentsRefreshed);
+    };
+  }, [
+    normalizeTeacherStudentRecords,
+    refreshTeacherStudents,
+    teacherHasAssignedClasses,
+  ]);
 
-  const buildInitialGradingDrafts = (submissions: AssignmentSubmissionRecord[]) =>
+  const buildInitialGradingDrafts = (
+    submissions: AssignmentSubmissionRecord[],
+  ) =>
     submissions.reduce(
       (acc, submission) => {
         acc[submission.id] = {
-          score: typeof submission.score === "number" ? String(submission.score) : "",
+          score:
+            typeof submission.score === "number"
+              ? String(submission.score)
+              : "",
           comment: submission.comment ?? "",
-        }
-        return acc
+        };
+        return acc;
       },
       {} as Record<string, { score: string; comment: string }>,
-    )
+    );
 
   const readFileAsDataUrl = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "")
-      reader.onerror = () => reject(new Error("Unable to read file"))
-      reader.readAsDataURL(file)
-    })
+      const reader = new FileReader();
+      reader.onload = () =>
+        resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(new Error("Unable to read file"));
+      reader.readAsDataURL(file);
+    });
 
   const normaliseAssignmentRecord = useCallback(
     (record: RawAssignmentRecord): TeacherAssignmentSummary => {
-      const submissions = Array.isArray(record.submissions) ? record.submissions : []
+      const submissions = Array.isArray(record.submissions)
+        ? record.submissions
+        : [];
       const assignedStudentIds = Array.isArray(record.assignedStudentIds)
         ? record.assignedStudentIds
-        : []
+        : [];
 
-      const normalisedSubmissions: AssignmentSubmissionRecord[] = submissions.map((submission) => ({
-        id: submission.id,
-        studentId: submission.studentId,
-        status: submission.status,
-        submittedAt: submission.submittedAt ?? null,
-        files: Array.isArray(submission.files)
-          ? submission.files.map((file) => ({
-              id: typeof file.id === "string" ? file.id : `${submission.id}_${Math.random().toString(36).slice(2)}`,
-              name: typeof file.name === "string" ? file.name : "Submission attachment",
-              url: typeof (file as { url?: unknown }).url === "string" ? (file as { url?: string }).url : null,
-            }))
-          : [],
-        comment: submission.comment ?? null,
-        grade: submission.grade ?? null,
-        score: typeof submission.score === "number" ? submission.score : null,
-      }))
+      const normalisedSubmissions: AssignmentSubmissionRecord[] =
+        submissions.map((submission) => ({
+          id: submission.id,
+          studentId: submission.studentId,
+          status: submission.status,
+          submittedAt: submission.submittedAt ?? null,
+          files: Array.isArray(submission.files)
+            ? submission.files.map((file) => ({
+                id:
+                  typeof file.id === "string"
+                    ? file.id
+                    : `${submission.id}_${Math.random().toString(36).slice(2)}`,
+                name:
+                  typeof file.name === "string"
+                    ? file.name
+                    : "Submission attachment",
+                url:
+                  typeof (file as { url?: unknown }).url === "string"
+                    ? (file as { url?: string }).url
+                    : null,
+              }))
+            : [],
+          comment: submission.comment ?? null,
+          grade: submission.grade ?? null,
+          score: typeof submission.score === "number" ? submission.score : null,
+        }));
 
       return {
         id: String(record.id),
         title: record.title,
         description: record.description ?? "",
         subject: record.subject,
-        className: record.className ?? (record as { class?: string }).class ?? "General",
+        className:
+          record.className ?? (record as { class?: string }).class ?? "General",
         classId: record.classId ?? null,
         dueDate: record.dueDate,
         status: (record.status ?? "draft") as TeacherAssignmentStatus,
         maximumScore:
-          typeof (record as { maximumScore?: unknown }).maximumScore === "number"
+          typeof (record as { maximumScore?: unknown }).maximumScore ===
+          "number"
             ? ((record as { maximumScore?: number }).maximumScore as number)
             : (record as { maximumScore?: string | number | null }).maximumScore
-            ? Number((record as { maximumScore?: string | number | null }).maximumScore)
-            : null,
+              ? Number(
+                  (record as { maximumScore?: string | number | null })
+                    .maximumScore,
+                )
+              : null,
         submissions: normalisedSubmissions,
         assignedStudentIds,
         resourceName: record.resourceName ?? null,
@@ -2866,45 +3323,55 @@ export function TeacherDashboard({
             : record.resourceSize
               ? Number(record.resourceSize)
               : null,
-        createdAt: "createdAt" in record ? (record as { createdAt?: string | null }).createdAt ?? null : null,
+        createdAt:
+          "createdAt" in record
+            ? ((record as { createdAt?: string | null }).createdAt ?? null)
+            : null,
         updatedAt: record.updatedAt,
-      }
+      };
     },
     [],
-  )
+  );
 
   const resolveAssignmentRoster = useCallback(
     async (assignment: TeacherAssignmentSummary) => {
-      const roster = new Map<string, AssignmentStudentInfo>()
+      const roster = new Map<string, AssignmentStudentInfo>();
 
       const addStudent = (student: AssignmentStudentInfo) => {
         if (!student.id) {
-          return
+          return;
         }
 
-        const existing = roster.get(student.id)
+        const existing = roster.get(student.id);
         roster.set(student.id, {
           id: student.id,
           name: student.name ?? existing?.name ?? null,
-          className: student.className ?? existing?.className ?? assignment.className ?? null,
-        })
-      }
+          className:
+            student.className ??
+            existing?.className ??
+            assignment.className ??
+            null,
+        });
+      };
 
       const assignedIds = new Set(
         assignment.assignedStudentIds
           .filter((id) => typeof id === "string" && id.trim().length > 0)
           .map((id) => id.trim()),
-      )
+      );
 
-      const classLabel = assignment.className ?? assignment.classId ?? ""
+      const classLabel = assignment.className ?? assignment.classId ?? "";
 
       if (classLabel) {
         try {
-          const students = await dbManager.getStudentsByClass(classLabel)
+          const students = await dbManager.getStudentsByClass(classLabel);
           students.forEach((student: any) => {
-            const id = typeof student?.id === "string" ? student.id : String(student?.id ?? "")
+            const id =
+              typeof student?.id === "string"
+                ? student.id
+                : String(student?.id ?? "");
             if (!id) {
-              return
+              return;
             }
 
             if (assignedIds.size === 0 || assignedIds.has(id)) {
@@ -2921,25 +3388,30 @@ export function TeacherDashboard({
                     ? student.class
                     : typeof student?.className === "string"
                       ? student.className
-                      : assignment.className ?? null,
-              })
+                      : (assignment.className ?? null),
+              });
             }
-          })
+          });
         } catch (error) {
-          logger.error("Unable to load class roster for assignment", { error })
+          logger.error("Unable to load class roster for assignment", { error });
         }
       }
 
       if (assignedIds.size > 0) {
-        const missingAssigned = Array.from(assignedIds).filter((id) => !roster.has(id))
+        const missingAssigned = Array.from(assignedIds).filter(
+          (id) => !roster.has(id),
+        );
         if (missingAssigned.length > 0) {
           try {
-            const users = await dbManager.getAllUsers()
+            const users = await dbManager.getAllUsers();
             missingAssigned.forEach((studentId) => {
               const match = users.find((user: any) => {
-                const candidateId = typeof user?.id === "string" ? user.id : String(user?.id ?? "")
-                return candidateId.trim() === studentId
-              })
+                const candidateId =
+                  typeof user?.id === "string"
+                    ? user.id
+                    : String(user?.id ?? "");
+                return candidateId.trim() === studentId;
+              });
 
               if (match) {
                 addStudent({
@@ -2955,51 +3427,53 @@ export function TeacherDashboard({
                       ? match.className
                       : typeof match?.class === "string"
                         ? match.class
-                        : assignment.className ?? null,
-                })
+                        : (assignment.className ?? null),
+                });
               }
-            })
+            });
           } catch (error) {
-            logger.error("Unable to resolve assigned students for roster", { error })
+            logger.error("Unable to resolve assigned students for roster", {
+              error,
+            });
           }
         }
       }
 
       if (roster.size === 0 && teacherStudents.length > 0) {
-        const normalizedLabelTokens = new Set<string>()
-        const normalizedLabelName = normalizeClassName(classLabel)
-        const normalizedLabelDisplay = normalizeClassToken(classLabel)
+        const normalizedLabelTokens = new Set<string>();
+        const normalizedLabelName = normalizeClassName(classLabel);
+        const normalizedLabelDisplay = normalizeClassToken(classLabel);
 
         if (normalizedLabelName) {
-          normalizedLabelTokens.add(normalizedLabelName)
+          normalizedLabelTokens.add(normalizedLabelName);
         }
         if (normalizedLabelDisplay) {
-          normalizedLabelTokens.add(normalizedLabelDisplay)
+          normalizedLabelTokens.add(normalizedLabelDisplay);
         }
         if (classLabel) {
-          normalizedLabelTokens.add(classLabel.trim().toLowerCase())
+          normalizedLabelTokens.add(classLabel.trim().toLowerCase());
         }
 
         teacherStudents
           .filter((student) => {
             if (normalizedLabelTokens.size === 0) {
-              return true
+              return true;
             }
 
-            const studentTokens = new Set<string>()
+            const studentTokens = new Set<string>();
             if (student.className) {
-              studentTokens.add(normalizeClassName(student.className))
-              studentTokens.add(normalizeClassToken(student.className))
-              studentTokens.add(student.className.trim().toLowerCase())
+              studentTokens.add(normalizeClassName(student.className));
+              studentTokens.add(normalizeClassToken(student.className));
+              studentTokens.add(student.className.trim().toLowerCase());
             }
             if (student.classId) {
-              studentTokens.add(normalizeClassToken(student.classId))
-              studentTokens.add(student.classId.trim().toLowerCase())
+              studentTokens.add(normalizeClassToken(student.classId));
+              studentTokens.add(student.classId.trim().toLowerCase());
             }
 
             return Array.from(studentTokens).some(
               (token) => token && normalizedLabelTokens.has(token),
-            )
+            );
           })
           .forEach((student) => {
             if (assignedIds.size === 0 || assignedIds.has(student.id)) {
@@ -3007,33 +3481,47 @@ export function TeacherDashboard({
                 id: student.id,
                 name: student.name,
                 className: student.className ?? assignment.className ?? null,
-              })
+              });
             }
-          })
+          });
       }
 
       assignment.submissions.forEach((submission) => {
         if (!roster.has(submission.studentId)) {
-          addStudent({ id: submission.studentId, name: null, className: assignment.className ?? null })
+          addStudent({
+            id: submission.studentId,
+            name: null,
+            className: assignment.className ?? null,
+          });
         }
-      })
+      });
 
-      return Object.fromEntries(roster.entries())
-  },
+      return Object.fromEntries(roster.entries());
+    },
     [normalizeClassName, teacherStudents],
-  )
+  );
 
   const combinedSubmissionRecords = useMemo(() => {
     if (!selectedAssignment) {
-      return [] as Array<{ student: AssignmentStudentInfo; submission: AssignmentSubmissionRecord }>
+      return [] as Array<{
+        student: AssignmentStudentInfo;
+        submission: AssignmentSubmissionRecord;
+      }>;
     }
 
     const submissionMap = new Map(
-      selectedAssignment.submissions.map((submission) => [submission.studentId, submission] as const),
-    )
+      selectedAssignment.submissions.map(
+        (submission) => [submission.studentId, submission] as const,
+      ),
+    );
 
-    const combined = new Map<string, { student: AssignmentStudentInfo; submission: AssignmentSubmissionRecord }>()
-    const createPlaceholder = (studentId: string): AssignmentSubmissionRecord => ({
+    const combined = new Map<
+      string,
+      { student: AssignmentStudentInfo; submission: AssignmentSubmissionRecord }
+    >();
+    const createPlaceholder = (
+      studentId: string,
+    ): AssignmentSubmissionRecord => ({
       id: `pending-${studentId}`,
       studentId,
       status: "pending",
@@ -3042,17 +3530,21 @@ export function TeacherDashboard({
       comment: null,
       grade: null,
       score: null,
-    })
+    });
 
     Object.values(assignmentRoster).forEach((student) => {
-      const submission = submissionMap.get(student.id) ?? createPlaceholder(student.id)
-      combined.set(student.id, { student, submission })
-    })
+      const submission =
+        submissionMap.get(student.id) ?? createPlaceholder(student.id);
+      combined.set(student.id, { student, submission });
+    });
 
     selectedAssignment.submissions.forEach((submission) => {
-      const current = combined.get(submission.studentId)
+      const current = combined.get(submission.studentId);
       if (current) {
-        combined.set(submission.studentId, { student: current.student, submission })
+        combined.set(submission.studentId, {
+          student: current.student,
+          submission,
+        });
       } else {
         combined.set(submission.studentId, {
           student: {
@@ -3061,125 +3553,139 @@ export function TeacherDashboard({
             className: selectedAssignment.className ?? null,
           },
           submission,
-        })
+        });
       }
-    })
+    });
 
     return Array.from(combined.values()).sort((a, b) => {
-      const nameA = a.student.name ?? a.student.id
-      const nameB = b.student.name ?? b.student.id
-      return nameA.localeCompare(nameB, undefined, { sensitivity: "base" })
-    })
-  }, [assignmentRoster, selectedAssignment])
+      const nameA = a.student.name ?? a.student.id;
+      const nameB = b.student.name ?? b.student.id;
+      return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+    });
+  }, [assignmentRoster, selectedAssignment]);
 
   const pendingSubmissionRecords = useMemo(
-    () => combinedSubmissionRecords.filter((entry) => entry.submission.status === "pending"),
+    () =>
+      combinedSubmissionRecords.filter(
+        (entry) => entry.submission.status === "pending",
+      ),
     [combinedSubmissionRecords],
-  )
+  );
 
   const receivedSubmissionRecords = useMemo(
-    () => combinedSubmissionRecords.filter((entry) => entry.submission.status !== "pending"),
+    () =>
+      combinedSubmissionRecords.filter(
+        (entry) => entry.submission.status !== "pending",
+      ),
     [combinedSubmissionRecords],
-  )
+  );
 
   const gradedSubmissionCount = useMemo(
-    () => receivedSubmissionRecords.filter((entry) => entry.submission.status === "graded").length,
+    () =>
+      receivedSubmissionRecords.filter(
+        (entry) => entry.submission.status === "graded",
+      ).length,
     [receivedSubmissionRecords],
-  )
+  );
 
   const loadAssignments = useCallback(async () => {
     try {
-      setIsAssignmentsLoading(true)
-      const records = await dbManager.getAssignments({ teacherId: teacher.id })
+      setIsAssignmentsLoading(true);
+      const records = await dbManager.getAssignments({ teacherId: teacher.id });
 
-      const normalised = records.map((record) => normaliseAssignmentRecord(record))
+      const normalised = records.map((record) =>
+        normaliseAssignmentRecord(record),
+      );
 
-      setAssignments(normalised)
+      setAssignments(normalised);
     } catch (error) {
-      logger.error("Failed to load teacher assignments", { error })
+      logger.error("Failed to load teacher assignments", { error });
       toast({
         variant: "destructive",
         title: "Unable to load assignments",
-        description: "We could not retrieve your assignments. Please try again shortly.",
-      })
+        description:
+          "We could not retrieve your assignments. Please try again shortly.",
+      });
     } finally {
-      setIsAssignmentsLoading(false)
+      setIsAssignmentsLoading(false);
     }
-  }, [normaliseAssignmentRecord, teacher.id, toast])
+  }, [normaliseAssignmentRecord, teacher.id, toast]);
 
   useEffect(() => {
-    void loadAssignments()
+    void loadAssignments();
 
     const handleAssignmentsUpdate = () => {
-      void loadAssignments()
-    }
+      void loadAssignments();
+    };
 
-    dbManager.on("assignmentsUpdate", handleAssignmentsUpdate)
+    dbManager.on("assignmentsUpdate", handleAssignmentsUpdate);
 
     return () => {
-      dbManager.off("assignmentsUpdate", handleAssignmentsUpdate)
-    }
-  }, [loadAssignments])
+      dbManager.off("assignmentsUpdate", handleAssignmentsUpdate);
+    };
+  }, [loadAssignments]);
 
   const loadExams = useCallback(async () => {
     try {
       if (isComponentMountedRef.current) {
-        setIsExamLoading(true)
+        setIsExamLoading(true);
       }
-      const schedules = await dbManager.getExamSchedules()
+      const schedules = await dbManager.getExamSchedules();
 
       if (!isComponentMountedRef.current) {
-        return
+        return;
       }
 
-      const normalizedClasses = new Set(teacherClassNames.map((cls) => normalizeClassName(cls)))
+      const normalizedClasses = new Set(
+        teacherClassNames.map((cls) => normalizeClassName(cls)),
+      );
       const relevantExams = schedules.filter((exam) =>
         normalizedClasses.has(normalizeClassName(exam.className)),
-      )
+      );
 
-      setTeacherExams(relevantExams)
+      setTeacherExams(relevantExams);
     } catch (error) {
-      logger.error("Failed to load teacher exams", { error })
+      logger.error("Failed to load teacher exams", { error });
     } finally {
       if (isComponentMountedRef.current) {
-        setIsExamLoading(false)
+        setIsExamLoading(false);
       }
     }
-  }, [normalizeClassName, teacherClassNames])
+  }, [normalizeClassName, teacherClassNames]);
 
   useEffect(() => {
-    void loadExams()
+    void loadExams();
 
     const handleExamUpdate = () => {
-      void loadExams()
-    }
+      void loadExams();
+    };
 
-    dbManager.on("examScheduleUpdated", handleExamUpdate)
-    dbManager.on("examResultsUpdated", handleExamUpdate)
+    dbManager.on("examScheduleUpdated", handleExamUpdate);
+    dbManager.on("examResultsUpdated", handleExamUpdate);
 
     return () => {
-      dbManager.off("examScheduleUpdated", handleExamUpdate)
-      dbManager.off("examResultsUpdated", handleExamUpdate)
-    }
-  }, [loadExams])
+      dbManager.off("examScheduleUpdated", handleExamUpdate);
+      dbManager.off("examResultsUpdated", handleExamUpdate);
+    };
+  }, [loadExams]);
 
   const loadTimetable = useCallback(async () => {
     if (!selectedClass) {
       if (isComponentMountedRef.current) {
-        setTeacherTimetable([])
-        setIsTeacherTimetableLoading(false)
+        setTeacherTimetable([]);
+        setIsTeacherTimetableLoading(false);
       }
-      return
+      return;
     }
 
     try {
       if (isComponentMountedRef.current) {
-        setIsTeacherTimetableLoading(true)
+        setIsTeacherTimetableLoading(true);
       }
-      const slots = await dbManager.getTimetable(selectedClass)
+      const slots = await dbManager.getTimetable(selectedClass);
 
       if (!isComponentMountedRef.current) {
-        return
+        return;
       }
 
       const normalized = normalizeTimetableCollection(slots).map(
@@ -3191,148 +3697,175 @@ export function TeacherDashboard({
           teacher,
           location,
         }),
-      )
-      setTeacherTimetable(normalized)
+      );
+      setTeacherTimetable(normalized);
     } catch (error) {
-      logger.error("Failed to load teacher timetable", { error })
+      logger.error("Failed to load teacher timetable", { error });
       if (isComponentMountedRef.current) {
-        setTeacherTimetable([])
+        setTeacherTimetable([]);
       }
     } finally {
       if (isComponentMountedRef.current) {
-        setIsTeacherTimetableLoading(false)
+        setIsTeacherTimetableLoading(false);
       }
     }
-  }, [selectedClass])
+  }, [selectedClass]);
 
   useEffect(() => {
-    void loadTimetable()
+    void loadTimetable();
 
-    const handleTimetableUpdate = (payload: { className?: string } | undefined) => {
+    const handleTimetableUpdate = (
+      payload: { className?: string } | undefined,
+    ) => {
       if (!selectedClass) {
-        return
+        return;
       }
 
       const updatedClassName =
-        typeof payload?.className === "string" ? payload.className : selectedClass
+        typeof payload?.className === "string"
+          ? payload.className
+          : selectedClass;
 
-      if (normalizeClassName(updatedClassName) === normalizeClassName(selectedClass)) {
-        void loadTimetable()
+      if (
+        normalizeClassName(updatedClassName) ===
+        normalizeClassName(selectedClass)
+      ) {
+        void loadTimetable();
       }
-    }
+    };
 
-    dbManager.on("timetableUpdated", handleTimetableUpdate)
+    dbManager.on("timetableUpdated", handleTimetableUpdate);
 
     return () => {
-      dbManager.off("timetableUpdated", handleTimetableUpdate)
-    }
-  }, [loadTimetable, normalizeClassName, selectedClass])
+      dbManager.off("timetableUpdated", handleTimetableUpdate);
+    };
+  }, [loadTimetable, normalizeClassName, selectedClass]);
 
-  const lastPersistedSelectionRef = useRef<string | null>(null)
-  const suppressMarksRefreshRef = useRef(false)
+  const lastPersistedSelectionRef = useRef<string | null>(null);
+  const suppressMarksRefreshRef = useRef(false);
 
   const loadRosterCandidates = useCallback(async () => {
     if (!selectedClass && !selectedClassId) {
-      setRosterCandidates([])
-      setSelectedRosterId(null)
-      setRosterNotice("Select a class to load the roster.")
-      return
+      setRosterCandidates([]);
+      setSelectedRosterId(null);
+      setRosterNotice("Select a class to load the roster.");
+      return;
     }
 
-    setIsRosterLoading(true)
-    setRosterNotice(null)
+    setIsRosterLoading(true);
+    setRosterNotice(null);
 
-    const existingIds = new Set(marksData.map((student) => String(student.studentId)))
-    const candidateMap = new Map<string, AssignmentStudentInfo>()
+    const existingIds = new Set(
+      marksData.map((student) => String(student.studentId)),
+    );
+    const candidateMap = new Map<string, AssignmentStudentInfo>();
 
-    const selectedTokens = new Set<string>()
-    const normalizedSelectedName = selectedClass ? normalizeClassName(selectedClass) : ""
-    const normalizedSelectedDisplay = selectedClass ? normalizeClassToken(selectedClass) : ""
-    const normalizedSelectedId = selectedClassId ? normalizeClassToken(selectedClassId) : ""
+    const selectedTokens = new Set<string>();
+    const normalizedSelectedName = selectedClass
+      ? normalizeClassName(selectedClass)
+      : "";
+    const normalizedSelectedDisplay = selectedClass
+      ? normalizeClassToken(selectedClass)
+      : "";
+    const normalizedSelectedId = selectedClassId
+      ? normalizeClassToken(selectedClassId)
+      : "";
 
     if (normalizedSelectedName) {
-      selectedTokens.add(normalizedSelectedName)
+      selectedTokens.add(normalizedSelectedName);
     }
     if (normalizedSelectedDisplay) {
-      selectedTokens.add(normalizedSelectedDisplay)
+      selectedTokens.add(normalizedSelectedDisplay);
     }
     if (normalizedSelectedId) {
-      selectedTokens.add(normalizedSelectedId)
+      selectedTokens.add(normalizedSelectedId);
     }
     if (selectedClass) {
-      selectedTokens.add(selectedClass.trim().toLowerCase())
+      selectedTokens.add(selectedClass.trim().toLowerCase());
     }
     if (selectedClassId) {
-      selectedTokens.add(selectedClassId.trim().toLowerCase())
+      selectedTokens.add(selectedClassId.trim().toLowerCase());
     }
 
     const registerCandidates = (records: TeacherScopedStudent[]) => {
       records.forEach((student) => {
-        const normalizedId = normalizeStudentString(student.id)
-        if (!normalizedId || existingIds.has(normalizedId) || candidateMap.has(normalizedId)) {
-          return
+        const normalizedId = normalizeStudentString(student.id);
+        if (
+          !normalizedId ||
+          existingIds.has(normalizedId) ||
+          candidateMap.has(normalizedId)
+        ) {
+          return;
         }
 
-        const candidateClassName = student.className || selectedClass || ""
-        const candidateClassId = student.classId || null
+        const candidateClassName = student.className || selectedClass || "";
+        const candidateClassId = student.classId || null;
 
-        const candidateTokens = new Set<string>()
-        const normalizedCandidateName = candidateClassName ? normalizeClassName(candidateClassName) : ""
-        const normalizedCandidateDisplay = candidateClassName ? normalizeClassToken(candidateClassName) : ""
-        const normalizedCandidateId = candidateClassId ? normalizeClassToken(candidateClassId) : ""
+        const candidateTokens = new Set<string>();
+        const normalizedCandidateName = candidateClassName
+          ? normalizeClassName(candidateClassName)
+          : "";
+        const normalizedCandidateDisplay = candidateClassName
+          ? normalizeClassToken(candidateClassName)
+          : "";
+        const normalizedCandidateId = candidateClassId
+          ? normalizeClassToken(candidateClassId)
+          : "";
 
         if (normalizedCandidateName) {
-          candidateTokens.add(normalizedCandidateName)
+          candidateTokens.add(normalizedCandidateName);
         }
         if (normalizedCandidateDisplay) {
-          candidateTokens.add(normalizedCandidateDisplay)
+          candidateTokens.add(normalizedCandidateDisplay);
         }
         if (normalizedCandidateId) {
-          candidateTokens.add(normalizedCandidateId)
+          candidateTokens.add(normalizedCandidateId);
         }
         if (candidateClassName) {
-          candidateTokens.add(candidateClassName.trim().toLowerCase())
+          candidateTokens.add(candidateClassName.trim().toLowerCase());
         }
         if (candidateClassId) {
-          candidateTokens.add(candidateClassId.trim().toLowerCase())
+          candidateTokens.add(candidateClassId.trim().toLowerCase());
         }
 
         const matchesSelection =
           selectedTokens.size === 0 ||
-          Array.from(candidateTokens).some((token) => token && selectedTokens.has(token))
+          Array.from(candidateTokens).some(
+            (token) => token && selectedTokens.has(token),
+          );
 
         if (!matchesSelection) {
-          return
+          return;
         }
 
         candidateMap.set(normalizedId, {
           id: normalizedId,
           name: student.name,
           className: candidateClassName || selectedClass || null,
-        })
-      })
-    }
+        });
+      });
+    };
 
-    registerCandidates(teacherStudents)
+    registerCandidates(teacherStudents);
 
     if (teacherStudents.length === 0) {
-      const refreshed = await refreshTeacherStudents()
+      const refreshed = await refreshTeacherStudents();
       if (Array.isArray(refreshed) && refreshed.length > 0) {
-        registerCandidates(refreshed)
+        registerCandidates(refreshed);
       }
     }
 
-    let nextNotice: string | null = null
-    const token = safeStorage.getItem("vea_auth_token")
+    let nextNotice: string | null = null;
+    const token = safeStorage.getItem("vea_auth_token");
 
     if (!token) {
-      nextNotice = "Your session has expired. Please log in again."
+      nextNotice = "Your session has expired. Please log in again.";
     } else {
       try {
-        const searchParams = new URLSearchParams()
-        const classQuery = selectedClassId || selectedClass
+        const searchParams = new URLSearchParams();
+        const classQuery = selectedClassId || selectedClass;
         if (classQuery) {
-          searchParams.set("class", classQuery)
+          searchParams.set("class", classQuery);
         }
 
         const response = await fetch(
@@ -3343,66 +3876,72 @@ export function TeacherDashboard({
             },
             cache: "no-store",
           },
-        )
-        const payload = await response.json().catch(() => ({}))
+        );
+        const payload = await response.json().catch(() => ({}));
 
         if (response.ok) {
-          const normalized = normalizeTeacherStudentRecords((payload as { students?: unknown }).students ?? [])
-          registerCandidates(normalized)
+          const normalized = normalizeTeacherStudentRecords(
+            (payload as { students?: unknown }).students ?? [],
+          );
+          registerCandidates(normalized);
 
           if (candidateMap.size === 0) {
             nextNotice =
-              normalizeStudentString((payload as { message?: unknown }).message) ||
-              "No students available for this class."
+              normalizeStudentString(
+                (payload as { message?: unknown }).message,
+              ) || "No students available for this class.";
           } else {
-            const infoMessage = normalizeStudentString((payload as { message?: unknown }).message)
+            const infoMessage = normalizeStudentString(
+              (payload as { message?: unknown }).message,
+            );
             if (infoMessage) {
-              nextNotice = infoMessage
+              nextNotice = infoMessage;
             }
           }
         } else {
           let message =
             typeof (payload as { error?: unknown }).error === "string"
               ? (payload as { error?: string }).error
-              : null
+              : null;
 
           if (response.status === 401) {
-            message = "Your session has expired. Please log in again."
+            message = "Your session has expired. Please log in again.";
           } else if (response.status === 403) {
-            message = "You do not have permission to view this class roster."
+            message = "You do not have permission to view this class roster.";
           } else if (response.status === 404) {
             message =
-              normalizeStudentString((payload as { message?: unknown }).message) ||
-              "No students available for this class."
+              normalizeStudentString(
+                (payload as { message?: unknown }).message,
+              ) || "No students available for this class.";
           } else if (!message) {
-            message = "Unable to load the class roster. Please try again."
+            message = "Unable to load the class roster. Please try again.";
           }
 
-          nextNotice = message
+          nextNotice = message;
         }
       } catch (error) {
-        logger.warn("Unable to load class roster for grade entry", { error })
+        logger.warn("Unable to load class roster for grade entry", { error });
         nextNotice =
           candidateMap.size === 0
             ? "We couldn't load the class roster from the database. Please refresh or try again shortly."
-            : "Some students may be missing because the roster could not be fully loaded."
+            : "Some students may be missing because the roster could not be fully loaded.";
       }
     }
 
     const nextCandidates = Array.from(candidateMap.values()).sort((a, b) => {
-      const left = a.name ?? a.id
-      const right = b.name ?? b.id
-      return left.localeCompare(right, undefined, { sensitivity: "base" })
-    })
+      const left = a.name ?? a.id;
+      const right = b.name ?? b.id;
+      return left.localeCompare(right, undefined, { sensitivity: "base" });
+    });
 
     if (nextCandidates.length === 0 && !nextNotice) {
-      nextNotice = "No students available for this class."
+      nextNotice = "No students available for this class.";
     }
 
-    setRosterCandidates(nextCandidates)
-    setSelectedRosterId(null)
-    setRosterNotice(nextNotice)
-    setIsRosterLoading(false)
+    setRosterCandidates(nextCandidates);
+    setSelectedRosterId(null);
+    setRosterNotice(nextNotice);
+    setIsRosterLoading(false);
   }, [
     marksData,
     normalizeClassName,
@@ -3411,114 +3950,129 @@ export function TeacherDashboard({
     selectedClass,
     selectedClassId,
     teacherStudents,
-  ])
+  ]);
 
   useEffect(() => {
     if (!isAddStudentDialogOpen) {
-      return
+      return;
     }
 
-    void loadRosterCandidates()
-  }, [isAddStudentDialogOpen, loadRosterCandidates])
+    void loadRosterCandidates();
+  }, [isAddStudentDialogOpen, loadRosterCandidates]);
 
   useEffect(() => {
     if (isAddStudentDialogOpen) {
-      setAddStudentDialogSubjectKey(selectedSubjectKey)
+      setAddStudentDialogSubjectKey(selectedSubjectKey);
     } else {
-      setAddStudentDialogSubjectKey("")
+      setAddStudentDialogSubjectKey("");
     }
-  }, [isAddStudentDialogOpen, selectedSubjectKey])
+  }, [isAddStudentDialogOpen, selectedSubjectKey]);
 
   const handleOpenAddStudentDialog = useCallback(() => {
     if (!selectedClass) {
       toast({
         variant: "destructive",
         title: "Select a class",
-        description: "Choose one of your assigned classes before adding students to the grade sheet.",
-      })
-      return
+        description:
+          "Choose one of your assigned classes before adding students to the grade sheet.",
+      });
+      return;
     }
 
     if (!hasAvailableSubjects) {
       toast({
         variant: "destructive",
         title: "No subjects available",
-        description: "You do not have any subjects assigned for this class. Contact your administrator.",
-      })
-      return
+        description:
+          "You do not have any subjects assigned for this class. Contact your administrator.",
+      });
+      return;
     }
 
-    setIsAddStudentDialogOpen(true)
-  }, [hasAvailableSubjects, selectedClass, toast])
+    setIsAddStudentDialogOpen(true);
+  }, [hasAvailableSubjects, selectedClass, toast]);
 
   const handleCloseAddStudentDialog = useCallback(() => {
-    setIsAddStudentDialogOpen(false)
-    setSelectedRosterId(null)
-    setRosterNotice(null)
-  }, [])
+    setIsAddStudentDialogOpen(false);
+    setSelectedRosterId(null);
+    setRosterNotice(null);
+  }, []);
 
-  const emitMarksStoreUpdate = useCallback(
-    (payload: unknown) => {
-      suppressMarksRefreshRef.current = true
-      dbManager.triggerEvent(STUDENT_MARKS_STORAGE_KEY, payload)
-      setTimeout(() => {
-        suppressMarksRefreshRef.current = false
-      }, 0)
-    },
-    [],
-  )
+  const emitMarksStoreUpdate = useCallback((payload: unknown) => {
+    suppressMarksRefreshRef.current = true;
+    dbManager.triggerEvent(STUDENT_MARKS_STORAGE_KEY, payload);
+    setTimeout(() => {
+      suppressMarksRefreshRef.current = false;
+    }, 0);
+  }, []);
 
   const calculatePositionsAndAverages = useCallback(
     (data: MarksRecord[]) => {
-      const sorted = [...data].sort((a, b) => b.totalMarksObtained - a.totalMarksObtained)
+      const sorted = [...data].sort(
+        (a, b) => b.totalMarksObtained - a.totalMarksObtained,
+      );
 
       return data.map((student) => {
-        const position = sorted.findIndex((s) => s.studentId === student.studentId) + 1
+        const position =
+          sorted.findIndex((s) => s.studentId === student.studentId) + 1;
         const averageScore =
           student.totalMarksObtained > 0 && student.totalMarksObtainable > 0
-            ? Math.round((student.totalMarksObtained / student.totalMarksObtainable) * 100)
-            : 0
+            ? Math.round(
+                (student.totalMarksObtained / student.totalMarksObtainable) *
+                  100,
+              )
+            : 0;
 
         return {
           ...student,
           position,
           averageScore,
-          grade: deriveGradeForTotals(student.totalMarksObtained, student.totalMarksObtainable),
-        }
-      })
+          grade: deriveGradeForTotals(
+            student.totalMarksObtained,
+            student.totalMarksObtainable,
+          ),
+        };
+      });
     },
     [deriveGradeForTotals],
-  )
+  );
 
   const handleConfirmAddStudents = useCallback(() => {
     const preferredOption = addStudentDialogSubjectKey
       ? subjectOptionByKey.get(addStudentDialogSubjectKey)
-      : null
-    const fallbackOption = selectedSubjectKey ? subjectOptionByKey.get(selectedSubjectKey) : null
-    const resolvedOption = preferredOption ?? fallbackOption ?? null
-    const effectiveSubject = resolvedOption?.subject?.trim() ?? selectedSubject.trim()
+      : null;
+    const fallbackOption = selectedSubjectKey
+      ? subjectOptionByKey.get(selectedSubjectKey)
+      : null;
+    const resolvedOption = preferredOption ?? fallbackOption ?? null;
+    const effectiveSubject =
+      resolvedOption?.subject?.trim() ?? selectedSubject.trim();
 
     if (!effectiveSubject) {
       toast({
         variant: "destructive",
         title: "Select a subject",
-        description: "Pick one of your assigned subjects before adding a learner to the grade sheet.",
-      })
-      return
+        description:
+          "Pick one of your assigned subjects before adding a learner to the grade sheet.",
+      });
+      return;
     }
 
-    const normalizedEffectiveSubject = effectiveSubject.toLowerCase()
+    const normalizedEffectiveSubject = effectiveSubject.toLowerCase();
     const normalizedAvailableSubjects = new Set(
-      availableSubjectOptions.map((option) => option.subject.trim().toLowerCase()),
-    )
+      availableSubjectOptions.map((option) =>
+        option.subject.trim().toLowerCase(),
+      ),
+    );
 
     if (!normalizedAvailableSubjects.has(normalizedEffectiveSubject)) {
       toast({
         variant: "destructive",
         title: "Subject not assigned",
-        description: "Choose a subject from your assignment list before adding a learner.",
-      })
-      return
+        description:
+          "Choose a subject from your assignment list before adding a learner.",
+      });
+      return;
     }
 
     if (!selectedRosterId) {
@@ -3526,66 +4080,81 @@ export function TeacherDashboard({
         variant: "destructive",
         title: "Select a student",
         description: "Choose a learner from the class list to continue.",
-      })
-      return
+      });
+      return;
     }
 
-    const candidate = rosterCandidates.find((entry) => entry.id === selectedRosterId)
+    const candidate = rosterCandidates.find(
+      (entry) => entry.id === selectedRosterId,
+    );
     if (!candidate) {
       toast({
         variant: "destructive",
         title: "Student unavailable",
-        description: "The selected learner could not be found. Please refresh and try again.",
-      })
-      return
+        description:
+          "The selected learner could not be found. Please refresh and try again.",
+      });
+      return;
     }
 
-    if (marksData.some((student) => String(student.studentId) === String(candidate.id))) {
+    if (
+      marksData.some(
+        (student) => String(student.studentId) === String(candidate.id),
+      )
+    ) {
       toast({
         title: "Already added",
-        description: "This learner is already on the grade sheet and ready for editing.",
-      })
-      handleCloseAddStudentDialog()
-      return
+        description:
+          "This learner is already on the grade sheet and ready for editing.",
+      });
+      handleCloseAddStudentDialog();
+      return;
     }
 
     const storedRecord = getStoredStudentMarksRecord(
       String(candidate.id),
       normalizedTermLabel,
       selectedSession,
-    )
-    const storedSubject = storedRecord ? storedRecord.subjects?.[effectiveSubject] : null
-    const resolvedSubjectKey = resolvedOption?.key ?? selectedSubjectKey
+    );
+    const storedSubject = storedRecord
+      ? storedRecord.subjects?.[effectiveSubject]
+      : null;
+    const resolvedSubjectKey = resolvedOption?.key ?? selectedSubjectKey;
 
     const initialScores = normalizeScores({
       ca1: storedSubject?.ca1 ?? 0,
       ca2: storedSubject?.ca2 ?? 0,
       assignment: storedSubject?.assignment ?? 0,
       exam: storedSubject?.exam ?? 0,
-    })
-    const totals = calculateScoreTotals(initialScores)
+    });
+    const totals = calculateScoreTotals(initialScores);
     const storedTotalObtainable =
-      typeof storedSubject?.totalObtainable === "number" && Number.isFinite(storedSubject.totalObtainable)
+      typeof storedSubject?.totalObtainable === "number" &&
+      Number.isFinite(storedSubject.totalObtainable)
         ? Math.round(storedSubject.totalObtainable)
-        : null
+        : null;
     const storedTotalObtained =
-      typeof storedSubject?.totalObtained === "number" && Number.isFinite(storedSubject.totalObtained)
+      typeof storedSubject?.totalObtained === "number" &&
+      Number.isFinite(storedSubject.totalObtained)
         ? Math.round(storedSubject.totalObtained)
-        : null
-    const totalObtainable = storedTotalObtainable && storedTotalObtainable > 0
-      ? storedTotalObtainable
-      : defaultTotalMaximum
-    const totalObtained = storedTotalObtained !== null ? storedTotalObtained : totals.grandTotal
+        : null;
+    const totalObtainable =
+      storedTotalObtainable && storedTotalObtainable > 0
+        ? storedTotalObtainable
+        : defaultTotalMaximum;
+    const totalObtained =
+      storedTotalObtained !== null ? storedTotalObtained : totals.grandTotal;
     const averageScore =
       typeof storedSubject?.averageScore === "number" && totalObtainable > 0
         ? Math.round(storedSubject.averageScore)
         : totalObtainable > 0
           ? Math.round((totalObtained / totalObtainable) * 100)
-          : 0
+          : 0;
     const initialGrade =
-      typeof storedSubject?.grade === "string" && storedSubject.grade.trim().length > 0
+      typeof storedSubject?.grade === "string" &&
+      storedSubject.grade.trim().length > 0
         ? storedSubject.grade
-        : deriveGradeForTotals(totalObtained, totalObtainable)
+        : deriveGradeForTotals(totalObtained, totalObtainable);
 
     const newRecord: MarksRecord = {
       studentId: candidate.id,
@@ -3599,37 +4168,53 @@ export function TeacherDashboard({
       totalMarksObtainable: totalObtainable,
       totalMarksObtained: totalObtained,
       averageScore,
-      position: typeof storedSubject?.position === "number" ? storedSubject.position : 0,
+      position:
+        typeof storedSubject?.position === "number"
+          ? storedSubject.position
+          : 0,
       grade: initialGrade,
       teacherRemark: storedSubject?.remark ?? "",
-    }
+    };
 
-    setMarksData((prev) => calculatePositionsAndAverages([...prev, newRecord]))
+    setMarksData((prev) => calculatePositionsAndAverages([...prev, newRecord]));
 
     setAdditionalData((prev) => {
-      const nextAffective = { ...prev.affectiveDomain }
-      const nextPsychomotor = { ...prev.psychomotorDomain }
-      const nextRemarks: ClassTeacherRemarksState = { ...prev.classTeacherRemarks }
-      const nextAttendance = { ...prev.attendance }
-      const nextStatus = { ...prev.studentStatus }
+      const nextAffective = { ...prev.affectiveDomain };
+      const nextPsychomotor = { ...prev.psychomotorDomain };
+      const nextRemarks: ClassTeacherRemarksState = {
+        ...prev.classTeacherRemarks,
+      };
+      const nextAttendance = { ...prev.attendance };
+      const nextStatus = { ...prev.studentStatus };
 
       if (!nextAffective[newRecord.studentId]) {
-        nextAffective[newRecord.studentId] = createBehavioralRecordSkeleton(AFFECTIVE_TRAITS)
+        nextAffective[newRecord.studentId] =
+          createBehavioralRecordSkeleton(AFFECTIVE_TRAITS);
       }
       if (!nextPsychomotor[newRecord.studentId]) {
-        nextPsychomotor[newRecord.studentId] = createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS)
+        nextPsychomotor[newRecord.studentId] =
+          createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS);
       }
 
-      const interpretedRemark = interpretClassTeacherRemark(storedSubject?.remark)
+      const interpretedRemark = interpretClassTeacherRemark(
+        storedSubject?.remark,
+      );
       if (interpretedRemark && resolvedSubjectKey) {
-        const remarkKey = buildRemarkKey(resolvedSubjectKey, newRecord.studentId)
-        nextRemarks[remarkKey] = { remark: interpretedRemark }
+        const remarkKey = buildRemarkKey(
+          resolvedSubjectKey,
+          newRecord.studentId,
+        );
+        nextRemarks[remarkKey] = { remark: interpretedRemark };
       }
       if (!nextAttendance[newRecord.studentId]) {
-        nextAttendance[newRecord.studentId] = { present: 0, absent: 0, total: 0 }
+        nextAttendance[newRecord.studentId] = {
+          present: 0,
+          absent: 0,
+          total: 0,
+        };
       }
       if (!nextStatus[newRecord.studentId]) {
-        nextStatus[newRecord.studentId] = storedRecord?.status ?? "promoted"
+        nextStatus[newRecord.studentId] = storedRecord?.status ?? "promoted";
       }
 
       return {
@@ -3639,17 +4224,20 @@ export function TeacherDashboard({
         classTeacherRemarks: nextRemarks,
         attendance: nextAttendance,
         studentStatus: nextStatus,
-      }
-    })
+      };
+    });
 
-    setRosterCandidates((prev) => prev.filter((entry) => entry.id !== candidate.id))
+    setRosterCandidates((prev) =>
+      prev.filter((entry) => entry.id !== candidate.id),
+    );
 
     toast({
       title: `${candidate.name ?? `Student ${candidate.id}`} added`,
-      description: "Update their scores and remarks, then save when you are done.",
-    })
+      description:
+        "Update their scores and remarks, then save when you are done.",
+    });
 
-    handleCloseAddStudentDialog()
+    handleCloseAddStudentDialog();
   }, [
     addStudentDialogSubjectKey,
     availableSubjectOptions,
@@ -3665,36 +4253,42 @@ export function TeacherDashboard({
     setAdditionalData,
     subjectOptionByKey,
     toast,
-  ])
+  ]);
 
   const buildStudentPreview = useCallback(
-    (student: MarksRecord, aggregatedRaw?: RawReportCardData | null): RawReportCardData => {
+    (
+      student: MarksRecord,
+      aggregatedRaw?: RawReportCardData | null,
+    ): RawReportCardData => {
       const attendanceStats = additionalData.attendance[student.studentId] ?? {
         present: 0,
         absent: 0,
         total: 0,
-      }
+      };
       const totalAttendance =
         attendanceStats.total && attendanceStats.total > 0
           ? attendanceStats.total
-          : attendanceStats.present + attendanceStats.absent
+          : attendanceStats.present + attendanceStats.absent;
 
-      const summaryGrade = deriveGradeFromScore(student.averageScore)
-      const studentRemarkEntries = getStudentRemarkEntries(student.studentId)
-      const classTeacherRemarkSummary = buildClassTeacherRemarkSummary(studentRemarkEntries)
+      const summaryGrade = deriveGradeFromScore(student.averageScore);
+      const studentRemarkEntries = getStudentRemarkEntries(student.studentId);
+      const classTeacherRemarkSummary =
+        buildClassTeacherRemarkSummary(studentRemarkEntries);
       const remarkAssignmentsForStudent = studentRemarkEntries.reduce(
         (acc, entry) => {
-          acc[entry.key] = { remark: entry.remark }
-          return acc
+          acc[entry.key] = { remark: entry.remark };
+          return acc;
         },
         {} as Record<string, ClassTeacherRemarkEntry>,
-      )
+      );
       const activeSubjectRemarkEntry = selectedSubjectKey
-        ? studentRemarkEntries.find((entry) => entry.subjectKey === selectedSubjectKey)
-        : undefined
+        ? studentRemarkEntries.find(
+            (entry) => entry.subjectKey === selectedSubjectKey,
+          )
+        : undefined;
       const activeSubjectRemarkDisplay = activeSubjectRemarkEntry
         ? mapClassTeacherRemarkToSubjectRemark(activeSubjectRemarkEntry.remark)
-        : student.teacherRemark
+        : student.teacherRemark;
       const baseSummary = {
         totalMarksObtainable: student.totalMarksObtainable,
         totalMarksObtained: student.totalMarksObtained,
@@ -3702,26 +4296,27 @@ export function TeacherDashboard({
         position: student.position,
         numberOfStudents: marksData.length,
         grade: summaryGrade,
-      }
+      };
 
-      const fallbackAdmissionNumber = `VEA/${student.studentId}`
+      const fallbackAdmissionNumber = `VEA/${student.studentId}`;
       const aggregatedAdmissionCandidate =
         typeof aggregatedRaw?.student?.admissionNumber === "string"
           ? aggregatedRaw.student.admissionNumber.trim()
-          : ""
+          : "";
       const cachedAdmissionNumber =
         resolveCachedAdmissionNumber({
           id: String(student.studentId),
-          admissionNumber: aggregatedAdmissionCandidate || fallbackAdmissionNumber,
+          admissionNumber:
+            aggregatedAdmissionCandidate || fallbackAdmissionNumber,
           name: aggregatedRaw?.student?.name ?? student.studentName,
-        }) ?? null
+        }) ?? null;
       const admissionNumber =
         (cachedAdmissionNumber && cachedAdmissionNumber.length > 0
           ? cachedAdmissionNumber
           : null) ??
         (aggregatedAdmissionCandidate && aggregatedAdmissionCandidate.length > 0
           ? aggregatedAdmissionCandidate
-          : fallbackAdmissionNumber)
+          : fallbackAdmissionNumber);
 
       const { passportUrl, photoUrl } = resolveStudentPassportFromCache(
         {
@@ -3730,7 +4325,7 @@ export function TeacherDashboard({
           name: aggregatedRaw?.student?.name ?? student.studentName,
         },
         aggregatedRaw?.student ?? null,
-      )
+      );
 
       const basePreview: RawReportCardData = {
         student: {
@@ -3766,7 +4361,8 @@ export function TeacherDashboard({
         average: student.averageScore,
         position: student.position,
         affectiveDomain:
-          additionalData.affectiveDomain[student.studentId] ?? createBehavioralRecordSkeleton(AFFECTIVE_TRAITS),
+          additionalData.affectiveDomain[student.studentId] ??
+          createBehavioralRecordSkeleton(AFFECTIVE_TRAITS),
         psychomotorDomain:
           additionalData.psychomotorDomain[student.studentId] ??
           createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS),
@@ -3795,19 +4391,20 @@ export function TeacherDashboard({
           Object.keys(remarkAssignmentsForStudent).length > 0
             ? remarkAssignmentsForStudent
             : undefined,
-      }
+      };
 
       if (!aggregatedRaw) {
-        return basePreview
+        return basePreview;
       }
 
       const enrichedSummary = aggregatedRaw.summary
         ? {
             ...aggregatedRaw.summary,
             numberOfStudents:
-              additionalData.termInfo.numberInClass ?? aggregatedRaw.summary.numberOfStudents,
+              additionalData.termInfo.numberInClass ??
+              aggregatedRaw.summary.numberOfStudents,
           }
-        : baseSummary
+        : baseSummary;
 
       return {
         ...aggregatedRaw,
@@ -3817,26 +4414,43 @@ export function TeacherDashboard({
           ...aggregatedRaw.student,
           admissionNumber,
           numberInClass: additionalData.termInfo.numberInClass,
-          status: additionalData.studentStatus[student.studentId] ?? aggregatedRaw.student?.status,
+          status:
+            additionalData.studentStatus[student.studentId] ??
+            aggregatedRaw.student?.status,
         },
         subjects:
-          Array.isArray(aggregatedRaw.subjects) && aggregatedRaw.subjects.length > 0
+          Array.isArray(aggregatedRaw.subjects) &&
+          aggregatedRaw.subjects.length > 0
             ? aggregatedRaw.subjects
             : basePreview.subjects,
         summary: enrichedSummary,
         totalObtainable:
-          aggregatedRaw.totalObtainable ?? enrichedSummary.totalMarksObtainable ?? basePreview.totalObtainable,
+          aggregatedRaw.totalObtainable ??
+          enrichedSummary.totalMarksObtainable ??
+          basePreview.totalObtainable,
         totalObtained:
-          aggregatedRaw.totalObtained ?? enrichedSummary.totalMarksObtained ?? basePreview.totalObtained,
-        average: aggregatedRaw.average ?? enrichedSummary.averageScore ?? basePreview.average,
-        position: aggregatedRaw.position ?? enrichedSummary.position ?? basePreview.position,
+          aggregatedRaw.totalObtained ??
+          enrichedSummary.totalMarksObtained ??
+          basePreview.totalObtained,
+        average:
+          aggregatedRaw.average ??
+          enrichedSummary.averageScore ??
+          basePreview.average,
+        position:
+          aggregatedRaw.position ??
+          enrichedSummary.position ??
+          basePreview.position,
         affectiveDomain: basePreview.affectiveDomain,
         psychomotorDomain: basePreview.psychomotorDomain,
         classTeacherRemarks: basePreview.classTeacherRemarks,
         remarks: {
           classTeacher:
-            basePreview.remarks?.classTeacher ?? aggregatedRaw.remarks?.classTeacher ?? student.teacherRemark,
-          headTeacher: aggregatedRaw.remarks?.headTeacher ?? basePreview.remarks?.headTeacher,
+            basePreview.remarks?.classTeacher ??
+            aggregatedRaw.remarks?.classTeacher ??
+            student.teacherRemark,
+          headTeacher:
+            aggregatedRaw.remarks?.headTeacher ??
+            basePreview.remarks?.headTeacher,
         },
         attendance: basePreview.attendance,
         termInfo: basePreview.termInfo,
@@ -3845,7 +4459,7 @@ export function TeacherDashboard({
           name: teacher.name,
           signatureUrl: teacherSignature.url,
         },
-      }
+      };
     },
     [
       additionalData,
@@ -3861,39 +4475,55 @@ export function TeacherDashboard({
       teacher.name,
       teacherSignature.url,
     ],
-  )
+  );
 
-  const handleMarksUpdate = (studentId: string, field: string, value: unknown) => {
+  const handleMarksUpdate = (
+    studentId: string,
+    field: string,
+    value: unknown,
+  ) => {
     setMarksData((prev) => {
       const updated = prev.map((student) => {
         if (student.studentId !== studentId) {
-          return student
+          return student;
         }
 
         if (field === "teacherRemark") {
-          return { ...student, teacherRemark: typeof value === "string" ? value : student.teacherRemark }
+          return {
+            ...student,
+            teacherRemark:
+              typeof value === "string" ? value : student.teacherRemark,
+          };
         }
 
         if (field === "totalMarksObtainable") {
-          const numericValue = typeof value === "number" ? value : Number(value)
-          const safeValue = Number.isFinite(numericValue) && numericValue > 0 ? Math.round(numericValue) : defaultTotalMaximum
+          const numericValue =
+            typeof value === "number" ? value : Number(value);
+          const safeValue =
+            Number.isFinite(numericValue) && numericValue > 0
+              ? Math.round(numericValue)
+              : defaultTotalMaximum;
           return {
             ...student,
             totalMarksObtainable: safeValue,
             grade: deriveGradeForTotals(student.totalMarksObtained, safeValue),
-          }
+          };
         }
 
-        const numericValue = typeof value === "number" ? value : Number(value)
-        const safeValue = Number.isFinite(numericValue) ? Number(numericValue) : 0
+        const numericValue = typeof value === "number" ? value : Number(value);
+        const safeValue = Number.isFinite(numericValue)
+          ? Number(numericValue)
+          : 0;
         const currentScores = {
           ca1: field === "firstCA" ? safeValue : student.firstCA,
           ca2: field === "secondCA" ? safeValue : student.secondCA,
-          assignment: field === "noteAssignment" ? safeValue : student.noteAssignment,
+          assignment:
+            field === "noteAssignment" ? safeValue : student.noteAssignment,
           exam: field === "exam" ? safeValue : student.exam,
-        }
-        const { normalized, caTotal, grandTotal } = calculateScoreTotals(currentScores)
-        const totalMarksObtained = grandTotal
+        };
+        const { normalized, caTotal, grandTotal } =
+          calculateScoreTotals(currentScores);
+        const totalMarksObtained = grandTotal;
 
         return {
           ...student,
@@ -3904,76 +4534,85 @@ export function TeacherDashboard({
           caTotal,
           grandTotal,
           totalMarksObtained,
-          grade: deriveGradeForTotals(totalMarksObtained, student.totalMarksObtainable),
-        }
-      })
+          grade: deriveGradeForTotals(
+            totalMarksObtained,
+            student.totalMarksObtainable,
+          ),
+        };
+      });
 
-      return calculatePositionsAndAverages(updated)
-    })
-  }
+      return calculatePositionsAndAverages(updated);
+    });
+  };
 
   const handleClassTeacherRemarkSelection = useCallback(
     (studentId: string, subjectKey: string, value: ClassTeacherRemarkValue) => {
       if (!studentId || !subjectKey) {
-        return
+        return;
       }
 
       setAdditionalData((prev) => {
-        const nextRemarks: ClassTeacherRemarksState = { ...prev.classTeacherRemarks }
-        const remarkKey = buildRemarkKey(subjectKey, studentId)
-        nextRemarks[remarkKey] = { remark: value }
+        const nextRemarks: ClassTeacherRemarksState = {
+          ...prev.classTeacherRemarks,
+        };
+        const remarkKey = buildRemarkKey(subjectKey, studentId);
+        nextRemarks[remarkKey] = { remark: value };
 
         return {
           ...prev,
           classTeacherRemarks: nextRemarks,
-        }
-      })
+        };
+      });
 
       setMarksData((previous) =>
         previous.map((entry) => {
           if (entry.studentId !== studentId) {
-            return entry
+            return entry;
           }
 
-          const mappedRemark = mapClassTeacherRemarkToSubjectRemark(value)
+          const mappedRemark = mapClassTeacherRemarkToSubjectRemark(value);
           if (entry.teacherRemark === mappedRemark) {
-            return entry
+            return entry;
           }
 
-          return { ...entry, teacherRemark: mappedRemark }
+          return { ...entry, teacherRemark: mappedRemark };
         }),
-      )
+      );
     },
     [setAdditionalData, setMarksData],
-  )
+  );
 
   const persistAcademicMarksToStorage = useCallback(() => {
     if (!selectedClass || !selectedSubject || marksData.length === 0) {
-      return
+      return;
     }
 
     try {
-      const timestamp = new Date().toISOString()
-      const store = readStudentMarksStore()
-      const updatedStore: Record<string, StoredStudentMarkRecord> = { ...store }
+      const timestamp = new Date().toISOString();
+      const store = readStudentMarksStore();
+      const updatedStore: Record<string, StoredStudentMarkRecord> = {
+        ...store,
+      };
 
-      let reportCards: ReportCardRecord[] = []
+      let reportCards: ReportCardRecord[] = [];
       try {
-        const rawReportCards = safeStorage.getItem("reportCards")
+        const rawReportCards = safeStorage.getItem("reportCards");
         if (rawReportCards) {
-          const parsed = JSON.parse(rawReportCards)
+          const parsed = JSON.parse(rawReportCards);
           if (Array.isArray(parsed)) {
-            reportCards = parsed as ReportCardRecord[]
+            reportCards = parsed as ReportCardRecord[];
           }
         }
       } catch (parseError) {
-        logger.warn("Unable to parse stored report cards", parseError)
+        logger.warn("Unable to parse stored report cards", parseError);
       }
 
       marksData.forEach((student) => {
-        const studentKey = `${student.studentId}-${normalizedTermLabel}-${selectedSession}`
-        const previousRecord = updatedStore[studentKey]
-        const subjects: Record<string, StoredSubjectRecord> = { ...(previousRecord?.subjects ?? {}) }
+        const studentKey = `${student.studentId}-${normalizedTermLabel}-${selectedSession}`;
+        const previousRecord = updatedStore[studentKey];
+        const subjects: Record<string, StoredSubjectRecord> = {
+          ...(previousRecord?.subjects ?? {}),
+        };
 
         subjects[selectedSubject] = {
           subject: selectedSubject,
@@ -3986,25 +4625,33 @@ export function TeacherDashboard({
           total: student.grandTotal,
           grade: student.grade,
           remark: student.teacherRemark,
-          position: student.position ?? previousRecord?.subjects?.[selectedSubject]?.position ?? null,
+          position:
+            student.position ??
+            previousRecord?.subjects?.[selectedSubject]?.position ??
+            null,
           totalObtainable: student.totalMarksObtainable,
           totalObtained: student.totalMarksObtained,
           averageScore: student.averageScore,
           teacherId: teacher.id,
           teacherName: teacher.name,
           updatedAt: timestamp,
-        }
+        };
 
-        const aggregatedSubjects = Object.values(subjects)
+        const aggregatedSubjects = Object.values(subjects);
         const totalMarksObtainable = aggregatedSubjects.reduce(
           (sum, subject) => sum + (subject.totalObtainable ?? 100),
           0,
-        )
-        const totalMarksObtained = aggregatedSubjects.reduce((sum, subject) => sum + subject.total, 0)
+        );
+        const totalMarksObtained = aggregatedSubjects.reduce(
+          (sum, subject) => sum + subject.total,
+          0,
+        );
         const overallAverage =
           totalMarksObtainable > 0
-            ? Number(((totalMarksObtained / totalMarksObtainable) * 100).toFixed(2))
-            : undefined
+            ? Number(
+                ((totalMarksObtained / totalMarksObtainable) * 100).toFixed(2),
+              )
+            : undefined;
 
         const mergedRecord: StoredStudentMarkRecord = {
           studentId: String(student.studentId),
@@ -4014,15 +4661,22 @@ export function TeacherDashboard({
           session: selectedSession,
           subjects,
           lastUpdated: timestamp,
-          status: additionalData.studentStatus[student.studentId] ?? previousRecord?.status,
-          numberInClass: additionalData.termInfo.numberInClass || previousRecord?.numberInClass,
+          status:
+            additionalData.studentStatus[student.studentId] ??
+            previousRecord?.status,
+          numberInClass:
+            additionalData.termInfo.numberInClass ||
+            previousRecord?.numberInClass,
           overallAverage: overallAverage ?? previousRecord?.overallAverage,
-          overallPosition: student.position ?? previousRecord?.overallPosition ?? null,
-        }
+          overallPosition:
+            student.position ?? previousRecord?.overallPosition ?? null,
+        };
 
-        updatedStore[studentKey] = mergedRecord
+        updatedStore[studentKey] = mergedRecord;
 
-        const subjectRecords: ReportCardSubjectRecord[] = Object.values(subjects).map((subject) => ({
+        const subjectRecords: ReportCardSubjectRecord[] = Object.values(
+          subjects,
+        ).map((subject) => ({
           name: subject.subject,
           ca1: subject.ca1,
           ca2: subject.ca2,
@@ -4032,29 +4686,37 @@ export function TeacherDashboard({
           grade: subject.grade,
           remark: subject.remark,
           position: subject.position ?? null,
-        }))
+        }));
 
         const existingIndex = reportCards.findIndex(
           (record) =>
             record.studentId === String(student.studentId) &&
             record.term === normalizedTermLabel &&
             record.session === selectedSession,
-        )
+        );
 
-        const existingRecord = existingIndex >= 0 ? reportCards[existingIndex] : null
-        const reportCardId = existingRecord?.id ?? `report_${student.studentId}_${normalizedTermLabel}_${selectedSession}`
-        const headTeacherRemark = existingRecord?.headTeacherRemark ?? null
-        const remarkEntriesForStudent = getStudentRemarkEntries(student.studentId)
+        const existingRecord =
+          existingIndex >= 0 ? reportCards[existingIndex] : null;
+        const reportCardId =
+          existingRecord?.id ??
+          `report_${student.studentId}_${normalizedTermLabel}_${selectedSession}`;
+        const headTeacherRemark = existingRecord?.headTeacherRemark ?? null;
+        const remarkEntriesForStudent = getStudentRemarkEntries(
+          student.studentId,
+        );
         const classTeacherRemark =
-          buildClassTeacherRemarkSummary(remarkEntriesForStudent) || student.teacherRemark
+          buildClassTeacherRemarkSummary(remarkEntriesForStudent) ||
+          student.teacherRemark;
 
-        const aggregatedRaw = buildRawReportCardFromStoredRecord(mergedRecord)
-        const previewPayload = buildStudentPreview(student, aggregatedRaw)
+        const aggregatedRaw = buildRawReportCardFromStoredRecord(mergedRecord);
+        const previewPayload = buildStudentPreview(student, aggregatedRaw);
 
         const existingMetadata =
-          existingRecord && typeof existingRecord.metadata === "object" && existingRecord.metadata !== null
+          existingRecord &&
+          typeof existingRecord.metadata === "object" &&
+          existingRecord.metadata !== null
             ? (existingRecord.metadata as Record<string, unknown>)
-            : {}
+            : {};
 
         const updatedReportCard: ReportCardRecord = {
           id: reportCardId,
@@ -4074,22 +4736,25 @@ export function TeacherDashboard({
           },
           createdAt: existingRecord?.createdAt ?? timestamp,
           updatedAt: timestamp,
-        }
+        };
 
         if (existingIndex >= 0) {
-          reportCards[existingIndex] = updatedReportCard
+          reportCards[existingIndex] = updatedReportCard;
         } else {
-          reportCards.push(updatedReportCard)
+          reportCards.push(updatedReportCard);
         }
 
-        dbManager.triggerEvent("reportCardUpdated", updatedReportCard)
-      })
+        dbManager.triggerEvent("reportCardUpdated", updatedReportCard);
+      });
 
-      safeStorage.setItem(STUDENT_MARKS_STORAGE_KEY, JSON.stringify(updatedStore))
-      emitMarksStoreUpdate(updatedStore)
-      safeStorage.setItem("reportCards", JSON.stringify(reportCards))
+      safeStorage.setItem(
+        STUDENT_MARKS_STORAGE_KEY,
+        JSON.stringify(updatedStore),
+      );
+      emitMarksStoreUpdate(updatedStore);
+      safeStorage.setItem("reportCards", JSON.stringify(reportCards));
     } catch (error) {
-      logger.error("Failed to persist academic marks", { error })
+      logger.error("Failed to persist academic marks", { error });
     }
   }, [
     additionalData.classTeacherRemarks,
@@ -4107,51 +4772,51 @@ export function TeacherDashboard({
     selectedSubject,
     teacher.id,
     teacher.name,
-  ])
+  ]);
 
   const loadStoredReportCardPreview = useCallback(
     (studentId: string): RawReportCardData | null => {
       try {
-        const stored = safeStorage.getItem("reportCards")
+        const stored = safeStorage.getItem("reportCards");
         if (!stored) {
-          return null
+          return null;
         }
 
-        const parsed = JSON.parse(stored) as unknown
+        const parsed = JSON.parse(stored) as unknown;
         if (!Array.isArray(parsed)) {
-          return null
+          return null;
         }
 
-        const normalizedId = String(studentId)
+        const normalizedId = String(studentId);
         for (const entry of parsed) {
           if (!entry || typeof entry !== "object") {
-            continue
+            continue;
           }
 
-          const candidate = entry as ReportCardRecord
+          const candidate = entry as ReportCardRecord;
           if (
             candidate.studentId === normalizedId &&
             mapTermKeyToLabel(candidate.term) === normalizedTermLabel &&
             candidate.session === selectedSession
           ) {
-            return mapReportCardRecordToRaw(candidate)
+            return mapReportCardRecordToRaw(candidate);
           }
         }
       } catch (error) {
-        logger.warn("Unable to load stored report card preview", error)
+        logger.warn("Unable to load stored report card preview", error);
       }
 
-      return null
+      return null;
     },
     [normalizedTermLabel, selectedSession],
-  )
+  );
 
   const closePreviewDialog = useCallback(() => {
-    setPreviewDialogOpen(false)
-    setPreviewStudentId(null)
-    setPreviewData(null)
-    setIsPreviewDownloading(false)
-  }, [])
+    setPreviewDialogOpen(false);
+    setPreviewStudentId(null);
+    setPreviewData(null);
+    setIsPreviewDownloading(false);
+  }, []);
 
   const openPreviewForStudent = useCallback(
     (student: MarksRecord) => {
@@ -4159,34 +4824,37 @@ export function TeacherDashboard({
         toast({
           variant: "destructive",
           title: "Selection required",
-          description: "Choose a class and subject to generate a report card preview.",
-        })
-        return
+          description:
+            "Choose a class and subject to generate a report card preview.",
+        });
+        return;
       }
 
-      persistAcademicMarksToStorage()
+      persistAcademicMarksToStorage();
 
-      setPreviewStudentId(student.studentId)
+      setPreviewStudentId(student.studentId);
 
-      const storedPreview = loadStoredReportCardPreview(String(student.studentId))
+      const storedPreview = loadStoredReportCardPreview(
+        String(student.studentId),
+      );
       if (storedPreview) {
-        setPreviewData(storedPreview)
-        setPreviewDialogOpen(true)
-        return
+        setPreviewData(storedPreview);
+        setPreviewDialogOpen(true);
+        return;
       }
 
       const storedRecord = getStoredStudentMarksRecord(
         String(student.studentId),
         normalizedTermLabel,
         selectedSession,
-      )
+      );
       const aggregatedRaw = storedRecord
         ? buildRawReportCardFromStoredRecord(storedRecord)
-        : null
-      const previewPayload = buildStudentPreview(student, aggregatedRaw)
+        : null;
+      const previewPayload = buildStudentPreview(student, aggregatedRaw);
 
-      setPreviewData(previewPayload)
-      setPreviewDialogOpen(true)
+      setPreviewData(previewPayload);
+      setPreviewDialogOpen(true);
     },
     [
       buildStudentPreview,
@@ -4198,126 +4866,139 @@ export function TeacherDashboard({
       selectedSubject,
       toast,
     ],
-  )
+  );
 
   const handlePreviewDownload = useCallback(() => {
     if (!previewData) {
       toast({
         title: "Preview unavailable",
-        description: "Generate a report card preview before attempting to download.",
+        description:
+          "Generate a report card preview before attempting to download.",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
     try {
-      setIsPreviewDownloading(true)
-      const html = buildReportCardHtml(previewData)
-      const blob = new Blob([html], { type: "text/html" })
-      const studentName = previewData.student.name ?? "student"
-      const termLabel = mapTermKeyToLabel(selectedTerm)
-      const filename = `${sanitizeFileName(studentName)}-${sanitizeFileName(termLabel)}-${sanitizeFileName(selectedSession)}.html`
+      setIsPreviewDownloading(true);
+      const html = buildReportCardHtml(previewData);
+      const blob = new Blob([html], { type: "text/html" });
+      const studentName = previewData.student.name ?? "student";
+      const termLabel = mapTermKeyToLabel(selectedTerm);
+      const filename = `${sanitizeFileName(studentName)}-${sanitizeFileName(termLabel)}-${sanitizeFileName(selectedSession)}.html`;
 
-      const link = document.createElement("a")
-      const downloadUrl = URL.createObjectURL(blob)
-      link.href = downloadUrl
-      link.download = filename
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(downloadUrl)
+      const link = document.createElement("a");
+      const downloadUrl = URL.createObjectURL(blob);
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
     } catch (error) {
-      logger.error("Failed to download report card preview", { error })
+      logger.error("Failed to download report card preview", { error });
       toast({
         title: "Download failed",
-        description: "We couldn't generate the report card file. Please try again shortly.",
+        description:
+          "We couldn't generate the report card file. Please try again shortly.",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsPreviewDownloading(false)
+      setIsPreviewDownloading(false);
     }
-  }, [previewData, selectedSession, selectedTerm, toast])
+  }, [previewData, selectedSession, selectedTerm, toast]);
 
   const generateCumulativeSummaries = useCallback(
     async (options: { silent?: boolean } = {}) => {
       if (marksData.length === 0) {
-        setCumulativeSummaries({})
+        setCumulativeSummaries({});
         if (!options.silent) {
           toast({
             title: "No students loaded",
-            description: "Add students to the grade sheet before generating cumulative summaries.",
-          })
+            description:
+              "Add students to the grade sheet before generating cumulative summaries.",
+          });
         }
-        return {}
+        return {};
       }
 
       try {
-        setIsGeneratingCumulative(true)
+        setIsGeneratingCumulative(true);
         const summaries = await Promise.all(
           marksData.map(async (student) => {
             try {
               const report = await dbManager.getStudentCumulativeReport(
                 String(student.studentId),
                 selectedSession,
-              )
+              );
               if (!report) {
-                return { studentId: String(student.studentId), summary: undefined }
+                return {
+                  studentId: String(student.studentId),
+                  summary: undefined,
+                };
               }
               const summary: ReportCardCumulativeSummary = {
                 average: report.cumulativeAverage,
                 grade: report.cumulativeGrade,
                 position: report.cumulativePosition,
                 totalStudents: report.totalStudents ?? marksData.length,
-              }
-              return { studentId: String(student.studentId), summary }
+              };
+              return { studentId: String(student.studentId), summary };
             } catch (error) {
               logger.warn("Failed to resolve cumulative summary", {
                 error,
                 studentId: student.studentId,
-              })
-              return { studentId: String(student.studentId), summary: undefined }
+              });
+              return {
+                studentId: String(student.studentId),
+                summary: undefined,
+              };
             }
           }),
-        )
+        );
 
-        const nextSummaries: Record<string, ReportCardCumulativeSummary> = {}
-        let generatedCount = 0
+        const nextSummaries: Record<string, ReportCardCumulativeSummary> = {};
+        let generatedCount = 0;
         summaries.forEach(({ studentId, summary }) => {
           if (summary) {
-            nextSummaries[studentId] = summary
-            generatedCount += 1
+            nextSummaries[studentId] = summary;
+            generatedCount += 1;
           }
-        })
+        });
 
-        setCumulativeSummaries(nextSummaries)
+        setCumulativeSummaries(nextSummaries);
 
         if (!options.silent) {
           toast({
-            title: generatedCount > 0 ? "Cumulative summary ready" : "Cumulative summary pending",
+            title:
+              generatedCount > 0
+                ? "Cumulative summary ready"
+                : "Cumulative summary pending",
             description:
               generatedCount > 0
                 ? `Updated cumulative snapshots for ${generatedCount} ${generatedCount === 1 ? "student" : "students"}.`
                 : "No cumulative data is available yet. Sync exam results to generate summaries.",
-          })
+          });
         }
 
-        return nextSummaries
+        return nextSummaries;
       } catch (error) {
-        logger.error("Failed to generate cumulative summaries", { error })
+        logger.error("Failed to generate cumulative summaries", { error });
         if (!options.silent) {
           toast({
             variant: "destructive",
             title: "Unable to generate cumulative summary",
-            description: error instanceof Error ? error.message : "Please try again.",
-          })
+            description:
+              error instanceof Error ? error.message : "Please try again.",
+          });
         }
-        return {}
+        return {};
       } finally {
-        setIsGeneratingCumulative(false)
+        setIsGeneratingCumulative(false);
       }
     },
     [marksData, selectedSession, toast],
-  )
+  );
 
   const handleSyncAcademicMarks = async () => {
     try {
@@ -4326,39 +5007,41 @@ export function TeacherDashboard({
           variant: "destructive",
           title: "Selection required",
           description: "Choose both a class and subject before syncing grades.",
-        })
-        return
+        });
+        return;
       }
 
       if (marksData.length === 0) {
         toast({
           variant: "destructive",
           title: "No marks recorded",
-          description: "Add student scores before sending them to the exam office.",
-        })
-        return
+          description:
+            "Add student scores before sending them to the exam office.",
+        });
+        return;
       }
 
-      const termLabel = mapTermKeyToLabel(selectedTerm)
-      const normalizedClass = normalizeClassName(selectedClass)
+      const termLabel = mapTermKeyToLabel(selectedTerm);
+      const normalizedClass = normalizeClassName(selectedClass);
       const matchingExam = teacherExams.find(
         (exam) =>
           normalizeClassName(exam.className) === normalizedClass &&
           exam.subject.toLowerCase() === selectedSubject.toLowerCase() &&
           exam.term === termLabel &&
           exam.session === selectedSession,
-      )
+      );
 
       if (!matchingExam) {
         toast({
           variant: "destructive",
           title: "Exam schedule not found",
-          description: "Ask the administrator to schedule this assessment in Exam Management first.",
-        })
-        return
+          description:
+            "Ask the administrator to schedule this assessment in Exam Management first.",
+        });
+        return;
       }
 
-      setIsSyncingGrades(true)
+      setIsSyncingGrades(true);
 
       const resultsPayload = marksData.map((student) => {
         const { normalized, grandTotal } = calculateScoreTotals({
@@ -4366,7 +5049,7 @@ export function TeacherDashboard({
           ca2: student.secondCA,
           assignment: student.noteAssignment,
           exam: student.exam,
-        })
+        });
 
         return {
           studentId: String(student.studentId),
@@ -4377,87 +5060,103 @@ export function TeacherDashboard({
           exam: normalized.exam,
           grade: deriveGradeForTotals(grandTotal, student.totalMarksObtainable),
           position: student.position,
-          remarks: student.teacherRemark.trim() ? student.teacherRemark.trim() : undefined,
+          remarks: student.teacherRemark.trim()
+            ? student.teacherRemark.trim()
+            : undefined,
           totalStudents: marksData.length,
           status: "pending" as const,
-        }
-      })
+        };
+      });
 
-      await dbManager.saveExamResults(matchingExam.id, resultsPayload, { autoPublish: false })
-      const summaries = await generateCumulativeSummaries({ silent: true })
-      const generatedCount = Object.keys(summaries).length
+      await dbManager.saveExamResults(matchingExam.id, resultsPayload, {
+        autoPublish: false,
+      });
+      const summaries = await generateCumulativeSummaries({ silent: true });
+      const generatedCount = Object.keys(summaries).length;
       const cumulativeMessage =
         generatedCount > 0
           ? `Cumulative snapshots updated for ${generatedCount} ${generatedCount === 1 ? "student" : "students"}.`
-          : "Cumulative summaries will refresh once the exam office confirms the remaining subject scores."
+          : "Cumulative summaries will refresh once the exam office confirms the remaining subject scores.";
 
       toast({
         title: "Grades synced",
         description: `Marks are now available in the admin Exam Management portal for consolidation. ${cumulativeMessage}`,
-      })
+      });
     } catch (error) {
-      logger.error("Failed to sync academic marks", { error })
+      logger.error("Failed to sync academic marks", { error });
       toast({
         variant: "destructive",
         title: "Unable to sync grades",
-        description: "Please try again or contact the administrator if the problem persists.",
-      })
+        description:
+          "Please try again or contact the administrator if the problem persists.",
+      });
     } finally {
-      setIsSyncingGrades(false)
+      setIsSyncingGrades(false);
     }
-  }
+  };
 
   const refreshMarksForSelection = useCallback(() => {
     if (typeof window === "undefined") {
-      return
+      return;
     }
 
     void (async () => {
       if (!selectedClass || !selectedSubject) {
-        setMarksData([])
-        return
+        setMarksData([]);
+        return;
       }
 
       try {
-        const normalizedClass = normalizeClassName(selectedClass)
-        const normalizedSubject = selectedSubject.toLowerCase()
-        const liveRecords: MarksRecord[] = []
+        const normalizedClass = normalizeClassName(selectedClass);
+        const normalizedSubject = selectedSubject.toLowerCase();
+        const liveRecords: MarksRecord[] = [];
 
         try {
           const matchingExams = await dbManager.getExamSchedules({
             className: selectedClass,
             term: normalizedTermLabel,
             session: selectedSession,
-          })
+          });
           const targetExam = matchingExams.find(
             (exam) => (exam.subject ?? "").toLowerCase() === normalizedSubject,
-          )
+          );
 
           if (targetExam) {
-            const examResults = await dbManager.getExamResults(targetExam.id)
+            const examResults = await dbManager.getExamResults(targetExam.id);
             examResults
               .filter(
-                (result) => normalizeClassName(result.className ?? "") === normalizedClass,
+                (result) =>
+                  normalizeClassName(result.className ?? "") ===
+                  normalizedClass,
               )
               .forEach((result) => {
-                const { normalized, caTotal, grandTotal } = calculateScoreTotals({
-                  ca1: result.ca1 ?? 0,
-                  ca2: result.ca2 ?? 0,
-                  assignment: result.assignment ?? 0,
-                  exam: result.exam ?? 0,
-                })
+                const { normalized, caTotal, grandTotal } =
+                  calculateScoreTotals({
+                    ca1: result.ca1 ?? 0,
+                    ca2: result.ca2 ?? 0,
+                    assignment: result.assignment ?? 0,
+                    exam: result.exam ?? 0,
+                  });
 
-                const totalMarksObtainable = defaultTotalMaximum > 0 ? defaultTotalMaximum : fallbackTotalMaximum
-                const totalMarksObtained = grandTotal
+                const totalMarksObtainable =
+                  defaultTotalMaximum > 0
+                    ? defaultTotalMaximum
+                    : fallbackTotalMaximum;
+                const totalMarksObtained = grandTotal;
                 const resolvedGrade =
-                  typeof result.grade === "string" && result.grade.trim().length > 0
+                  typeof result.grade === "string" &&
+                  result.grade.trim().length > 0
                     ? result.grade.trim().toUpperCase()
-                    : deriveGradeForTotals(totalMarksObtained, totalMarksObtainable)
+                    : deriveGradeForTotals(
+                        totalMarksObtained,
+                        totalMarksObtainable,
+                      );
 
                 liveRecords.push({
                   studentId: result.studentId,
                   studentName:
-                    typeof result.studentName === "string" && result.studentName.trim().length > 0
+                    typeof result.studentName === "string" &&
+                    result.studentName.trim().length > 0
                       ? result.studentName
                       : `Student ${result.studentId}`,
                   firstCA: normalized.ca1,
@@ -4470,55 +5169,61 @@ export function TeacherDashboard({
                   totalMarksObtained,
                   averageScore: 0,
                   position:
-                    typeof result.position === "number" && Number.isFinite(result.position)
+                    typeof result.position === "number" &&
+                    Number.isFinite(result.position)
                       ? result.position
                       : 0,
                   grade: resolvedGrade,
                   teacherRemark:
                     typeof result.remarks === "string" ? result.remarks : "",
-                })
-              })
+                });
+              });
           }
         } catch (examError) {
-          logger.warn("Unable to load live exam results for teacher selection", {
-            error: examError,
-          })
+          logger.warn(
+            "Unable to load live exam results for teacher selection",
+            {
+              error: examError,
+            },
+          );
         }
 
-        let nextRecords = liveRecords
+        let nextRecords = liveRecords;
 
         if (nextRecords.length === 0) {
-          const store = readStudentMarksStore()
-          const storedRecords: MarksRecord[] = []
+          const store = readStudentMarksStore();
+          const storedRecords: MarksRecord[] = [];
 
           Object.values(store).forEach((record) => {
             if (!record) {
-              return
+              return;
             }
 
-            if (normalizeClassName(record.className ?? "") !== normalizedClass) {
-              return
+            if (
+              normalizeClassName(record.className ?? "") !== normalizedClass
+            ) {
+              return;
             }
 
             if (record.term !== normalizedTermLabel) {
-              return
+              return;
             }
 
             if (record.session !== selectedSession) {
-              return
+              return;
             }
 
-            const subjects = record.subjects ?? {}
+            const subjects = record.subjects ?? {};
             const subjectRecord =
               subjects[selectedSubject] ??
               Object.values(subjects).find(
                 (entry) =>
                   typeof entry.subject === "string" &&
                   entry.subject.toLowerCase() === normalizedSubject,
-              )
+              );
 
             if (!subjectRecord) {
-              return
+              return;
             }
 
             const { normalized, caTotal, grandTotal } = calculateScoreTotals({
@@ -4526,26 +5231,31 @@ export function TeacherDashboard({
               ca2: subjectRecord.ca2 ?? 0,
               assignment: subjectRecord.assignment ?? 0,
               exam: subjectRecord.exam ?? 0,
-            })
+            });
 
             const totalMarksObtainable =
-              typeof subjectRecord.totalObtainable === "number" && Number.isFinite(subjectRecord.totalObtainable)
+              typeof subjectRecord.totalObtainable === "number" &&
+              Number.isFinite(subjectRecord.totalObtainable)
                 ? subjectRecord.totalObtainable
                 : defaultTotalMaximum > 0
                   ? defaultTotalMaximum
-                  : fallbackTotalMaximum
+                  : fallbackTotalMaximum;
             const totalMarksObtained =
-              typeof subjectRecord.totalObtained === "number" && Number.isFinite(subjectRecord.totalObtained)
+              typeof subjectRecord.totalObtained === "number" &&
+              Number.isFinite(subjectRecord.totalObtained)
                 ? subjectRecord.totalObtained
-                : grandTotal
+                : grandTotal;
 
             const teacherRemark =
-              typeof subjectRecord.remark === "string" ? subjectRecord.remark : ""
+              typeof subjectRecord.remark === "string"
+                ? subjectRecord.remark
+                : "";
 
             storedRecords.push({
               studentId: record.studentId,
               studentName:
-                typeof record.studentName === "string" && record.studentName.trim().length > 0
+                typeof record.studentName === "string" &&
+                record.studentName.trim().length > 0
                   ? record.studentName
                   : `Student ${record.studentId}`,
               firstCA: normalized.ca1,
@@ -4558,29 +5268,40 @@ export function TeacherDashboard({
               totalMarksObtained,
               averageScore:
                 totalMarksObtainable > 0
-                  ? Math.round((totalMarksObtained / totalMarksObtainable) * 100)
+                  ? Math.round(
+                      (totalMarksObtained / totalMarksObtainable) * 100,
+                    )
                   : 0,
               position:
-                typeof subjectRecord.position === "number" && Number.isFinite(subjectRecord.position)
+                typeof subjectRecord.position === "number" &&
+                Number.isFinite(subjectRecord.position)
                   ? subjectRecord.position
                   : 0,
               grade:
-                typeof subjectRecord.grade === "string" && subjectRecord.grade.trim().length > 0
+                typeof subjectRecord.grade === "string" &&
+                subjectRecord.grade.trim().length > 0
                   ? subjectRecord.grade.trim().toUpperCase()
-                  : deriveGradeForTotals(totalMarksObtained, totalMarksObtainable),
+                  : deriveGradeForTotals(
+                      totalMarksObtained,
+                      totalMarksObtainable,
+                    ),
               teacherRemark,
-            })
-          })
+            });
+          });
 
-          nextRecords = storedRecords
+          nextRecords = storedRecords;
         }
 
-        setMarksData(nextRecords.length > 0 ? calculatePositionsAndAverages(nextRecords) : [])
+        setMarksData(
+          nextRecords.length > 0
+            ? calculatePositionsAndAverages(nextRecords)
+            : [],
+        );
       } catch (error) {
-        logger.warn("Failed to refresh marks for selection", { error })
-        setMarksData([])
+        logger.warn("Failed to refresh marks for selection", { error });
+        setMarksData([]);
       }
-    })()
+    })();
   }, [
     calculatePositionsAndAverages,
     normalizedTermLabel,
@@ -4588,30 +5309,32 @@ export function TeacherDashboard({
     selectedClass,
     selectedSession,
     selectedSubject,
-  ])
+  ]);
 
   const loadAdditionalData = useCallback(() => {
     if (typeof window === "undefined") {
-      return
+      return;
     }
 
     const parseStorageRecord = (key: string) => {
       try {
-        const storedValue = safeStorage.getItem(key)
+        const storedValue = safeStorage.getItem(key);
         if (!storedValue) {
-          return {}
+          return {};
         }
-        const parsed = JSON.parse(storedValue)
-        return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {}
+        const parsed = JSON.parse(storedValue);
+        return typeof parsed === "object" && parsed !== null
+          ? (parsed as Record<string, unknown>)
+          : {};
       } catch (error) {
-        logger.error(`Failed to parse ${key} storage`, { error })
-        return {}
+        logger.error(`Failed to parse ${key} storage`, { error });
+        return {};
       }
-    }
+    };
 
-    const behavioralStore = parseStorageRecord("behavioralAssessments")
-    const attendanceStore = parseStorageRecord("attendancePositions")
-    const remarksStore = parseStorageRecord("classTeacherRemarks")
+    const behavioralStore = parseStorageRecord("behavioralAssessments");
+    const attendanceStore = parseStorageRecord("attendancePositions");
+    const remarksStore = parseStorageRecord("classTeacherRemarks");
 
     const nextState = {
       affectiveDomain: {} as BehavioralDomainState,
@@ -4620,175 +5343,233 @@ export function TeacherDashboard({
       attendance: {} as AttendanceState,
       studentStatus: {} as StudentStatusState,
       termInfo: createEmptyTermInfo(),
-    }
+    };
 
-    let termInfoLoaded = false
+    let termInfoLoaded = false;
 
     marksData.forEach((student) => {
-      const studentKey = `${student.studentId}-${normalizedTermLabel}-${selectedSession}`
+      const studentKey = `${student.studentId}-${normalizedTermLabel}-${selectedSession}`;
 
       const behavioralRecord = behavioralStore[studentKey] as
         | {
-            affectiveDomain?: Record<string, unknown>
-            psychomotorDomain?: Record<string, unknown>
+            affectiveDomain?: Record<string, unknown>;
+            psychomotorDomain?: Record<string, unknown>;
           }
-        | undefined
+        | undefined;
 
-      const defaultAffectiveSelections = createBehavioralRecordSkeleton(AFFECTIVE_TRAITS)
-      const defaultPsychomotorSelections = createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS)
+      const defaultAffectiveSelections =
+        createBehavioralRecordSkeleton(AFFECTIVE_TRAITS);
+      const defaultPsychomotorSelections =
+        createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS);
 
-      nextState.affectiveDomain[student.studentId] = { ...defaultAffectiveSelections }
-      nextState.psychomotorDomain[student.studentId] = { ...defaultPsychomotorSelections }
+      nextState.affectiveDomain[student.studentId] = {
+        ...defaultAffectiveSelections,
+      };
+      nextState.psychomotorDomain[student.studentId] = {
+        ...defaultPsychomotorSelections,
+      };
 
       if (behavioralRecord) {
-        const storedAffective = behavioralRecord.affectiveDomain ?? {}
+        const storedAffective = behavioralRecord.affectiveDomain ?? {};
         Object.entries(storedAffective).forEach(([rawKey, rawValue]) => {
-          const canonicalKey = normalizeBehavioralDomainKey("affective", rawKey)
+          const canonicalKey = normalizeBehavioralDomainKey(
+            "affective",
+            rawKey,
+          );
           if (!canonicalKey) {
-            return
+            return;
           }
-          nextState.affectiveDomain[student.studentId][canonicalKey] = interpretBehavioralSelection(rawValue)
-        })
+          nextState.affectiveDomain[student.studentId][canonicalKey] =
+            interpretBehavioralSelection(rawValue);
+        });
 
-        const storedPsychomotor = behavioralRecord.psychomotorDomain ?? {}
+        const storedPsychomotor = behavioralRecord.psychomotorDomain ?? {};
         Object.entries(storedPsychomotor).forEach(([rawKey, rawValue]) => {
-          const canonicalKey = normalizeBehavioralDomainKey("psychomotor", rawKey)
+          const canonicalKey = normalizeBehavioralDomainKey(
+            "psychomotor",
+            rawKey,
+          );
           if (!canonicalKey) {
-            return
+            return;
           }
-          nextState.psychomotorDomain[student.studentId][canonicalKey] = interpretBehavioralSelection(rawValue)
-        })
+          nextState.psychomotorDomain[student.studentId][canonicalKey] =
+            interpretBehavioralSelection(rawValue);
+        });
       }
 
       const attendanceRecord = attendanceStore[studentKey] as
         | {
-            attendance?: { present?: number; absent?: number; total?: number }
-            status?: string
-            termInfo?: Partial<TermInfoState>
+            attendance?: { present?: number; absent?: number; total?: number };
+            status?: string;
+            termInfo?: Partial<TermInfoState>;
           }
-        | undefined
+        | undefined;
 
       if (attendanceRecord) {
-        if (attendanceRecord.attendance && typeof attendanceRecord.attendance === "object") {
-          const { present = 0, absent = 0, total = 0 } = attendanceRecord.attendance
+        if (
+          attendanceRecord.attendance &&
+          typeof attendanceRecord.attendance === "object"
+        ) {
+          const {
+            present = 0,
+            absent = 0,
+            total = 0,
+          } = attendanceRecord.attendance;
           nextState.attendance[student.studentId] = {
             present: Number.isFinite(present) ? present : 0,
             absent: Number.isFinite(absent) ? absent : 0,
             total: Number.isFinite(total) ? total : 0,
-          }
+          };
         }
 
         if (typeof attendanceRecord.status === "string") {
-          nextState.studentStatus[student.studentId] = attendanceRecord.status
+          nextState.studentStatus[student.studentId] = attendanceRecord.status;
         }
 
-        if (attendanceRecord.termInfo && typeof attendanceRecord.termInfo === "object") {
-          termInfoLoaded = true
+        if (
+          attendanceRecord.termInfo &&
+          typeof attendanceRecord.termInfo === "object"
+        ) {
+          termInfoLoaded = true;
           nextState.termInfo = {
             numberInClass:
               typeof attendanceRecord.termInfo.numberInClass === "number"
                 ? String(attendanceRecord.termInfo.numberInClass)
-                : attendanceRecord.termInfo.numberInClass ?? nextState.termInfo.numberInClass,
-            nextTermBegins: attendanceRecord.termInfo.nextTermBegins ?? nextState.termInfo.nextTermBegins,
-            vacationEnds: attendanceRecord.termInfo.vacationEnds ?? nextState.termInfo.vacationEnds,
-            nextTermFees: attendanceRecord.termInfo.nextTermFees ?? nextState.termInfo.nextTermFees,
-            feesBalance: attendanceRecord.termInfo.feesBalance ?? nextState.termInfo.feesBalance,
-          }
+                : (attendanceRecord.termInfo.numberInClass ??
+                  nextState.termInfo.numberInClass),
+            nextTermBegins:
+              attendanceRecord.termInfo.nextTermBegins ??
+              nextState.termInfo.nextTermBegins,
+            vacationEnds:
+              attendanceRecord.termInfo.vacationEnds ??
+              nextState.termInfo.vacationEnds,
+            nextTermFees:
+              attendanceRecord.termInfo.nextTermFees ??
+              nextState.termInfo.nextTermFees,
+            feesBalance:
+              attendanceRecord.termInfo.feesBalance ??
+              nextState.termInfo.feesBalance,
+          };
         }
       }
 
       const remarksRecord = remarksStore[studentKey] as
         | {
-            remark?: unknown
-            remarksBySubject?: Record<string, unknown>
+            remark?: unknown;
+            remarksBySubject?: Record<string, unknown>;
           }
-        | undefined
+        | undefined;
 
-      const assignRemarkToStudent = (subjectKey: string, remark: ClassTeacherRemarkValue) => {
+      const assignRemarkToStudent = (
+        subjectKey: string,
+        remark: ClassTeacherRemarkValue,
+      ) => {
         if (!subjectKey) {
-          return
+          return;
         }
 
-        const remarkKey = buildRemarkKey(subjectKey, student.studentId)
-        nextState.classTeacherRemarks[remarkKey] = { remark }
-      }
+        const remarkKey = buildRemarkKey(subjectKey, student.studentId);
+        nextState.classTeacherRemarks[remarkKey] = { remark };
+      };
 
       if (remarksRecord && typeof remarksRecord === "object") {
-        if (remarksRecord.remarkAssignments && typeof remarksRecord.remarkAssignments === "object") {
-          Object.entries(remarksRecord.remarkAssignments).forEach(([compositeKey, rawValue]) => {
-            const candidate =
-              typeof rawValue === "object" && rawValue !== null && "remark" in rawValue
-                ? (rawValue as { remark?: unknown }).remark
-                : rawValue
-            const interpreted = interpretClassTeacherRemark(candidate)
-            if (!interpreted) {
-              return
-            }
+        if (
+          remarksRecord.remarkAssignments &&
+          typeof remarksRecord.remarkAssignments === "object"
+        ) {
+          Object.entries(remarksRecord.remarkAssignments).forEach(
+            ([compositeKey, rawValue]) => {
+              const candidate =
+                typeof rawValue === "object" &&
+                rawValue !== null &&
+                "remark" in rawValue
+                  ? (rawValue as { remark?: unknown }).remark
+                  : rawValue;
+              const interpreted = interpretClassTeacherRemark(candidate);
+              if (!interpreted) {
+                return;
+              }
 
-            const { subjectKey, studentId: entryStudentId } = parseRemarkKey(compositeKey)
-            if (entryStudentId === student.studentId) {
-              assignRemarkToStudent(subjectKey, interpreted)
-            }
-          })
+              const { subjectKey, studentId: entryStudentId } =
+                parseRemarkKey(compositeKey);
+              if (entryStudentId === student.studentId) {
+                assignRemarkToStudent(subjectKey, interpreted);
+              }
+            },
+          );
         }
 
-        if (remarksRecord.remarksBySubject && typeof remarksRecord.remarksBySubject === "object") {
-          Object.entries(remarksRecord.remarksBySubject).forEach(([subjectKey, rawValue]) => {
-            const candidate =
-              typeof rawValue === "object" && rawValue !== null && "remark" in rawValue
-                ? (rawValue as { remark?: unknown }).remark
-                : rawValue
-            const interpreted = interpretClassTeacherRemark(candidate)
-            if (interpreted) {
-              assignRemarkToStudent(subjectKey, interpreted)
-            }
-          })
+        if (
+          remarksRecord.remarksBySubject &&
+          typeof remarksRecord.remarksBySubject === "object"
+        ) {
+          Object.entries(remarksRecord.remarksBySubject).forEach(
+            ([subjectKey, rawValue]) => {
+              const candidate =
+                typeof rawValue === "object" &&
+                rawValue !== null &&
+                "remark" in rawValue
+                  ? (rawValue as { remark?: unknown }).remark
+                  : rawValue;
+              const interpreted = interpretClassTeacherRemark(candidate);
+              if (interpreted) {
+                assignRemarkToStudent(subjectKey, interpreted);
+              }
+            },
+          );
         }
 
         if (remarksRecord.remark) {
-          const interpreted = interpretClassTeacherRemark(remarksRecord.remark)
+          const interpreted = interpretClassTeacherRemark(remarksRecord.remark);
           if (interpreted) {
-            const hasExistingRemarkForStudent = Object.keys(nextState.classTeacherRemarks).some((key) => {
-              const parsed = parseRemarkKey(key)
-              return parsed.studentId === student.studentId
-            })
+            const hasExistingRemarkForStudent = Object.keys(
+              nextState.classTeacherRemarks,
+            ).some((key) => {
+              const parsed = parseRemarkKey(key);
+              return parsed.studentId === student.studentId;
+            });
 
             if (!hasExistingRemarkForStudent) {
-              const fallbackKey = selectedSubjectKey || selectedSubject || "general"
-              assignRemarkToStudent(fallbackKey, interpreted)
+              const fallbackKey =
+                selectedSubjectKey || selectedSubject || "general";
+              assignRemarkToStudent(fallbackKey, interpreted);
             }
           }
         }
       }
-    })
+    });
 
     if (selectedSubjectKey) {
-      const activeSubjectKey = selectedSubjectKey
+      const activeSubjectKey = selectedSubjectKey;
 
       setMarksData((previous) => {
         if (previous.length === 0) {
-          return previous
+          return previous;
         }
 
-        let hasChanges = false
+        let hasChanges = false;
         const nextMarks = previous.map((entry) => {
           const remarkEntry =
-            nextState.classTeacherRemarks[buildRemarkKey(activeSubjectKey, entry.studentId)]
+            nextState.classTeacherRemarks[
+              buildRemarkKey(activeSubjectKey, entry.studentId)
+            ];
           if (!remarkEntry?.remark) {
-            return entry
+            return entry;
           }
 
-          const mappedRemark = mapClassTeacherRemarkToSubjectRemark(remarkEntry.remark)
+          const mappedRemark = mapClassTeacherRemarkToSubjectRemark(
+            remarkEntry.remark,
+          );
           if (entry.teacherRemark === mappedRemark) {
-            return entry
+            return entry;
           }
 
-          hasChanges = true
-          return { ...entry, teacherRemark: mappedRemark }
-        })
+          hasChanges = true;
+          return { ...entry, teacherRemark: mappedRemark };
+        });
 
-        return hasChanges ? nextMarks : previous
-      })
+        return hasChanges ? nextMarks : previous;
+      });
     }
 
     setAdditionalData((prev) => ({
@@ -4799,7 +5580,7 @@ export function TeacherDashboard({
       attendance: nextState.attendance,
       studentStatus: nextState.studentStatus,
       termInfo: termInfoLoaded ? nextState.termInfo : createEmptyTermInfo(),
-    }))
+    }));
   }, [
     marksData,
     mapClassTeacherRemarkToSubjectRemark,
@@ -4808,57 +5589,57 @@ export function TeacherDashboard({
     selectedSubject,
     selectedSubjectKey,
     setMarksData,
-  ])
+  ]);
 
   useEffect(() => {
-    refreshMarksForSelection()
-  }, [refreshMarksForSelection])
+    refreshMarksForSelection();
+  }, [refreshMarksForSelection]);
 
   useEffect(() => {
     const handleExamResultsUpdate = () => {
-      refreshMarksForSelection()
-    }
+      refreshMarksForSelection();
+    };
 
-    dbManager.on("examResultsUpdated", handleExamResultsUpdate)
+    dbManager.on("examResultsUpdated", handleExamResultsUpdate);
 
     return () => {
-      dbManager.off("examResultsUpdated", handleExamResultsUpdate)
-    }
-  }, [refreshMarksForSelection])
+      dbManager.off("examResultsUpdated", handleExamResultsUpdate);
+    };
+  }, [refreshMarksForSelection]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
-      return
+      return;
     }
 
     const handleMarksUpdate = () => {
       if (suppressMarksRefreshRef.current) {
-        return
+        return;
       }
-      refreshMarksForSelection()
-    }
+      refreshMarksForSelection();
+    };
 
     const handleStorage = (event: StorageEvent) => {
       if (event.key === STUDENT_MARKS_STORAGE_KEY) {
         if (suppressMarksRefreshRef.current) {
-          return
+          return;
         }
-        refreshMarksForSelection()
+        refreshMarksForSelection();
       }
-    }
+    };
 
-    dbManager.on(STUDENT_MARKS_STORAGE_KEY, handleMarksUpdate)
-    window.addEventListener("storage", handleStorage)
+    dbManager.on(STUDENT_MARKS_STORAGE_KEY, handleMarksUpdate);
+    window.addEventListener("storage", handleStorage);
 
     return () => {
-      dbManager.off(STUDENT_MARKS_STORAGE_KEY, handleMarksUpdate)
-      window.removeEventListener("storage", handleStorage)
-    }
-  }, [refreshMarksForSelection])
+      dbManager.off(STUDENT_MARKS_STORAGE_KEY, handleMarksUpdate);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [refreshMarksForSelection]);
 
   useEffect(() => {
-    loadAdditionalData()
-  }, [loadAdditionalData])
+    loadAdditionalData();
+  }, [loadAdditionalData]);
 
   useEffect(() => {
     const selectionKey = [
@@ -4866,19 +5647,19 @@ export function TeacherDashboard({
       selectedSubject || "",
       normalizedTermLabel,
       selectedSession,
-    ].join("::")
+    ].join("::");
 
     if (!selectedClass || !selectedSubject || marksData.length === 0) {
-      lastPersistedSelectionRef.current = selectionKey
-      return
+      lastPersistedSelectionRef.current = selectionKey;
+      return;
     }
 
     if (lastPersistedSelectionRef.current !== selectionKey) {
-      lastPersistedSelectionRef.current = selectionKey
-      return
+      lastPersistedSelectionRef.current = selectionKey;
+      return;
     }
 
-    persistAcademicMarksToStorage()
+    persistAcademicMarksToStorage();
   }, [
     marksData,
     normalizedTermLabel,
@@ -4886,29 +5667,37 @@ export function TeacherDashboard({
     selectedClass,
     selectedSession,
     selectedSubject,
-  ])
+  ]);
 
   useEffect(() => {
-    setWorkflowRecords(getWorkflowRecords())
-  }, [])
+    setWorkflowRecords(getWorkflowRecords());
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
-      return
+      return;
     }
 
     const handleWorkflowUpdate = (event: Event) => {
-      const detail = (event as CustomEvent<{ records?: ReportCardWorkflowRecord[] }>).detail
+      const detail = (
+        event as CustomEvent<{ records?: ReportCardWorkflowRecord[] }>
+      ).detail;
       if (Array.isArray(detail?.records)) {
-        setWorkflowRecords(detail.records)
+        setWorkflowRecords(detail.records);
       }
-    }
+    };
 
-    window.addEventListener(REPORT_CARD_WORKFLOW_EVENT, handleWorkflowUpdate as EventListener)
+    window.addEventListener(
+      REPORT_CARD_WORKFLOW_EVENT,
+      handleWorkflowUpdate as EventListener,
+    );
     return () => {
-      window.removeEventListener(REPORT_CARD_WORKFLOW_EVENT, handleWorkflowUpdate as EventListener)
-    }
-  }, [])
+      window.removeEventListener(
+        REPORT_CARD_WORKFLOW_EVENT,
+        handleWorkflowUpdate as EventListener,
+      );
+    };
+  }, []);
 
   const currentWorkflowRecords = useMemo(
     () =>
@@ -4920,10 +5709,20 @@ export function TeacherDashboard({
           record.session === selectedSession &&
           record.teacherId === teacher.id,
       ),
-    [normalizedTermLabel, selectedClass, selectedSession, selectedSubject, teacher.id, workflowRecords],
-  )
+    [
+      normalizedTermLabel,
+      selectedClass,
+      selectedSession,
+      selectedSubject,
+      teacher.id,
+      workflowRecords,
+    ],
+  );
 
-  const currentStatus = useMemo(() => getWorkflowSummary(currentWorkflowRecords), [currentWorkflowRecords])
+  const currentStatus = useMemo(
+    () => getWorkflowSummary(currentWorkflowRecords),
+    [currentWorkflowRecords],
+  );
 
   const handleSaveDraft = useCallback(async () => {
     if (!selectedClass || !selectedSubject) {
@@ -4931,8 +5730,8 @@ export function TeacherDashboard({
         variant: "destructive",
         title: "Select class & subject",
         description: "Choose a class and subject before saving your progress.",
-      })
-      return
+      });
+      return;
     }
 
     if (!marksData.length) {
@@ -4940,26 +5739,28 @@ export function TeacherDashboard({
         variant: "destructive",
         title: "No student results",
         description: "Add student scores before saving progress.",
-      })
-      return
+      });
+      return;
     }
 
     try {
-      setIsSavingDraft(true)
-      await Promise.resolve(persistAcademicMarksToStorage())
+      setIsSavingDraft(true);
+      await Promise.resolve(persistAcademicMarksToStorage());
       toast({
         title: "Progress saved",
-        description: "Your report card entries are stored until you're ready to submit for approval.",
-      })
+        description:
+          "Your report card entries are stored until you're ready to submit for approval.",
+      });
     } catch (error) {
-      logger.error("Failed to save report card draft", { error })
+      logger.error("Failed to save report card draft", { error });
       toast({
         variant: "destructive",
         title: "Unable to save progress",
-        description: error instanceof Error ? error.message : "Please try again.",
-      })
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
     } finally {
-      setIsSavingDraft(false)
+      setIsSavingDraft(false);
     }
   }, [
     marksData.length,
@@ -4967,16 +5768,17 @@ export function TeacherDashboard({
     selectedClass,
     selectedSubject,
     toast,
-  ])
+  ]);
 
   const handleSubmitForApproval = useCallback(async () => {
     if (!selectedClass || !selectedSubject) {
       toast({
         variant: "destructive",
         title: "Select class & subject",
-        description: "Choose a class and subject before sending report cards for approval.",
-      })
-      return
+        description:
+          "Choose a class and subject before sending report cards for approval.",
+      });
+      return;
     }
 
     if (!marksData.length) {
@@ -4984,15 +5786,17 @@ export function TeacherDashboard({
         variant: "destructive",
         title: "No student results",
         description: "Add student scores before submitting for approval.",
-      })
-      return
+      });
+      return;
     }
 
     try {
-      persistAcademicMarksToStorage()
-      setIsSubmittingForApproval(true)
-      const cumulativeSnapshot = await generateCumulativeSummaries({ silent: true })
-      const generatedCount = Object.keys(cumulativeSnapshot).length
+      persistAcademicMarksToStorage();
+      setIsSubmittingForApproval(true);
+      const cumulativeSnapshot = await generateCumulativeSummaries({
+        silent: true,
+      });
+      const generatedCount = Object.keys(cumulativeSnapshot).length;
       const updated = submitReportCardsForApproval({
         teacherId: teacher.id,
         teacherName: teacher.name,
@@ -5005,25 +5809,26 @@ export function TeacherDashboard({
           name: student.studentName,
         })),
         cumulativeSummaries: cumulativeSnapshot,
-      })
+      });
 
-      setWorkflowRecords(updated)
+      setWorkflowRecords(updated);
       toast({
         title: "Sent for approval",
         description:
           generatedCount > 0
             ? `Admin has been notified to review this result batch, including cumulative snapshots for ${generatedCount} ${generatedCount === 1 ? "student" : "students"}.`
             : "Admin has been notified to review this result batch. Cumulative summaries will update after the exam office finalises other subjects.",
-      })
+      });
     } catch (error) {
-      logger.error("Failed to submit report cards for approval", { error })
+      logger.error("Failed to submit report cards for approval", { error });
       toast({
         variant: "destructive",
         title: "Unable to submit",
-        description: error instanceof Error ? error.message : "Please try again.",
-      })
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
     } finally {
-      setIsSubmittingForApproval(false)
+      setIsSubmittingForApproval(false);
     }
   }, [
     generateCumulativeSummaries,
@@ -5035,62 +5840,74 @@ export function TeacherDashboard({
     teacher.id,
     teacher.name,
     toast,
-  ])
+  ]);
 
   const handleCancelSubmission = useCallback(async () => {
     try {
-      setIsCancellingSubmission(true)
+      setIsCancellingSubmission(true);
       const updated = resetReportCardSubmission({
         teacherId: teacher.id,
         className: selectedClass,
         subject: selectedSubject,
         term: normalizedTermLabel,
         session: selectedSession,
-      })
-      setWorkflowRecords(updated)
+      });
+      setWorkflowRecords(updated);
       toast({
         title: "Submission cancelled",
-        description: "You can continue editing the report card details before resubmitting.",
-      })
+        description:
+          "You can continue editing the report card details before resubmitting.",
+      });
     } catch (error) {
-      logger.error("Failed to cancel report card submission", { error })
+      logger.error("Failed to cancel report card submission", { error });
       toast({
         variant: "destructive",
         title: "Unable to cancel submission",
-        description: error instanceof Error ? error.message : "Please try again.",
-      })
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
     } finally {
-      setIsCancellingSubmission(false)
+      setIsCancellingSubmission(false);
     }
-  }, [normalizedTermLabel, selectedClass, selectedSession, selectedSubject, teacher.id, toast])
+  }, [
+    normalizedTermLabel,
+    selectedClass,
+    selectedSession,
+    selectedSubject,
+    teacher.id,
+    toast,
+  ]);
 
-  const handleDownloadAssignmentAttachment = (assignment: TeacherAssignmentSummary) => {
+  const handleDownloadAssignmentAttachment = (
+    assignment: TeacherAssignmentSummary,
+  ) => {
     if (!assignment.resourceUrl) {
       toast({
         variant: "destructive",
         title: "No attachment",
         description: "This assignment does not have an attachment to download.",
-      })
-      return
+      });
+      return;
     }
 
-    const runtime = getBrowserRuntime()
+    const runtime = getBrowserRuntime();
     if (!runtime?.document) {
       toast({
         variant: "destructive",
         title: "Download unavailable",
-        description: "Attachments can only be downloaded in a browser environment.",
-      })
-      return
+        description:
+          "Attachments can only be downloaded in a browser environment.",
+      });
+      return;
     }
 
-    const link = runtime.document.createElement("a")
-    link.href = assignment.resourceUrl
-    link.download = assignment.resourceName || `${assignment.title}.attachment`
-    runtime.document.body?.appendChild(link)
-    link.click()
-    runtime.document.body?.removeChild(link)
-  }
+    const link = runtime.document.createElement("a");
+    link.href = assignment.resourceUrl;
+    link.download = assignment.resourceName || `${assignment.title}.attachment`;
+    runtime.document.body?.appendChild(link);
+    link.click();
+    runtime.document.body?.removeChild(link);
+  };
 
   const handleDownloadSubmissionFile = (
     submission: AssignmentSubmissionRecord,
@@ -5101,28 +5918,29 @@ export function TeacherDashboard({
         variant: "destructive",
         title: "Download unavailable",
         description: "This submission file could not be downloaded.",
-      })
-      return
+      });
+      return;
     }
 
-    const runtime = getBrowserRuntime()
+    const runtime = getBrowserRuntime();
 
     if (!runtime?.document) {
       toast({
         variant: "destructive",
         title: "Download unavailable",
-        description: "Submission files can only be downloaded in a browser environment.",
-      })
-      return
+        description:
+          "Submission files can only be downloaded in a browser environment.",
+      });
+      return;
     }
 
-    const link = runtime.document.createElement("a")
-    link.href = file.url
-    link.download = file.name || `${submission.studentId}-submission`
-    runtime.document.body?.appendChild(link)
-    link.click()
-    runtime.document.body?.removeChild(link)
-  }
+    const link = runtime.document.createElement("a");
+    link.href = file.url;
+    link.download = file.name || `${submission.studentId}-submission`;
+    runtime.document.body?.appendChild(link);
+    link.click();
+    runtime.document.body?.removeChild(link);
+  };
 
   const resetAssignmentForm = useCallback(() => {
     setAssignmentForm({
@@ -5138,22 +5956,26 @@ export function TeacherDashboard({
       resourceType: "",
       resourceUrl: "",
       resourceSize: null,
-    })
-    setEditingAssignmentId(null)
-    setAssignmentDialogMode("create")
-  }, [assignmentFormDefaultMaximum, teacherClasses, teacherSubjects])
+    });
+    setEditingAssignmentId(null);
+    setAssignmentDialogMode("create");
+  }, [assignmentFormDefaultMaximum, teacherClasses, teacherSubjects]);
 
   const openCreateAssignmentDialog = () => {
-    resetAssignmentForm()
-    setShowCreateAssignment(true)
-  }
+    resetAssignmentForm();
+    setShowCreateAssignment(true);
+  };
 
   const handleEditAssignment = (assignment: TeacherAssignmentSummary) => {
-    setAssignmentDialogMode("edit")
-    setEditingAssignmentId(assignment.id)
+    setAssignmentDialogMode("edit");
+    setEditingAssignmentId(assignment.id);
     const matchedClass = assignment.classId
       ? teacherClasses.find((cls) => cls.id === assignment.classId)
-      : teacherClasses.find((cls) => normalizeClassName(cls.name) === normalizeClassName(assignment.className))
+      : teacherClasses.find(
+          (cls) =>
+            normalizeClassName(cls.name) ===
+            normalizeClassName(assignment.className),
+        );
     setAssignmentForm({
       title: assignment.title,
       description: assignment.description ?? "",
@@ -5168,77 +5990,91 @@ export function TeacherDashboard({
       resourceName: assignment.resourceName ?? "",
       resourceType: assignment.resourceType ?? "",
       resourceUrl: assignment.resourceUrl ?? "",
-      resourceSize: typeof assignment.resourceSize === "number" ? assignment.resourceSize : null,
-    })
-    setShowCreateAssignment(true)
-  }
+      resourceSize:
+        typeof assignment.resourceSize === "number"
+          ? assignment.resourceSize
+          : null,
+    });
+    setShowCreateAssignment(true);
+  };
 
   const handlePreviewAssignment = (assignment: TeacherAssignmentSummary) => {
-    setPreviewAssignment(assignment)
-  }
+    setPreviewAssignment(assignment);
+  };
 
   const describeDueDate = (value: string) => {
-    if (!value) return "No due date"
-    const dueDate = new Date(value)
+    if (!value) return "No due date";
+    const dueDate = new Date(value);
     if (Number.isNaN(dueDate.getTime())) {
-      return value
+      return value;
     }
 
-    const oneDay = 1000 * 60 * 60 * 24
-    const diff = Math.ceil((dueDate.getTime() - Date.now()) / oneDay)
+    const oneDay = 1000 * 60 * 60 * 24;
+    const diff = Math.ceil((dueDate.getTime() - Date.now()) / oneDay);
 
-    if (diff > 1) return `Due in ${diff} days`
-    if (diff === 1) return "Due tomorrow"
-    if (diff === 0) return "Due today"
-    return `Overdue by ${Math.abs(diff)} day${Math.abs(diff) === 1 ? "" : "s"}`
-  }
+    if (diff > 1) return `Due in ${diff} days`;
+    if (diff === 1) return "Due tomorrow";
+    if (diff === 0) return "Due today";
+    return `Overdue by ${Math.abs(diff)} day${Math.abs(diff) === 1 ? "" : "s"}`;
+  };
 
   useEffect(() => {
     if (!assignments.length || !teacher.id) {
-      return
+      return;
     }
 
     const reminderTasks = assignments.map(async (assignment) => {
-      const assignmentId = assignment.id
-      const dueDate = assignment.dueDate
+      const assignmentId = assignment.id;
+      const dueDate = assignment.dueDate;
 
       if (!assignmentId || !dueDate) {
-        clearAssignmentReminderHistory("teacher", assignmentId)
-        return
+        clearAssignmentReminderHistory("teacher", assignmentId);
+        return;
       }
 
       if (assignment.status === "draft") {
-        clearAssignmentReminderHistory("teacher", assignmentId)
-        return
+        clearAssignmentReminderHistory("teacher", assignmentId);
+        return;
       }
 
-      const dueTimestamp = Date.parse(dueDate)
+      const dueTimestamp = Date.parse(dueDate);
       if (Number.isNaN(dueTimestamp)) {
-        return
+        return;
       }
 
       const submittedCount = assignment.submissions.filter((submission) =>
         ["submitted", "graded"].includes(submission.status),
-      ).length
-      const gradedCount = assignment.submissions.filter((submission) => submission.status === "graded").length
-      const pendingGradingCount = assignment.submissions.filter((submission) => submission.status === "submitted").length
+      ).length;
+      const gradedCount = assignment.submissions.filter(
+        (submission) => submission.status === "graded",
+      ).length;
+      const pendingGradingCount = assignment.submissions.filter(
+        (submission) => submission.status === "submitted",
+      ).length;
       const totalAssigned = Array.isArray(assignment.assignedStudentIds)
         ? assignment.assignedStudentIds.length
-        : assignment.submissions.length
-      const missingSubmissions = Math.max(totalAssigned - submittedCount, 0)
+        : assignment.submissions.length;
+      const missingSubmissions = Math.max(totalAssigned - submittedCount, 0);
 
       if (pendingGradingCount === 0 && missingSubmissions === 0) {
-        clearAssignmentReminderHistory("teacher", assignmentId)
-        return
+        clearAssignmentReminderHistory("teacher", assignmentId);
+        return;
       }
 
-      const audience = [teacher.id, "teacher"] as const
-      const title = assignment.title || "Assignment"
-      const className = assignment.className || assignment.classId || undefined
-      const subject = assignment.subject
+      const audience = [teacher.id, "teacher"] as const;
+      const title = assignment.title || "Assignment";
+      const className = assignment.className || assignment.classId || undefined;
+      const subject = assignment.subject;
 
       if (pendingGradingCount > 0 && Date.now() > dueTimestamp) {
-        if (shouldSendAssignmentReminder("teacher", assignmentId, "gradingPending", { dueDate })) {
+        if (
+          shouldSendAssignmentReminder(
+            "teacher",
+            assignmentId,
+            "gradingPending",
+            { dueDate },
+          )
+        ) {
           try {
             await dbManager.saveNotification({
               title: "Submissions awaiting grading",
@@ -5254,18 +6090,35 @@ export function TeacherDashboard({
                 className,
                 pendingGrading: pendingGradingCount,
               },
-            })
-            markAssignmentReminderSent("teacher", assignmentId, "gradingPending", { dueDate })
+            });
+            markAssignmentReminderSent(
+              "teacher",
+              assignmentId,
+              "gradingPending",
+              { dueDate },
+            );
           } catch (error) {
-            logger.error("Failed to save grading reminder", { error, assignmentId })
+            logger.error("Failed to save grading reminder", {
+              error,
+              assignmentId,
+            });
           }
         }
       } else if (pendingGradingCount === 0) {
-        clearAssignmentReminderHistory("teacher", assignmentId, { types: ["gradingPending"] })
+        clearAssignmentReminderHistory("teacher", assignmentId, {
+          types: ["gradingPending"],
+        });
       }
 
       if (missingSubmissions > 0 && Date.now() > dueTimestamp) {
-        if (shouldSendAssignmentReminder("teacher", assignmentId, "missingSubmissions", { dueDate })) {
+        if (
+          shouldSendAssignmentReminder(
+            "teacher",
+            assignmentId,
+            "missingSubmissions",
+            { dueDate },
+          )
+        ) {
           try {
             await dbManager.saveNotification({
               title: "Students missing submissions",
@@ -5282,23 +6135,33 @@ export function TeacherDashboard({
                 outstandingSubmissions: missingSubmissions,
                 gradedCount,
               },
-            })
-            markAssignmentReminderSent("teacher", assignmentId, "missingSubmissions", { dueDate })
+            });
+            markAssignmentReminderSent(
+              "teacher",
+              assignmentId,
+              "missingSubmissions",
+              { dueDate },
+            );
           } catch (error) {
-            logger.error("Failed to save missing submission reminder", { error, assignmentId })
+            logger.error("Failed to save missing submission reminder", {
+              error,
+              assignmentId,
+            });
           }
         }
       } else if (missingSubmissions === 0) {
-        clearAssignmentReminderHistory("teacher", assignmentId, { types: ["missingSubmissions"] })
+        clearAssignmentReminderHistory("teacher", assignmentId, {
+          types: ["missingSubmissions"],
+        });
       }
-    })
+    });
 
-    void Promise.allSettled(reminderTasks)
-  }, [assignments, teacher.id])
+    void Promise.allSettled(reminderTasks);
+  }, [assignments, teacher.id]);
 
   const handleSaveAssignment = async (intent: "draft" | "sent") => {
     if (isSavingAssignment) {
-      return
+      return;
     }
 
     if (
@@ -5311,40 +6174,42 @@ export function TeacherDashboard({
       toast({
         variant: "destructive",
         title: "Incomplete details",
-        description: "Please provide the title, subject, class, and due date for the assignment.",
-      })
-      return
+        description:
+          "Please provide the title, subject, class, and due date for the assignment.",
+      });
+      return;
     }
 
-    const parsedMaximum = Number(assignmentForm.maximumScore)
+    const parsedMaximum = Number(assignmentForm.maximumScore);
     if (!Number.isFinite(parsedMaximum) || parsedMaximum <= 0) {
       toast({
         variant: "destructive",
         title: "Invalid mark",
-        description: "Please set a valid maximum score greater than zero for this assignment.",
-      })
-      return
+        description:
+          "Please set a valid maximum score greater than zero for this assignment.",
+      });
+      return;
     }
 
-    const maximumScoreValue = Math.round(parsedMaximum)
+    const maximumScoreValue = Math.round(parsedMaximum);
 
     try {
-      setIsSavingAssignment(true)
+      setIsSavingAssignment(true);
 
-      const trimmedClassName = assignmentForm.className.trim()
-      const trimmedClassId = assignmentForm.classId?.trim() ?? ""
-      const resolvedClassId = trimmedClassId.length > 0 ? trimmedClassId : null
+      const trimmedClassName = assignmentForm.className.trim();
+      const trimmedClassId = assignmentForm.classId?.trim() ?? "";
+      const resolvedClassId = trimmedClassId.length > 0 ? trimmedClassId : null;
 
-      let resourceUrl = assignmentForm.resourceUrl || ""
-      let resourceType = assignmentForm.resourceType || ""
-      let resourceSize = assignmentForm.resourceSize ?? null
-      let resourceName = assignmentForm.resourceName || ""
+      let resourceUrl = assignmentForm.resourceUrl || "";
+      let resourceType = assignmentForm.resourceType || "";
+      let resourceSize = assignmentForm.resourceSize ?? null;
+      let resourceName = assignmentForm.resourceName || "";
 
       if (assignmentForm.file) {
-        resourceUrl = await readFileAsDataUrl(assignmentForm.file)
-        resourceType = assignmentForm.file.type || "application/octet-stream"
-        resourceSize = assignmentForm.file.size
-        resourceName = assignmentForm.file.name
+        resourceUrl = await readFileAsDataUrl(assignmentForm.file);
+        resourceType = assignmentForm.file.type || "application/octet-stream";
+        resourceSize = assignmentForm.file.size;
+        resourceName = assignmentForm.file.name;
       }
 
       const payload = {
@@ -5362,19 +6227,19 @@ export function TeacherDashboard({
         resourceType: resourceType || null,
         resourceUrl: resourceUrl || null,
         resourceSize,
-      }
+      };
 
       if (assignmentDialogMode === "edit" && editingAssignmentId) {
-        await dbManager.updateAssignment(editingAssignmentId, payload)
+        await dbManager.updateAssignment(editingAssignmentId, payload);
         toast({
           title: intent === "sent" ? "Assignment sent" : "Draft updated",
           description:
             intent === "sent"
               ? "Students can now access the refreshed assignment."
               : "Your changes have been saved successfully.",
-        })
+        });
       } else {
-        await dbManager.createAssignment(payload)
+        await dbManager.createAssignment(payload);
 
         toast({
           title: intent === "sent" ? "Assignment sent" : "Draft saved",
@@ -5382,158 +6247,175 @@ export function TeacherDashboard({
             intent === "sent"
               ? "Students have been notified about the new assignment."
               : "You can return later to finish and send this assignment.",
-        })
+        });
       }
 
-      setShowCreateAssignment(false)
-      resetAssignmentForm()
-      void loadAssignments()
+      setShowCreateAssignment(false);
+      resetAssignmentForm();
+      void loadAssignments();
     } catch (error) {
-      logger.error("Failed to save assignment", { error })
+      logger.error("Failed to save assignment", { error });
       toast({
         variant: "destructive",
         title: "Unable to save assignment",
-        description: error instanceof Error ? error.message : "Please try again or contact the administrator.",
-      })
+        description:
+          error instanceof Error
+            ? error.message
+            : "Please try again or contact the administrator.",
+      });
     } finally {
-      setIsSavingAssignment(false)
+      setIsSavingAssignment(false);
     }
-  }
+  };
 
   const handleAssignmentSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+    event.preventDefault();
 
     if (isSavingAssignment) {
-      return
+      return;
     }
 
-    const nativeEvent = event.nativeEvent
-    let intent: "draft" | "sent" = "draft"
+    const nativeEvent = event.nativeEvent;
+    let intent: "draft" | "sent" = "draft";
 
-    if (nativeEvent && typeof (nativeEvent as SubmitEvent).submitter !== "undefined") {
-      const submitter = (nativeEvent as SubmitEvent).submitter
+    if (
+      nativeEvent &&
+      typeof (nativeEvent as SubmitEvent).submitter !== "undefined"
+    ) {
+      const submitter = (nativeEvent as SubmitEvent).submitter;
 
       if (submitter instanceof HTMLElement) {
         const rawValue =
-          submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement
+          submitter instanceof HTMLButtonElement ||
+          submitter instanceof HTMLInputElement
             ? submitter.value
-            : submitter.getAttribute("value") ?? ""
+            : (submitter.getAttribute("value") ?? "");
 
-        const fallbackIntent = submitter.getAttribute("data-intent")
-        const normalized = (rawValue || fallbackIntent || "").toLowerCase()
+        const fallbackIntent = submitter.getAttribute("data-intent");
+        const normalized = (rawValue || fallbackIntent || "").toLowerCase();
 
         if (normalized === "sent" || normalized === "send") {
-          intent = "sent"
+          intent = "sent";
         } else if (normalized === "draft" || normalized === "save") {
-          intent = "draft"
+          intent = "draft";
         }
       }
     }
 
-    await handleSaveAssignment(intent)
-  }
+    await handleSaveAssignment(intent);
+  };
 
   const handleSendAssignment = async (assignment: TeacherAssignmentSummary) => {
     try {
-      setAssignmentActionId(assignment.id)
-      await dbManager.updateAssignmentStatus(assignment.id, "sent")
+      setAssignmentActionId(assignment.id);
+      await dbManager.updateAssignmentStatus(assignment.id, "sent");
       toast({
         title: "Assignment sent",
         description: "Students can now view and submit this assignment.",
-      })
-      void loadAssignments()
+      });
+      void loadAssignments();
     } catch (error) {
-      logger.error("Failed to send assignment", { error })
+      logger.error("Failed to send assignment", { error });
       toast({
         variant: "destructive",
         title: "Unable to send assignment",
-        description: error instanceof Error ? error.message : "Please try again.",
-      })
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
     } finally {
-      setAssignmentActionId(null)
+      setAssignmentActionId(null);
     }
-  }
+  };
 
-  const handleDeleteAssignment = async (assignment: TeacherAssignmentSummary) => {
+  const handleDeleteAssignment = async (
+    assignment: TeacherAssignmentSummary,
+  ) => {
     if (typeof window !== "undefined") {
-      const confirmed = window.confirm(`Delete ${assignment.title}? This cannot be undone.`)
+      const confirmed = window.confirm(
+        `Delete ${assignment.title}? This cannot be undone.`,
+      );
       if (!confirmed) {
-        return
+        return;
       }
     }
 
     try {
-      setDeletingAssignmentId(assignment.id)
-      await dbManager.deleteAssignment(assignment.id)
+      setDeletingAssignmentId(assignment.id);
+      await dbManager.deleteAssignment(assignment.id);
       toast({
         title: "Assignment deleted",
         description: "The assignment has been removed from your dashboard.",
-      })
-      void loadAssignments()
+      });
+      void loadAssignments();
     } catch (error) {
-      logger.error("Failed to delete assignment", { error })
+      logger.error("Failed to delete assignment", { error });
       toast({
         variant: "destructive",
         title: "Unable to delete assignment",
-        description: error instanceof Error ? error.message : "Please try again.",
-      })
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
     } finally {
-      setDeletingAssignmentId(null)
+      setDeletingAssignmentId(null);
     }
-  }
+  };
 
-  const handleViewSubmissions = async (assignment: TeacherAssignmentSummary) => {
-    setSelectedAssignment(assignment)
-    setGradingDrafts(buildInitialGradingDrafts(assignment.submissions))
-    setShowSubmissions(true)
-    setIsLoadingSubmissions(true)
-    setAssignmentRoster({})
+  const handleViewSubmissions = async (
+    assignment: TeacherAssignmentSummary,
+  ) => {
+    setSelectedAssignment(assignment);
+    setGradingDrafts(buildInitialGradingDrafts(assignment.submissions));
+    setShowSubmissions(true);
+    setIsLoadingSubmissions(true);
+    setAssignmentRoster({});
 
     try {
-      const initialRoster = await resolveAssignmentRoster(assignment)
-      setAssignmentRoster(initialRoster)
+      const initialRoster = await resolveAssignmentRoster(assignment);
+      setAssignmentRoster(initialRoster);
 
       const records = await dbManager.getAssignments({
         teacherId: teacher.id,
         assignmentId: assignment.id,
-      })
+      });
 
-      const latest = records.find((record) => String(record.id) === assignment.id)
+      const latest = records.find(
+        (record) => String(record.id) === assignment.id,
+      );
 
       if (latest) {
-        const normalised = normaliseAssignmentRecord(latest)
-        setSelectedAssignment(normalised)
-        setGradingDrafts(buildInitialGradingDrafts(normalised.submissions))
-        const updatedRoster = await resolveAssignmentRoster(normalised)
-        setAssignmentRoster(updatedRoster)
+        const normalised = normaliseAssignmentRecord(latest);
+        setSelectedAssignment(normalised);
+        setGradingDrafts(buildInitialGradingDrafts(normalised.submissions));
+        const updatedRoster = await resolveAssignmentRoster(normalised);
+        setAssignmentRoster(updatedRoster);
       }
     } catch (error) {
-      logger.error("Failed to load assignment submissions", { error })
+      logger.error("Failed to load assignment submissions", { error });
       toast({
         variant: "destructive",
         title: "Unable to load submissions",
         description: "Please try again shortly.",
-      })
+      });
     } finally {
-      setIsLoadingSubmissions(false)
+      setIsLoadingSubmissions(false);
     }
-  }
+  };
 
   const applyAssignmentScoreToMarksRecord = (
     studentId: string,
     score: number | null,
   ): MarksRecord | null => {
     if (score === null) {
-      const existing = marksData.find((entry) => entry.studentId === studentId)
-      return existing ?? null
+      const existing = marksData.find((entry) => entry.studentId === studentId);
+      return existing ?? null;
     }
 
-    let updatedRecord: MarksRecord | null = null
+    let updatedRecord: MarksRecord | null = null;
 
     setMarksData((prev) => {
       const updated = prev.map((student) => {
         if (student.studentId !== studentId) {
-          return student
+          return student;
         }
 
         const { normalized, caTotal, grandTotal } = calculateScoreTotals({
@@ -5541,7 +6423,7 @@ export function TeacherDashboard({
           ca2: student.secondCA,
           assignment: score,
           exam: student.exam,
-        })
+        });
 
         const recalculated: MarksRecord = {
           ...student,
@@ -5553,17 +6435,17 @@ export function TeacherDashboard({
           grandTotal,
           totalMarksObtained: grandTotal,
           grade: deriveGradeForTotals(grandTotal, student.totalMarksObtainable),
-        }
+        };
 
-        updatedRecord = recalculated
-        return recalculated
-      })
+        updatedRecord = recalculated;
+        return recalculated;
+      });
 
-      return calculatePositionsAndAverages(updated)
-    })
+      return calculatePositionsAndAverages(updated);
+    });
 
-    return updatedRecord
-  }
+    return updatedRecord;
+  };
 
   const syncAssignmentScoreToReportCard = useCallback(
     ({
@@ -5576,26 +6458,27 @@ export function TeacherDashboard({
       maximumScore,
       marksRecord,
     }: {
-      studentId: string
-      studentName?: string | null
-      className?: string | null
-      subject: string
-      score: number
-      grade: string | null
-      maximumScore: number
-      marksRecord?: MarksRecord | null
+      studentId: string;
+      studentName?: string | null;
+      className?: string | null;
+      subject: string;
+      score: number;
+      grade: string | null;
+      maximumScore: number;
+      marksRecord?: MarksRecord | null;
     }) => {
       try {
-        const store = readStudentMarksStore()
-        const timestamp = new Date().toISOString()
-        const normalizedTerm = normalizedTermLabel
-        const key = `${studentId}-${normalizedTerm}-${selectedSession}`
-        const previousRecord = store[key] ?? null
+        const store = readStudentMarksStore();
+        const timestamp = new Date().toISOString();
+        const normalizedTerm = normalizedTermLabel;
+        const key = `${studentId}-${normalizedTerm}-${selectedSession}`;
+        const previousRecord = store[key] ?? null;
 
-        const subjects = { ...(previousRecord?.subjects ?? {}) }
+        const subjects = { ...(previousRecord?.subjects ?? {}) };
         const baseline = subjects[subject] ?? {
           subject,
-          className: className ?? previousRecord?.className ?? selectedClass ?? "",
+          className:
+            className ?? previousRecord?.className ?? selectedClass ?? "",
           ca1: previousRecord?.subjects?.[subject]?.ca1 ?? 0,
           ca2: previousRecord?.subjects?.[subject]?.ca2 ?? 0,
           assignment: previousRecord?.subjects?.[subject]?.assignment ?? 0,
@@ -5605,7 +6488,8 @@ export function TeacherDashboard({
           grade: previousRecord?.subjects?.[subject]?.grade ?? "",
           remark: previousRecord?.subjects?.[subject]?.remark ?? "",
           position: previousRecord?.subjects?.[subject]?.position ?? null,
-          totalObtainable: previousRecord?.subjects?.[subject]?.totalObtainable ?? 100,
+          totalObtainable:
+            previousRecord?.subjects?.[subject]?.totalObtainable ?? 100,
           totalObtained:
             previousRecord?.subjects?.[subject]?.totalObtained ??
             previousRecord?.subjects?.[subject]?.total ??
@@ -5614,25 +6498,26 @@ export function TeacherDashboard({
           teacherId: previousRecord?.subjects?.[subject]?.teacherId,
           teacherName: previousRecord?.subjects?.[subject]?.teacherName,
           updatedAt: previousRecord?.subjects?.[subject]?.updatedAt,
-        }
+        };
 
         const { normalized, caTotal, grandTotal } = calculateScoreTotals({
           ca1: baseline.ca1,
           ca2: baseline.ca2,
           assignment: score,
           exam: baseline.exam,
-        })
+        });
         const subjectTotalObtainable =
-          typeof baseline.totalObtainable === "number" && baseline.totalObtainable > 0
+          typeof baseline.totalObtainable === "number" &&
+          baseline.totalObtainable > 0
             ? baseline.totalObtainable
             : defaultTotalMaximum > 0
               ? defaultTotalMaximum
-              : fallbackTotalMaximum
+              : fallbackTotalMaximum;
         const resolvedGrade =
           grade ??
           (maximumScore > 0
             ? deriveGradeFromScore((score / maximumScore) * 100)
-            : deriveGradeForTotals(grandTotal, subjectTotalObtainable))
+            : deriveGradeForTotals(grandTotal, subjectTotalObtainable));
 
         const updatedSubject: StoredSubjectRecord = {
           ...baseline,
@@ -5646,23 +6531,25 @@ export function TeacherDashboard({
           teacherId: teacher.id,
           teacherName: teacher.name,
           updatedAt: timestamp,
-        }
+        };
 
-        subjects[subject] = updatedSubject
+        subjects[subject] = updatedSubject;
 
-        const aggregatedSubjects = Object.values(subjects)
+        const aggregatedSubjects = Object.values(subjects);
         const totalMarksObtainable = aggregatedSubjects.reduce(
           (sum, subjectRecord) => sum + (subjectRecord.totalObtainable ?? 100),
           0,
-        )
+        );
         const totalMarksObtained = aggregatedSubjects.reduce(
           (sum, subjectRecord) => sum + (subjectRecord.total ?? 0),
           0,
-        )
+        );
         const overallAverage =
           totalMarksObtainable > 0
-            ? Number(((totalMarksObtained / totalMarksObtainable) * 100).toFixed(2))
-            : undefined
+            ? Number(
+                ((totalMarksObtained / totalMarksObtainable) * 100).toFixed(2),
+              )
+            : undefined;
 
         const mergedRecord: StoredStudentMarkRecord = {
           studentId,
@@ -5671,33 +6558,39 @@ export function TeacherDashboard({
             marksRecord?.studentName ??
             previousRecord?.studentName ??
             `Student ${studentId}`,
-          className: className ?? previousRecord?.className ?? selectedClass ?? "",
+          className:
+            className ?? previousRecord?.className ?? selectedClass ?? "",
           term: normalizedTerm,
           session: selectedSession,
           subjects,
           lastUpdated: timestamp,
-          status: additionalData.studentStatus[studentId] ?? previousRecord?.status,
-          numberInClass: additionalData.termInfo.numberInClass || previousRecord?.numberInClass,
+          status:
+            additionalData.studentStatus[studentId] ?? previousRecord?.status,
+          numberInClass:
+            additionalData.termInfo.numberInClass ||
+            previousRecord?.numberInClass,
           overallAverage: overallAverage ?? previousRecord?.overallAverage,
           overallPosition: previousRecord?.overallPosition ?? null,
-        }
+        };
 
-        store[key] = mergedRecord
+        store[key] = mergedRecord;
 
-        let reportCards: ReportCardRecord[] = []
+        let reportCards: ReportCardRecord[] = [];
         try {
-          const rawReportCards = safeStorage.getItem("reportCards")
+          const rawReportCards = safeStorage.getItem("reportCards");
           if (rawReportCards) {
-            const parsed = JSON.parse(rawReportCards)
+            const parsed = JSON.parse(rawReportCards);
             if (Array.isArray(parsed)) {
-              reportCards = parsed as ReportCardRecord[]
+              reportCards = parsed as ReportCardRecord[];
             }
           }
         } catch (parseError) {
-          logger.warn("Unable to parse stored report cards", parseError)
+          logger.warn("Unable to parse stored report cards", parseError);
         }
 
-        const subjectRecords: ReportCardSubjectRecord[] = Object.values(subjects).map((subjectRecord) => ({
+        const subjectRecords: ReportCardSubjectRecord[] = Object.values(
+          subjects,
+        ).map((subjectRecord) => ({
           name: subjectRecord.subject,
           ca1: subjectRecord.ca1,
           ca2: subjectRecord.ca2,
@@ -5707,35 +6600,40 @@ export function TeacherDashboard({
           grade: subjectRecord.grade,
           remark: subjectRecord.remark,
           position: subjectRecord.position ?? null,
-        }))
+        }));
 
         const existingIndex = reportCards.findIndex(
           (record) =>
             record.studentId === studentId &&
             record.term === normalizedTerm &&
             record.session === selectedSession,
-        )
+        );
 
-        const existingRecord = existingIndex >= 0 ? reportCards[existingIndex] : null
+        const existingRecord =
+          existingIndex >= 0 ? reportCards[existingIndex] : null;
         const reportCardId =
-          existingRecord?.id ?? `report_${studentId}_${normalizedTerm}_${selectedSession}`
-        const headTeacherRemark = existingRecord?.headTeacherRemark ?? null
-        const studentRemarkEntriesForRecord = getStudentRemarkEntries(studentId)
+          existingRecord?.id ??
+          `report_${studentId}_${normalizedTerm}_${selectedSession}`;
+        const headTeacherRemark = existingRecord?.headTeacherRemark ?? null;
+        const studentRemarkEntriesForRecord =
+          getStudentRemarkEntries(studentId);
         const classTeacherRemark =
           buildClassTeacherRemarkSummary(studentRemarkEntriesForRecord) ||
           marksRecord?.teacherRemark ||
           existingRecord?.classTeacherRemark ||
-          ""
+          "";
 
-        const aggregatedRaw = buildRawReportCardFromStoredRecord(mergedRecord)
+        const aggregatedRaw = buildRawReportCardFromStoredRecord(mergedRecord);
 
         const metadata =
-          existingRecord && typeof existingRecord.metadata === "object" && existingRecord.metadata !== null
+          existingRecord &&
+          typeof existingRecord.metadata === "object" &&
+          existingRecord.metadata !== null
             ? { ...(existingRecord.metadata as Record<string, unknown>) }
-            : {}
+            : {};
 
         if (aggregatedRaw) {
-          metadata.enhancedReportCard = aggregatedRaw
+          metadata.enhancedReportCard = aggregatedRaw;
         }
 
         const updatedReportCard: ReportCardRecord = {
@@ -5751,20 +6649,22 @@ export function TeacherDashboard({
           metadata,
           createdAt: existingRecord?.createdAt ?? timestamp,
           updatedAt: timestamp,
-        }
+        };
 
         if (existingIndex >= 0) {
-          reportCards[existingIndex] = updatedReportCard
+          reportCards[existingIndex] = updatedReportCard;
         } else {
-          reportCards.push(updatedReportCard)
+          reportCards.push(updatedReportCard);
         }
 
-        safeStorage.setItem(STUDENT_MARKS_STORAGE_KEY, JSON.stringify(store))
-        safeStorage.setItem("reportCards", JSON.stringify(reportCards))
-        emitMarksStoreUpdate(store)
-        dbManager.triggerEvent("reportCardUpdated", updatedReportCard)
+        safeStorage.setItem(STUDENT_MARKS_STORAGE_KEY, JSON.stringify(store));
+        safeStorage.setItem("reportCards", JSON.stringify(reportCards));
+        emitMarksStoreUpdate(store);
+        dbManager.triggerEvent("reportCardUpdated", updatedReportCard);
       } catch (error) {
-        logger.error("Failed to sync assignment grade to report card", { error })
+        logger.error("Failed to sync assignment grade to report card", {
+          error,
+        });
       }
     },
     [
@@ -5779,25 +6679,31 @@ export function TeacherDashboard({
       teacher.id,
       teacher.name,
     ],
-  )
+  );
 
-  const handleGradeSubmission = async (submission: AssignmentSubmissionRecord) => {
-    if (!selectedAssignment) return
+  const handleGradeSubmission = async (
+    submission: AssignmentSubmissionRecord,
+  ) => {
+    if (!selectedAssignment) return;
 
-    const assignmentMaxScore = selectedAssignment.maximumScore ?? assignmentMaximum
-    const draft = gradingDrafts[submission.id] ?? { score: "", comment: "" }
-    const trimmedComment = draft.comment.trim()
-    const trimmedScore = draft.score.trim()
-    const hasScore = trimmedScore.length > 0
-    const parsedScore = hasScore ? Number(trimmedScore) : null
+    const assignmentMaxScore =
+      selectedAssignment.maximumScore ?? assignmentMaximum;
+    const draft = gradingDrafts[submission.id] ?? { score: "", comment: "" };
+    const trimmedComment = draft.comment.trim();
+    const trimmedScore = draft.score.trim();
+    const hasScore = trimmedScore.length > 0;
+    const parsedScore = hasScore ? Number(trimmedScore) : null;
 
-    if (hasScore && (Number.isNaN(parsedScore) || parsedScore === null || parsedScore < 0)) {
+    if (
+      hasScore &&
+      (Number.isNaN(parsedScore) || parsedScore === null || parsedScore < 0)
+    ) {
       toast({
         variant: "destructive",
         title: "Invalid score",
         description: "Please enter a valid score or leave it blank.",
-      })
-      return
+      });
+      return;
     }
 
     if (parsedScore !== null && parsedScore > assignmentMaxScore) {
@@ -5805,33 +6711,42 @@ export function TeacherDashboard({
         variant: "destructive",
         title: "Score too high",
         description: `The maximum obtainable score is ${assignmentMaxScore}.`,
-      })
-      return
+      });
+      return;
     }
 
     try {
-      setGradingSubmissionId(submission.id)
-      const normalizedScore = parsedScore === null ? null : Math.round(parsedScore * 100) / 100
+      setGradingSubmissionId(submission.id);
+      const normalizedScore =
+        parsedScore === null ? null : Math.round(parsedScore * 100) / 100;
       const grade =
         normalizedScore === null
           ? null
-          : deriveGradeFromScore((normalizedScore / Math.max(assignmentMaxScore, 1)) * 100)
+          : deriveGradeFromScore(
+              (normalizedScore / Math.max(assignmentMaxScore, 1)) * 100,
+            );
 
-      const updatedSubmission = await dbManager.gradeAssignmentSubmission(selectedAssignment.id, submission.studentId, {
-        score: normalizedScore,
-        grade,
-        comment: trimmedComment || null,
-      })
+      const updatedSubmission = await dbManager.gradeAssignmentSubmission(
+        selectedAssignment.id,
+        submission.studentId,
+        {
+          score: normalizedScore,
+          grade,
+          comment: trimmedComment || null,
+        },
+      );
 
       setSelectedAssignment((prev) => {
-        if (!prev) return prev
+        if (!prev) return prev;
         return {
           ...prev,
           submissions: prev.submissions.map((entry) =>
-            entry.id === submission.id ? { ...entry, ...updatedSubmission } : entry,
+            entry.id === submission.id
+              ? { ...entry, ...updatedSubmission }
+              : entry,
           ),
-        }
-      })
+        };
+      });
 
       setGradingDrafts((prev) => ({
         ...prev,
@@ -5839,24 +6754,28 @@ export function TeacherDashboard({
           score: normalizedScore === null ? "" : String(normalizedScore),
           comment: trimmedComment,
         },
-      }))
+      }));
 
       if (normalizedScore !== null) {
         const updatedMarksRecord = applyAssignmentScoreToMarksRecord(
           submission.studentId,
           normalizedScore,
-        )
-        const rosterEntry = assignmentRoster[submission.studentId]
+        );
+        const rosterEntry = assignmentRoster[submission.studentId];
         syncAssignmentScoreToReportCard({
           studentId: submission.studentId,
-          studentName: rosterEntry?.name ?? updatedMarksRecord?.studentName ?? submission.studentId,
-          className: rosterEntry?.className ?? selectedAssignment.className ?? null,
+          studentName:
+            rosterEntry?.name ??
+            updatedMarksRecord?.studentName ??
+            submission.studentId,
+          className:
+            rosterEntry?.className ?? selectedAssignment.className ?? null,
           subject: selectedAssignment.subject,
           score: normalizedScore,
           grade,
           maximumScore: assignmentMaxScore,
           marksRecord: updatedMarksRecord ?? undefined,
-        })
+        });
       }
 
       toast({
@@ -5865,20 +6784,21 @@ export function TeacherDashboard({
           normalizedScore === null
             ? "Feedback saved without a score."
             : `Marked ${normalizedScore}/${assignmentMaxScore}${grade ? ` (${grade})` : ""}.`,
-      })
+      });
 
-      void loadAssignments()
+      void loadAssignments();
     } catch (error) {
-      logger.error("Failed to grade assignment submission", { error })
+      logger.error("Failed to grade assignment submission", { error });
       toast({
         variant: "destructive",
         title: "Unable to save score",
-        description: error instanceof Error ? error.message : "Please try again.",
-      })
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
     } finally {
-      setGradingSubmissionId(null)
+      setGradingSubmissionId(null);
     }
-  }
+  };
 
   const handleSaveAcademicRecords = async () => {
     try {
@@ -5886,9 +6806,10 @@ export function TeacherDashboard({
         toast({
           variant: "destructive",
           title: "Selection required",
-          description: "Choose both a class and subject before saving academic entries.",
-        })
-        return
+          description:
+            "Choose both a class and subject before saving academic entries.",
+        });
+        return;
       }
 
       if (!marksData.length) {
@@ -5896,30 +6817,32 @@ export function TeacherDashboard({
           variant: "destructive",
           title: "No marks recorded",
           description: "Add student scores before saving academic entries.",
-        })
-        return
+        });
+        return;
       }
 
-      setIsSavingAcademicRecords(true)
-      await Promise.resolve(persistAcademicMarksToStorage())
+      setIsSavingAcademicRecords(true);
+      await Promise.resolve(persistAcademicMarksToStorage());
 
       toast({
         title: "Academic entries saved",
-        description: "Marks and subject remarks have been stored for the selected students.",
-      })
+        description:
+          "Marks and subject remarks have been stored for the selected students.",
+      });
 
-      loadAdditionalData()
+      loadAdditionalData();
     } catch (error) {
-      logger.error("Error saving academic entries", { error })
+      logger.error("Error saving academic entries", { error });
       toast({
         variant: "destructive",
         title: "Failed to save academic entries",
-        description: "Please try again or contact the administrator if the issue persists.",
-      })
+        description:
+          "Please try again or contact the administrator if the issue persists.",
+      });
     } finally {
-      setIsSavingAcademicRecords(false)
+      setIsSavingAcademicRecords(false);
     }
-  }
+  };
 
   const handleSaveBehavioralAssessment = async () => {
     try {
@@ -5927,36 +6850,42 @@ export function TeacherDashboard({
         toast({
           variant: "destructive",
           title: "Selection required",
-          description: "Please choose both a class and a subject before saving assessments.",
-        })
-        return
+          description:
+            "Please choose both a class and a subject before saving assessments.",
+        });
+        return;
       }
 
-      const timestamp = new Date().toISOString()
-      const termLabel = normalizedTermLabel
-      const existingData = JSON.parse(safeStorage.getItem("behavioralAssessments") || "{}") as Record<string, unknown>
+      const timestamp = new Date().toISOString();
+      const termLabel = normalizedTermLabel;
+      const existingData = JSON.parse(
+        safeStorage.getItem("behavioralAssessments") || "{}",
+      ) as Record<string, unknown>;
 
       marksData.forEach((student) => {
-        const studentKey = `${student.studentId}-${termLabel}-${selectedSession}`
+        const studentKey = `${student.studentId}-${termLabel}-${selectedSession}`;
         const storedAffective =
-          additionalData.affectiveDomain[student.studentId] ?? createBehavioralRecordSkeleton(AFFECTIVE_TRAITS)
+          additionalData.affectiveDomain[student.studentId] ??
+          createBehavioralRecordSkeleton(AFFECTIVE_TRAITS);
         const storedPsychomotor =
           additionalData.psychomotorDomain[student.studentId] ??
-          createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS)
+          createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS);
 
-        const affectiveEntries: Record<string, boolean> = {}
+        const affectiveEntries: Record<string, boolean> = {};
         AFFECTIVE_TRAITS.forEach(({ key }) => {
-          const canonicalKey = normalizeBehavioralDomainKey("affective", key) ?? key
-          const value = storedAffective[canonicalKey]
-          affectiveEntries[canonicalKey] = Boolean(value)
-        })
+          const canonicalKey =
+            normalizeBehavioralDomainKey("affective", key) ?? key;
+          const value = storedAffective[canonicalKey];
+          affectiveEntries[canonicalKey] = Boolean(value);
+        });
 
-        const psychomotorEntries: Record<string, boolean> = {}
+        const psychomotorEntries: Record<string, boolean> = {};
         PSYCHOMOTOR_SKILLS.forEach(({ key }) => {
-          const canonicalKey = normalizeBehavioralDomainKey("psychomotor", key) ?? key
-          const value = storedPsychomotor[canonicalKey]
-          psychomotorEntries[canonicalKey] = Boolean(value)
-        })
+          const canonicalKey =
+            normalizeBehavioralDomainKey("psychomotor", key) ?? key;
+          const value = storedPsychomotor[canonicalKey];
+          psychomotorEntries[canonicalKey] = Boolean(value);
+        });
 
         existingData[studentKey] = {
           studentId: student.studentId,
@@ -5969,27 +6898,32 @@ export function TeacherDashboard({
           psychomotorDomain: psychomotorEntries,
           teacherId: teacher.id,
           timestamp,
-        }
-      })
+        };
+      });
 
-      safeStorage.setItem("behavioralAssessments", JSON.stringify(existingData))
+      safeStorage.setItem(
+        "behavioralAssessments",
+        JSON.stringify(existingData),
+      );
 
-      persistAcademicMarksToStorage()
+      persistAcademicMarksToStorage();
 
       toast({
         title: "Behavioral assessment saved",
-        description: "Affective and psychomotor records have been updated for the selected students.",
-      })
-      loadAdditionalData()
+        description:
+          "Affective and psychomotor records have been updated for the selected students.",
+      });
+      loadAdditionalData();
     } catch (error) {
-      logger.error("Error saving behavioral assessment", { error })
+      logger.error("Error saving behavioral assessment", { error });
       toast({
         variant: "destructive",
         title: "Failed to save assessment",
-        description: "Please try again or contact the administrator if the issue persists.",
-      })
+        description:
+          "Please try again or contact the administrator if the issue persists.",
+      });
     }
-  }
+  };
 
   const handleSaveAttendanceRecords = async () => {
     try {
@@ -5997,36 +6931,45 @@ export function TeacherDashboard({
         toast({
           variant: "destructive",
           title: "Selection required",
-          description: "Please choose both a class and a subject before saving attendance records.",
-        })
-        return
+          description:
+            "Please choose both a class and a subject before saving attendance records.",
+        });
+        return;
       }
 
-      const timestamp = new Date().toISOString()
-      const termLabel = normalizedTermLabel
-      const existingData = JSON.parse(safeStorage.getItem("attendancePositions") || "{}") as Record<string, unknown>
+      const timestamp = new Date().toISOString();
+      const termLabel = normalizedTermLabel;
+      const existingData = JSON.parse(
+        safeStorage.getItem("attendancePositions") || "{}",
+      ) as Record<string, unknown>;
       const normalizedTermInfo = {
         numberInClass: additionalData.termInfo.numberInClass.trim(),
         nextTermBegins: additionalData.termInfo.nextTermBegins,
         vacationEnds: additionalData.termInfo.vacationEnds,
         nextTermFees: additionalData.termInfo.nextTermFees,
         feesBalance: additionalData.termInfo.feesBalance,
-      }
+      };
 
       marksData.forEach((student) => {
-        const studentKey = `${student.studentId}-${termLabel}-${selectedSession}`
-        const attendanceStats = additionalData.attendance[student.studentId] ?? {
+        const studentKey = `${student.studentId}-${termLabel}-${selectedSession}`;
+        const attendanceStats = additionalData.attendance[
+          student.studentId
+        ] ?? {
           present: 0,
           absent: 0,
           total: 0,
-        }
+        };
 
-        const present = Number.isFinite(attendanceStats.present) ? attendanceStats.present : 0
-        const absent = Number.isFinite(attendanceStats.absent) ? attendanceStats.absent : 0
+        const present = Number.isFinite(attendanceStats.present)
+          ? attendanceStats.present
+          : 0;
+        const absent = Number.isFinite(attendanceStats.absent)
+          ? attendanceStats.absent
+          : 0;
         const total =
           Number.isFinite(attendanceStats.total) && attendanceStats.total > 0
             ? attendanceStats.total
-            : present + absent
+            : present + absent;
 
         existingData[studentKey] = {
           studentId: student.studentId,
@@ -6041,27 +6984,29 @@ export function TeacherDashboard({
           termInfo: normalizedTermInfo,
           teacherId: teacher.id,
           timestamp,
-        }
-      })
+        };
+      });
 
-      safeStorage.setItem("attendancePositions", JSON.stringify(existingData))
+      safeStorage.setItem("attendancePositions", JSON.stringify(existingData));
 
-      persistAcademicMarksToStorage()
+      persistAcademicMarksToStorage();
 
       toast({
         title: "Attendance saved",
-        description: "Attendance records have been updated for the selected students.",
-      })
-      loadAdditionalData()
+        description:
+          "Attendance records have been updated for the selected students.",
+      });
+      loadAdditionalData();
     } catch (error) {
-      logger.error("Error saving attendance/position", { error })
+      logger.error("Error saving attendance/position", { error });
       toast({
         variant: "destructive",
         title: "Failed to save attendance",
-        description: "Please try again or contact the administrator if the issue persists.",
-      })
+        description:
+          "Please try again or contact the administrator if the issue persists.",
+      });
     }
-  }
+  };
 
   const handleSaveClassTeacherRemarks = async () => {
     try {
@@ -6069,41 +7014,49 @@ export function TeacherDashboard({
         toast({
           variant: "destructive",
           title: "Selection required",
-          description: "Please choose both a class and a subject before saving teacher remarks.",
-        })
-        return
+          description:
+            "Please choose both a class and a subject before saving teacher remarks.",
+        });
+        return;
       }
 
-      const timestamp = new Date().toISOString()
-      const termLabel = normalizedTermLabel
-      const existingData = JSON.parse(safeStorage.getItem("classTeacherRemarks") || "{}") as Record<string, unknown>
+      const timestamp = new Date().toISOString();
+      const termLabel = normalizedTermLabel;
+      const existingData = JSON.parse(
+        safeStorage.getItem("classTeacherRemarks") || "{}",
+      ) as Record<string, unknown>;
 
       marksData.forEach((student) => {
-        const studentKey = `${student.studentId}-${termLabel}-${selectedSession}`
-        const remarkEntries = getStudentRemarkEntries(student.studentId)
-        const remarkSummary = buildClassTeacherRemarkSummary(remarkEntries)
+        const studentKey = `${student.studentId}-${termLabel}-${selectedSession}`;
+        const remarkEntries = getStudentRemarkEntries(student.studentId);
+        const remarkSummary = buildClassTeacherRemarkSummary(remarkEntries);
         const remarksBySubject = remarkEntries.reduce(
           (
             acc: Record<
               string,
               {
-                label: string
-                remark: ClassTeacherRemarkValue
+                label: string;
+                remark: ClassTeacherRemarkValue;
               }
             >,
             entry,
           ) => {
-            const subjectOption = subjectOptionByKey.get(entry.subjectKey)
-            const label = subjectOption?.subject ?? (entry.subjectKey === "general" ? "General" : entry.subjectKey)
-            acc[entry.subjectKey] = { label, remark: entry.remark }
-            return acc
+            const subjectOption = subjectOptionByKey.get(entry.subjectKey);
+            const label =
+              subjectOption?.subject ??
+              (entry.subjectKey === "general" ? "General" : entry.subjectKey);
+            acc[entry.subjectKey] = { label, remark: entry.remark };
+            return acc;
           },
           {},
-        )
-        const remarkAssignments = remarkEntries.reduce((acc, entry) => {
-          acc[entry.key] = { remark: entry.remark }
-          return acc
-        }, {} as Record<string, ClassTeacherRemarkEntry>)
+        );
+        const remarkAssignments = remarkEntries.reduce(
+          (acc, entry) => {
+            acc[entry.key] = { remark: entry.remark };
+            return acc;
+          },
+          {} as Record<string, ClassTeacherRemarkEntry>,
+        );
 
         existingData[studentKey] = {
           studentId: student.studentId,
@@ -6117,45 +7070,49 @@ export function TeacherDashboard({
           remarkAssignments,
           teacherId: teacher.id,
           timestamp,
-        }
-      })
+        };
+      });
 
-      safeStorage.setItem("classTeacherRemarks", JSON.stringify(existingData))
+      safeStorage.setItem("classTeacherRemarks", JSON.stringify(existingData));
 
-      persistAcademicMarksToStorage()
+      persistAcademicMarksToStorage();
 
       toast({
         title: "Remarks saved",
-        description: "Class teacher remarks have been updated for the selected students.",
-      })
-      loadAdditionalData()
+        description:
+          "Class teacher remarks have been updated for the selected students.",
+      });
+      loadAdditionalData();
     } catch (error) {
-      logger.error("Error saving class teacher remarks", { error })
+      logger.error("Error saving class teacher remarks", { error });
       toast({
         variant: "destructive",
         title: "Failed to save remarks",
-        description: "Please try again or contact the administrator if the issue persists.",
-      })
+        description:
+          "Please try again or contact the administrator if the issue persists.",
+      });
     }
-  }
+  };
 
-  const [isHardRefreshing, setIsHardRefreshing] = useState(false)
-  const isHardRefreshingRef = useRef(false)
+  const [isHardRefreshing, setIsHardRefreshing] = useState(false);
+  const isHardRefreshingRef = useRef(false);
 
   const handleHardRefresh = useCallback(async () => {
     if (isHardRefreshingRef.current) {
-      return
+      return;
     }
 
-    isHardRefreshingRef.current = true
-    setIsHardRefreshing(true)
+    isHardRefreshingRef.current = true;
+    setIsHardRefreshing(true);
 
     try {
       if (typeof onRefreshAssignments === "function") {
         try {
-          await onRefreshAssignments()
+          await onRefreshAssignments();
         } catch (callbackError) {
-          logger.warn("Teacher assignment refresh callback failed", { error: callbackError })
+          logger.warn("Teacher assignment refresh callback failed", {
+            error: callbackError,
+          });
         }
       }
 
@@ -6165,35 +7122,37 @@ export function TeacherDashboard({
         loadAssignments(),
         loadExams(),
         loadTimetable(),
-      ])
+      ]);
 
       const failures = results.filter(
         (result) =>
           result.status === "rejected" ||
           (result.status === "fulfilled" && result.value === false),
-      )
+      );
 
       if (failures.length > 0) {
         failures.forEach((failure) => {
           logger.error("Teacher dashboard refresh task failed", {
             error: failure.status === "rejected" ? failure.reason : undefined,
-          })
-        })
+          });
+        });
         toast({
           variant: "destructive",
           title: "Refresh incomplete",
-          description: "Some teacher records could not be updated. Please try again shortly.",
-        })
-        return
+          description:
+            "Some teacher records could not be updated. Please try again shortly.",
+        });
+        return;
       }
 
       toast({
         title: "Dashboard updated",
-        description: "Your classes, subjects, and student lists are now up to date.",
-      })
+        description:
+          "Your classes, subjects, and student lists are now up to date.",
+      });
     } finally {
-      isHardRefreshingRef.current = false
-      setIsHardRefreshing(false)
+      isHardRefreshingRef.current = false;
+      setIsHardRefreshing(false);
     }
   }, [
     fetchAssignedSubjects,
@@ -6203,7 +7162,7 @@ export function TeacherDashboard({
     onRefreshAssignments,
     refreshTeacherStudents,
     toast,
-  ])
+  ]);
 
   return (
     <div className="space-y-6">
@@ -6223,7 +7182,7 @@ export function TeacherDashboard({
             <Button
               type="button"
               onClick={() => {
-                void handleHardRefresh()
+                void handleHardRefresh();
               }}
               disabled={isHardRefreshing}
               className="bg-white/10 text-white hover:bg-white/20"
@@ -6235,7 +7194,10 @@ export function TeacherDashboard({
               )}
               Hard Refresh
             </Button>
-            <TutorialLink href="https://www.youtube.com/watch?v=HkyVTxH2fIM" variant="inverse" />
+            <TutorialLink
+              href="https://www.youtube.com/watch?v=HkyVTxH2fIM"
+              variant="inverse"
+            />
           </div>
         </div>
       </div>
@@ -6268,7 +7230,8 @@ export function TeacherDashboard({
                 <div>
                   <p className="text-sm font-medium text-gray-500">Subjects</p>
                   <div className="mt-2 flex items-center gap-2 text-3xl font-semibold text-[#b29032]">
-                    {isTeacherSubjectsLoading && teacherSubjects.length === 0 ? (
+                    {isTeacherSubjectsLoading &&
+                    teacherSubjects.length === 0 ? (
                       <Loader2 className="h-6 w-6 animate-spin" />
                     ) : (
                       <span>{teacherSubjects.length}</span>
@@ -6391,10 +7354,15 @@ export function TeacherDashboard({
               </CardHeader>
               <CardContent>
                 {isContextLoading ? (
-                  <p className="text-sm text-gray-600">Loading your class assignments...</p>
+                  <p className="text-sm text-gray-600">
+                    Loading your class assignments...
+                  </p>
                 ) : teacherClasses.length === 0 ? (
                   <div className="space-y-2 text-sm text-gray-600">
-                    <p>{contextError ?? "You are not assigned to any class. Contact your administrator."}</p>
+                    <p>
+                      {contextError ??
+                        "You are not assigned to any class. Contact your administrator."}
+                    </p>
                     {onRefreshAssignments ? (
                       <Button
                         variant="outline"
@@ -6409,7 +7377,10 @@ export function TeacherDashboard({
                 ) : (
                   <div className="space-y-2">
                     {teacherClasses.map((classItem, index) => (
-                      <div key={classItem.id ?? index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                      <div
+                        key={classItem.id ?? index}
+                        className="flex justify-between items-center p-2 bg-gray-50 rounded"
+                      >
                         <span>{classItem.name}</span>
                         <Badge variant="outline">
                           {classItem.subjects.length > 0
@@ -6425,43 +7396,60 @@ export function TeacherDashboard({
 
             <ExamScheduleOverview
               role="teacher"
-                title="Upcoming Exams"
-                description="Next scheduled assessments across your assigned classes."
-                classNames={teacherClassNames}
-                classIds={teacherClassIds}
-                className="h-full"
-                emptyState="No upcoming exams scheduled for your classes."
+              title="Upcoming Exams"
+              description="Next scheduled assessments across your assigned classes."
+              classNames={teacherClassNames}
+              classIds={teacherClassIds}
+              className="h-full"
+              emptyState="No upcoming exams scheduled for your classes."
               limit={4}
             />
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-[#2d682d]">Assigned Students</CardTitle>
-                <CardDescription>Quick view of students linked to your classes</CardDescription>
+                <CardTitle className="text-[#2d682d]">
+                  Assigned Students
+                </CardTitle>
+                <CardDescription>
+                  Quick view of students linked to your classes
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {isTeacherStudentsLoading ? (
                   <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Loading your students...
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading your
+                    students...
                   </div>
                 ) : teacherStudentsError ? (
                   <p className="text-sm text-red-600">{teacherStudentsError}</p>
                 ) : teacherStudents.length === 0 ? (
                   <p className="text-sm text-gray-600">
-                    {teacherStudentsMessage ?? "No students found for your assigned classes yet."}
+                    {teacherStudentsMessage ??
+                      "No students found for your assigned classes yet."}
                   </p>
                 ) : (
                   <>
                     <div>
-                      <p className="text-2xl font-semibold text-[#2d682d]">{teacherStudents.length}</p>
-                      <p className="text-sm text-gray-600">Students across your assigned classes</p>
+                      <p className="text-2xl font-semibold text-[#2d682d]">
+                        {teacherStudents.length}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Students across your assigned classes
+                      </p>
                     </div>
                     <div className="space-y-2">
                       {teacherStudents.slice(0, 3).map((student) => (
-                        <div key={student.id} className="flex flex-col text-sm text-gray-700">
-                          <span className="font-medium text-gray-900">{student.name}</span>
+                        <div
+                          key={student.id}
+                          className="flex flex-col text-sm text-gray-700"
+                        >
+                          <span className="font-medium text-gray-900">
+                            {student.name}
+                          </span>
                           <span className="text-gray-600">
-                            {student.className ? student.className : "Class not set"}
+                            {student.className
+                              ? student.className
+                              : "Class not set"}
                           </span>
                         </div>
                       ))}
@@ -6500,13 +7488,17 @@ export function TeacherDashboard({
                   <div>
                     <h3 className="text-lg font-medium">{teacher.name}</h3>
                     <p className="text-gray-600">{teacher.email}</p>
-                    <p className="text-sm text-gray-500">Teacher ID: TCH{teacher.id}</p>
+                    <p className="text-sm text-gray-500">
+                      Teacher ID: TCH{teacher.id}
+                    </p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 pt-4">
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Subjects</label>
+                    <label className="text-sm font-medium text-gray-700">
+                      Subjects
+                    </label>
                     <div className="flex gap-1 mt-1">
                       {teacherSubjects.map((subject, index) => (
                         <Badge key={index} variant="secondary">
@@ -6516,7 +7508,9 @@ export function TeacherDashboard({
                     </div>
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Classes</label>
+                    <label className="text-sm font-medium text-gray-700">
+                      Classes
+                    </label>
                     <div className="flex gap-1 mt-1">
                       {teacherClasses.map((classItem, index) => (
                         <Badge key={classItem.id ?? index} variant="outline">
@@ -6531,9 +7525,12 @@ export function TeacherDashboard({
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle className="text-[#2d682d]">Digital Signature</CardTitle>
+              <CardTitle className="text-[#2d682d]">
+                Digital Signature
+              </CardTitle>
               <CardDescription>
-                Upload a clear scan of your handwritten signature to personalise report cards.
+                Upload a clear scan of your handwritten signature to personalise
+                report cards.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -6553,22 +7550,31 @@ export function TeacherDashboard({
                 </div>
                 <div className="space-y-2 text-sm text-gray-600">
                   <p>
-                    This signature appears in the <strong>Teacher&apos;s Signature</strong> section of every generated
-                    report card preview.
+                    This signature appears in the{" "}
+                    <strong>Teacher&apos;s Signature</strong> section of every
+                    generated report card preview.
                   </p>
                   {teacherSignature.fileName ? (
                     <div className="rounded-md border border-dashed border-[#2d682d]/30 bg-[#f8faf8] p-3 text-xs text-gray-600">
                       <p>
-                        <span className="font-semibold text-gray-700">File:</span> {teacherSignature.fileName}
+                        <span className="font-semibold text-gray-700">
+                          File:
+                        </span>{" "}
+                        {teacherSignature.fileName}
                       </p>
                       {teacherSignatureUploadedAtLabel ? (
                         <p>
-                          <span className="font-semibold text-gray-700">Uploaded:</span> {teacherSignatureUploadedAtLabel}
+                          <span className="font-semibold text-gray-700">
+                            Uploaded:
+                          </span>{" "}
+                          {teacherSignatureUploadedAtLabel}
                         </p>
                       ) : null}
                     </div>
                   ) : (
-                    <p className="text-xs text-gray-500">Accepted formats: PNG, JPG or SVG up to 1.5MB.</p>
+                    <p className="text-xs text-gray-500">
+                      Accepted formats: PNG, JPG or SVG up to 1.5MB.
+                    </p>
                   )}
                 </div>
               </div>
@@ -6620,16 +7626,26 @@ export function TeacherDashboard({
         <TabsContent value="marks" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-[#2d682d]">Enter Student Marks & Report Card Details</CardTitle>
-              <CardDescription>Enter comprehensive assessment data that will appear on report cards</CardDescription>
+              <CardTitle className="text-[#2d682d]">
+                Enter Student Marks & Report Card Details
+              </CardTitle>
+              <CardDescription>
+                Enter comprehensive assessment data that will appear on report
+                cards
+              </CardDescription>
               {teacherSubjectsError ? (
                 <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                   {teacherSubjectsError}
                 </div>
               ) : hasCompletedSubjectFetch && !hasAvailableSubjects ? (
                 <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  <p className="font-semibold">No subjects available for marking.</p>
-                  <p>Please contact the admin to assign subjects before entering marks.</p>
+                  <p className="font-semibold">
+                    No subjects available for marking.
+                  </p>
+                  <p>
+                    Please contact the admin to assign subjects before entering
+                    marks.
+                  </p>
                 </div>
               ) : null}
               {selectedClass && selectedSubject && (
@@ -6646,14 +7662,21 @@ export function TeacherDashboard({
                     }
                     className="text-sm"
                   >
-                    Status: {currentStatus.status.charAt(0).toUpperCase() + currentStatus.status.slice(1)}
+                    Status:{" "}
+                    {currentStatus.status.charAt(0).toUpperCase() +
+                      currentStatus.status.slice(1)}
                   </Badge>
-                  {currentStatus.status === "revoked" && currentStatus.message && (
-                    <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                      <p className="text-sm text-red-700 font-medium">Admin Feedback:</p>
-                      <p className="text-sm text-red-600">{currentStatus.message}</p>
-                    </div>
-                  )}
+                  {currentStatus.status === "revoked" &&
+                    currentStatus.message && (
+                      <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-sm text-red-700 font-medium">
+                          Admin Feedback:
+                        </p>
+                        <p className="text-sm text-red-600">
+                          {currentStatus.message}
+                        </p>
+                      </div>
+                    )}
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button
                       variant="outline"
@@ -6730,11 +7753,16 @@ export function TeacherDashboard({
                       <SelectContent>
                         {noClassesAssigned ? (
                           <SelectItem value="__no_classes__" disabled>
-                            {isContextLoading ? "Loading..." : "No classes available"}
+                            {isContextLoading
+                              ? "Loading..."
+                              : "No classes available"}
                           </SelectItem>
                         ) : (
                           teacherClasses.map((classItem) => (
-                            <SelectItem key={`${classItem.id}-${classItem.name}`} value={classItem.name}>
+                            <SelectItem
+                              key={`${classItem.id}-${classItem.name}`}
+                              value={classItem.name}
+                            >
                               {classItem.name}
                             </SelectItem>
                           ))
@@ -6743,7 +7771,8 @@ export function TeacherDashboard({
                     </Select>
                     {noClassesAssigned && !isContextLoading ? (
                       <p className="mt-2 text-sm text-gray-600">
-                        {contextError ?? "You are not assigned to any class. Contact your administrator."}
+                        {contextError ??
+                          "You are not assigned to any class. Contact your administrator."}
                       </p>
                     ) : null}
                   </div>
@@ -6785,17 +7814,22 @@ export function TeacherDashboard({
                       size="sm"
                       className="mt-2 h-8 justify-start px-2 text-xs text-[#2d682d] hover:bg-[#2d682d]/10"
                       onClick={() => setIsSubjectSwitcherOpen(true)}
-                      disabled={isSubjectSelectDisabled || !hasAvailableSubjects}
+                      disabled={
+                        isSubjectSelectDisabled || !hasAvailableSubjects
+                      }
                     >
                       <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
                       Switch subject
                     </Button>
                     {isTeacherSubjectsLoading ? (
                       <p className="mt-2 flex items-center gap-2 text-xs text-gray-500">
-                        <Loader2 className="h-3 w-3 animate-spin" /> Updating your subject list…
+                        <Loader2 className="h-3 w-3 animate-spin" /> Updating
+                        your subject list…
                       </p>
                     ) : teacherSubjectsError ? (
-                      <p className="mt-2 text-xs text-amber-600">{teacherSubjectsError}</p>
+                      <p className="mt-2 text-xs text-amber-600">
+                        {teacherSubjectsError}
+                      </p>
                     ) : !hasAvailableSubjects && hasCompletedSubjectFetch ? (
                       <p className="mt-2 text-xs text-amber-600">
                         No subjects assigned. Please contact the admin.
@@ -6804,7 +7838,10 @@ export function TeacherDashboard({
                   </div>
                   <div>
                     <Label>Term</Label>
-                    <Select value={selectedTerm} onValueChange={setSelectedTerm}>
+                    <Select
+                      value={selectedTerm}
+                      onValueChange={setSelectedTerm}
+                    >
                       <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
@@ -6817,7 +7854,10 @@ export function TeacherDashboard({
                   </div>
                   <div>
                     <Label>Session</Label>
-                    <Select value={selectedSession} onValueChange={setSelectedSession}>
+                    <Select
+                      value={selectedSession}
+                      onValueChange={setSelectedSession}
+                    >
                       <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
@@ -6915,17 +7955,23 @@ export function TeacherDashboard({
                             </TableHead>
                             {hasFirstTestColumn && (
                               <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                                {firstTestMaximum > 0 ? `${firstTestLabel} (${firstTestMaximum})` : firstTestLabel}
+                                {firstTestMaximum > 0
+                                  ? `${firstTestLabel} (${firstTestMaximum})`
+                                  : firstTestLabel}
                               </TableHead>
                             )}
                             {hasSecondTestColumn && (
                               <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                                {secondTestMaximum > 0 ? `${secondTestLabel} (${secondTestMaximum})` : secondTestLabel}
+                                {secondTestMaximum > 0
+                                  ? `${secondTestLabel} (${secondTestMaximum})`
+                                  : secondTestLabel}
                               </TableHead>
                             )}
                             {hasAssignmentColumn && (
                               <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                                {assignmentMaximum > 0 ? `${assignmentLabel} (${assignmentMaximum})` : assignmentLabel}
+                                {assignmentMaximum > 0
+                                  ? `${assignmentLabel} (${assignmentMaximum})`
+                                  : assignmentLabel}
                               </TableHead>
                             )}
                             {hasContinuousColumns && (
@@ -6937,7 +7983,9 @@ export function TeacherDashboard({
                             )}
                             {hasExamColumn && (
                               <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                                {examMaximum > 0 ? `${examLabel} (${examMaximum})` : examLabel}
+                                {examMaximum > 0
+                                  ? `${examLabel} (${examMaximum})`
+                                  : examLabel}
                               </TableHead>
                             )}
                             <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
@@ -6960,9 +8008,6 @@ export function TeacherDashboard({
                             <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
                               Grade
                             </TableHead>
-                            <TableHead className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                              Subject Remarks
-                            </TableHead>
                             <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
                               Preview
                             </TableHead>
@@ -6970,7 +8015,10 @@ export function TeacherDashboard({
                         </TableHeader>
                         <TableBody>
                           {marksData.map((student) => (
-                            <TableRow key={student.studentId} className="divide-x divide-gray-100">
+                            <TableRow
+                              key={student.studentId}
+                              className="divide-x divide-gray-100"
+                            >
                               <TableCell className="font-medium text-gray-800">
                                 {student.studentName}
                               </TableCell>
@@ -6981,10 +8029,17 @@ export function TeacherDashboard({
                                     max={firstTestMaximum || undefined}
                                     value={student.firstCA}
                                     onChange={(e) =>
-                                      handleMarksUpdate(student.studentId, "firstCA", Number.parseInt(e.target.value) || 0)
+                                      handleMarksUpdate(
+                                        student.studentId,
+                                        "firstCA",
+                                        Number.parseInt(e.target.value) || 0,
+                                      )
                                     }
                                     className="h-9 w-full text-xs"
-                                    disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                    disabled={
+                                      currentStatus.status === "pending" ||
+                                      currentStatus.status === "approved"
+                                    }
                                   />
                                 </TableCell>
                               )}
@@ -6995,10 +8050,17 @@ export function TeacherDashboard({
                                     max={secondTestMaximum || undefined}
                                     value={student.secondCA}
                                     onChange={(e) =>
-                                      handleMarksUpdate(student.studentId, "secondCA", Number.parseInt(e.target.value) || 0)
+                                      handleMarksUpdate(
+                                        student.studentId,
+                                        "secondCA",
+                                        Number.parseInt(e.target.value) || 0,
+                                      )
                                     }
                                     className="h-9 w-full text-xs"
-                                    disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                    disabled={
+                                      currentStatus.status === "pending" ||
+                                      currentStatus.status === "approved"
+                                    }
                                   />
                                 </TableCell>
                               )}
@@ -7016,7 +8078,10 @@ export function TeacherDashboard({
                                       )
                                     }
                                     className="h-9 w-full text-xs"
-                                    disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                    disabled={
+                                      currentStatus.status === "pending" ||
+                                      currentStatus.status === "approved"
+                                    }
                                   />
                                 </TableCell>
                               )}
@@ -7032,10 +8097,17 @@ export function TeacherDashboard({
                                     max={examMaximum || undefined}
                                     value={student.exam}
                                     onChange={(e) =>
-                                      handleMarksUpdate(student.studentId, "exam", Number.parseInt(e.target.value) || 0)
+                                      handleMarksUpdate(
+                                        student.studentId,
+                                        "exam",
+                                        Number.parseInt(e.target.value) || 0,
+                                      )
                                     }
                                     className="h-9 w-full text-xs"
-                                    disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                    disabled={
+                                      currentStatus.status === "pending" ||
+                                      currentStatus.status === "approved"
+                                    }
                                   />
                                 </TableCell>
                               )}
@@ -7054,7 +8126,10 @@ export function TeacherDashboard({
                                     )
                                   }
                                   className="h-9 w-full text-xs"
-                                  disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                  disabled={
+                                    currentStatus.status === "pending" ||
+                                    currentStatus.status === "approved"
+                                  }
                                 />
                               </TableCell>
                               <TableCell className="text-center font-semibold text-blue-600">
@@ -7069,25 +8144,16 @@ export function TeacherDashboard({
                               <TableCell className="text-center">
                                 <Badge
                                   variant={
-                                    student.grade === "A" ? "default" : student.grade === "F" ? "destructive" : "secondary"
+                                    student.grade === "A"
+                                      ? "default"
+                                      : student.grade === "F"
+                                        ? "destructive"
+                                        : "secondary"
                                   }
                                   className="text-xs"
                                 >
                                   {student.grade}
                                 </Badge>
-                              </TableCell>
-                              <TableCell className="min-w-[200px]">
-                                <RemarkChoiceGroup
-                                  idPrefix={`${student.studentId}-subject-remark`}
-                                  options={SUBJECT_REMARK_CHOICES}
-                                  value={student.teacherRemark}
-                                  onChange={(value) =>
-                                    handleMarksUpdate(student.studentId, "teacherRemark", value)
-                                  }
-                                  disabled={
-                                    currentStatus.status === "pending" || currentStatus.status === "approved"
-                                  }
-                                />
                               </TableCell>
                               <TableCell className="text-center">
                                 <Button
@@ -7107,12 +8173,17 @@ export function TeacherDashboard({
                     <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                       <Card>
                         <CardContent className="p-4">
-                          <div className="text-sm font-medium text-gray-600">Class Average</div>
+                          <div className="text-sm font-medium text-gray-600">
+                            Class Average
+                          </div>
                           <div className="text-2xl font-bold text-[#2d682d]">
                             {marksData.length > 0
                               ? Math.round(
-                                  marksData.reduce((sum, student) => sum + student.averageScore, 0) /
-                                    marksData.length,
+                                  marksData.reduce(
+                                    (sum, student) =>
+                                      sum + student.averageScore,
+                                    0,
+                                  ) / marksData.length,
                                 )
                               : 0}
                             %
@@ -7121,27 +8192,40 @@ export function TeacherDashboard({
                       </Card>
                       <Card>
                         <CardContent className="p-4">
-                          <div className="text-sm font-medium text-gray-600">Highest Score</div>
+                          <div className="text-sm font-medium text-gray-600">
+                            Highest Score
+                          </div>
                           <div className="text-2xl font-bold text-[#b29032]">
-                            {marksData.length > 0 ? Math.max(...marksData.map((s) => s.grandTotal)) : 0}
+                            {marksData.length > 0
+                              ? Math.max(...marksData.map((s) => s.grandTotal))
+                              : 0}
                           </div>
                         </CardContent>
                       </Card>
                       <Card>
                         <CardContent className="p-4">
-                          <div className="text-sm font-medium text-gray-600">Lowest Score</div>
+                          <div className="text-sm font-medium text-gray-600">
+                            Lowest Score
+                          </div>
                           <div className="text-2xl font-bold text-red-600">
-                            {marksData.length > 0 ? Math.min(...marksData.map((s) => s.grandTotal)) : 0}
+                            {marksData.length > 0
+                              ? Math.min(...marksData.map((s) => s.grandTotal))
+                              : 0}
                           </div>
                         </CardContent>
                       </Card>
                       <Card>
                         <CardContent className="p-4">
-                          <div className="text-sm font-medium text-gray-600">Pass Rate</div>
+                          <div className="text-sm font-medium text-gray-600">
+                            Pass Rate
+                          </div>
                           <div className="text-2xl font-bold text-green-600">
                             {marksData.length > 0
                               ? Math.round(
-                                  (marksData.filter((s) => s.grade !== "F").length / marksData.length) * 100,
+                                  (marksData.filter((s) => s.grade !== "F")
+                                    .length /
+                                    marksData.length) *
+                                    100,
                                 )
                               : 0}
                             %
@@ -7153,9 +8237,12 @@ export function TeacherDashboard({
                       <Card className="mt-4">
                         <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                           <div>
-                            <CardTitle className="text-sm text-[#2d682d]">Cumulative Snapshots</CardTitle>
+                            <CardTitle className="text-sm text-[#2d682d]">
+                              Cumulative Snapshots
+                            </CardTitle>
                             <CardDescription className="text-xs text-gray-500">
-                              These summaries are bundled with your submission to help admins and parents review progress.
+                              These summaries are bundled with your submission
+                              to help admins and parents review progress.
                             </CardDescription>
                           </div>
                           <Button
@@ -7175,24 +8262,35 @@ export function TeacherDashboard({
                         </CardHeader>
                         <CardContent className="space-y-3">
                           {marksData.map((student) => {
-                            const summary = cumulativeSummaries[String(student.studentId)]
+                            const summary =
+                              cumulativeSummaries[String(student.studentId)];
                             return (
                               <div
                                 key={student.studentId}
                                 className="flex flex-col gap-3 rounded-lg border border-dashed border-[#2d682d]/20 p-3 sm:flex-row sm:items-center sm:justify-between"
                               >
                                 <div>
-                                  <p className="text-sm font-semibold text-[#2d682d]">{student.studentName}</p>
-                                  <p className="text-xs text-gray-500">ID: {student.studentId}</p>
+                                  <p className="text-sm font-semibold text-[#2d682d]">
+                                    {student.studentName}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    ID: {student.studentId}
+                                  </p>
                                 </div>
                                 {summary ? (
                                   <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm">
-                                    <span className="font-medium text-[#2d682d]">{summary.average}% Avg</span>
-                                    <Badge variant="secondary" className="text-xs">
+                                    <span className="font-medium text-[#2d682d]">
+                                      {summary.average}% Avg
+                                    </span>
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-xs"
+                                    >
                                       {summary.grade}
                                     </Badge>
                                     <span className="text-gray-600">
-                                      Position {summary.position}/{summary.totalStudents}
+                                      Position {summary.position}/
+                                      {summary.totalStudents}
                                     </span>
                                   </div>
                                 ) : (
@@ -7206,7 +8304,7 @@ export function TeacherDashboard({
                                   </div>
                                 )}
                               </div>
-                            )
+                            );
                           })}
                         </CardContent>
                       </Card>
@@ -7218,9 +8316,12 @@ export function TeacherDashboard({
                       {marksData.map((student) => (
                         <Card key={student.studentId}>
                           <CardHeader className="pb-3">
-                            <CardTitle className="text-sm text-[#2d682d]">{student.studentName}</CardTitle>
+                            <CardTitle className="text-sm text-[#2d682d]">
+                              {student.studentName}
+                            </CardTitle>
                             <CardDescription className="text-xs text-gray-500">
-                              Provide affective and psychomotor ratings for this term.
+                              Provide affective and psychomotor ratings for this
+                              term.
                             </CardDescription>
                           </CardHeader>
                           <CardContent className="space-y-5">
@@ -7230,10 +8331,12 @@ export function TeacherDashboard({
                               </p>
                               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                 {AFFECTIVE_TRAITS.map(({ key, label }) => {
-                                  const fieldId = `affective-${student.studentId}-${key}`
+                                  const fieldId = `affective-${student.studentId}-${key}`;
                                   const checked = Boolean(
-                                    additionalData.affectiveDomain[student.studentId]?.[key],
-                                  )
+                                    additionalData.affectiveDomain[
+                                      student.studentId
+                                    ]?.[key],
+                                  );
                                   return (
                                     <div
                                       key={key}
@@ -7245,8 +8348,12 @@ export function TeacherDashboard({
                                         onCheckedChange={(nextValue) =>
                                           setAdditionalData((prev) => {
                                             const previous =
-                                              prev.affectiveDomain[student.studentId] ??
-                                              createEmptyBehavioralRecord(AFFECTIVE_TRAITS)
+                                              prev.affectiveDomain[
+                                                student.studentId
+                                              ] ??
+                                              createEmptyBehavioralRecord(
+                                                AFFECTIVE_TRAITS,
+                                              );
 
                                             return {
                                               ...prev,
@@ -7257,15 +8364,18 @@ export function TeacherDashboard({
                                                   [key]: nextValue === true,
                                                 },
                                               },
-                                            }
+                                            };
                                           })
                                         }
                                       />
-                                      <Label htmlFor={fieldId} className="text-xs font-medium text-gray-700">
+                                      <Label
+                                        htmlFor={fieldId}
+                                        className="text-xs font-medium text-gray-700"
+                                      >
                                         {label}
                                       </Label>
                                     </div>
-                                  )
+                                  );
                                 })}
                               </div>
                             </div>
@@ -7275,10 +8385,12 @@ export function TeacherDashboard({
                               </p>
                               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                 {PSYCHOMOTOR_SKILLS.map(({ key, label }) => {
-                                  const fieldId = `psychomotor-${student.studentId}-${key}`
+                                  const fieldId = `psychomotor-${student.studentId}-${key}`;
                                   const checked = Boolean(
-                                    additionalData.psychomotorDomain[student.studentId]?.[key],
-                                  )
+                                    additionalData.psychomotorDomain[
+                                      student.studentId
+                                    ]?.[key],
+                                  );
                                   return (
                                     <div
                                       key={key}
@@ -7290,8 +8402,12 @@ export function TeacherDashboard({
                                         onCheckedChange={(nextValue) =>
                                           setAdditionalData((prev) => {
                                             const previous =
-                                              prev.psychomotorDomain[student.studentId] ??
-                                              createEmptyBehavioralRecord(PSYCHOMOTOR_SKILLS)
+                                              prev.psychomotorDomain[
+                                                student.studentId
+                                              ] ??
+                                              createEmptyBehavioralRecord(
+                                                PSYCHOMOTOR_SKILLS,
+                                              );
 
                                             return {
                                               ...prev,
@@ -7302,15 +8418,18 @@ export function TeacherDashboard({
                                                   [key]: nextValue === true,
                                                 },
                                               },
-                                            }
+                                            };
                                           })
                                         }
                                       />
-                                      <Label htmlFor={fieldId} className="text-xs font-medium text-gray-700">
+                                      <Label
+                                        htmlFor={fieldId}
+                                        className="text-xs font-medium text-gray-700"
+                                      >
                                         {label}
                                       </Label>
                                     </div>
-                                  )
+                                  );
                                 })}
                               </div>
                             </div>
@@ -7333,24 +8452,40 @@ export function TeacherDashboard({
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                       <Card>
                         <CardHeader>
-                          <CardTitle className="text-sm">Attendance Record</CardTitle>
+                          <CardTitle className="text-sm">
+                            Attendance Record
+                          </CardTitle>
                           <CardDescription className="text-xs">
-                            These values are used to calculate attendance percentage.
+                            These values are used to calculate attendance
+                            percentage.
                           </CardDescription>
                         </CardHeader>
                         <CardContent>
                           {marksData.map((student) => {
-                            const stats = additionalData.attendance[student.studentId] ?? {
+                            const stats = additionalData.attendance[
+                              student.studentId
+                            ] ?? {
                               present: 0,
                               absent: 0,
                               total: 0,
-                            }
-                            const totalDays = stats.total && stats.total > 0 ? stats.total : stats.present + stats.absent
-                            const percentage = totalDays > 0 ? Math.round((stats.present / totalDays) * 100) : 0
+                            };
+                            const totalDays =
+                              stats.total && stats.total > 0
+                                ? stats.total
+                                : stats.present + stats.absent;
+                            const percentage =
+                              totalDays > 0
+                                ? Math.round((stats.present / totalDays) * 100)
+                                : 0;
 
                             return (
-                              <div key={student.studentId} className="mb-4 rounded-lg border p-3">
-                                <p className="font-medium text-sm mb-2">{student.studentName}</p>
+                              <div
+                                key={student.studentId}
+                                className="mb-4 rounded-lg border p-3"
+                              >
+                                <p className="font-medium text-sm mb-2">
+                                  {student.studentName}
+                                </p>
                                 <div className="grid grid-cols-3 gap-2">
                                   <div>
                                     <Label className="text-xs">Present</Label>
@@ -7360,21 +8495,27 @@ export function TeacherDashboard({
                                       value={stats.present}
                                       onChange={(e) =>
                                         setAdditionalData((prev) => {
-                                          const previous = prev.attendance[student.studentId] ?? {
+                                          const previous = prev.attendance[
+                                            student.studentId
+                                          ] ?? {
                                             present: 0,
                                             absent: 0,
                                             total: 0,
-                                          }
+                                          };
                                           return {
                                             ...prev,
                                             attendance: {
                                               ...prev.attendance,
                                               [student.studentId]: {
                                                 ...previous,
-                                                present: Number.parseInt(e.target.value, 10) || 0,
+                                                present:
+                                                  Number.parseInt(
+                                                    e.target.value,
+                                                    10,
+                                                  ) || 0,
                                               },
                                             },
-                                          }
+                                          };
                                         })
                                       }
                                       className="h-8 text-xs"
@@ -7388,49 +8529,63 @@ export function TeacherDashboard({
                                       value={stats.absent}
                                       onChange={(e) =>
                                         setAdditionalData((prev) => {
-                                          const previous = prev.attendance[student.studentId] ?? {
+                                          const previous = prev.attendance[
+                                            student.studentId
+                                          ] ?? {
                                             present: 0,
                                             absent: 0,
                                             total: 0,
-                                          }
+                                          };
                                           return {
                                             ...prev,
                                             attendance: {
                                               ...prev.attendance,
                                               [student.studentId]: {
                                                 ...previous,
-                                                absent: Number.parseInt(e.target.value, 10) || 0,
+                                                absent:
+                                                  Number.parseInt(
+                                                    e.target.value,
+                                                    10,
+                                                  ) || 0,
                                               },
                                             },
-                                          }
+                                          };
                                         })
                                       }
                                       className="h-8 text-xs"
                                     />
                                   </div>
                                   <div>
-                                    <Label className="text-xs">Total Days</Label>
+                                    <Label className="text-xs">
+                                      Total Days
+                                    </Label>
                                     <Input
                                       type="number"
                                       min="0"
                                       value={stats.total}
                                       onChange={(e) =>
                                         setAdditionalData((prev) => {
-                                          const previous = prev.attendance[student.studentId] ?? {
+                                          const previous = prev.attendance[
+                                            student.studentId
+                                          ] ?? {
                                             present: 0,
                                             absent: 0,
                                             total: 0,
-                                          }
+                                          };
                                           return {
                                             ...prev,
                                             attendance: {
                                               ...prev.attendance,
                                               [student.studentId]: {
                                                 ...previous,
-                                                total: Number.parseInt(e.target.value, 10) || 0,
+                                                total:
+                                                  Number.parseInt(
+                                                    e.target.value,
+                                                    10,
+                                                  ) || 0,
                                               },
                                             },
-                                          }
+                                          };
                                         })
                                       }
                                       className="h-8 text-xs"
@@ -7438,14 +8593,14 @@ export function TeacherDashboard({
                                   </div>
                                 </div>
                                 <p className="text-[11px] text-gray-500 mt-2">
-                                  Attendance: {percentage}% ({stats.present} / {totalDays || 0})
+                                  Attendance: {percentage}% ({stats.present} /{" "}
+                                  {totalDays || 0})
                                 </p>
                               </div>
-                            )
+                            );
                           })}
                         </CardContent>
                       </Card>
-
                     </div>
                     <div className="flex justify-end">
                       <Button
@@ -7461,10 +8616,93 @@ export function TeacherDashboard({
                   <TabsContent value="remarks" className="space-y-4">
                     <Card>
                       <CardHeader>
-                        <CardTitle className="text-sm">Class Teacher General Remarks</CardTitle>
+                        <CardTitle className="text-sm">
+                          Subject Remarks
+                        </CardTitle>
                         <CardDescription>
-                          Share a brief written comment for each student. The text you enter will appear on their
-                          report card.
+                          Assign quick subject remarks for{" "}
+                          <span className="font-semibold text-emerald-700">
+                            {selectedSubjectOption?.label ??
+                              (selectedSubject || "the selected subject")}
+                          </span>
+                          . These remarks mirror what appears in the academic
+                          marks table.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {marksData.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-muted-foreground/40 bg-muted/40 p-4 text-sm text-muted-foreground">
+                            {selectedSubject
+                              ? "No student records loaded for this subject yet. Save academic entries to begin."
+                              : "Select a subject above to start adding remarks."}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="space-y-3">
+                              {marksData.map((student) => (
+                                <div
+                                  key={student.studentId}
+                                  className="rounded-lg border border-emerald-100 bg-white p-3 shadow-sm"
+                                >
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-semibold text-slate-900">
+                                        {student.studentName}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        Select the remark that best fits{" "}
+                                        <span className="font-semibold text-slate-700">
+                                          {student.studentName}
+                                        </span>{" "}
+                                        in{" "}
+                                        <span className="font-semibold text-slate-700">
+                                          {selectedSubjectOption?.label ??
+                                            (selectedSubject || "this subject")}
+                                        </span>
+                                        .
+                                      </p>
+                                    </div>
+                                    <RemarkChoiceGroup
+                                      idPrefix={`${student.studentId}-subject-remark`}
+                                      options={SUBJECT_REMARK_CHOICES}
+                                      value={student.teacherRemark}
+                                      onChange={(value) =>
+                                        handleMarksUpdate(
+                                          student.studentId,
+                                          "teacherRemark",
+                                          value,
+                                        )
+                                      }
+                                      disabled={
+                                        currentStatus.status === "pending" ||
+                                        currentStatus.status === "approved"
+                                      }
+                                      className="flex flex-wrap gap-2 sm:justify-end"
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="mt-3 text-[11px] text-muted-foreground">
+                              Subject remarks are saved alongside the academic
+                              entries for{" "}
+                              {selectedSubjectOption?.label ??
+                                (selectedSubject || "this subject")}
+                              . Remember to save your academic records after
+                              updating remarks.
+                            </p>
+                          </>
+                        )}
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-sm">
+                          Class Teacher General Remarks
+                        </CardTitle>
+                        <CardDescription>
+                          Share a brief written comment for each student. The
+                          text you enter will appear on their report card.
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
@@ -7477,14 +8715,21 @@ export function TeacherDashboard({
                               <Select
                                 value={selectedSubjectKey || undefined}
                                 onValueChange={handleSelectSubject}
-                                disabled={isSubjectSelectDisabled || !hasRemarkSubjects}
+                                disabled={
+                                  isSubjectSelectDisabled || !hasRemarkSubjects
+                                }
                               >
                                 <SelectTrigger className="h-10">
-                                  <SelectValue placeholder={subjectSelectPlaceholder} />
+                                  <SelectValue
+                                    placeholder={subjectSelectPlaceholder}
+                                  />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {availableSubjectOptions.map((option) => (
-                                    <SelectItem key={option.key} value={option.key}>
+                                    <SelectItem
+                                      key={option.key}
+                                      value={option.key}
+                                    >
                                       {option.label}
                                     </SelectItem>
                                   ))}
@@ -7492,7 +8737,9 @@ export function TeacherDashboard({
                               </Select>
                               <p
                                 className={`text-[11px] ${
-                                  hasRemarkSubjects ? "text-muted-foreground" : "text-amber-600"
+                                  hasRemarkSubjects
+                                    ? "text-muted-foreground"
+                                    : "text-amber-600"
                                 }`}
                               >
                                 {hasRemarkSubjects
@@ -7510,17 +8757,25 @@ export function TeacherDashboard({
                                 disabled={isStudentSelectDisabledForRemarks}
                               >
                                 <SelectTrigger className="h-10">
-                                  <SelectValue placeholder={studentSelectPlaceholder} />
+                                  <SelectValue
+                                    placeholder={studentSelectPlaceholder}
+                                  />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {remarkStudentOptions.length > 0 ? (
                                     remarkStudentOptions.map((student) => (
-                                      <SelectItem key={student.studentId} value={student.studentId}>
+                                      <SelectItem
+                                        key={student.studentId}
+                                        value={student.studentId}
+                                      >
                                         {student.studentName}
                                       </SelectItem>
                                     ))
                                   ) : (
-                                    <SelectItem value="__no_students__" disabled>
+                                    <SelectItem
+                                      value="__no_students__"
+                                      disabled
+                                    >
                                       No students available
                                     </SelectItem>
                                   )}
@@ -7528,10 +8783,13 @@ export function TeacherDashboard({
                               </Select>
                               <p
                                 className={`text-[11px] ${
-                                  studentDropdownStatusMessage ? "text-amber-600" : "text-muted-foreground"
+                                  studentDropdownStatusMessage
+                                    ? "text-amber-600"
+                                    : "text-muted-foreground"
                                 }`}
                               >
-                                {studentDropdownStatusMessage ?? "Remarks are saved per student and subject."}
+                                {studentDropdownStatusMessage ??
+                                  "Remarks are saved per student and subject."}
                               </p>
                             </div>
                             <div className="space-y-2">
@@ -7539,13 +8797,17 @@ export function TeacherDashboard({
                                 Current status
                               </Label>
                               <div className="flex h-10 items-center justify-center rounded-md border border-dashed border-muted-foreground/40 bg-muted/30 px-3 text-xs font-semibold text-slate-600">
-                                {selectedRemarkStudent && selectedSubjectKey && selectedRemarkValue ? (
+                                {selectedRemarkStudent &&
+                                selectedSubjectKey &&
+                                selectedRemarkValue ? (
                                   <span
                                     className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 ${
-                                      currentRemarkOption?.badgeClass ?? "border-muted bg-muted text-slate-600"
+                                      currentRemarkOption?.badgeClass ??
+                                      "border-muted bg-muted text-slate-600"
                                     }`}
                                   >
-                                    {currentRemarkOption?.label ?? selectedRemarkValue}
+                                    {currentRemarkOption?.label ??
+                                      selectedRemarkValue}
                                   </span>
                                 ) : (
                                   <span className="text-xs font-normal text-muted-foreground">
@@ -7563,10 +8825,15 @@ export function TeacherDashboard({
                             {selectedSubjectKey && selectedRemarkStudent ? (
                               <>
                                 <p className="text-sm font-medium text-emerald-900">
-                                  Select the remark that best fits{' '}
-                                  <span className="font-semibold">{selectedRemarkStudent.studentName}</span> in{' '}
+                                  Select the remark that best fits{" "}
                                   <span className="font-semibold">
-                                    {selectedSubjectOption?.label ?? selectedSubject || "the selected subject"}
+                                    {selectedRemarkStudent.studentName}
+                                  </span>{" "}
+                                  in{" "}
+                                  <span className="font-semibold">
+                                    {selectedSubjectOption?.label ??
+                                      (selectedSubject ||
+                                        "the selected subject")}
                                   </span>
                                   .
                                 </p>
@@ -7593,7 +8860,8 @@ export function TeacherDashboard({
                                       : "Select a subject and student to assign a remark."}
                                   </p>
                                   <p className="text-xs text-emerald-700/80">
-                                    Remarks are color-coded for quick progress tracking.
+                                    Remarks are color-coded for quick progress
+                                    tracking.
                                   </p>
                                 </div>
                                 <Sparkles className="h-5 w-5 text-emerald-500" />
@@ -7602,7 +8870,9 @@ export function TeacherDashboard({
                           </div>
 
                           <div className="space-y-3">
-                            <h4 className="text-sm font-semibold text-slate-700">Saved remark overview</h4>
+                            <h4 className="text-sm font-semibold text-slate-700">
+                              Saved remark overview
+                            </h4>
                             {marksData.length === 0 ? (
                               <div className="rounded-lg border border-dashed border-muted-foreground/40 bg-muted/40 p-4 text-sm text-muted-foreground">
                                 Add students to begin capturing remarks.
@@ -7610,41 +8880,60 @@ export function TeacherDashboard({
                             ) : (
                               <div className="space-y-2">
                                 {marksData.map((student) => {
-                                  const remarkEntries = getStudentRemarkEntries(student.studentId)
-                                  const summary = buildClassTeacherRemarkSummary(remarkEntries)
+                                  const remarkEntries = getStudentRemarkEntries(
+                                    student.studentId,
+                                  );
+                                  const summary =
+                                    buildClassTeacherRemarkSummary(
+                                      remarkEntries,
+                                    );
                                   const activeRemarkEntry = selectedSubjectKey
-                                    ? remarkEntries.find((entry) => entry.subjectKey === selectedSubjectKey)
-                                    : undefined
+                                    ? remarkEntries.find(
+                                        (entry) =>
+                                          entry.subjectKey ===
+                                          selectedSubjectKey,
+                                      )
+                                    : undefined;
                                   const activeOption = activeRemarkEntry
-                                    ? CLASS_TEACHER_REMARK_OPTION_MAP[activeRemarkEntry.remark] ?? null
-                                    : null
+                                    ? (CLASS_TEACHER_REMARK_OPTION_MAP[
+                                        activeRemarkEntry.remark
+                                      ] ?? null)
+                                    : null;
                                   return (
                                     <div
                                       key={student.studentId}
                                       className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
                                     >
                                       <div>
-                                        <p className="text-sm font-semibold text-slate-900">{student.studentName}</p>
+                                        <p className="text-sm font-semibold text-slate-900">
+                                          {student.studentName}
+                                        </p>
                                         <p className="text-xs text-slate-500">
-                                          {summary ? summary : "No remarks saved yet."}
+                                          {summary
+                                            ? summary
+                                            : "No remarks saved yet."}
                                         </p>
                                       </div>
                                       {activeRemarkEntry ? (
                                         <span
                                           className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-semibold ${
-                                            activeOption?.badgeClass ?? "border-muted bg-muted text-slate-600"
+                                            activeOption?.badgeClass ??
+                                            "border-muted bg-muted text-slate-600"
                                           }`}
                                         >
                                           {`${
-                                            selectedSubjectOption?.label ?? selectedSubject || "Subject"
+                                            selectedSubjectOption?.label ??
+                                            (selectedSubject || "Subject")
                                           }: ${
                                             activeOption?.label ??
-                                            mapClassTeacherRemarkToSubjectRemark(activeRemarkEntry.remark)
+                                            mapClassTeacherRemarkToSubjectRemark(
+                                              activeRemarkEntry.remark,
+                                            )
                                           }`}
                                         </span>
                                       ) : null}
                                     </div>
-                                  )
+                                  );
                                 })}
                               </div>
                             )}
@@ -7674,9 +8963,14 @@ export function TeacherDashboard({
               <div className="flex justify-between items-center">
                 <div>
                   <CardTitle className="text-[#2d682d]">Assignments</CardTitle>
-                  <CardDescription>Manage assignments and view submissions</CardDescription>
+                  <CardDescription>
+                    Manage assignments and view submissions
+                  </CardDescription>
                 </div>
-                <Button onClick={openCreateAssignmentDialog} className="bg-[#2d682d] hover:bg-[#2d682d]/90">
+                <Button
+                  onClick={openCreateAssignmentDialog}
+                  className="bg-[#2d682d] hover:bg-[#2d682d]/90"
+                >
                   <Plus className="w-4 h-4 mr-2" />
                   Create Assignment
                 </Button>
@@ -7685,11 +8979,13 @@ export function TeacherDashboard({
             <CardContent>
               {isAssignmentsLoading ? (
                 <div className="flex items-center justify-center py-8 text-gray-500">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading assignments...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading
+                  assignments...
                 </div>
               ) : assignments.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
-                  No assignments created yet. Click "Create Assignment" to share work with your students.
+                  No assignments created yet. Click "Create Assignment" to share
+                  work with your students.
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -7703,7 +8999,9 @@ export function TeacherDashboard({
                         {assignmentInsights.activeAssignments}
                       </p>
                       <p className="mt-2 text-xs text-emerald-700/80">
-                        {assignmentInsights.draftCount} draft{assignmentInsights.draftCount === 1 ? "" : "s"} ready for later.
+                        {assignmentInsights.draftCount} draft
+                        {assignmentInsights.draftCount === 1 ? "" : "s"} ready
+                        for later.
                       </p>
                     </div>
                     <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
@@ -7714,7 +9012,10 @@ export function TeacherDashboard({
                       <p className="mt-2 text-2xl font-semibold text-blue-900">
                         {assignmentInsights.submissionRate}%
                       </p>
-                      <Progress value={assignmentInsights.submissionRate} className="mt-3 h-2 bg-blue-100" />
+                      <Progress
+                        value={assignmentInsights.submissionRate}
+                        className="mt-3 h-2 bg-blue-100"
+                      />
                       <p className="mt-2 text-xs text-blue-700/80">
                         {assignmentInsights.totalCapacity > 0
                           ? `${assignmentInsights.submissionCount} submissions from ${assignmentInsights.totalCapacity} expected.`
@@ -7741,7 +9042,9 @@ export function TeacherDashboard({
                         <Trophy className="h-4 w-4" />
                       </div>
                       <p className="mt-2 text-2xl font-semibold text-purple-900">
-                        {assignmentInsights.averageScore !== null ? assignmentInsights.averageScore : "--"}
+                        {assignmentInsights.averageScore !== null
+                          ? assignmentInsights.averageScore
+                          : "--"}
                       </p>
                       <p className="mt-2 text-xs text-purple-700/80">
                         Calculated from graded submissions so far.
@@ -7750,13 +9053,23 @@ export function TeacherDashboard({
                   </div>
 
                   {assignments.map((assignment) => {
-                    const submittedCount = assignment.submissions.filter((submission) =>
-                      ["submitted", "graded"].includes(submission.status),
-                    ).length
-                    const gradedCount = assignment.submissions.filter((submission) => submission.status === "graded").length
-                    const totalAssigned = assignment.assignedStudentIds.length || assignment.submissions.length
-                    const progress = totalAssigned > 0 ? Math.round((submittedCount / totalAssigned) * 100) : 0
-                    const statusMeta = ASSIGNMENT_STATUS_META[assignment.status] ?? ASSIGNMENT_STATUS_META.draft
+                    const submittedCount = assignment.submissions.filter(
+                      (submission) =>
+                        ["submitted", "graded"].includes(submission.status),
+                    ).length;
+                    const gradedCount = assignment.submissions.filter(
+                      (submission) => submission.status === "graded",
+                    ).length;
+                    const totalAssigned =
+                      assignment.assignedStudentIds.length ||
+                      assignment.submissions.length;
+                    const progress =
+                      totalAssigned > 0
+                        ? Math.round((submittedCount / totalAssigned) * 100)
+                        : 0;
+                    const statusMeta =
+                      ASSIGNMENT_STATUS_META[assignment.status] ??
+                      ASSIGNMENT_STATUS_META.draft;
 
                     return (
                       <div
@@ -7770,14 +9083,18 @@ export function TeacherDashboard({
                           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                             <div className="space-y-3">
                               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                                <Badge className={`${statusMeta.badgeClass} px-2 py-1 font-medium uppercase tracking-wide`}>
+                                <Badge
+                                  className={`${statusMeta.badgeClass} px-2 py-1 font-medium uppercase tracking-wide`}
+                                >
                                   {statusMeta.label}
                                 </Badge>
                                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">
-                                  <BookOpen className="h-3.5 w-3.5" /> {assignment.subject}
+                                  <BookOpen className="h-3.5 w-3.5" />{" "}
+                                  {assignment.subject}
                                 </span>
                                 <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-sky-700">
-                                  <Users className="h-3.5 w-3.5" /> {assignment.className}
+                                  <Users className="h-3.5 w-3.5" />{" "}
+                                  {assignment.className}
                                 </span>
                               </div>
                               <div className="space-y-1">
@@ -7786,7 +9103,8 @@ export function TeacherDashboard({
                                   <span>{assignment.title}</span>
                                 </div>
                                 <p className="text-sm text-muted-foreground line-clamp-2 md:max-w-2xl">
-                                  {assignment.description || "No description provided."}
+                                  {assignment.description ||
+                                    "No description provided."}
                                 </p>
                               </div>
                               <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
@@ -7794,15 +9112,19 @@ export function TeacherDashboard({
                                   <CalendarClock className="h-4 w-4 text-amber-500" />
                                   Due {formatExamDate(assignment.dueDate)}
                                 </span>
-                                <span className="text-slate-500">{describeDueDate(assignment.dueDate)}</span>
+                                <span className="text-slate-500">
+                                  {describeDueDate(assignment.dueDate)}
+                                </span>
                                 <span className="inline-flex items-center gap-1 font-medium text-slate-600">
                                   <Trophy className="h-3.5 w-3.5 text-purple-500" />
-                                  {assignment.maximumScore ?? assignmentMaximum} marks
+                                  {assignment.maximumScore ?? assignmentMaximum}{" "}
+                                  marks
                                 </span>
                                 {assignment.updatedAt ? (
                                   <span className="inline-flex items-center gap-1">
                                     <Clock className="h-3.5 w-3.5 text-slate-400" />
-                                    Updated {formatExamDate(assignment.updatedAt)}
+                                    Updated{" "}
+                                    {formatExamDate(assignment.updatedAt)}
                                   </span>
                                 ) : null}
                               </div>
@@ -7810,19 +9132,31 @@ export function TeacherDashboard({
                                 <button
                                   type="button"
                                   className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 transition hover:text-emerald-900"
-                                  onClick={() => handleDownloadAssignmentAttachment(assignment)}
+                                  onClick={() =>
+                                    handleDownloadAssignmentAttachment(
+                                      assignment,
+                                    )
+                                  }
                                 >
-                                  <Download className="h-3.5 w-3.5" /> {assignment.resourceName}
+                                  <Download className="h-3.5 w-3.5" />{" "}
+                                  {assignment.resourceName}
                                 </button>
                               ) : null}
                             </div>
                             <div className="flex flex-col items-start gap-3 rounded-xl bg-slate-50/70 p-4 text-sm md:items-end">
                               <div className="flex flex-wrap items-center gap-2 text-slate-600">
-                                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-                                  {submittedCount}/{totalAssigned || "--"} submitted
+                                <Badge
+                                  variant="outline"
+                                  className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                                >
+                                  {submittedCount}/{totalAssigned || "--"}{" "}
+                                  submitted
                                 </Badge>
                                 {gradedCount > 0 ? (
-                                  <Badge variant="outline" className="border-purple-200 bg-purple-50 text-purple-700">
+                                  <Badge
+                                    variant="outline"
+                                    className="border-purple-200 bg-purple-50 text-purple-700"
+                                  >
                                     {gradedCount} graded
                                   </Badge>
                                 ) : null}
@@ -7830,10 +9164,14 @@ export function TeacherDashboard({
                               <div className="h-2 w-40 overflow-hidden rounded-full bg-slate-200">
                                 <div
                                   className="h-full rounded-full bg-emerald-500 transition-all"
-                                  style={{ width: `${Math.min(100, progress)}%` }}
+                                  style={{
+                                    width: `${Math.min(100, progress)}%`,
+                                  }}
                                 />
                               </div>
-                              <p className="text-xs text-slate-500">Progress: {progress}%</p>
+                              <p className="text-xs text-slate-500">
+                                Progress: {progress}%
+                              </p>
                             </div>
                           </div>
 
@@ -7843,10 +9181,11 @@ export function TeacherDashboard({
                               variant="outline"
                               className="border-emerald-200 text-emerald-700 transition hover:bg-emerald-50"
                               onClick={() => {
-                                void handleViewSubmissions(assignment)
+                                void handleViewSubmissions(assignment);
                               }}
                             >
-                              <Users className="mr-1 h-4 w-4" /> View submissions
+                              <Users className="mr-1 h-4 w-4" /> View
+                              submissions
                             </Button>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -7854,12 +9193,16 @@ export function TeacherDashboard({
                                   size="sm"
                                   variant="outline"
                                   className="border-slate-200 text-slate-700 transition hover:bg-slate-100"
-                                  onClick={() => handlePreviewAssignment(assignment)}
+                                  onClick={() =>
+                                    handlePreviewAssignment(assignment)
+                                  }
                                 >
                                   <Eye className="mr-1 h-4 w-4" /> Preview
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent>Preview what students will see</TooltipContent>
+                              <TooltipContent>
+                                Preview what students will see
+                              </TooltipContent>
                             </Tooltip>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -7867,12 +9210,16 @@ export function TeacherDashboard({
                                   size="sm"
                                   variant="outline"
                                   className="border-slate-200 text-slate-700 transition hover:bg-slate-100"
-                                  onClick={() => handleEditAssignment(assignment)}
+                                  onClick={() =>
+                                    handleEditAssignment(assignment)
+                                  }
                                 >
                                   <Pencil className="mr-1 h-4 w-4" /> Edit
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent>Edit details or attachment</TooltipContent>
+                              <TooltipContent>
+                                Edit details or attachment
+                              </TooltipContent>
                             </Tooltip>
                             {assignment.status === "draft" ? (
                               <Button
@@ -7886,7 +9233,9 @@ export function TeacherDashboard({
                                 ) : (
                                   <Send className="mr-1 h-4 w-4" />
                                 )}
-                                {assignmentActionId === assignment.id ? "Sending..." : "Send to students"}
+                                {assignmentActionId === assignment.id
+                                  ? "Sending..."
+                                  : "Send to students"}
                               </Button>
                             ) : null}
                             <Tooltip>
@@ -7895,23 +9244,31 @@ export function TeacherDashboard({
                                   size="sm"
                                   variant="ghost"
                                   className="text-red-600 transition hover:bg-red-50"
-                                  onClick={() => handleDeleteAssignment(assignment)}
-                                  disabled={deletingAssignmentId === assignment.id}
+                                  onClick={() =>
+                                    handleDeleteAssignment(assignment)
+                                  }
+                                  disabled={
+                                    deletingAssignmentId === assignment.id
+                                  }
                                 >
                                   {deletingAssignmentId === assignment.id ? (
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                   ) : (
                                     <Trash2 className="mr-1 h-4 w-4" />
                                   )}
-                                  {deletingAssignmentId === assignment.id ? "Removing" : "Delete"}
+                                  {deletingAssignmentId === assignment.id
+                                    ? "Removing"
+                                    : "Delete"}
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent>Remove this assignment</TooltipContent>
+                              <TooltipContent>
+                                Remove this assignment
+                              </TooltipContent>
                             </Tooltip>
                           </div>
                         </div>
                       </div>
-                    )
+                    );
                   })}
                 </div>
               )}
@@ -7936,7 +9293,7 @@ export function TeacherDashboard({
                     size="sm"
                     className="inline-flex items-center gap-2"
                     onClick={() => {
-                      void refreshTeacherStudents()
+                      void refreshTeacherStudents();
                     }}
                     disabled={isTeacherStudentsLoading}
                   >
@@ -7963,11 +9320,14 @@ export function TeacherDashboard({
 
                 {isTeacherStudentsLoading ? (
                   <div className="flex items-center gap-2 rounded-md border border-dashed border-emerald-200 p-3 text-sm text-emerald-700">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Loading students…
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading
+                    students…
                   </div>
                 ) : null}
 
-                {!isTeacherStudentsLoading && !teacherStudentsError && teacherStudents.length > 0 ? (
+                {!isTeacherStudentsLoading &&
+                !teacherStudentsError &&
+                teacherStudents.length > 0 ? (
                   <div className="space-y-3">
                     {teacherStudents.map((student) => (
                       <div
@@ -7975,14 +9335,22 @@ export function TeacherDashboard({
                         className="flex flex-col justify-between gap-3 rounded-lg border border-slate-200 p-4 md:flex-row md:items-center"
                       >
                         <div>
-                          <h3 className="font-medium text-slate-900">{student.name}</h3>
+                          <h3 className="font-medium text-slate-900">
+                            {student.name}
+                          </h3>
                           <p className="text-sm text-slate-600">
-                            {student.className ? student.className : "Class not set"}
+                            {student.className
+                              ? student.className
+                              : "Class not set"}
                           </p>
                           {student.subjects.length > 0 ? (
                             <div className="mt-2 flex flex-wrap gap-1">
                               {student.subjects.map((subject) => (
-                                <Badge key={`${student.id}-${subject}`} variant="secondary" className="text-xs">
+                                <Badge
+                                  key={`${student.id}-${subject}`}
+                                  variant="secondary"
+                                  className="text-xs"
+                                >
                                   {subject}
                                 </Badge>
                               ))}
@@ -7991,7 +9359,9 @@ export function TeacherDashboard({
                         </div>
                         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
                           <CheckCircle className="h-4 w-4" />
-                          {student.status.toLowerCase() === "inactive" ? "Inactive" : "Active"}
+                          {student.status.toLowerCase() === "inactive"
+                            ? "Inactive"
+                            : "Active"}
                         </div>
                       </div>
                     ))}
@@ -8011,25 +9381,34 @@ export function TeacherDashboard({
             <CardContent>
               {isTeacherTimetableLoading ? (
                 <div className="flex items-center justify-center py-6 text-gray-500">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading timetable...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading
+                  timetable...
                 </div>
               ) : (
                 <TimetableWeeklyView
                   slots={teacherTimetable}
                   emptyMessage={`No timetable entries available for ${selectedClass}.`}
                   renderDetails={(slot) => {
-                    const details: string[] = []
-                    const facilitator = slot.teacher?.trim()
-                    if (facilitator && facilitator.length > 0 && facilitator !== teacher.name) {
-                      details.push(`Facilitator: ${facilitator}`)
+                    const details: string[] = [];
+                    const facilitator = slot.teacher?.trim();
+                    if (
+                      facilitator &&
+                      facilitator.length > 0 &&
+                      facilitator !== teacher.name
+                    ) {
+                      details.push(`Facilitator: ${facilitator}`);
                     }
                     if (slot.location && slot.location.trim().length > 0) {
-                      details.push(`Location: ${slot.location}`)
+                      details.push(`Location: ${slot.location}`);
                     }
                     if (details.length === 0) {
-                      details.push("Get ready for this session.")
+                      details.push("Get ready for this session.");
                     }
-                    return <p className="text-sm text-emerald-700/80">{details.join(" • ")}</p>
+                    return (
+                      <p className="text-sm text-emerald-700/80">
+                        {details.join(" • ")}
+                      </p>
+                    );
                   }}
                 />
               )}
@@ -8041,7 +9420,9 @@ export function TeacherDashboard({
           <Card>
             <CardHeader>
               <CardTitle className="text-[#2d682d]">Study Materials</CardTitle>
-              <CardDescription>Upload and manage study materials for your students</CardDescription>
+              <CardDescription>
+                Upload and manage study materials for your students
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <StudyMaterials
@@ -8060,7 +9441,13 @@ export function TeacherDashboard({
         </TabsContent>
 
         <TabsContent value="messages" className="space-y-4">
-          <InternalMessaging currentUser={{ id: teacher.id, name: teacher.name, role: "teacher" }} />
+          <InternalMessaging
+            currentUser={{
+              id: teacher.id,
+              name: teacher.name,
+              role: "teacher",
+            }}
+          />
         </TabsContent>
       </Tabs>
 
@@ -8080,7 +9467,7 @@ export function TeacherDashboard({
               </CommandItem>
             ) : (
               availableSubjectOptions.map((option) => {
-                const isActive = option.key === selectedSubjectKey
+                const isActive = option.key === selectedSubjectKey;
 
                 return (
                   <CommandItem
@@ -8090,10 +9477,12 @@ export function TeacherDashboard({
                   >
                     <div className="flex w-full items-center justify-between">
                       <span>{option.label}</span>
-                      {isActive ? <Check className="h-4 w-4 text-[#2d682d]" /> : null}
+                      {isActive ? (
+                        <Check className="h-4 w-4 text-[#2d682d]" />
+                      ) : null}
                     </div>
                   </CommandItem>
-                )
+                );
               })
             )}
           </CommandGroup>
@@ -8104,9 +9493,9 @@ export function TeacherDashboard({
         open={isAddStudentDialogOpen}
         onOpenChange={(open) => {
           if (open) {
-            setIsAddStudentDialogOpen(true)
+            setIsAddStudentDialogOpen(true);
           } else {
-            handleCloseAddStudentDialog()
+            handleCloseAddStudentDialog();
           }
         }}
       >
@@ -8114,13 +9503,15 @@ export function TeacherDashboard({
           <DialogHeader>
             <DialogTitle>Add students to the grade sheet</DialogTitle>
             <DialogDescription>
-              Select a learner from the class roster so their results appear on the report card and can be
-              updated.
+              Select a learner from the class roster so their results appear on
+              the report card and can be updated.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-900">
-              <p className="text-sm font-semibold text-emerald-800">Current selection</p>
+              <p className="text-sm font-semibold text-emerald-800">
+                Current selection
+              </p>
               <div className="mt-2 grid gap-3 sm:grid-cols-2">
                 <div>
                   <span className="block text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
@@ -8130,7 +9521,8 @@ export function TeacherDashboard({
                     {selectedClass || "Not selected"}
                   </span>
                   <p className="mt-1 text-[11px] text-emerald-700">
-                    This class is automatically assigned from your teacher profile.
+                    This class is automatically assigned from your teacher
+                    profile.
                   </p>
                 </div>
                 <div>
@@ -8138,7 +9530,10 @@ export function TeacherDashboard({
                     Subject
                   </span>
                   <span className="text-sm font-medium text-emerald-900">
-                    {addStudentDialogOption?.label || selectedSubjectOption?.label || selectedSubject || "Not selected"}
+                    {addStudentDialogOption?.label ||
+                      selectedSubjectOption?.label ||
+                      selectedSubject ||
+                      "Not selected"}
                   </span>
                 </div>
                 <div>
@@ -8171,7 +9566,8 @@ export function TeacherDashboard({
               </Label>
               {isRosterLoading ? (
                 <div className="flex items-center gap-2 rounded-md border border-dashed border-gray-200 p-3 text-sm text-gray-600">
-                  <Loader2 className="h-4 w-4 animate-spin text-[#2d682d]" /> Loading class roster…
+                  <Loader2 className="h-4 w-4 animate-spin text-[#2d682d]" />{" "}
+                  Loading class roster…
                 </div>
               ) : rosterCandidates.length === 0 ? (
                 <div className="rounded-md border border-dashed border-gray-200 p-3 text-sm text-gray-600">
@@ -8185,8 +9581,9 @@ export function TeacherDashboard({
                     className="divide-y divide-gray-100"
                   >
                     {rosterCandidates.map((candidate) => {
-                      const displayName = candidate.name ?? `Student ${candidate.id}`
-                      const inputId = `roster-${candidate.id}`
+                      const displayName =
+                        candidate.name ?? `Student ${candidate.id}`;
+                      const inputId = `roster-${candidate.id}`;
                       return (
                         <label
                           key={candidate.id}
@@ -8195,19 +9592,25 @@ export function TeacherDashboard({
                         >
                           <RadioGroupItem value={candidate.id} id={inputId} />
                           <div className="space-y-1">
-                            <p className="text-sm font-medium text-gray-900">{displayName}</p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {displayName}
+                            </p>
                             <p className="text-xs text-gray-500">
                               {candidate.id}
-                              {candidate.className ? ` • ${candidate.className}` : ""}
+                              {candidate.className
+                                ? ` • ${candidate.className}`
+                                : ""}
                             </p>
                           </div>
                         </label>
-                      )
+                      );
                     })}
                   </RadioGroup>
                 </ScrollArea>
               )}
-              <p className="text-[11px] text-gray-500">Selected: {selectedRosterId ? 1 : 0}</p>
+              <p className="text-[11px] text-gray-500">
+                Selected: {selectedRosterId ? 1 : 0}
+              </p>
             </div>
           </div>
           <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
@@ -8256,7 +9659,9 @@ export function TeacherDashboard({
         {previewData ? (
           <EnhancedReportCard data={previewData} />
         ) : (
-          <p className="text-sm text-muted-foreground">No preview data available yet.</p>
+          <p className="text-sm text-muted-foreground">
+            No preview data available yet.
+          </p>
         )}
       </ReportCardPreviewOverlay>
 
@@ -8264,9 +9669,9 @@ export function TeacherDashboard({
       <Dialog
         open={showCreateAssignment}
         onOpenChange={(open) => {
-          setShowCreateAssignment(open)
+          setShowCreateAssignment(open);
           if (!open) {
-            resetAssignmentForm()
+            resetAssignmentForm();
           }
         }}
       >
@@ -8274,15 +9679,19 @@ export function TeacherDashboard({
           <form onSubmit={handleAssignmentSubmit} className="space-y-5">
             <DialogHeader className="space-y-1">
               <DialogTitle>{assignmentDialogTitle}</DialogTitle>
-              <DialogDescription>{assignmentDialogDescription}</DialogDescription>
+              <DialogDescription>
+                {assignmentDialogDescription}
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-5">
               <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60 p-4 text-sm text-emerald-800">
                 <p className="flex items-center gap-2 font-medium">
-                  <Sparkles className="h-4 w-4 text-emerald-500" /> Tailor engaging assignments
+                  <Sparkles className="h-4 w-4 text-emerald-500" /> Tailor
+                  engaging assignments
                 </p>
                 <p className="mt-1 text-emerald-700/80">
-                  Add clear instructions, set a due date, and attach helpful resources to guide your learners.
+                  Add clear instructions, set a due date, and attach helpful
+                  resources to guide your learners.
                 </p>
               </div>
               <div className="space-y-3">
@@ -8291,7 +9700,12 @@ export function TeacherDashboard({
                   <Input
                     id="title"
                     value={assignmentForm.title}
-                    onChange={(e) => setAssignmentForm((prev) => ({ ...prev, title: e.target.value }))}
+                    onChange={(e) =>
+                      setAssignmentForm((prev) => ({
+                        ...prev,
+                        title: e.target.value,
+                      }))
+                    }
                     placeholder="Enter assignment title"
                   />
                 </div>
@@ -8300,7 +9714,12 @@ export function TeacherDashboard({
                   <Textarea
                     id="description"
                     value={assignmentForm.description}
-                    onChange={(e) => setAssignmentForm((prev) => ({ ...prev, description: e.target.value }))}
+                    onChange={(e) =>
+                      setAssignmentForm((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
                     placeholder="Share instructions, expectations, and submission tips"
                     rows={4}
                   />
@@ -8310,9 +9729,17 @@ export function TeacherDashboard({
                     <Label htmlFor={assignmentSubjectFieldId}>Subject</Label>
                     <Select
                       value={assignmentForm.subject}
-                      onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, subject: value }))}
+                      onValueChange={(value) =>
+                        setAssignmentForm((prev) => ({
+                          ...prev,
+                          subject: value,
+                        }))
+                      }
                     >
-                      <SelectTrigger id={assignmentSubjectFieldId} aria-label="Assignment subject">
+                      <SelectTrigger
+                        id={assignmentSubjectFieldId}
+                        aria-label="Assignment subject"
+                      >
                         <SelectValue placeholder="Select subject" />
                       </SelectTrigger>
                       <SelectContent>
@@ -8330,21 +9757,33 @@ export function TeacherDashboard({
                       value={assignmentForm.classId || ""}
                       onValueChange={(value) =>
                         setAssignmentForm((prev) => {
-                          const match = teacherClasses.find((cls) => cls.id === value)
+                          const match = teacherClasses.find(
+                            (cls) => cls.id === value,
+                          );
                           return {
                             ...prev,
                             classId: value,
                             className: match?.name ?? prev.className,
-                          }
+                          };
                         })
                       }
                     >
-                      <SelectTrigger id={assignmentClassFieldId} aria-label="Assignment class">
-                        <SelectValue placeholder={assignmentForm.className || "Select class"} />
+                      <SelectTrigger
+                        id={assignmentClassFieldId}
+                        aria-label="Assignment class"
+                      >
+                        <SelectValue
+                          placeholder={
+                            assignmentForm.className || "Select class"
+                          }
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {teacherClasses.map((classItem) => (
-                          <SelectItem key={`${classItem.id}-${classItem.name}`} value={classItem.id}>
+                          <SelectItem
+                            key={`${classItem.id}-${classItem.name}`}
+                            value={classItem.id}
+                          >
                             {classItem.name}
                           </SelectItem>
                         ))}
@@ -8359,7 +9798,12 @@ export function TeacherDashboard({
                       id="dueDate"
                       type="date"
                       value={assignmentForm.dueDate}
-                      onChange={(e) => setAssignmentForm((prev) => ({ ...prev, dueDate: e.target.value }))}
+                      onChange={(e) =>
+                        setAssignmentForm((prev) => ({
+                          ...prev,
+                          dueDate: e.target.value,
+                        }))
+                      }
                     />
                   </div>
                   <div>
@@ -8384,7 +9828,8 @@ export function TeacherDashboard({
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Set how many marks this assignment contributes for your students.
+                      Set how many marks this assignment contributes for your
+                      students.
                     </p>
                   </div>
                 </div>
@@ -8393,18 +9838,30 @@ export function TeacherDashboard({
                   <Input
                     id="file"
                     type="file"
-                    onChange={(e) => setAssignmentForm((prev) => ({ ...prev, file: e.target.files?.[0] || null }))}
+                    onChange={(e) =>
+                      setAssignmentForm((prev) => ({
+                        ...prev,
+                        file: e.target.files?.[0] || null,
+                      }))
+                    }
                   />
-                  {isEditingAssignment && assignmentForm.resourceName && !assignmentForm.file ? (
+                  {isEditingAssignment &&
+                  assignmentForm.resourceName &&
+                  !assignmentForm.file ? (
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Current attachment: <span className="font-medium text-slate-700">{assignmentForm.resourceName}</span>
+                      Current attachment:{" "}
+                      <span className="font-medium text-slate-700">
+                        {assignmentForm.resourceName}
+                      </span>
                     </p>
                   ) : null}
                 </div>
               </div>
               <Separator />
               <p className="text-xs text-muted-foreground">
-                Tip: Assignment scores contribute up to {resolvedAssignmentMaximum} marks to continuous assessment this term.
+                Tip: Assignment scores contribute up to{" "}
+                {resolvedAssignmentMaximum} marks to continuous assessment this
+                term.
               </p>
             </div>
             <DialogFooter className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:gap-2">
@@ -8412,8 +9869,8 @@ export function TeacherDashboard({
                 type="button"
                 variant="ghost"
                 onClick={() => {
-                  setShowCreateAssignment(false)
-                  resetAssignmentForm()
+                  setShowCreateAssignment(false);
+                  resetAssignmentForm();
                 }}
               >
                 Cancel
@@ -8428,8 +9885,16 @@ export function TeacherDashboard({
                   disabled={isSavingAssignment}
                   className="border-slate-300"
                 >
-                  {isSavingAssignment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                  {isSavingAssignment ? "Saving..." : isEditingAssignment ? "Save Draft" : "Save as Draft"}
+                  {isSavingAssignment ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  {isSavingAssignment
+                    ? "Saving..."
+                    : isEditingAssignment
+                      ? "Save Draft"
+                      : "Save as Draft"}
                 </Button>
                 <Button
                   type="submit"
@@ -8439,8 +9904,16 @@ export function TeacherDashboard({
                   disabled={isSavingAssignment}
                   className="bg-[#2d682d] hover:bg-[#2d682d]/90"
                 >
-                  {isSavingAssignment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                  {isSavingAssignment ? "Sending..." : isEditingAssignment ? "Update & Send" : "Send Assignment"}
+                  {isSavingAssignment ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="mr-2 h-4 w-4" />
+                  )}
+                  {isSavingAssignment
+                    ? "Sending..."
+                    : isEditingAssignment
+                      ? "Update & Send"
+                      : "Send Assignment"}
                 </Button>
               </div>
             </DialogFooter>
@@ -8453,13 +9926,15 @@ export function TeacherDashboard({
         open={Boolean(previewAssignment)}
         onOpenChange={(open) => {
           if (!open) {
-            setPreviewAssignment(null)
+            setPreviewAssignment(null);
           }
         }}
       >
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{previewAssignment?.title ?? "Assignment Preview"}</DialogTitle>
+            <DialogTitle>
+              {previewAssignment?.title ?? "Assignment Preview"}
+            </DialogTitle>
             <DialogDescription>
               {previewAssignment
                 ? `${previewAssignment.subject} • ${previewAssignment.className} • Worth ${
@@ -8471,22 +9946,28 @@ export function TeacherDashboard({
           {previewAssignment ? (
             <div className="space-y-5">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge className={`${ASSIGNMENT_STATUS_META[previewAssignment.status].badgeClass} uppercase`}>
+                <Badge
+                  className={`${ASSIGNMENT_STATUS_META[previewAssignment.status].badgeClass} uppercase`}
+                >
                   {ASSIGNMENT_STATUS_META[previewAssignment.status].label}
                 </Badge>
-                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                <Badge
+                  variant="outline"
+                  className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                >
                   {
                     previewAssignment.submissions.filter((submission) =>
                       ["submitted", "graded"].includes(submission.status),
                     ).length
-                  }
-                  {" "}submissions
+                  }{" "}
+                  submissions
                 </Badge>
               </div>
               <div className="rounded-xl border bg-slate-50 p-4 text-sm text-slate-700">
                 <h4 className="font-semibold text-slate-800">Instructions</h4>
                 <p className="mt-2 whitespace-pre-line">
-                  {previewAssignment.description || "No description provided yet."}
+                  {previewAssignment.description ||
+                    "No description provided yet."}
                 </p>
               </div>
               {previewAssignment.resourceName ? (
@@ -8494,7 +9975,9 @@ export function TeacherDashboard({
                   <p className="font-medium">Attached Resource</p>
                   <button
                     type="button"
-                    onClick={() => handleDownloadAssignmentAttachment(previewAssignment)}
+                    onClick={() =>
+                      handleDownloadAssignmentAttachment(previewAssignment)
+                    }
                     className="mt-2 inline-flex items-center gap-2 text-emerald-700 transition hover:text-emerald-900"
                   >
                     <Download className="h-4 w-4" />
@@ -8503,8 +9986,18 @@ export function TeacherDashboard({
                 </div>
               ) : null}
               <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                <div>Created: {previewAssignment.createdAt ? formatExamDate(previewAssignment.createdAt) : "—"}</div>
-                <div>Last updated: {previewAssignment.updatedAt ? formatExamDate(previewAssignment.updatedAt) : "—"}</div>
+                <div>
+                  Created:{" "}
+                  {previewAssignment.createdAt
+                    ? formatExamDate(previewAssignment.createdAt)
+                    : "—"}
+                </div>
+                <div>
+                  Last updated:{" "}
+                  {previewAssignment.updatedAt
+                    ? formatExamDate(previewAssignment.updatedAt)
+                    : "—"}
+                </div>
               </div>
             </div>
           ) : null}
@@ -8517,8 +10010,8 @@ export function TeacherDashboard({
                 <Button
                   variant="outline"
                   onClick={() => {
-                    handleEditAssignment(previewAssignment)
-                    setPreviewAssignment(null)
+                    handleEditAssignment(previewAssignment);
+                    setPreviewAssignment(null);
                   }}
                 >
                   <Pencil className="mr-2 h-4 w-4" /> Edit
@@ -8527,7 +10020,7 @@ export function TeacherDashboard({
                   variant="outline"
                   onClick={() => {
                     if (previewAssignment) {
-                      void handleViewSubmissions(previewAssignment)
+                      void handleViewSubmissions(previewAssignment);
                     }
                   }}
                 >
@@ -8537,8 +10030,8 @@ export function TeacherDashboard({
                   <Button
                     className="bg-[#2d682d] text-white hover:bg-[#1f4a1f]"
                     onClick={() => {
-                      handleSendAssignment(previewAssignment)
-                      setPreviewAssignment(null)
+                      handleSendAssignment(previewAssignment);
+                      setPreviewAssignment(null);
                     }}
                   >
                     <Send className="mr-2 h-4 w-4" /> Send to students
@@ -8554,18 +10047,20 @@ export function TeacherDashboard({
       <Dialog
         open={showSubmissions}
         onOpenChange={(open) => {
-          setShowSubmissions(open)
+          setShowSubmissions(open);
           if (!open) {
-            setSelectedAssignment(null)
-            setGradingDrafts({})
-            setIsLoadingSubmissions(false)
-            setAssignmentRoster({})
+            setSelectedAssignment(null);
+            setGradingDrafts({});
+            setIsLoadingSubmissions(false);
+            setAssignmentRoster({});
           }
         }}
       >
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Assignment Submissions - {selectedAssignment?.title}</DialogTitle>
+            <DialogTitle>
+              Assignment Submissions - {selectedAssignment?.title}
+            </DialogTitle>
             <DialogDescription>
               {selectedAssignment
                 ? `${selectedAssignment.subject} • ${selectedAssignment.className} • Due ${formatExamDate(selectedAssignment.dueDate)}`
@@ -8577,10 +10072,12 @@ export function TeacherDashboard({
               <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-700">
                 <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
                   <span className="inline-flex items-center gap-1">
-                    <CalendarClock className="h-3.5 w-3.5 text-amber-500" /> Due {formatExamDate(selectedAssignment.dueDate)}
+                    <CalendarClock className="h-3.5 w-3.5 text-amber-500" /> Due{" "}
+                    {formatExamDate(selectedAssignment.dueDate)}
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    <Users className="h-3.5 w-3.5 text-emerald-500" /> Assigned to {selectedAssignment.className ?? "assigned students"}
+                    <Users className="h-3.5 w-3.5 text-emerald-500" /> Assigned
+                    to {selectedAssignment.className ?? "assigned students"}
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <Trophy className="h-3.5 w-3.5 text-purple-500" />
@@ -8595,22 +10092,36 @@ export function TeacherDashboard({
                 {selectedAssignment.resourceName ? (
                   <button
                     type="button"
-                    onClick={() => handleDownloadAssignmentAttachment(selectedAssignment)}
+                    onClick={() =>
+                      handleDownloadAssignmentAttachment(selectedAssignment)
+                    }
                     className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-emerald-700 transition hover:text-emerald-900"
                   >
-                    <Download className="h-3.5 w-3.5" /> Download assignment attachment ({selectedAssignment.resourceName})
+                    <Download className="h-3.5 w-3.5" /> Download assignment
+                    attachment ({selectedAssignment.resourceName})
                   </button>
                 ) : (
-                  <p className="mt-3 text-xs text-slate-500">No assignment attachment to download.</p>
+                  <p className="mt-3 text-xs text-slate-500">
+                    No assignment attachment to download.
+                  </p>
                 )}
                 <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                  <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                  <Badge
+                    variant="outline"
+                    className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                  >
                     {receivedSubmissionRecords.length} submitted
                   </Badge>
-                  <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+                  <Badge
+                    variant="outline"
+                    className="border-amber-200 bg-amber-50 text-amber-700"
+                  >
                     {pendingSubmissionRecords.length} not submitted
                   </Badge>
-                  <Badge variant="outline" className="border-purple-200 bg-purple-50 text-purple-700">
+                  <Badge
+                    variant="outline"
+                    className="border-purple-200 bg-purple-50 text-purple-700"
+                  >
                     {gradedSubmissionCount} graded
                   </Badge>
                 </div>
@@ -8618,16 +10129,21 @@ export function TeacherDashboard({
             ) : null}
             {isLoadingSubmissions ? (
               <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading submissions...
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading
+                submissions...
               </div>
             ) : receivedSubmissionRecords.length > 0 ? (
               receivedSubmissionRecords.map(({ student, submission }) => {
-                const assignmentMaxScore = selectedAssignment?.maximumScore ?? assignmentMaximum
-                const draft = gradingDrafts[submission.id] ?? { score: "", comment: "" }
+                const assignmentMaxScore =
+                  selectedAssignment?.maximumScore ?? assignmentMaximum;
+                const draft = gradingDrafts[submission.id] ?? {
+                  score: "",
+                  comment: "",
+                };
                 const submissionStatusMeta =
                   submission.status === "graded"
                     ? ASSIGNMENT_STATUS_META.graded
-                    : ASSIGNMENT_STATUS_META.submitted
+                    : ASSIGNMENT_STATUS_META.submitted;
 
                 return (
                   <div
@@ -8645,17 +10161,24 @@ export function TeacherDashboard({
                             {student.className ? ` • ${student.className}` : ""}
                           </p>
                           <p className="text-xs text-slate-500">
-                            Submitted {submission.submittedAt ? formatExamDate(submission.submittedAt) : "—"}
+                            Submitted{" "}
+                            {submission.submittedAt
+                              ? formatExamDate(submission.submittedAt)
+                              : "—"}
                           </p>
                         </div>
                         {submission.files && submission.files.length > 0 ? (
                           <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-700">
-                            <span className="font-medium text-emerald-800">Attachments:</span>
+                            <span className="font-medium text-emerald-800">
+                              Attachments:
+                            </span>
                             {submission.files.map((file) => (
                               <button
                                 key={file.id}
                                 type="button"
-                                onClick={() => handleDownloadSubmissionFile(submission, file)}
+                                onClick={() =>
+                                  handleDownloadSubmissionFile(submission, file)
+                                }
                                 className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700 transition hover:bg-emerald-100"
                               >
                                 <Download className="h-3.5 w-3.5" /> {file.name}
@@ -8663,16 +10186,22 @@ export function TeacherDashboard({
                             ))}
                           </div>
                         ) : (
-                          <p className="text-xs text-slate-500">No attachments were included in this submission.</p>
+                          <p className="text-xs text-slate-500">
+                            No attachments were included in this submission.
+                          </p>
                         )}
                       </div>
-                      <Badge className={`${submissionStatusMeta.badgeClass} uppercase`}>
+                      <Badge
+                        className={`${submissionStatusMeta.badgeClass} uppercase`}
+                      >
                         {submission.status}
                       </Badge>
                     </div>
                     <div className="grid gap-4 rounded-lg bg-slate-50 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                       <div className="space-y-2">
-                        <Label className="text-xs uppercase tracking-wide text-slate-500">Score</Label>
+                        <Label className="text-xs uppercase tracking-wide text-slate-500">
+                          Score
+                        </Label>
                         <div className="flex items-center gap-2">
                           <Input
                             type="number"
@@ -8689,17 +10218,22 @@ export function TeacherDashboard({
                               }))
                             }
                           />
-                          <span className="text-xs text-muted-foreground">/ {assignmentMaxScore}</span>
+                          <span className="text-xs text-muted-foreground">
+                            / {assignmentMaxScore}
+                          </span>
                         </div>
                         {submission.grade || submission.score !== null ? (
                           <p className="text-xs text-slate-500">
-                            Last score: {submission.score ?? "--"}/{assignmentMaxScore}
+                            Last score: {submission.score ?? "--"}/
+                            {assignmentMaxScore}
                             {submission.grade ? ` (${submission.grade})` : ""}
                           </p>
                         ) : null}
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-xs uppercase tracking-wide text-slate-500">Feedback</Label>
+                        <Label className="text-xs uppercase tracking-wide text-slate-500">
+                          Feedback
+                        </Label>
                         <Textarea
                           value={draft.comment}
                           onChange={(e) =>
@@ -8741,7 +10275,7 @@ export function TeacherDashboard({
                       </Button>
                     </div>
                   </div>
-                )
+                );
               })
             ) : (
               <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
@@ -8768,7 +10302,10 @@ export function TeacherDashboard({
                           {student.className ? ` • ${student.className}` : ""}
                         </p>
                       </div>
-                      <Badge variant="outline" className="border-amber-300 bg-amber-100 text-amber-700">
+                      <Badge
+                        variant="outline"
+                        className="border-amber-300 bg-amber-100 text-amber-700"
+                      >
                         Not submitted
                       </Badge>
                     </li>
@@ -8781,8 +10318,8 @@ export function TeacherDashboard({
             <Button
               variant="outline"
               onClick={() => {
-                setShowSubmissions(false)
-                setSelectedAssignment(null)
+                setShowSubmissions(false);
+                setSelectedAssignment(null);
               }}
             >
               Close
@@ -8791,5 +10328,5 @@ export function TeacherDashboard({
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }
