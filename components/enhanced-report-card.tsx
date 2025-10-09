@@ -2072,6 +2072,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   const showRemarksBlock = isSectionEnabled("remarks") && (classTeacherFieldEnabled || headTeacherFieldEnabled)
   const showPsychomotorBlock = isSectionEnabled("behavioral_psychomotor") && psychomotorSkills.length > 0
   const showAffectiveBlock = isSectionEnabled("behavioral_affective") && affectiveTraits.length > 0
+  const shouldRenderAffectiveContainer =
+    showAffectiveBlock || teacherSignatureEnabled || headSignatureEnabled
   const attendanceTitle = getSectionTitleResolved(
     "attendance",
     getDefaultSectionTitle("attendance"),
@@ -2379,33 +2381,37 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                 </div>
               )}
 
-              {showAffectiveBlock && (
+              {shouldRenderAffectiveContainer && (
                 <div className="domain-block affective-block">
                   <strong>{affectiveTitle}</strong>
-                  <table className="af-domain-table checkmark-table">
-                    <thead>
-                      <tr>
-                        <th>Trait</th>
-                        <th className="check-column">Demonstrated</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {affectiveTraits.length > 0 ? (
-                        affectiveTraits.map((trait) => (
-                          <tr key={trait.key}>
-                            <td>{trait.label}</td>
-                            <td className={reportCardData.affectiveDomain[trait.key] ? "tick" : ""}>
-                              {reportCardData.affectiveDomain[trait.key] ? "✓" : ""}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
+                  {showAffectiveBlock ? (
+                    <table className="af-domain-table checkmark-table">
+                      <thead>
                         <tr>
-                          <td colSpan={2}>No affective records available.</td>
+                          <th>Trait</th>
+                          <th className="check-column">Demonstrated</th>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {affectiveTraits.length > 0 ? (
+                          affectiveTraits.map((trait) => (
+                            <tr key={trait.key}>
+                              <td>{trait.label}</td>
+                              <td className={reportCardData.affectiveDomain[trait.key] ? "tick" : ""}>
+                                {reportCardData.affectiveDomain[trait.key] ? "✓" : ""}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={2}>No affective records available.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="affective-placeholder">Affective domain records are not enabled for this layout.</div>
+                  )}
                   {(teacherSignatureEnabled || headSignatureEnabled) && (
                     <div className="affective-signatures">
                       {renderTeacherSignature()}
@@ -2448,13 +2454,6 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-
-          {(teacherSignatureEnabled || headSignatureEnabled) && !showAffectiveBlock && (
-            <div className="signatures-box">
-              {renderTeacherSignature()}
-              {renderHeadSignature()}
             </div>
           )}
 
@@ -2842,15 +2841,27 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
         .affective-signatures {
           margin-top: 16px;
+          padding-top: 12px;
           display: flex;
           align-items: baseline;
           justify-content: space-between;
           gap: 24px;
           flex-wrap: nowrap;
+          border-top: 1px dashed #27613d;
         }
 
         .affective-signatures .signature-item {
           flex: 1 1 220px;
+        }
+
+        .affective-placeholder {
+          margin-top: 12px;
+          font-size: 0.95em;
+          color: #134e1f;
+          background: #f0fdf4;
+          border: 1px dashed #27613d;
+          border-radius: 4px;
+          padding: 12px;
         }
 
         .vacation-box {
@@ -2860,17 +2871,6 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           font-size: 1em;
           align-items: center;
           padding: 0 15px 8px;
-        }
-
-        .signatures-box {
-          display: flex;
-          gap: 24px;
-          margin-top: 6px;
-          font-size: 1em;
-          align-items: baseline;
-          justify-content: space-between;
-          padding: 0 15px 8px;
-          flex-wrap: nowrap;
         }
 
         .signature-item {
@@ -2892,7 +2892,6 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         }
 
         @media (max-width: 600px) {
-          .signatures-box,
           .affective-signatures {
             flex-direction: column;
             align-items: stretch;
@@ -3074,7 +3073,6 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           .grades-table,
           .remark-section,
           .vacation-box,
-          .signatures-box,
           .affective-signatures,
           .grading-key-container {
             page-break-inside: avoid;
@@ -3145,7 +3143,6 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           }
 
           .vacation-box,
-          .signatures-box,
           .affective-signatures {
             gap: 12px;
             font-size: 9.5pt;
