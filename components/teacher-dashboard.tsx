@@ -1656,42 +1656,6 @@ export function TeacherDashboard({
     ? "Refresh the assignment details before you share or resend it to your class."
     : "Design a rich assignment experience for your students with attachments and clear guidance."
 
-  useEffect(() => {
-    if (remarkStudentOptions.length === 0) {
-      if (selectedRemarkStudentId) {
-        setSelectedRemarkStudentId("")
-      }
-      return
-    }
-
-    if (
-      !selectedRemarkStudentId ||
-      !remarkStudentOptions.some((student) => student.studentId === selectedRemarkStudentId)
-    ) {
-      setSelectedRemarkStudentId(remarkStudentOptions[0].studentId)
-    }
-  }, [remarkStudentOptions, selectedRemarkStudentId, setSelectedRemarkStudentId])
-
-  const selectedRemarkStudent = useMemo(
-    () =>
-      selectedRemarkStudentId
-        ? remarkStudentOptionById.get(selectedRemarkStudentId) ?? null
-        : null,
-    [remarkStudentOptionById, selectedRemarkStudentId],
-  )
-
-  const selectedRemarkKey =
-    selectedRemarkStudent && selectedSubjectKey
-      ? buildRemarkKey(selectedSubjectKey, selectedRemarkStudent.studentId)
-      : ""
-  const selectedRemarkEntry = selectedRemarkKey
-    ? additionalData.classTeacherRemarks[selectedRemarkKey]
-    : undefined
-  const selectedRemarkValue: ClassTeacherRemarkValue | "" = selectedRemarkEntry?.remark ?? ""
-  const currentRemarkOption = selectedRemarkValue
-    ? CLASS_TEACHER_REMARK_OPTION_MAP[selectedRemarkValue] ?? null
-    : null
-
   const assignmentInsights = useMemo(() => {
     if (assignments.length === 0) {
       return {
@@ -2365,6 +2329,42 @@ export function TeacherDashboard({
     })
     return map
   }, [remarkStudentOptions])
+
+  useEffect(() => {
+    if (remarkStudentOptions.length === 0) {
+      if (selectedRemarkStudentId) {
+        setSelectedRemarkStudentId("")
+      }
+      return
+    }
+
+    if (
+      !selectedRemarkStudentId ||
+      !remarkStudentOptions.some((student) => student.studentId === selectedRemarkStudentId)
+    ) {
+      setSelectedRemarkStudentId(remarkStudentOptions[0].studentId)
+    }
+  }, [remarkStudentOptions, selectedRemarkStudentId])
+
+  const selectedRemarkStudent = useMemo(
+    () =>
+      selectedRemarkStudentId
+        ? remarkStudentOptionById.get(selectedRemarkStudentId) ?? null
+        : null,
+    [remarkStudentOptionById, selectedRemarkStudentId],
+  )
+
+  const selectedRemarkKey =
+    selectedRemarkStudent && selectedSubjectKey
+      ? buildRemarkKey(selectedSubjectKey, selectedRemarkStudent.studentId)
+      : ""
+  const selectedRemarkEntry = selectedRemarkKey
+    ? additionalData.classTeacherRemarks[selectedRemarkKey]
+    : undefined
+  const selectedRemarkValue: ClassTeacherRemarkValue | "" = selectedRemarkEntry?.remark ?? ""
+  const currentRemarkOption = selectedRemarkValue
+    ? CLASS_TEACHER_REMARK_OPTION_MAP[selectedRemarkValue] ?? null
+    : null
 
   const isStudentSelectDisabledForRemarks = !selectedSubjectKey
   const hasRemarkStudentsForSelection = remarkStudentOptions.length > 0
