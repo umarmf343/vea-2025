@@ -833,13 +833,40 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
       </Card>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-1 gap-2 sm:grid-cols-5">
-          <TabsTrigger value="collections">Collections</TabsTrigger>
-          <TabsTrigger value="expenses">Expenses</TabsTrigger>
-          <TabsTrigger value="defaulters">Defaulters</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="fees">Fee Configuration</TabsTrigger>
-        </TabsList>
+        <div className="w-full overflow-x-auto">
+          <TabsList className="flex w-max flex-nowrap gap-1 bg-green-50 p-1">
+            <TabsTrigger
+              value="collections"
+              className="min-w-[140px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
+            >
+              Collections
+            </TabsTrigger>
+            <TabsTrigger
+              value="expenses"
+              className="min-w-[140px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
+            >
+              Expenses
+            </TabsTrigger>
+            <TabsTrigger
+              value="defaulters"
+              className="min-w-[140px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
+            >
+              Defaulters
+            </TabsTrigger>
+            <TabsTrigger
+              value="analytics"
+              className="min-w-[140px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
+            >
+              Analytics
+            </TabsTrigger>
+            <TabsTrigger
+              value="fees"
+              className="min-w-[140px] px-3 text-xs data-[state=active]:bg-[#2d682d] data-[state=active]:text-white"
+            >
+              Fee Configuration
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="collections" className="space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
