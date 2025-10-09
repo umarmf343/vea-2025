@@ -7908,32 +7908,34 @@ export function TeacherDashboard({
                 </div>
 
                 <Tabs defaultValue="academic" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2 gap-2 bg-transparent p-0 sm:bg-muted sm:p-[3px] xl:grid-cols-4">
-                    <TabsTrigger
-                      value="academic"
-                      className="h-auto w-full justify-start whitespace-normal rounded-md px-4 py-3 text-left text-sm leading-snug sm:h-[calc(100%-1px)]"
-                    >
-                      Academic Marks
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="behavioral"
-                      className="h-auto w-full justify-start whitespace-normal rounded-md px-4 py-3 text-left text-sm leading-snug sm:h-[calc(100%-1px)]"
-                    >
-                      Behavioral Assessment
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="attendance"
-                      className="h-auto w-full justify-start whitespace-normal rounded-md px-4 py-3 text-left text-sm leading-snug sm:h-[calc(100%-1px)]"
-                    >
-                      Attendance &amp; Position
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="remarks"
-                      className="h-auto w-full justify-start whitespace-normal rounded-md px-4 py-3 text-left text-sm leading-snug sm:h-[calc(100%-1px)]"
-                    >
-                      Class Teacher Remarks
-                    </TabsTrigger>
-                  </TabsList>
+                  <div className="w-full overflow-x-auto">
+                    <TabsList className="flex w-max flex-nowrap gap-1 bg-green-50 p-1">
+                      <TabsTrigger
+                        value="academic"
+                        className="min-w-[180px] justify-start whitespace-normal rounded-md px-4 py-2 text-left text-xs font-medium leading-snug text-[#1f2937] transition-colors duration-150 data-[state=active]:bg-[#2d682d] data-[state=active]:text-white sm:text-sm"
+                      >
+                        Academic Marks
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="behavioral"
+                        className="min-w-[180px] justify-start whitespace-normal rounded-md px-4 py-2 text-left text-xs font-medium leading-snug text-[#1f2937] transition-colors duration-150 data-[state=active]:bg-[#2d682d] data-[state=active]:text-white sm:text-sm"
+                      >
+                        Behavioral Assessment
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="attendance"
+                        className="min-w-[180px] justify-start whitespace-normal rounded-md px-4 py-2 text-left text-xs font-medium leading-snug text-[#1f2937] transition-colors duration-150 data-[state=active]:bg-[#2d682d] data-[state=active]:text-white sm:text-sm"
+                      >
+                        Attendance &amp; Position
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="remarks"
+                        className="min-w-[180px] justify-start whitespace-normal rounded-md px-4 py-2 text-left text-xs font-medium leading-snug text-[#1f2937] transition-colors duration-150 data-[state=active]:bg-[#2d682d] data-[state=active]:text-white sm:text-sm"
+                      >
+                        Class Teacher Remarks
+                      </TabsTrigger>
+                    </TabsList>
+                  </div>
 
                   <TabsContent value="academic" className="space-y-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
