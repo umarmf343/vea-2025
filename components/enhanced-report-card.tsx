@@ -1471,6 +1471,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     [resolvedColumns],
   )
   const hasExamColumns = useMemo(() => resolvedColumns.some((column) => column.isExam), [resolvedColumns])
+  const showExamSummaryColumn = !hasExamColumns
 
   const preparePdfDocument = useCallback(async () => {
     const target = containerRef.current
@@ -2104,14 +2105,12 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                 })}
                 {hasContinuousAssessmentColumns ? (
                   <th>
-                    Continuous
-                    <br />
-                    Assessment
+                    Total
                     <br />
                     ({formatTotalValue(reportCardData.assessmentMaximums.continuousAssessment)})
                   </th>
                 ) : null}
-                {hasExamColumns ? (
+                {showExamSummaryColumn ? (
                   <th>
                     Exam
                     <br />
@@ -2141,7 +2140,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                       {hasContinuousAssessmentColumns ? (
                         <td>{formatScoreValue(subject.caTotal)}</td>
                       ) : null}
-                      {hasExamColumns ? (
+                      {showExamSummaryColumn ? (
                         <td>{formatScoreValue(subject.exam)}</td>
                       ) : null}
                       <td>{formatScoreValue(subject.total)}</td>
@@ -2159,7 +2158,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                     {hasContinuousAssessmentColumns ? (
                       <td>{formatTotalValue(totalsRow?.continuousAssessment ?? 0)}</td>
                     ) : null}
-                    {hasExamColumns ? (
+                    {showExamSummaryColumn ? (
                       <td>{formatTotalValue(totalsRow?.exam ?? 0)}</td>
                     ) : null}
                     <td>{formatTotalValue(totalsRow?.overall ?? 0)}</td>
@@ -2173,7 +2172,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                     colSpan={
                       resolvedColumns.length +
                       (hasContinuousAssessmentColumns ? 1 : 0) +
-                      (hasExamColumns ? 1 : 0) +
+                      (showExamSummaryColumn ? 1 : 0) +
                       4
                     }
                   >
