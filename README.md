@@ -28,6 +28,7 @@ The VEA 2025 Portal is a comprehensive school management system built with Next.
 - Cumulative reporting across terms and sessions
 - Real-time grade calculations (1st C.A. + 2nd C.A. + Assignment + Exam)
 - Affective and Psychomotor domain assessments
+- Subject-specific class teacher remarks with live report card sync
 - Teacher remarks and administrative comments
 
 #### 🔐 **Security & Access Control**
