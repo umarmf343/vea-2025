@@ -1,4 +1,4 @@
-import type { RawReportCardData } from "@/lib/report-card-types"
+import type { RawReportCardData } from "@/lib/report-card-types";
 import {
   AFFECTIVE_TRAITS,
   PSYCHOMOTOR_SKILLS,
@@ -6,7 +6,7 @@ import {
   getAffectiveTraitLabel,
   getPsychomotorSkillLabel,
   normalizeBehavioralSelections,
-} from "./report-card-constants"
+} from "./report-card-constants";
 
 const escapeHtml = (value: string) =>
   value
@@ -14,56 +14,61 @@ const escapeHtml = (value: string) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
+    .replace(/'/g, "&#39;");
 
 const formatScoreValue = (value: unknown) => {
   if (typeof value === "number" && Number.isFinite(value)) {
-    return value.toString()
+    return value.toString();
   }
 
   if (typeof value === "string" && value.trim().length > 0) {
-    return value
+    return value;
   }
 
-  return "—"
-}
+  return "—";
+};
 
 const formatMetadata = (value: unknown) => {
   if (typeof value === "number" && Number.isFinite(value)) {
-    return value.toString()
+    return value.toString();
   }
 
   if (typeof value === "string" && value.trim().length > 0) {
-    return value
+    return value;
   }
 
-  return "—"
-}
+  return "—";
+};
 
 export const buildReportCardHtml = (data: RawReportCardData) => {
-  const subjects = Array.isArray(data.subjects) ? (data.subjects as Array<Record<string, unknown>>) : []
+  const subjects = Array.isArray(data.subjects)
+    ? (data.subjects as Array<Record<string, unknown>>)
+    : [];
   const subjectRows = subjects
     .map((subjectEntry, index) => {
-      const subject = subjectEntry as Record<string, unknown>
+      const subject = subjectEntry as Record<string, unknown>;
       const subjectName =
         typeof subject.subject === "string"
           ? subject.subject
           : typeof subject.name === "string"
             ? subject.name
-            : `Subject ${index + 1}`
-      const ca1 = formatScoreValue(subject["ca1"])
-      const ca2 = formatScoreValue(subject["ca2"])
-      const assignment = formatScoreValue(subject["assignment"])
-      const caTotal = formatScoreValue(subject["caTotal"] ?? subject["ca_total"])
-      const exam = formatScoreValue(subject["exam"])
-      const total = formatScoreValue(subject["total"])
-      const grade = formatScoreValue(subject["grade"])
+            : `Subject ${index + 1}`;
+      const ca1 = formatScoreValue(subject["ca1"]);
+      const ca2 = formatScoreValue(subject["ca2"]);
+      const assignment = formatScoreValue(subject["assignment"]);
+      const caTotal = formatScoreValue(
+        subject["caTotal"] ?? subject["ca_total"],
+      );
+      const exam = formatScoreValue(subject["exam"]);
+      const total = formatScoreValue(subject["total"]);
+      const grade = formatScoreValue(subject["grade"]);
       const remark =
-        typeof subject["remark"] === "string" && subject["remark"].trim().length > 0
+        typeof subject["remark"] === "string" &&
+        subject["remark"].trim().length > 0
           ? (subject["remark"] as string)
           : typeof subject["comment"] === "string"
             ? (subject["comment"] as string)
-            : "—"
+            : "—";
 
       return `
         <tr>
@@ -77,106 +82,126 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           <td>${escapeHtml(grade)}</td>
           <td>${escapeHtml(remark)}</td>
         </tr>
-      `
+      `;
     })
-    .join("")
+    .join("");
 
   const resolveBehavioralSelections = (
     domain: "affective" | "psychomotor",
     defaults: readonly { key: string; label: string }[],
     selections: Record<string, boolean | undefined> | undefined,
   ) => {
-    const skeleton = createBehavioralRecordSkeleton(defaults)
-    const normalized = normalizeBehavioralSelections(domain, selections as Record<string, unknown> | undefined)
-    const merged: Record<string, boolean> = { ...skeleton }
+    const skeleton = createBehavioralRecordSkeleton(defaults);
+    const normalized = normalizeBehavioralSelections(
+      domain,
+      selections as Record<string, unknown> | undefined,
+    );
+    const merged: Record<string, boolean> = { ...skeleton };
 
     Object.entries(normalized).forEach(([key, value]) => {
-      merged[key] = value
-    })
+      merged[key] = value;
+    });
 
     Object.entries(selections ?? {}).forEach(([key, value]) => {
       if (!(key in merged)) {
-        merged[key] = Boolean(value)
+        merged[key] = Boolean(value);
       }
-    })
+    });
 
-    return merged
-  }
+    return merged;
+  };
 
   const buildDomainRows = (
     traits: readonly { key: string; label: string }[],
     selections: Record<string, boolean>,
     labelResolver: (key: string) => string,
   ) => {
-    const seen = new Set<string>()
-    const orderedKeys: string[] = []
+    const seen = new Set<string>();
+    const orderedKeys: string[] = [];
 
     traits.forEach(({ key }) => {
       if (!seen.has(key)) {
-        orderedKeys.push(key)
-        seen.add(key)
+        orderedKeys.push(key);
+        seen.add(key);
       }
-    })
+    });
 
     Object.keys(selections).forEach((key) => {
       if (!seen.has(key)) {
-        orderedKeys.push(key)
-        seen.add(key)
+        orderedKeys.push(key);
+        seen.add(key);
       }
-    })
+    });
 
     return orderedKeys
       .map((key) => {
-        const checked = selections[key]
+        const checked = selections[key];
         return `
         <tr>
           <td>${escapeHtml(labelResolver(key))}</td>
           <td>${checked ? '<span class="checkmark">✓</span>' : ""}</td>
         </tr>
-      `
+      `;
       })
-      .join("")
-  }
+      .join("");
+  };
 
-  const affectiveSelections = resolveBehavioralSelections("affective", AFFECTIVE_TRAITS, data.affectiveDomain)
-  const psychomotorSelections = resolveBehavioralSelections("psychomotor", PSYCHOMOTOR_SKILLS, data.psychomotorDomain)
+  const affectiveSelections = resolveBehavioralSelections(
+    "affective",
+    AFFECTIVE_TRAITS,
+    data.affectiveDomain,
+  );
+  const psychomotorSelections = resolveBehavioralSelections(
+    "psychomotor",
+    PSYCHOMOTOR_SKILLS,
+    data.psychomotorDomain,
+  );
 
-  const affectiveRows = buildDomainRows(AFFECTIVE_TRAITS, affectiveSelections, getAffectiveTraitLabel)
+  const affectiveRows = buildDomainRows(
+    AFFECTIVE_TRAITS,
+    affectiveSelections,
+    getAffectiveTraitLabel,
+  );
   const psychomotorRows = buildDomainRows(
     PSYCHOMOTOR_SKILLS,
     psychomotorSelections,
     getPsychomotorSkillLabel,
-  )
+  );
 
   if (!data.branding?.logo) {
-    console.warn("Report card branding: school logo not set")
+    console.warn("Report card branding: school logo not set");
   }
 
   if (!data.branding?.signature) {
-    console.warn("Report card branding: headmaster signature pending")
+    console.warn("Report card branding: headmaster signature pending");
   }
 
-  const summary = data.summary ?? {}
-  const teacherSignatureLabel = "Teacher's Signature"
-  const headSignatureLabel = "Headmaster's Signature"
+  const summary = data.summary ?? {};
+  const teacherSignatureLabel = "Teacher's Signature";
+  const headSignatureLabel = "Headmaster's Signature";
   const teacherSignatureImage =
-    typeof data.teacher?.signatureUrl === "string" && data.teacher.signatureUrl.trim().length > 0
+    typeof data.teacher?.signatureUrl === "string" &&
+    data.teacher.signatureUrl.trim().length > 0
       ? data.teacher.signatureUrl.trim()
-      : typeof data.teacher?.signature === "string" && data.teacher.signature.trim().length > 0
+      : typeof data.teacher?.signature === "string" &&
+          data.teacher.signature.trim().length > 0
         ? data.teacher.signature.trim()
-        : null
+        : null;
   const teacherSignatureName =
-    typeof data.teacher?.name === "string" && data.teacher.name.trim().length > 0
+    typeof data.teacher?.name === "string" &&
+    data.teacher.name.trim().length > 0
       ? data.teacher.name.trim()
-      : ""
+      : "";
   const headSignatureImage =
-    typeof data.branding?.signature === "string" && data.branding.signature.trim().length > 0
+    typeof data.branding?.signature === "string" &&
+    data.branding.signature.trim().length > 0
       ? data.branding.signature.trim()
-      : null
+      : null;
   const headSignatureName =
-    typeof data.branding?.headmasterName === "string" && data.branding.headmasterName.trim().length > 0
+    typeof data.branding?.headmasterName === "string" &&
+    data.branding.headmasterName.trim().length > 0
       ? data.branding.headmasterName.trim()
-      : ""
+      : "";
 
   return `<!DOCTYPE html>
   <html lang="en">
@@ -387,8 +412,17 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           font-weight: 700;
           font-size: 16px;
         }
-        .affective-signatures {
+        .affective-domain-card {
           margin-top: 12px;
+          padding: 14px 16px;
+          border: 1px solid #d9eadd;
+          border-radius: 10px;
+          background: #f6fdf8;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .affective-signatures {
           padding-top: 12px;
           border-top: 1px dashed #2d682d;
           display: flex;
@@ -490,7 +524,7 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
             </tr>
           </thead>
           <tbody>
-            ${subjectRows || "<tr><td colspan=\"9\">No subjects recorded.</td></tr>"}
+            ${subjectRows || '<tr><td colspan="9">No subjects recorded.</td></tr>'}
           </tbody>
         </table>
       </section>
@@ -534,43 +568,45 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
         <div class="grid holistic-grid">
           <div>
             <h3>Affective Domain</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Trait</th>
-                  <th>Rating</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${affectiveRows || "<tr><td colspan=\"2\">No affective selections recorded.</td></tr>"}
-              </tbody>
-            </table>
-            <div class="affective-signatures">
-              <div class="affective-signature-item">
-                <span class="affective-signature-label">${escapeHtml(teacherSignatureLabel)}</span>
-                ${
-                  teacherSignatureImage
-                    ? `<div class="signature-image"><img src="${escapeHtml(teacherSignatureImage)}" alt="Teacher signature" /></div>`
-                    : '<div class="signature-line"></div>'
-                }
-                ${
-                  teacherSignatureName
-                    ? `<div class="signature-name">${escapeHtml(teacherSignatureName)}</div>`
-                    : ""
-                }
-              </div>
-              <div class="affective-signature-item head">
-                <span class="affective-signature-label">${escapeHtml(headSignatureLabel)}</span>
-                ${
-                  headSignatureImage
-                    ? `<div class="signature-image"><img src="${escapeHtml(headSignatureImage)}" alt="Headmaster signature" /></div>`
-                    : '<div class="signature-placeholder">Signature Pending</div>'
-                }
-                ${
-                  headSignatureName
-                    ? `<div class="signature-name">${escapeHtml(headSignatureName)}</div>`
-                    : ""
-                }
+            <div class="affective-domain-card">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Trait</th>
+                    <th>Rating</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${affectiveRows || '<tr><td colspan="2">No affective selections recorded.</td></tr>'}
+                </tbody>
+              </table>
+              <div class="affective-signatures">
+                <div class="affective-signature-item">
+                  <span class="affective-signature-label">${escapeHtml(teacherSignatureLabel)}</span>
+                  ${
+                    teacherSignatureImage
+                      ? `<div class="signature-image"><img src="${escapeHtml(teacherSignatureImage)}" alt="Teacher signature" /></div>`
+                      : '<div class="signature-line"></div>'
+                  }
+                  ${
+                    teacherSignatureName
+                      ? `<div class="signature-name">${escapeHtml(teacherSignatureName)}</div>`
+                      : ""
+                  }
+                </div>
+                <div class="affective-signature-item head">
+                  <span class="affective-signature-label">${escapeHtml(headSignatureLabel)}</span>
+                  ${
+                    headSignatureImage
+                      ? `<div class="signature-image"><img src="${escapeHtml(headSignatureImage)}" alt="Headmaster signature" /></div>`
+                      : '<div class="signature-placeholder">Signature Pending</div>'
+                  }
+                  ${
+                    headSignatureName
+                      ? `<div class="signature-name">${escapeHtml(headSignatureName)}</div>`
+                      : ""
+                  }
+                </div>
               </div>
             </div>
           </div>
@@ -584,7 +620,7 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
                 </tr>
               </thead>
               <tbody>
-                ${psychomotorRows || "<tr><td colspan=\"2\">No psychomotor selections recorded.</td></tr>"}
+                ${psychomotorRows || '<tr><td colspan="2">No psychomotor selections recorded.</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -650,5 +686,5 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
         <span>Powered by VEA School Portal</span>
       </footer>
     </body>
-  </html>`
-}
+  </html>`;
+};
