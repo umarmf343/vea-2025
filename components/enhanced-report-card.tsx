@@ -15,7 +15,11 @@ import {
   getPsychomotorSkillLabel,
   normalizeBehavioralSelections,
 } from "@/lib/report-card-constants"
-import type { RawReportCardData } from "@/lib/report-card-types"
+import type {
+  ClassTeacherRemarkEntry,
+  ClassTeacherSubjectRemark,
+  RawReportCardData,
+} from "@/lib/report-card-types"
 import { deriveGradeFromScore } from "@/lib/grade-utils"
 import { getHtmlToImage } from "@/lib/html-to-image-loader"
 import { getJsPdf } from "@/lib/jspdf-loader"
@@ -51,6 +55,8 @@ interface SubjectScore {
   remarks: string
   position?: string
   columnScores: Record<string, number>
+  subjectKey?: string
+  remarkStatus?: ClassTeacherSubjectRemark | null
 }
 
 interface AttendanceSummary {
@@ -125,6 +131,7 @@ interface NormalizedReportCard {
     exam: number
     total: number
   }
+  remarkAssignments: Record<string, ClassTeacherSubjectRemark>
 }
 
 type StoredClassTeacherRemarkEntry = {
@@ -135,6 +142,54 @@ type StoredClassTeacherRemarkEntry = {
 type StoredClassTeacherRemarkRecord = {
   remark?: string
   remarksBySubject?: Record<string, StoredClassTeacherRemarkEntry>
+  remarkAssignments?: Record<string, StoredClassTeacherRemarkEntry>
+}
+
+const CLASS_TEACHER_REMARK_LABELS: Record<ClassTeacherSubjectRemark, string> = {
+  Excellent: "Excellent",
+  "V.Good": "Very Good",
+  Good: "Good",
+  Poor: "Poor",
+}
+
+const CLASS_TEACHER_REMARK_CLASS_MAP: Record<ClassTeacherSubjectRemark, string> = {
+  Excellent: "excellent",
+  "V.Good": "vgood",
+  Good: "good",
+  Poor: "poor",
+}
+
+const REMARK_KEY_SEPARATOR = "::"
+
+const buildRemarkKey = (subjectKey: string, studentId: string) =>
+  `${subjectKey}${REMARK_KEY_SEPARATOR}${studentId}`
+
+const interpretClassTeacherRemark = (value: unknown): ClassTeacherSubjectRemark | null => {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  const normalized = trimmed.toLowerCase().replace(/\s+/g, "")
+  if (normalized === "vgood" || normalized === "v.good" || normalized === "verygood") {
+    return "V.Good"
+  }
+
+  if (normalized === "excellent") {
+    return "Excellent"
+  }
+  if (normalized === "good") {
+    return "Good"
+  }
+  if (normalized === "poor") {
+    return "Poor"
+  }
+
+  return null
 }
 
 const STORAGE_KEYS_TO_WATCH = [
@@ -609,6 +664,10 @@ const normalizeSubjects = (
       subject.position ?? subject.subjectPosition ?? subject.rank ?? subject.order ?? null,
     )
     const positionLabel = rawPosition ? formatOrdinal(rawPosition) : undefined
+    const subjectKey =
+      typeof subject.subjectKey === "string" && subject.subjectKey.trim().length > 0
+        ? subject.subjectKey.trim()
+        : undefined
 
     return {
       name: String(subject.name ?? subject.subject ?? "Unknown Subject"),
@@ -621,6 +680,8 @@ const normalizeSubjects = (
       grade,
       remarks,
       columnScores,
+      subjectKey,
+      remarkStatus: null,
       position:
         positionLabel ??
         (typeof subject.position === "string" && subject.position.trim().length > 0
@@ -670,7 +731,8 @@ const normalizeReportCard = (
   const studentId = source.student.id ?? source.student.admissionNumber ?? source.student.name
   const termLabel = source.student.term
   const sessionLabel = source.student.session
-  const storageKey = `${studentId}-${termLabel}-${sessionLabel}`
+  const normalizedStudentId = String(studentId)
+  const storageKey = `${normalizedStudentId}-${termLabel}-${sessionLabel}`
 
   const behavioralStore = parseJsonRecord(safeStorage.getItem("behavioralAssessments"))
   const attendanceStore = parseJsonRecord(safeStorage.getItem("attendancePositions"))
@@ -694,6 +756,49 @@ const normalizeReportCard = (
 
   const remarkRecord = remarksStore[storageKey] as StoredClassTeacherRemarkRecord | undefined
 
+  const remarkAssignments = new Map<string, ClassTeacherSubjectRemark>()
+  const registerRemarkAssignment = (key: string, value: unknown) => {
+    if (!key) {
+      return
+    }
+
+    const interpreted = interpretClassTeacherRemark(value)
+    if (interpreted) {
+      remarkAssignments.set(key, interpreted)
+    }
+  }
+
+  if (
+    source.classTeacherRemarkAssignments &&
+    typeof source.classTeacherRemarkAssignments === "object"
+  ) {
+    Object.entries(source.classTeacherRemarkAssignments).forEach(([key, entry]) => {
+      if (!key) {
+        return
+      }
+
+      if (entry && typeof entry === "object" && "remark" in entry) {
+        registerRemarkAssignment(key, (entry as ClassTeacherRemarkEntry).remark)
+      } else {
+        registerRemarkAssignment(key, entry)
+      }
+    })
+  }
+
+  if (remarkRecord?.remarkAssignments && typeof remarkRecord.remarkAssignments === "object") {
+    Object.entries(remarkRecord.remarkAssignments).forEach(([key, entry]) => {
+      if (!key) {
+        return
+      }
+
+      if (entry && typeof entry === "object" && "remark" in entry) {
+        registerRemarkAssignment(key, (entry as { remark?: unknown }).remark)
+      } else {
+        registerRemarkAssignment(key, entry)
+      }
+    })
+  }
+
   const storedRemarkSummaryFromSubjects = remarkRecord?.remarksBySubject
     ? (() => {
         const summary = Object.values(remarkRecord.remarksBySubject ?? {})
@@ -714,7 +819,48 @@ const normalizeReportCard = (
       })()
     : undefined
 
-  const normalizedSubjects = normalizeSubjects(source.subjects, columns)
+  if (remarkRecord?.remarksBySubject && typeof remarkRecord.remarksBySubject === "object") {
+    Object.entries(remarkRecord.remarksBySubject).forEach(([subjectKey, entry]) => {
+      if (!subjectKey) {
+        return
+      }
+
+      const remarkKey = buildRemarkKey(subjectKey, normalizedStudentId)
+      if (entry && typeof entry === "object" && "remark" in entry) {
+        registerRemarkAssignment(remarkKey, entry.remark)
+      } else {
+        registerRemarkAssignment(remarkKey, entry)
+      }
+    })
+  }
+
+  const rawSubjects = normalizeSubjects(source.subjects, columns)
+
+  if (remarkRecord?.remark) {
+    const hasStudentAssignment = Array.from(remarkAssignments.keys()).some((key) =>
+      key.endsWith(`${REMARK_KEY_SEPARATOR}${normalizedStudentId}`),
+    )
+
+    if (!hasStudentAssignment) {
+      const fallbackSubjectKey =
+        rawSubjects[0]?.subjectKey ?? (rawSubjects[0]?.name ? String(rawSubjects[0].name) : "general")
+      registerRemarkAssignment(buildRemarkKey(fallbackSubjectKey, normalizedStudentId), remarkRecord.remark)
+    }
+  }
+
+  const normalizedSubjects = rawSubjects.map((subject) => {
+    const subjectKey = subject.subjectKey ?? subject.name
+    const remarkKey = subjectKey ? buildRemarkKey(subjectKey, normalizedStudentId) : null
+    const status = remarkKey ? remarkAssignments.get(remarkKey) ?? null : null
+    const remarkLabel = status ? CLASS_TEACHER_REMARK_LABELS[status] : subject.remarks?.trim() ?? ""
+
+    return {
+      ...subject,
+      subjectKey,
+      remarkStatus: status,
+      remarks: remarkLabel,
+    }
+  })
   const hasConfiguredColumns = columns.length > 0
   const computedContinuousMaximum = columns
     .filter((column) => !column.isExam)
@@ -950,6 +1096,8 @@ const normalizeReportCard = (
         }
       : null
 
+  const remarkAssignmentsRecord = Object.fromEntries(remarkAssignments.entries())
+
   return {
     student: {
       id: String(studentId),
@@ -1004,6 +1152,7 @@ const normalizeReportCard = (
       exam: examMaximum,
       total: totalMaximum,
     },
+    remarkAssignments: remarkAssignmentsRecord,
   }
 }
 
@@ -1032,6 +1181,16 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   const [isDownloading, setIsDownloading] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  const renderSubjectRemark = (subject: SubjectScore) => {
+    const remarkText = typeof subject.remarks === "string" ? subject.remarks.trim() : ""
+    if (subject.remarkStatus && remarkText) {
+      const className = CLASS_TEACHER_REMARK_CLASS_MAP[subject.remarkStatus]
+      return <span className={`remark-pill remark-${className}`}>{remarkText}</span>
+    }
+
+    return remarkText.length > 0 ? remarkText : "—"
+  }
 
   useEffect(() => {
     let isMounted = true
@@ -2101,7 +2260,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                       ) : null}
                       <td>{formatScoreValue(subject.total)}</td>
                       <td>{subject.position ?? ""}</td>
-                      <td>{subject.remarks || ""}</td>
+                      <td>{renderSubjectRemark(subject)}</td>
                     </tr>
                   ))}
                   <tr className="total-row">
@@ -2601,6 +2760,43 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           background-color: #fff;
         }
 
+        .remark-pill {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 600;
+          border-radius: 9999px;
+          border: 1px solid transparent;
+          padding: 2px 10px;
+          font-size: 0.85rem;
+          line-height: 1.2;
+          min-width: 72px;
+        }
+
+        .remark-pill.remark-excellent {
+          color: #166534;
+          border-color: rgba(22, 163, 74, 0.35);
+          background-color: rgba(22, 163, 74, 0.12);
+        }
+
+        .remark-pill.remark-vgood {
+          color: #0f766e;
+          border-color: rgba(13, 148, 136, 0.35);
+          background-color: rgba(13, 148, 136, 0.12);
+        }
+
+        .remark-pill.remark-good {
+          color: #1d4ed8;
+          border-color: rgba(37, 99, 235, 0.35);
+          background-color: rgba(37, 99, 235, 0.12);
+        }
+
+        .remark-pill.remark-poor {
+          color: #b91c1c;
+          border-color: rgba(220, 38, 38, 0.35);
+          background-color: rgba(220, 38, 38, 0.12);
+        }
+
         .subject-name {
           text-align: left !important;
           padding-left: 8px;
@@ -2663,7 +2859,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         }
 
         .affective-signatures .signature-item {
-          flex: 1 1 180px;
+          flex: 1 1 220px;
         }
 
         .vacation-box {
@@ -2691,12 +2887,15 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           gap: 12px;
           font-weight: 600;
           color: #27613d;
+          align-items: flex-start;
+          text-align: left;
+          flex: 1 1 220px;
         }
 
         .signature-item.headmaster-signature {
-          margin-left: auto;
-          align-items: flex-end;
-          text-align: right;
+          margin-left: 0;
+          align-items: flex-start;
+          text-align: left;
         }
 
         .signature-label {

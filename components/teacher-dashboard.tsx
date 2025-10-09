@@ -100,6 +100,8 @@ import {
   normalizeBehavioralDomainKey,
 } from "@/lib/report-card-constants"
 import type {
+  ClassTeacherRemarkEntry,
+  ClassTeacherSubjectRemark,
   RawReportCardData,
   StoredStudentMarkRecord,
   StoredSubjectRecord,
@@ -124,30 +126,37 @@ type BrowserRuntime = typeof globalThis & Partial<Window>
 
 const SUBJECT_REMARK_OPTIONS = ["Excellent", "V. Good", "Good", "Poor"] as const
 
+const CLASS_TEACHER_REMARK_LABELS: Record<ClassTeacherSubjectRemark, string> = {
+  Excellent: "Excellent",
+  "V.Good": "Very Good",
+  Good: "Good",
+  Poor: "Poor",
+}
+
 const CLASS_TEACHER_REMARK_OPTIONS = [
   {
-    value: "Excellent" as const,
-    label: "Excellent",
-    badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    value: "Excellent" as ClassTeacherSubjectRemark,
+    label: CLASS_TEACHER_REMARK_LABELS.Excellent,
+    badgeClass: "border-[#16a34a]/40 bg-[#16a34a]/10 text-[#166534]",
   },
   {
-    value: "V.Good" as const,
-    label: "V.Good",
-    badgeClass: "border-sky-200 bg-sky-50 text-sky-700",
+    value: "V.Good" as ClassTeacherSubjectRemark,
+    label: CLASS_TEACHER_REMARK_LABELS["V.Good"],
+    badgeClass: "border-[#0d9488]/40 bg-[#0d9488]/10 text-[#0f766e]",
   },
   {
-    value: "Good" as const,
-    label: "Good",
-    badgeClass: "border-amber-200 bg-amber-50 text-amber-700",
+    value: "Good" as ClassTeacherSubjectRemark,
+    label: CLASS_TEACHER_REMARK_LABELS.Good,
+    badgeClass: "border-[#2563eb]/40 bg-[#2563eb]/10 text-[#1d4ed8]",
   },
   {
-    value: "Poor" as const,
-    label: "Poor",
-    badgeClass: "border-red-200 bg-red-50 text-red-700",
+    value: "Poor" as ClassTeacherSubjectRemark,
+    label: CLASS_TEACHER_REMARK_LABELS.Poor,
+    badgeClass: "border-[#dc2626]/40 bg-[#dc2626]/10 text-[#b91c1c]",
   },
 ] as const
 
-type ClassTeacherRemarkValue = (typeof CLASS_TEACHER_REMARK_OPTIONS)[number]["value"]
+type ClassTeacherRemarkValue = ClassTeacherSubjectRemark
 
 const interpretClassTeacherRemark = (value: unknown): ClassTeacherRemarkValue | null => {
   if (typeof value !== "string") {
@@ -161,7 +170,7 @@ const interpretClassTeacherRemark = (value: unknown): ClassTeacherRemarkValue | 
 
   const normalized = trimmed.toLowerCase().replace(/\s+/g, "")
 
-  if (normalized === "vgood" || normalized === "v.good") {
+  if (normalized === "vgood" || normalized === "v.good" || normalized === "verygood") {
     return "V.Good"
   }
 
@@ -173,8 +182,36 @@ const interpretClassTeacherRemark = (value: unknown): ClassTeacherRemarkValue | 
 }
 
 const mapClassTeacherRemarkToSubjectRemark = (value: ClassTeacherRemarkValue): string =>
-  value === "V.Good" ? "V. Good" : value
+  CLASS_TEACHER_REMARK_LABELS[value] ?? value
 const SUBJECT_REFRESH_TIMEOUT_MS = 15000
+
+const CLASS_TEACHER_REMARK_OPTION_MAP = CLASS_TEACHER_REMARK_OPTIONS.reduce(
+  (
+    acc,
+    option,
+  ) => {
+    acc[option.value] = option
+    return acc
+  },
+  {} as Record<ClassTeacherRemarkValue, (typeof CLASS_TEACHER_REMARK_OPTIONS)[number]>,
+)
+
+const REMARK_KEY_SEPARATOR = "::"
+
+const buildRemarkKey = (subjectKey: string, studentId: string) =>
+  `${subjectKey}${REMARK_KEY_SEPARATOR}${studentId}`
+
+const parseRemarkKey = (key: string): { subjectKey: string; studentId: string } => {
+  const separatorIndex = key.lastIndexOf(REMARK_KEY_SEPARATOR)
+  if (separatorIndex === -1) {
+    return { subjectKey: key, studentId: "" }
+  }
+
+  return {
+    subjectKey: key.slice(0, separatorIndex),
+    studentId: key.slice(separatorIndex + REMARK_KEY_SEPARATOR.length),
+  }
+}
 
 const getBrowserRuntime = (): BrowserRuntime | null => {
   if (typeof globalThis === "undefined") {
@@ -567,7 +604,7 @@ type TeacherTimetableSlot = TimetableWeeklyViewSlot
 type BehavioralDomainState = Record<string, Record<string, boolean>>
 type AttendanceState = Record<string, { present: number; absent: number; total: number }>
 type StudentStatusState = Record<string, string>
-type ClassTeacherRemarksState = Record<string, Record<string, ClassTeacherRemarkValue>>
+type ClassTeacherRemarksState = Record<string, ClassTeacherRemarkEntry>
 
 type TermInfoState = {
   numberInClass: string
@@ -1628,13 +1665,26 @@ export function TeacherDashboard({
     [marksData, selectedRemarkStudentId],
   )
 
-  const selectedRemarkValue: ClassTeacherRemarkValue | "" =
+  const selectedRemarkKey =
     selectedRemarkStudent && selectedSubjectKey
-      ? additionalData.classTeacherRemarks[selectedRemarkStudent.studentId]?.[selectedSubjectKey] ?? ""
+      ? buildRemarkKey(selectedSubjectKey, selectedRemarkStudent.studentId)
       : ""
+  const selectedRemarkEntry = selectedRemarkKey
+    ? additionalData.classTeacherRemarks[selectedRemarkKey]
+    : undefined
+  const selectedRemarkValue: ClassTeacherRemarkValue | "" = selectedRemarkEntry?.remark ?? ""
   const currentRemarkOption = selectedRemarkValue
-    ? CLASS_TEACHER_REMARK_OPTIONS.find((option) => option.value === selectedRemarkValue) ?? null
+    ? CLASS_TEACHER_REMARK_OPTION_MAP[selectedRemarkValue] ?? null
     : null
+  const hasRemarkSubjects = availableSubjectOptions.length > 0
+  const isStudentSelectDisabledForRemarks = !selectedSubjectKey || marksData.length === 0
+  const studentSelectPlaceholder = !selectedSubjectKey
+    ? "Select a subject first"
+    : marksData.length === 0
+      ? "No students available"
+      : "Select student"
+  const studentDropdownStatusMessage =
+    selectedSubjectKey && marksData.length === 0 ? "No students in this class." : null
 
   const assignmentInsights = useMemo(() => {
     if (assignments.length === 0) {
@@ -2054,27 +2104,61 @@ export function TeacherDashboard({
   }, [teacherSubjectOptions])
 
   const buildClassTeacherRemarkSummary = useCallback(
-    (remarks: Record<string, ClassTeacherRemarkValue> | undefined) => {
-      if (!remarks) {
+    (
+      entries:
+        | Array<{ subjectKey: string; remark: ClassTeacherRemarkValue }>
+        | undefined,
+    ) => {
+      if (!entries || entries.length === 0) {
         return ""
       }
 
-      const entries = Object.entries(remarks)
-        .map(([subjectKey, value]) => {
-          if (!value) {
+      const formatted = entries
+        .map(({ subjectKey, remark }) => {
+          const subjectOption = subjectOptionByKey.get(subjectKey)
+          const label = subjectOption?.subject ?? (subjectKey === "general" ? "General" : subjectKey)
+          const displayRemark = mapClassTeacherRemarkToSubjectRemark(remark)
+
+          if (!label || !displayRemark) {
             return null
           }
 
-          const subjectOption = subjectOptionByKey.get(subjectKey)
-          const label = subjectOption?.subject ?? (subjectKey === "general" ? "General" : subjectKey)
-
-          return `${label}: ${value}`
+          return `${label}: ${displayRemark}`
         })
         .filter((entry): entry is string => Boolean(entry))
 
-      return entries.join(" • ")
+      return formatted.join(" • ")
     },
     [subjectOptionByKey],
+  )
+
+  const getStudentRemarkEntries = useCallback(
+    (studentId: string) => {
+      if (!studentId) {
+        return [] as Array<{ key: string; subjectKey: string; remark: ClassTeacherRemarkValue }>
+      }
+
+      return Object.entries(additionalData.classTeacherRemarks)
+        .map(([compositeKey, entry]) => {
+          if (!entry || typeof entry !== "object" || !entry.remark) {
+            return null
+          }
+
+          const { subjectKey, studentId: entryStudentId } = parseRemarkKey(compositeKey)
+          if (!subjectKey || entryStudentId !== studentId) {
+            return null
+          }
+
+          return { key: compositeKey, subjectKey, remark: entry.remark }
+        })
+        .filter(
+          (
+            entry,
+          ): entry is { key: string; subjectKey: string; remark: ClassTeacherRemarkValue } =>
+            entry !== null,
+        )
+    },
+    [additionalData.classTeacherRemarks],
   )
 
   const availableSubjectOptions = useMemo(() => {
@@ -3163,7 +3247,7 @@ export function TeacherDashboard({
     setAdditionalData((prev) => {
       const nextAffective = { ...prev.affectiveDomain }
       const nextPsychomotor = { ...prev.psychomotorDomain }
-      const nextRemarks = { ...prev.classTeacherRemarks }
+      const nextRemarks: ClassTeacherRemarksState = { ...prev.classTeacherRemarks }
       const nextAttendance = { ...prev.attendance }
       const nextStatus = { ...prev.studentStatus }
 
@@ -3173,13 +3257,11 @@ export function TeacherDashboard({
       if (!nextPsychomotor[newRecord.studentId]) {
         nextPsychomotor[newRecord.studentId] = createBehavioralRecordSkeleton(PSYCHOMOTOR_SKILLS)
       }
-      if (!nextRemarks[newRecord.studentId]) {
-        nextRemarks[newRecord.studentId] = {}
-      }
 
       const interpretedRemark = interpretClassTeacherRemark(storedSubject?.remark)
       if (interpretedRemark && resolvedSubjectKey) {
-        nextRemarks[newRecord.studentId][resolvedSubjectKey] = interpretedRemark
+        const remarkKey = buildRemarkKey(resolvedSubjectKey, newRecord.studentId)
+        nextRemarks[remarkKey] = { remark: interpretedRemark }
       }
       if (!nextAttendance[newRecord.studentId]) {
         nextAttendance[newRecord.studentId] = { present: 0, absent: 0, total: 0 }
@@ -3236,9 +3318,21 @@ export function TeacherDashboard({
           : attendanceStats.present + attendanceStats.absent
 
       const summaryGrade = deriveGradeFromScore(student.averageScore)
-      const classTeacherRemarkSummary = buildClassTeacherRemarkSummary(
-        additionalData.classTeacherRemarks[student.studentId],
+      const studentRemarkEntries = getStudentRemarkEntries(student.studentId)
+      const classTeacherRemarkSummary = buildClassTeacherRemarkSummary(studentRemarkEntries)
+      const remarkAssignmentsForStudent = studentRemarkEntries.reduce(
+        (acc, entry) => {
+          acc[entry.key] = { remark: entry.remark }
+          return acc
+        },
+        {} as Record<string, ClassTeacherRemarkEntry>,
       )
+      const activeSubjectRemarkEntry = selectedSubjectKey
+        ? studentRemarkEntries.find((entry) => entry.subjectKey === selectedSubjectKey)
+        : undefined
+      const activeSubjectRemarkDisplay = activeSubjectRemarkEntry
+        ? mapClassTeacherRemarkToSubjectRemark(activeSubjectRemarkEntry.remark)
+        : student.teacherRemark
       const baseSummary = {
         totalMarksObtainable: student.totalMarksObtainable,
         totalMarksObtained: student.totalMarksObtained,
@@ -3292,6 +3386,7 @@ export function TeacherDashboard({
         subjects: [
           {
             name: selectedSubject || "Subject",
+            subjectKey: selectedSubjectKey || undefined,
             ca1: student.firstCA,
             ca2: student.secondCA,
             assignment: student.noteAssignment,
@@ -3299,7 +3394,7 @@ export function TeacherDashboard({
             exam: student.exam,
             total: student.grandTotal,
             grade: student.grade,
-            remarks: student.teacherRemark,
+            remarks: activeSubjectRemarkDisplay,
             position: student.position,
           },
         ],
@@ -3334,6 +3429,10 @@ export function TeacherDashboard({
           name: teacher.name,
           signatureUrl: teacherSignature.url,
         },
+        classTeacherRemarkAssignments:
+          Object.keys(remarkAssignmentsForStudent).length > 0
+            ? remarkAssignmentsForStudent
+            : undefined,
       }
 
       if (!aggregatedRaw) {
@@ -3389,11 +3488,13 @@ export function TeacherDashboard({
     [
       additionalData,
       buildClassTeacherRemarkSummary,
+      getStudentRemarkEntries,
       marksData.length,
       normalizedTermLabel,
       selectedClass,
       selectedSession,
       selectedSubject,
+      selectedSubjectKey,
       teacher.id,
       teacher.name,
       teacherSignature.url,
@@ -3456,10 +3557,9 @@ export function TeacherDashboard({
       }
 
       setAdditionalData((prev) => {
-        const nextRemarks = { ...prev.classTeacherRemarks }
-        const studentRemarks = { ...(nextRemarks[studentId] ?? {}) }
-        studentRemarks[subjectKey] = value
-        nextRemarks[studentId] = studentRemarks
+        const nextRemarks: ClassTeacherRemarksState = { ...prev.classTeacherRemarks }
+        const remarkKey = buildRemarkKey(subjectKey, studentId)
+        nextRemarks[remarkKey] = { remark: value }
 
         return {
           ...prev,
@@ -3582,9 +3682,9 @@ export function TeacherDashboard({
         const existingRecord = existingIndex >= 0 ? reportCards[existingIndex] : null
         const reportCardId = existingRecord?.id ?? `report_${student.studentId}_${normalizedTermLabel}_${selectedSession}`
         const headTeacherRemark = existingRecord?.headTeacherRemark ?? null
+        const remarkEntriesForStudent = getStudentRemarkEntries(student.studentId)
         const classTeacherRemark =
-          buildClassTeacherRemarkSummary(additionalData.classTeacherRemarks[student.studentId]) ||
-          student.teacherRemark
+          buildClassTeacherRemarkSummary(remarkEntriesForStudent) || student.teacherRemark
 
         const aggregatedRaw = buildRawReportCardFromStoredRecord(mergedRecord)
         const previewPayload = buildStudentPreview(student, aggregatedRaw)
@@ -3635,6 +3735,8 @@ export function TeacherDashboard({
     additionalData.studentStatus,
     additionalData.termInfo.numberInClass,
     buildStudentPreview,
+    buildClassTeacherRemarkSummary,
+    getStudentRemarkEntries,
     emitMarksStoreUpdate,
     marksData,
     normalizedTermLabel,
@@ -4240,13 +4342,34 @@ export function TeacherDashboard({
           }
         | undefined
 
-      if (!nextState.classTeacherRemarks[student.studentId]) {
-        nextState.classTeacherRemarks[student.studentId] = {}
+      const assignRemarkToStudent = (subjectKey: string, remark: ClassTeacherRemarkValue) => {
+        if (!subjectKey) {
+          return
+        }
+
+        const remarkKey = buildRemarkKey(subjectKey, student.studentId)
+        nextState.classTeacherRemarks[remarkKey] = { remark }
       }
 
-      const studentRemarks = nextState.classTeacherRemarks[student.studentId]
-
       if (remarksRecord && typeof remarksRecord === "object") {
+        if (remarksRecord.remarkAssignments && typeof remarksRecord.remarkAssignments === "object") {
+          Object.entries(remarksRecord.remarkAssignments).forEach(([compositeKey, rawValue]) => {
+            const candidate =
+              typeof rawValue === "object" && rawValue !== null && "remark" in rawValue
+                ? (rawValue as { remark?: unknown }).remark
+                : rawValue
+            const interpreted = interpretClassTeacherRemark(candidate)
+            if (!interpreted) {
+              return
+            }
+
+            const { subjectKey, studentId: entryStudentId } = parseRemarkKey(compositeKey)
+            if (entryStudentId === student.studentId) {
+              assignRemarkToStudent(subjectKey, interpreted)
+            }
+          })
+        }
+
         if (remarksRecord.remarksBySubject && typeof remarksRecord.remarksBySubject === "object") {
           Object.entries(remarksRecord.remarksBySubject).forEach(([subjectKey, rawValue]) => {
             const candidate =
@@ -4255,16 +4378,23 @@ export function TeacherDashboard({
                 : rawValue
             const interpreted = interpretClassTeacherRemark(candidate)
             if (interpreted) {
-              studentRemarks[subjectKey] = interpreted
+              assignRemarkToStudent(subjectKey, interpreted)
             }
           })
         }
 
-        if (remarksRecord.remark && Object.keys(studentRemarks).length === 0) {
+        if (remarksRecord.remark) {
           const interpreted = interpretClassTeacherRemark(remarksRecord.remark)
           if (interpreted) {
-            const fallbackKey = selectedSubjectKey || selectedSubject || "general"
-            studentRemarks[fallbackKey] = interpreted
+            const hasExistingRemarkForStudent = Object.keys(nextState.classTeacherRemarks).some((key) => {
+              const parsed = parseRemarkKey(key)
+              return parsed.studentId === student.studentId
+            })
+
+            if (!hasExistingRemarkForStudent) {
+              const fallbackKey = selectedSubjectKey || selectedSubject || "general"
+              assignRemarkToStudent(fallbackKey, interpreted)
+            }
           }
         }
       }
@@ -4280,12 +4410,13 @@ export function TeacherDashboard({
 
         let hasChanges = false
         const nextMarks = previous.map((entry) => {
-          const remarkValue = nextState.classTeacherRemarks[entry.studentId]?.[activeSubjectKey]
-          if (!remarkValue) {
+          const remarkEntry =
+            nextState.classTeacherRemarks[buildRemarkKey(activeSubjectKey, entry.studentId)]
+          if (!remarkEntry?.remark) {
             return entry
           }
 
-          const mappedRemark = mapClassTeacherRemarkToSubjectRemark(remarkValue)
+          const mappedRemark = mapClassTeacherRemarkToSubjectRemark(remarkEntry.remark)
           if (entry.teacherRemark === mappedRemark) {
             return entry
           }
@@ -5227,8 +5358,9 @@ export function TeacherDashboard({
         const reportCardId =
           existingRecord?.id ?? `report_${studentId}_${normalizedTerm}_${selectedSession}`
         const headTeacherRemark = existingRecord?.headTeacherRemark ?? null
+        const studentRemarkEntriesForRecord = getStudentRemarkEntries(studentId)
         const classTeacherRemark =
-          buildClassTeacherRemarkSummary(additionalData.classTeacherRemarks[studentId]) ||
+          buildClassTeacherRemarkSummary(studentRemarkEntriesForRecord) ||
           marksRecord?.teacherRemark ||
           existingRecord?.classTeacherRemark ||
           ""
@@ -5586,18 +5718,9 @@ export function TeacherDashboard({
 
       marksData.forEach((student) => {
         const studentKey = `${student.studentId}-${termLabel}-${selectedSession}`
-        const studentRemarks = additionalData.classTeacherRemarks[student.studentId] ?? {}
-
-        const normalizedRemarks: Record<string, ClassTeacherRemarkValue> = {}
-        Object.entries(studentRemarks).forEach(([subjectKey, value]) => {
-          const interpreted = interpretClassTeacherRemark(value)
-          if (interpreted) {
-            normalizedRemarks[subjectKey] = interpreted
-          }
-        })
-
-        const remarkSummary = buildClassTeacherRemarkSummary(normalizedRemarks)
-        const remarksBySubject = Object.entries(normalizedRemarks).reduce(
+        const remarkEntries = getStudentRemarkEntries(student.studentId)
+        const remarkSummary = buildClassTeacherRemarkSummary(remarkEntries)
+        const remarksBySubject = remarkEntries.reduce(
           (
             acc: Record<
               string,
@@ -5606,15 +5729,19 @@ export function TeacherDashboard({
                 remark: ClassTeacherRemarkValue
               }
             >,
-            [subjectKey, remarkValue],
+            entry,
           ) => {
-            const subjectOption = subjectOptionByKey.get(subjectKey)
-            const label = subjectOption?.subject ?? (subjectKey === "general" ? "General" : subjectKey)
-            acc[subjectKey] = { label, remark: remarkValue }
+            const subjectOption = subjectOptionByKey.get(entry.subjectKey)
+            const label = subjectOption?.subject ?? (entry.subjectKey === "general" ? "General" : entry.subjectKey)
+            acc[entry.subjectKey] = { label, remark: entry.remark }
             return acc
           },
           {},
         )
+        const remarkAssignments = remarkEntries.reduce((acc, entry) => {
+          acc[entry.key] = { remark: entry.remark }
+          return acc
+        }, {} as Record<string, ClassTeacherRemarkEntry>)
 
         existingData[studentKey] = {
           studentId: student.studentId,
@@ -5625,6 +5752,7 @@ export function TeacherDashboard({
           session: selectedSession,
           remark: remarkSummary,
           remarksBySubject,
+          remarkAssignments,
           teacherId: teacher.id,
           timestamp,
         }
@@ -7001,7 +7129,7 @@ export function TeacherDashboard({
                               <Select
                                 value={selectedSubjectKey || undefined}
                                 onValueChange={handleSelectSubject}
-                                disabled={isSubjectSelectDisabled || availableSubjectOptions.length === 0}
+                                disabled={isSubjectSelectDisabled || !hasRemarkSubjects}
                               >
                                 <SelectTrigger className="h-10">
                                   <SelectValue placeholder={subjectSelectPlaceholder} />
@@ -7014,8 +7142,14 @@ export function TeacherDashboard({
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <p className="text-[11px] text-muted-foreground">
-                                Choose the subject to attach a class teacher remark.
+                              <p
+                                className={`text-[11px] ${
+                                  hasRemarkSubjects ? "text-muted-foreground" : "text-amber-600"
+                                }`}
+                              >
+                                {hasRemarkSubjects
+                                  ? "Choose the subject to attach a class teacher remark."
+                                  : "No subjects assigned for remark entry."}
                               </p>
                             </div>
                             <div className="space-y-2">
@@ -7025,14 +7159,10 @@ export function TeacherDashboard({
                               <Select
                                 value={selectedRemarkStudentId || undefined}
                                 onValueChange={setSelectedRemarkStudentId}
-                                disabled={marksData.length === 0}
+                                disabled={isStudentSelectDisabledForRemarks}
                               >
                                 <SelectTrigger className="h-10">
-                                  <SelectValue
-                                    placeholder={
-                                      marksData.length === 0 ? "No students available" : "Select student"
-                                    }
-                                  />
+                                  <SelectValue placeholder={studentSelectPlaceholder} />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {marksData.map((student) => (
@@ -7042,8 +7172,12 @@ export function TeacherDashboard({
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <p className="text-[11px] text-muted-foreground">
-                                Remarks are saved per student and subject.
+                              <p
+                                className={`text-[11px] ${
+                                  studentDropdownStatusMessage ? "text-amber-600" : "text-muted-foreground"
+                                }`}
+                              >
+                                {studentDropdownStatusMessage ?? "Remarks are saved per student and subject."}
                               </p>
                             </div>
                             <div className="space-y-2">
@@ -7139,14 +7273,13 @@ export function TeacherDashboard({
                             ) : (
                               <div className="space-y-2">
                                 {marksData.map((student) => {
-                                  const studentRemarks = additionalData.classTeacherRemarks[student.studentId]
-                                  const summary = buildClassTeacherRemarkSummary(studentRemarks)
-                                  const activeRemark =
-                                    selectedSubjectKey && studentRemarks
-                                      ? studentRemarks[selectedSubjectKey]
-                                      : undefined
-                                  const activeOption = activeRemark
-                                    ? CLASS_TEACHER_REMARK_OPTIONS.find((option) => option.value === activeRemark)
+                                  const remarkEntries = getStudentRemarkEntries(student.studentId)
+                                  const summary = buildClassTeacherRemarkSummary(remarkEntries)
+                                  const activeRemarkEntry = selectedSubjectKey
+                                    ? remarkEntries.find((entry) => entry.subjectKey === selectedSubjectKey)
+                                    : undefined
+                                  const activeOption = activeRemarkEntry
+                                    ? CLASS_TEACHER_REMARK_OPTION_MAP[activeRemarkEntry.remark] ?? null
                                     : null
                                   return (
                                     <div
@@ -7159,7 +7292,7 @@ export function TeacherDashboard({
                                           {summary ? summary : "No remarks saved yet."}
                                         </p>
                                       </div>
-                                      {activeRemark ? (
+                                      {activeRemarkEntry ? (
                                         <span
                                           className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-semibold ${
                                             activeOption?.badgeClass ?? "border-muted bg-muted text-slate-600"
@@ -7167,7 +7300,10 @@ export function TeacherDashboard({
                                         >
                                           {`${
                                             selectedSubjectOption?.label ?? selectedSubject || "Subject"
-                                          }: ${activeOption?.label ?? activeRemark}`}
+                                          }: ${
+                                            activeOption?.label ??
+                                            mapClassTeacherRemarkToSubjectRemark(activeRemarkEntry.remark)
+                                          }`}
                                         </span>
                                       ) : null}
                                     </div>

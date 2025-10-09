@@ -61,6 +61,12 @@ export interface RawReportCardTeacher {
   uploadedAt?: string | null
 }
 
+export type ClassTeacherSubjectRemark = "Excellent" | "V.Good" | "Good" | "Poor"
+
+export type ClassTeacherRemarkEntry = {
+  remark: ClassTeacherSubjectRemark
+}
+
 export interface RawReportCardData {
   student: RawReportCardStudent
   subjects?: Array<Record<string, unknown>>
@@ -86,6 +92,7 @@ export interface RawReportCardData {
     outstanding?: string
   }
   teacher?: RawReportCardTeacher | null
+  classTeacherRemarkAssignments?: Record<string, ClassTeacherRemarkEntry>
 }
 
 export interface StoredSubjectRecord {
