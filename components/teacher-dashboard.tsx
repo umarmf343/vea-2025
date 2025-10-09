@@ -7712,22 +7712,22 @@ export function TeacherDashboard({
                         </p>
                       </div>
                     )}
-                  <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+                  <div className="mt-4 flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 lg:gap-4">
                     <Button
                       variant="outline"
-                      className="w-full justify-center sm:w-auto sm:justify-start"
+                      className="w-full justify-center px-3 py-2 text-sm sm:w-auto sm:justify-start sm:px-4 sm:py-2.5 sm:text-base"
                       onClick={() => void handleSaveDraft()}
                       disabled={isSavingDraft || isSubmittingForApproval}
                     >
                       {isSavingDraft ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin sm:h-4 sm:w-4" />
                       ) : (
-                        <Save className="mr-2 h-4 w-4" />
+                        <Save className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
                       )}
                       Save Progress
                     </Button>
                     <Button
-                      className="w-full justify-center bg-[#2d682d] text-white hover:bg-[#1f4a1f] sm:w-auto sm:justify-start"
+                      className="w-full justify-center bg-[#2d682d] px-3 py-2 text-sm text-white hover:bg-[#1f4a1f] sm:w-auto sm:justify-start sm:px-4 sm:py-2.5 sm:text-base"
                       onClick={() => void handleSubmitForApproval()}
                       disabled={
                         isSavingDraft ||
@@ -7737,9 +7737,9 @@ export function TeacherDashboard({
                       }
                     >
                       {isSubmittingForApproval ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin sm:h-4 sm:w-4" />
                       ) : (
-                        <FileText className="mr-2 h-4 w-4" />
+                        <FileText className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
                       )}
                       {currentStatus.status === "approved"
                         ? "Published"
@@ -7750,7 +7750,7 @@ export function TeacherDashboard({
                     {currentStatus.status === "revoked" && (
                       <Button
                         variant="outline"
-                        className="w-full justify-center sm:w-auto sm:justify-start"
+                        className="w-full justify-center px-3 py-2 text-sm sm:w-auto sm:justify-start sm:px-4 sm:py-2.5 sm:text-base"
                         onClick={() => void handleSubmitForApproval()}
                         disabled={isSavingDraft || isSubmittingForApproval}
                       >
@@ -7760,12 +7760,12 @@ export function TeacherDashboard({
                     {currentStatus.status === "pending" && (
                       <Button
                         variant="ghost"
-                        className="w-full justify-center sm:w-auto sm:justify-start"
+                        className="w-full justify-center px-3 py-2 text-sm sm:w-auto sm:justify-start sm:px-4 sm:py-2.5 sm:text-base"
                         onClick={() => void handleCancelSubmission()}
                         disabled={isCancellingSubmission}
                       >
                         {isCancellingSubmission ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          <Loader2 className="mr-2 h-3 w-3 animate-spin sm:h-4 sm:w-4" />
                         ) : null}
                         Cancel Submission
                       </Button>
@@ -7942,19 +7942,19 @@ export function TeacherDashboard({
                           ? `Assessment weighting: ${assessmentWeightingSummary}.`
                           : "Assessment columns will appear once your administrator configures them."}
                       </p>
-                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 lg:gap-4">
                         <Button
                           variant="outline"
-                          className="w-full justify-center border-dashed border-[#2d682d] text-[#2d682d] hover:bg-[#2d682d]/10 sm:w-auto sm:justify-start"
+                          className="w-full justify-center border-dashed border-[#2d682d] px-3 py-2 text-sm text-[#2d682d] hover:bg-[#2d682d]/10 sm:w-auto sm:justify-start sm:px-4 sm:py-2.5 sm:text-base"
                           onClick={handleOpenAddStudentDialog}
                           disabled={!selectedClass || !hasAvailableSubjects}
                         >
-                          <UserPlus className="mr-2 h-4 w-4" />
+                          <UserPlus className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
                           Add Student Entry
                         </Button>
                         <Button
                           variant="outline"
-                          className="w-full justify-center border-[#2d682d] text-[#2d682d] hover:bg-[#2d682d]/10 sm:w-auto sm:justify-start"
+                          className="w-full justify-center border-[#2d682d] px-3 py-2 text-sm text-[#2d682d] hover:bg-[#2d682d]/10 sm:w-auto sm:justify-start sm:px-4 sm:py-2.5 sm:text-base"
                           onClick={handleSaveAcademicRecords}
                           disabled={
                             isSavingAcademicRecords ||
@@ -7963,21 +7963,21 @@ export function TeacherDashboard({
                           }
                         >
                           {isSavingAcademicRecords ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            <Loader2 className="mr-2 h-3 w-3 animate-spin sm:h-4 sm:w-4" />
                           ) : (
-                            <Save className="mr-2 h-4 w-4" />
+                            <Save className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
                           )}
                           Save Academic Entries
                         </Button>
                         <Button
-                          className="w-full justify-center bg-[#2d682d] text-white hover:bg-[#245224] sm:w-auto sm:justify-start"
+                          className="w-full justify-center bg-[#2d682d] px-3 py-2 text-sm text-white hover:bg-[#245224] sm:w-auto sm:justify-start sm:px-4 sm:py-2.5 sm:text-base"
                           onClick={handleSyncAcademicMarks}
                           disabled={isSyncingGrades}
                         >
                           {isSyncingGrades ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            <Loader2 className="mr-2 h-3 w-3 animate-spin sm:h-4 sm:w-4" />
                           ) : (
-                            <Save className="mr-2 h-4 w-4" />
+                            <Save className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
                           )}
                           Sync to Exam Management
                         </Button>
@@ -8475,12 +8475,12 @@ export function TeacherDashboard({
                         </Card>
                       ))}
                     </div>
-                    <div className="flex justify-end mt-2">
+                    <div className="mt-2 flex flex-col items-stretch gap-2 sm:flex-row sm:justify-end">
                       <Button
                         onClick={handleSaveBehavioralAssessment}
-                        className="bg-[#2d682d] hover:bg-[#1f4a1f] text-white"
+                        className="w-full justify-center bg-[#2d682d] px-3 py-2 text-sm text-white hover:bg-[#1f4a1f] sm:w-auto sm:justify-start sm:px-4 sm:py-2.5 sm:text-base"
                       >
-                        <Save className="w-4 h-4 mr-2" />
+                        <Save className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
                         Save Behavioral Assessment
                       </Button>
                     </div>
@@ -8640,12 +8640,12 @@ export function TeacherDashboard({
                         </CardContent>
                       </Card>
                     </div>
-                    <div className="flex justify-end">
+                    <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:justify-end">
                       <Button
                         onClick={handleSaveAttendanceRecords}
-                        className="bg-[#2d682d] hover:bg-[#1f4a1f] text-white"
+                        className="w-full justify-center bg-[#2d682d] px-3 py-2 text-sm text-white hover:bg-[#1f4a1f] sm:w-auto sm:justify-start sm:px-4 sm:py-2.5 sm:text-base"
                       >
-                        <Save className="w-4 h-4 mr-2" />
+                        <Save className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
                         Save Attendance Records
                       </Button>
                     </div>
@@ -8976,12 +8976,12 @@ export function TeacherDashboard({
                         </div>
                       </CardContent>
                     </Card>
-                    <div className="flex justify-end mt-6">
+                    <div className="mt-6 flex flex-col items-stretch gap-2 sm:flex-row sm:justify-end">
                       <Button
                         onClick={handleSaveClassTeacherRemarks}
-                        className="bg-[#2d682d] hover:bg-[#1f4a1f] text-white"
+                        className="w-full justify-center bg-[#2d682d] px-3 py-2 text-sm text-white hover:bg-[#1f4a1f] sm:w-auto sm:justify-start sm:px-4 sm:py-2.5 sm:text-base"
                       >
-                        <Save className="w-4 h-4 mr-2" />
+                        <Save className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
                         Save Class Teacher Remarks
                       </Button>
                     </div>
