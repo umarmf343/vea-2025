@@ -2656,7 +2656,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         .affective-signatures {
           margin-top: 16px;
           display: flex;
-          align-items: flex-end;
+          align-items: flex-start;
           justify-content: space-between;
           gap: 24px;
           flex-wrap: wrap;
