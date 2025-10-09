@@ -1,0 +1,151 @@
+# VEA 2025 Portal – Beginner-Friendly cPanel Deployment Manual
+
+This guide walks you through every step required to take the project from your Windows development machine to a live deployment on a cPanel host. Follow each section in order. No prior DevOps knowledge is assumed.
+
+---
+
+## 1. Understand What You Will Deploy
+- **Framework**: Next.js 14 with a custom Node.js server (`server.js`).
+- **Runtime requirements**: Node.js 18.x+, npm 9+, and a MySQL-compatible database (create it separately in cPanel if you need live data).
+- **Start command**: `npm start` (this runs `node server.js`).
+- **Environment variables**: See `.env.example` for everything the app expects (Paystack keys, JWT secret, etc.).
+
+> 📌 **Important**: cPanel will only run the already-built application. All development commands (`npm install`, `npm run build`) must be executed on your Windows PC before you upload the bundle.
+
+---
+
+## 2. Prepare Your Windows Development Environment
+1. **Install Node.js 18 LTS**
+   - Download from [https://nodejs.org](https://nodejs.org) and choose the Windows installer.
+   - During installation, keep the default options so that `npm` is added to your PATH.
+2. **Install Git (optional but recommended)**
+   - Download from [https://git-scm.com](https://git-scm.com) to clone repositories and use Git Bash.
+3. **Clone or download the project**
+   - Example (PowerShell):
+     ```powershell
+     git clone https://github.com/<your-org>/vea-2025.git
+     cd vea-2025
+     ```
+4. **Install dependencies**
+   - Run in PowerShell or Command Prompt:
+     ```powershell
+     npm install
+     ```
+   - Wait for the installation to finish without errors.
+5. **Configure environment variables for local testing**
+   - Duplicate the sample file: `Copy-Item .env.example .env.local` (PowerShell) or `copy .env.example .env.local` (Command Prompt).
+   - Open `.env.local` in a text editor and fill in real values (Paystack keys, JWT secret, etc.).
+6. **Optional sanity checks**
+   - Start the dev server: `npm run dev`
+   - Visit `http://localhost:3000` to ensure the app loads.
+
+---
+
+## 3. Build the Production Bundle on Windows
+1. **Set the environment to production for the build**
+   ```powershell
+   setx NODE_ENV production
+   ```
+   (Close and reopen the terminal afterwards.)
+2. **Run the production build**
+   ```powershell
+   npm run build
+   ```
+   - On success you will see `.next/` generated inside the project folder.
+3. **Prepare the files that must be uploaded**
+   Keep the following in a clean folder, for example `deploy/`:
+   - `.next/` (the build output)
+   - `public/`
+   - `package.json`
+   - `package-lock.json`
+   - `server.js`
+   - `next.config.mjs`
+   - `middleware.ts` (if you rely on middleware)
+   - Any configuration files your app needs at runtime (e.g. `nginx.conf`, `lib/`, `app/` for server components, etc.)
+   - `.env` (the production environment file you will create in the next step).
+
+   > ⚠️ **Do not copy the Windows `node_modules/` folder**. Linux servers require Linux-compiled binaries, so we will install dependencies again on cPanel after extraction.
+
+4. **Create your production environment file**
+   - Make a copy of `.env.example` named `.env`.
+   - Fill in real production values for every variable. At a minimum you need:
+     - `PAYSTACK_SECRET_KEY`
+     - `NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY`
+     - `JWT_SECRET`
+     - `NEXT_PUBLIC_APP_URL`
+     - `NODE_ENV=production`
+   - Keep this file outside version control and never share it publicly.
+5. **Zip the deployment folder**
+   - Select all the files listed above and create `vea-2025-build.zip`. Windows 11: right-click → *Compress to ZIP file*.
+
+---
+
+## 4. Create the Node.js Application in cPanel
+1. **Log in to cPanel** using the credentials from your hosting provider.
+2. **Create a MySQL database** (if required):
+   - Go to *MySQL® Databases* → create database, user, and assign privileges.
+   - Save the database name, username, password, and host for your `.env` file.
+3. **Set up the Node.js application**:
+   - Open *Setup Node.js App* (may be under the *Software* section).
+   - Click **Create Application**.
+   - Choose **Node.js Version 18** (or the latest available ≥18).
+   - Set the **Application mode** to *Production*.
+   - Define the **Application root** (e.g. `vea-app`). cPanel will create this folder inside your home directory.
+   - Set the **Application URL** (e.g. `https://portal.yourdomain.com`).
+   - Set the **Application startup file** to `server.js`.
+   - Leave the default `Application port`; cPanel will proxy HTTP requests for you.
+   - Click **Create** to provision the app.
+
+---
+
+## 5. Upload the Production Bundle to cPanel
+1. Open **File Manager** in cPanel.
+2. Navigate to the application root folder you defined (e.g. `/home/<user>/vea-app`).
+3. Use the **Upload** button to send `vea-2025-build.zip` to this folder.
+4. After the upload completes, select the ZIP file and click **Extract**. Confirm the destination is the same application root.
+5. Verify the folder now contains `.next/`, `public/`, `server.js`, `package.json`, etc.
+6. Upload your `.env` file to the same directory (File Manager → Upload). Ensure the filename is exactly `.env`.
+
+---
+
+## 6. Install Production Dependencies on the Server
+1. Go back to **Setup Node.js App** in cPanel.
+2. Find your application and click **Manage**.
+3. Under *Actions*, click **Run NPM Install**. cPanel will execute `npm install --production` inside the application root using the Linux environment.
+4. Wait for the log to show `added XX packages` without errors. If you see build errors, resolve missing system dependencies with your host or adjust your package versions.
+
+---
+
+## 7. Start (or Restart) the Application
+1. In the same **Manage** screen, click **Restart App** (or **Start App** if it is the first time).
+2. Watch the output panel. You should see something like `> Ready on http://localhost:XXXX` from `server.js`.
+3. Visit the **Application URL** in your browser. If DNS is still propagating, use the temporary URL provided by your host or the server IP + port mapping.
+
+---
+
+## 8. Ongoing Maintenance Tasks
+- **Restart after changes**: Whenever you upload a new build, run “Run NPM Install” (if dependencies changed) and then “Restart App”.
+- **Log monitoring**: Use the *View Logs* option inside *Setup Node.js App* or SSH into the server and check `~/vea-app/logs/`. This helps debug runtime errors.
+- **Environment updates**: If you change environment variables, edit `.env`, re-upload it, and restart the application.
+- **Database migrations**: If you add SQL scripts (see `scripts/` directory), run them manually via phpMyAdmin or the MySQL command-line interface.
+
+---
+
+## 9. Troubleshooting Checklist
+| Symptom | Likely Cause | Fix |
+| --- | --- | --- |
+| Blank page / 500 error | Build not uploaded completely | Rebuild locally, re-zip, upload again |
+| `MODULE_NOT_FOUND` | Dependencies not installed on server | Run **Run NPM Install** again or check `package.json` |
+| `Error: listen EADDRINUSE` | Another app is using the port | Restart the Node app; cPanel handles port assignment automatically |
+| Styles missing | `public/` or `.next/static/` not uploaded | Ensure these folders exist after extraction |
+| Paystack/API failures | Missing or incorrect environment variables | Double-check `.env` values |
+
+---
+
+## 10. Summary Flow (Quick Reference)
+1. **Windows PC**: `npm install` → set `.env.local` → `npm run build`.
+2. Copy build artifacts + config files into a clean folder → create `.env` with production values → ZIP everything.
+3. **cPanel**: Create Node.js app → upload ZIP → extract → upload `.env` → Run NPM Install → Restart App.
+4. Test the public URL and monitor logs.
+
+Following these steps guarantees that the code you built on Windows is exactly what runs on your cPanel-hosted Node.js environment.
