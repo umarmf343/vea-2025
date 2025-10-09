@@ -25,8 +25,8 @@ const FALLBACK_BRANDING: BrandingInfo = {
   contactEmail: "info@victoryacademy.edu.ng",
   headmasterName: "Dr. Emmanuel Adebayo",
   defaultRemark: "Keep up the excellent work and continue to strive for academic excellence.",
-  logoUrl: null,
-  signatureUrl: null,
+  logoUrl: "/placeholder-logo.png",
+  signatureUrl: "/placeholder-signature.svg",
 }
 
 const isNonEmptyString = (value: unknown): value is string =>
@@ -43,6 +43,9 @@ const normalizeBrandingObject = (value: Partial<BrandingInfo> | null | undefined
   if (!value || typeof value !== "object") {
     return { ...FALLBACK_BRANDING }
   }
+
+  const normalizedLogoUrl = normalizeOptionalUrl(value.logoUrl)
+  const normalizedSignatureUrl = normalizeOptionalUrl(value.signatureUrl)
 
   return {
     schoolName: isNonEmptyString(value.schoolName) ? value.schoolName.trim() : FALLBACK_BRANDING.schoolName,
@@ -67,8 +70,8 @@ const normalizeBrandingObject = (value: Partial<BrandingInfo> | null | undefined
     defaultRemark: isNonEmptyString(value.defaultRemark)
       ? value.defaultRemark.trim()
       : FALLBACK_BRANDING.defaultRemark,
-    logoUrl: normalizeOptionalUrl(value.logoUrl),
-    signatureUrl: normalizeOptionalUrl(value.signatureUrl),
+    logoUrl: normalizedLogoUrl ?? FALLBACK_BRANDING.logoUrl,
+    signatureUrl: normalizedSignatureUrl ?? FALLBACK_BRANDING.signatureUrl,
     updatedAt: isNonEmptyString(value.updatedAt) ? value.updatedAt : undefined,
   }
 }
@@ -82,7 +85,7 @@ export const parseBranding = (rawValue: unknown): BrandingInfo => {
     try {
       const parsed = JSON.parse(rawValue) as Partial<BrandingInfo>
       return normalizeBrandingObject(parsed)
-    } catch (error) {
+    } catch {
       return { ...FALLBACK_BRANDING }
     }
   }
@@ -101,7 +104,7 @@ export const getBrandingFromStorage = () => {
       return { ...FALLBACK_BRANDING }
     }
     return parseBranding(value)
-  } catch (error) {
+  } catch {
     return { ...FALLBACK_BRANDING }
   }
 }
