@@ -2846,7 +2846,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           align-items: baseline;
           justify-content: space-between;
           gap: 24px;
-          flex-wrap: wrap;
+          flex-wrap: nowrap;
         }
 
         .affective-signatures .signature-item {
@@ -2870,7 +2870,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           align-items: baseline;
           justify-content: space-between;
           padding: 0 15px 8px;
-          flex-wrap: wrap;
+          flex-wrap: nowrap;
         }
 
         .signature-item {
@@ -2881,13 +2881,33 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           color: #27613d;
           align-items: flex-start;
           text-align: left;
-          flex: 1 1 220px;
+          flex: 1 1 0;
+          min-width: 220px;
         }
 
         .signature-item.headmaster-signature {
           margin-left: 0;
           align-items: flex-end;
           text-align: right;
+        }
+
+        @media (max-width: 600px) {
+          .signatures-box,
+          .affective-signatures {
+            flex-direction: column;
+            align-items: stretch;
+            justify-content: flex-start;
+            gap: 16px;
+          }
+
+          .signature-item {
+            min-width: 0;
+          }
+
+          .signature-item.headmaster-signature {
+            align-items: flex-start;
+            text-align: left;
+          }
         }
 
         .signature-label {
