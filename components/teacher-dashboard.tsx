@@ -74,6 +74,7 @@ import { normalizeTimetableCollection } from "@/lib/timetable"
 import { useToast } from "@/hooks/use-toast"
 import { SchoolCalendarViewer } from "@/components/school-calendar-viewer"
 import { TimetableWeeklyView, type TimetableWeeklyViewSlot } from "@/components/timetable-weekly-view"
+import { cn } from "@/lib/utils"
 import {
   STUDENT_MARKS_STORAGE_KEY,
   buildRawReportCardFromStoredRecord,
@@ -125,6 +126,40 @@ import {
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
 const SUBJECT_REMARK_OPTIONS = ["Excellent", "V. Good", "Good", "Poor"] as const
+
+const SUBJECT_REMARK_VISUAL_STYLES: Record<
+  (typeof SUBJECT_REMARK_OPTIONS)[number],
+  {
+    container: string
+    label: string
+    radio: string
+  }
+> = {
+  Excellent: {
+    container: "border-[#16a34a]/70 bg-[#16a34a]/10",
+    label: "text-[#16a34a]",
+    radio:
+      "data-[state=checked]:border-[#16a34a] data-[state=checked]:text-[#16a34a] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#16a34a]",
+  },
+  "V. Good": {
+    container: "border-[#0d9488]/70 bg-[#0d9488]/10",
+    label: "text-[#0d9488]",
+    radio:
+      "data-[state=checked]:border-[#0d9488] data-[state=checked]:text-[#0d9488] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#0d9488]",
+  },
+  Good: {
+    container: "border-[#2563eb]/70 bg-[#2563eb]/10",
+    label: "text-[#2563eb]",
+    radio:
+      "data-[state=checked]:border-[#2563eb] data-[state=checked]:text-[#2563eb] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#2563eb]",
+  },
+  Poor: {
+    container: "border-[#dc2626]/70 bg-[#dc2626]/10",
+    label: "text-[#dc2626]",
+    radio:
+      "data-[state=checked]:border-[#dc2626] data-[state=checked]:text-[#dc2626] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#dc2626]",
+  },
+}
 
 const CLASS_TEACHER_REMARK_LABELS: Record<ClassTeacherSubjectRemark, string> = {
   Excellent: "Excellent",
@@ -6944,14 +6979,39 @@ export function TeacherDashboard({
                                       .replace(/[^a-z0-9]+/g, "-")}`
                                     const isDisabled =
                                       currentStatus.status === "pending" || currentStatus.status === "approved"
+                                    const isSelected = student.teacherRemark === option
+                                    const styles = SUBJECT_REMARK_VISUAL_STYLES[option]
 
                                     return (
                                       <div
                                         key={option}
-                                        className="flex items-center gap-1.5 rounded-md border border-muted bg-muted/20 px-2.5 py-1.5"
+                                        className={cn(
+                                          "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 transition-colors",
+                                          isSelected
+                                            ? styles.container
+                                            : "border-muted bg-muted/20 text-muted-foreground",
+                                          isDisabled && !isSelected && "opacity-60",
+                                          isDisabled && "cursor-not-allowed",
+                                        )}
                                       >
-                                        <RadioGroupItem value={option} id={optionId} disabled={isDisabled} />
-                                        <Label htmlFor={optionId} className="cursor-pointer text-xs font-medium">
+                                        <RadioGroupItem
+                                          value={option}
+                                          id={optionId}
+                                          disabled={isDisabled}
+                                          className={cn(
+                                            "border-muted text-muted-foreground transition-colors",
+                                            styles.radio,
+                                            isDisabled && "cursor-not-allowed",
+                                          )}
+                                        />
+                                        <Label
+                                          htmlFor={optionId}
+                                          className={cn(
+                                            "cursor-pointer text-xs font-medium transition-colors",
+                                            isSelected ? styles.label : "text-muted-foreground",
+                                            isDisabled && "cursor-not-allowed",
+                                          )}
+                                        >
                                           {option}
                                         </Label>
                                       </div>
