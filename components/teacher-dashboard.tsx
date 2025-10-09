@@ -7942,7 +7942,7 @@ export function TeacherDashboard({
                       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                         <Button
                           variant="outline"
-                          className="border-dashed border-[#2d682d] text-[#2d682d] hover:bg-[#2d682d]/10"
+                          className="w-full justify-center border-dashed border-[#2d682d] text-[#2d682d] hover:bg-[#2d682d]/10 sm:w-auto sm:justify-start"
                           onClick={handleOpenAddStudentDialog}
                           disabled={!selectedClass || !hasAvailableSubjects}
                         >
@@ -7951,7 +7951,7 @@ export function TeacherDashboard({
                         </Button>
                         <Button
                           variant="outline"
-                          className="border-[#2d682d] text-[#2d682d] hover:bg-[#2d682d]/10"
+                          className="w-full justify-center border-[#2d682d] text-[#2d682d] hover:bg-[#2d682d]/10 sm:w-auto sm:justify-start"
                           onClick={handleSaveAcademicRecords}
                           disabled={
                             isSavingAcademicRecords ||
@@ -7967,7 +7967,7 @@ export function TeacherDashboard({
                           Save Academic Entries
                         </Button>
                         <Button
-                          className="bg-[#2d682d] hover:bg-[#245224] text-white"
+                          className="w-full justify-center bg-[#2d682d] text-white hover:bg-[#245224] sm:w-auto sm:justify-start"
                           onClick={handleSyncAcademicMarks}
                           disabled={isSyncingGrades}
                         >
