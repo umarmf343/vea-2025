@@ -1471,6 +1471,14 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     [resolvedColumns],
   )
   const hasExamColumns = useMemo(() => resolvedColumns.some((column) => column.isExam), [resolvedColumns])
+  const assessmentColumnsToDisplay = useMemo(
+    () => resolvedColumns.filter((column) => !column.isExam),
+    [resolvedColumns],
+  )
+  const examColumnsToDisplay = useMemo(
+    () => resolvedColumns.filter((column) => column.isExam),
+    [resolvedColumns],
+  )
   const showExamSummaryColumn = !hasExamColumns
 
   const preparePdfDocument = useCallback(async () => {
@@ -2089,7 +2097,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             <thead>
               <tr>
                 <th>Subject</th>
-                {resolvedColumns.map((column) => {
+                {assessmentColumnsToDisplay.map((column) => {
                   const columnMax = getColumnMaximum(column.config)
                   return (
                     <th key={column.config.id}>
@@ -2110,6 +2118,20 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                     ({formatTotalValue(reportCardData.assessmentMaximums.continuousAssessment)})
                   </th>
                 ) : null}
+                {examColumnsToDisplay.map((column) => {
+                  const columnMax = getColumnMaximum(column.config)
+                  return (
+                    <th key={column.config.id}>
+                      <span>{column.config.name}</span>
+                      {columnMax > 0 ? (
+                        <>
+                          <br />
+                          <span>({formatTotalValue(columnMax)})</span>
+                        </>
+                      ) : null}
+                    </th>
+                  )
+                })}
                 {showExamSummaryColumn ? (
                   <th>
                     Exam
@@ -2132,7 +2154,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                   {reportCardData.subjects.map((subject, index) => (
                     <tr key={`${subject.name}-${index}`}>
                       <td className="subject-name">{subject.name}</td>
-                      {resolvedColumns.map((column) => (
+                      {assessmentColumnsToDisplay.map((column) => (
                         <td key={column.config.id}>
                           {formatScoreValue(subject.columnScores[column.config.id])}
                         </td>
@@ -2140,6 +2162,11 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                       {hasContinuousAssessmentColumns ? (
                         <td>{formatScoreValue(subject.caTotal)}</td>
                       ) : null}
+                      {examColumnsToDisplay.map((column) => (
+                        <td key={column.config.id}>
+                          {formatScoreValue(subject.columnScores[column.config.id])}
+                        </td>
+                      ))}
                       {showExamSummaryColumn ? (
                         <td>{formatScoreValue(subject.exam)}</td>
                       ) : null}
@@ -2150,7 +2177,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                   ))}
                   <tr className="total-row">
                     <td className="total-label">TOTAL</td>
-                    {resolvedColumns.map((column) => (
+                    {assessmentColumnsToDisplay.map((column) => (
                       <td key={column.config.id}>
                         {formatTotalValue(totalsRow?.columnTotals[column.config.id] ?? 0)}
                       </td>
@@ -2158,6 +2185,11 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                     {hasContinuousAssessmentColumns ? (
                       <td>{formatTotalValue(totalsRow?.continuousAssessment ?? 0)}</td>
                     ) : null}
+                    {examColumnsToDisplay.map((column) => (
+                      <td key={column.config.id}>
+                        {formatTotalValue(totalsRow?.columnTotals[column.config.id] ?? 0)}
+                      </td>
+                    ))}
                     {showExamSummaryColumn ? (
                       <td>{formatTotalValue(totalsRow?.exam ?? 0)}</td>
                     ) : null}
@@ -2170,7 +2202,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                 <tr>
                   <td
                     colSpan={
-                      resolvedColumns.length +
+                      assessmentColumnsToDisplay.length +
+                      examColumnsToDisplay.length +
                       (hasContinuousAssessmentColumns ? 1 : 0) +
                       (showExamSummaryColumn ? 1 : 0) +
                       4
@@ -2266,6 +2299,31 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                       )}
                     </tbody>
                   </table>
+                  {(teacherSignatureEnabled || headSignatureEnabled) && (
+                    <div className="affective-signatures">
+                      {teacherSignatureEnabled ? (
+                        <div className="signature-item">
+                          <span className="signature-label">{teacherSignatureLabel}</span>
+                          <div className="signature-line" />
+                        </div>
+                      ) : null}
+                      {headSignatureEnabled ? (
+                        <div className="signature-item headmaster-signature">
+                          <span className="signature-label">{headSignatureLabel}</span>
+                          {reportCardData.branding.signature ? (
+                            <div className="signature-image">
+                              <img src={reportCardData.branding.signature} alt="Headmaster's signature" />
+                            </div>
+                          ) : (
+                            <div className="signature-placeholder">Signature Pending</div>
+                          )}
+                          {showHeadSignatureName ? (
+                            <span className="signature-name">{headSignatureName}</span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2305,7 +2363,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             </div>
           )}
 
-          {(teacherSignatureEnabled || headSignatureEnabled) && (
+          {(teacherSignatureEnabled || headSignatureEnabled) && !showAffectiveBlock && (
             <div className="signatures-box">
               {teacherSignatureEnabled && (
                 <div className="signature-item">
@@ -2676,6 +2734,19 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           min-width: 280px;
         }
 
+        .affective-signatures {
+          margin-top: 16px;
+          display: flex;
+          align-items: flex-end;
+          justify-content: space-between;
+          gap: 24px;
+          flex-wrap: wrap;
+        }
+
+        .affective-signatures .signature-item {
+          flex: 1 1 180px;
+        }
+
         .vacation-box {
           display: flex;
           gap: 24px;
@@ -2874,6 +2945,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           .remark-section,
           .vacation-box,
           .signatures-box,
+          .affective-signatures,
           .grading-key-container {
             page-break-inside: avoid;
           }
@@ -2943,7 +3015,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           }
 
           .vacation-box,
-          .signatures-box {
+          .signatures-box,
+          .affective-signatures {
             gap: 12px;
             font-size: 9.5pt;
           }
