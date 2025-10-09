@@ -639,6 +639,13 @@ interface MarksRecord {
   teacherRemark: string
 }
 
+interface RemarkStudentOption {
+  studentId: string
+  studentName: string
+  classId: string | null
+  className: string | null
+}
+
 type TeacherAssignmentStatus = "draft" | "sent" | "submitted" | "graded" | "overdue"
 
 interface AssignmentSubmissionRecord {
@@ -1650,19 +1657,27 @@ export function TeacherDashboard({
     : "Design a rich assignment experience for your students with attachments and clear guidance."
 
   useEffect(() => {
-    if (marksData.length === 0) {
-      setSelectedRemarkStudentId("")
+    if (remarkStudentOptions.length === 0) {
+      if (selectedRemarkStudentId) {
+        setSelectedRemarkStudentId("")
+      }
       return
     }
 
-    if (!selectedRemarkStudentId || !marksData.some((student) => student.studentId === selectedRemarkStudentId)) {
-      setSelectedRemarkStudentId(marksData[0].studentId)
+    if (
+      !selectedRemarkStudentId ||
+      !remarkStudentOptions.some((student) => student.studentId === selectedRemarkStudentId)
+    ) {
+      setSelectedRemarkStudentId(remarkStudentOptions[0].studentId)
     }
-  }, [marksData, selectedRemarkStudentId])
+  }, [remarkStudentOptions, selectedRemarkStudentId, setSelectedRemarkStudentId])
 
   const selectedRemarkStudent = useMemo(
-    () => marksData.find((student) => student.studentId === selectedRemarkStudentId) ?? null,
-    [marksData, selectedRemarkStudentId],
+    () =>
+      selectedRemarkStudentId
+        ? remarkStudentOptionById.get(selectedRemarkStudentId) ?? null
+        : null,
+    [remarkStudentOptionById, selectedRemarkStudentId],
   )
 
   const selectedRemarkKey =
@@ -2190,14 +2205,179 @@ export function TeacherDashboard({
   )
 
   const hasRemarkSubjects = availableSubjectOptions.length > 0
-  const isStudentSelectDisabledForRemarks = !selectedSubjectKey || marksData.length === 0
+  const remarkStudentOptions = useMemo(() => {
+    if (!selectedSubjectKey) {
+      return [] as RemarkStudentOption[]
+    }
+
+    const subjectOption = subjectOptionByKey.get(selectedSubjectKey) ?? null
+    const classTokens = new Set<string>()
+
+    const registerClassToken = (value: string | null | undefined) => {
+      if (!value || typeof value !== "string") {
+        return
+      }
+
+      const trimmed = value.trim()
+      if (!trimmed) {
+        return
+      }
+
+      classTokens.add(trimmed.toLowerCase())
+
+      const normalizedIdToken = normalizeClassToken(trimmed)
+      if (normalizedIdToken) {
+        classTokens.add(normalizedIdToken)
+      }
+
+      const normalizedNameToken = normalizeClassName(trimmed)
+      if (normalizedNameToken) {
+        classTokens.add(normalizedNameToken)
+      }
+    }
+
+    if (subjectOption) {
+      registerClassToken(subjectOption.classId)
+      registerClassToken(subjectOption.className)
+    }
+
+    const shouldMatchClassTokens = classTokens.size > 0
+    const entries = new Map<string, RemarkStudentOption>()
+
+    const registerStudent = (candidate: {
+      studentId: string | null | undefined
+      studentName: string | null | undefined
+      classId?: string | null
+      className?: string | null
+    }) => {
+      const rawId =
+        typeof candidate.studentId === "string"
+          ? candidate.studentId.trim()
+          : candidate.studentId
+            ? String(candidate.studentId).trim()
+            : ""
+
+      if (!rawId) {
+        return
+      }
+
+      const sanitizedName =
+        typeof candidate.studentName === "string" && candidate.studentName.trim().length > 0
+          ? candidate.studentName.trim()
+          : ""
+      const sanitizedClassId =
+        typeof candidate.classId === "string" && candidate.classId.trim().length > 0
+          ? candidate.classId.trim()
+          : null
+      const sanitizedClassName =
+        typeof candidate.className === "string" && candidate.className.trim().length > 0
+          ? candidate.className.trim()
+          : null
+
+      const existing = entries.get(rawId)
+      const nextName = sanitizedName || existing?.studentName || rawId
+      const nextClassId = sanitizedClassId ?? existing?.classId ?? null
+      const nextClassName = sanitizedClassName ?? existing?.className ?? null
+
+      entries.set(rawId, {
+        studentId: rawId,
+        studentName: nextName,
+        classId: nextClassId,
+        className: nextClassName,
+      })
+    }
+
+    const matchesSubjectClass = (classId: string | null, className: string | null) => {
+      if (!shouldMatchClassTokens) {
+        return true
+      }
+
+      const tokens = new Set<string>()
+      const collectTokens = (value: string | null | undefined) => {
+        if (!value || typeof value !== "string") {
+          return
+        }
+
+        const trimmed = value.trim()
+        if (!trimmed) {
+          return
+        }
+
+        tokens.add(trimmed.toLowerCase())
+
+        const normalizedIdToken = normalizeClassToken(trimmed)
+        if (normalizedIdToken) {
+          tokens.add(normalizedIdToken)
+        }
+
+        const normalizedNameToken = normalizeClassName(trimmed)
+        if (normalizedNameToken) {
+          tokens.add(normalizedNameToken)
+        }
+      }
+
+      collectTokens(classId)
+      collectTokens(className)
+
+      if (tokens.size === 0) {
+        return false
+      }
+
+      return Array.from(tokens).some((token) => token && classTokens.has(token))
+    }
+
+    teacherStudents.forEach((student) => {
+      if (matchesSubjectClass(student.classId, student.className)) {
+        registerStudent({
+          studentId: student.id,
+          studentName: student.name,
+          classId: student.classId,
+          className: student.className,
+        })
+      }
+    })
+
+    marksData.forEach((record) => {
+      registerStudent({
+        studentId: record.studentId,
+        studentName: record.studentName,
+        classId: subjectOption?.classId ?? null,
+        className: subjectOption?.className ?? null,
+      })
+    })
+
+    return Array.from(entries.values()).sort((left, right) =>
+      left.studentName.localeCompare(right.studentName, undefined, { sensitivity: "base" }),
+    )
+  }, [
+    marksData,
+    normalizeClassName,
+    normalizeClassToken,
+    selectedSubjectKey,
+    subjectOptionByKey,
+    teacherStudents,
+  ])
+
+  const remarkStudentOptionById = useMemo(() => {
+    const map = new Map<string, RemarkStudentOption>()
+    remarkStudentOptions.forEach((student) => {
+      map.set(student.studentId, student)
+    })
+    return map
+  }, [remarkStudentOptions])
+
+  const isStudentSelectDisabledForRemarks = !selectedSubjectKey
+  const hasRemarkStudentsForSelection = remarkStudentOptions.length > 0
   const studentSelectPlaceholder = !selectedSubjectKey
     ? "Select a subject first"
-    : marksData.length === 0
-      ? "No students available"
-      : "Select student"
-  const studentDropdownStatusMessage =
-    selectedSubjectKey && marksData.length === 0 ? "No students in this class." : null
+    : hasRemarkStudentsForSelection
+      ? "Select student"
+      : "No students available"
+  const studentDropdownStatusMessage = !selectedSubjectKey
+    ? null
+    : hasRemarkStudentsForSelection
+      ? "Remarks are saved per student and subject."
+      : "No students found for the selected subject's class."
 
   const hasAvailableSubjects = availableSubjectOptions.length > 0
   const hasCachedSubjectOptions =
@@ -7166,11 +7346,17 @@ export function TeacherDashboard({
                                   <SelectValue placeholder={studentSelectPlaceholder} />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {marksData.map((student) => (
-                                    <SelectItem key={student.studentId} value={student.studentId}>
-                                      {student.studentName}
+                                  {remarkStudentOptions.length > 0 ? (
+                                    remarkStudentOptions.map((student) => (
+                                      <SelectItem key={student.studentId} value={student.studentId}>
+                                        {student.studentName}
+                                      </SelectItem>
+                                    ))
+                                  ) : (
+                                    <SelectItem value="__no_students__" disabled>
+                                      No students available
                                     </SelectItem>
-                                  ))}
+                                  )}
                                 </SelectContent>
                               </Select>
                               <p
@@ -7255,7 +7441,11 @@ export function TeacherDashboard({
                             ) : (
                               <div className="flex items-center justify-between gap-3 text-sm text-emerald-800">
                                 <div>
-                                  <p>Select a subject and student to assign a remark.</p>
+                                  <p>
+                                    {selectedSubjectKey
+                                      ? "Select a student to assign a remark."
+                                      : "Select a subject and student to assign a remark."}
+                                  </p>
                                   <p className="text-xs text-emerald-700/80">
                                     Remarks are color-coded for quick progress tracking.
                                   </p>

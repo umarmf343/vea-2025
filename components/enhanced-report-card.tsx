@@ -1981,6 +1981,25 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
       </div>
     )
   }
+  const renderHeadSignature = () => {
+    if (!headSignatureEnabled) {
+      return null
+    }
+
+    return (
+      <div className="signature-item headmaster-signature">
+        <span className="signature-label">{headSignatureLabel}</span>
+        {reportCardData.branding.signature ? (
+          <div className="signature-image">
+            <img src={reportCardData.branding.signature} alt="Headmaster's signature" />
+          </div>
+        ) : (
+          <div className="signature-placeholder">Signature Pending</div>
+        )}
+        {showHeadSignatureName ? <span className="signature-name">{headSignatureName}</span> : null}
+      </div>
+    )
+  }
   const headNameField = getFieldConfig("signatures", "head_name_label")
   const headSignatureName =
     headNameField && headNameField.label.trim().length > 0
@@ -2390,21 +2409,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                   {(teacherSignatureEnabled || headSignatureEnabled) && (
                     <div className="affective-signatures">
                       {renderTeacherSignature()}
-                      {headSignatureEnabled ? (
-                        <div className="signature-item headmaster-signature">
-                          <span className="signature-label">{headSignatureLabel}</span>
-                          {reportCardData.branding.signature ? (
-                            <div className="signature-image">
-                              <img src={reportCardData.branding.signature} alt="Headmaster's signature" />
-                            </div>
-                          ) : (
-                            <div className="signature-placeholder">Signature Pending</div>
-                          )}
-                          {showHeadSignatureName ? (
-                            <span className="signature-name">{headSignatureName}</span>
-                          ) : null}
-                        </div>
-                      ) : null}
+                      {renderHeadSignature()}
                     </div>
                   )}
                 </div>
@@ -2449,21 +2454,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           {(teacherSignatureEnabled || headSignatureEnabled) && !showAffectiveBlock && (
             <div className="signatures-box">
               {renderTeacherSignature()}
-              {headSignatureEnabled && (
-                <div className="signature-item headmaster-signature">
-                  <span className="signature-label">{headSignatureLabel}</span>
-                  {reportCardData.branding.signature ? (
-                    <div className="signature-image">
-                      <img src={reportCardData.branding.signature} alt="Headmaster's signature" />
-                    </div>
-                  ) : (
-                    <div className="signature-placeholder">Signature Pending</div>
-                  )}
-                  {showHeadSignatureName ? (
-                    <span className="signature-name">{headSignatureName}</span>
-                  ) : null}
-                </div>
-              )}
+              {renderHeadSignature()}
             </div>
           )}
 
@@ -2852,7 +2843,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         .affective-signatures {
           margin-top: 16px;
           display: flex;
-          align-items: flex-start;
+          align-items: flex-end;
           justify-content: space-between;
           gap: 24px;
           flex-wrap: wrap;
@@ -2876,7 +2867,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           gap: 24px;
           margin-top: 6px;
           font-size: 1em;
-          align-items: flex-start;
+          align-items: flex-end;
+          justify-content: space-between;
           padding: 0 15px 8px;
           flex-wrap: wrap;
         }
