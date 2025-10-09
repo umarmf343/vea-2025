@@ -1469,7 +1469,7 @@ export default function SuperAdminDashboard() {
             </Card>
           ) : (
             <>
-              <div className="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2 md:grid-cols-4">
+              <div className="grid gap-4 max-[359px]:grid-cols-2 grid-cols-3 md:grid-cols-4">
                 <Card>
                   <CardContent className="flex items-center justify-between p-4">
                     <div>
@@ -1707,7 +1707,7 @@ export default function SuperAdminDashboard() {
                   </CardTitle>
                   <CardDescription>Realtime service health for the deployed portal</CardDescription>
                 </CardHeader>
-                <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                <CardContent className="grid gap-4 max-[359px]:grid-cols-2 grid-cols-3 md:grid-cols-4">
                   <div>
                     <p className="text-sm text-gray-500">Server</p>
                     <p className="text-lg font-semibold">{metrics?.serverStatus ?? "-"}</p>

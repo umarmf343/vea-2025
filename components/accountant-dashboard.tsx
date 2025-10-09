@@ -724,7 +724,7 @@ export function AccountantDashboard({ accountant }: AccountantDashboardProps) {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid max-[359px]:grid-cols-2 grid-cols-3 gap-4 xl:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Collections</CardTitle>
