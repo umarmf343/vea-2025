@@ -7905,7 +7905,7 @@ export function TeacherDashboard({
                 </div>
 
                 <Tabs defaultValue="academic" className="w-full">
-                  <TabsList className="flex w-full flex-col gap-3 bg-transparent p-0 sm:grid sm:grid-cols-2 sm:gap-2 sm:bg-muted sm:p-[3px] xl:grid-cols-4">
+                  <TabsList className="grid w-full grid-cols-2 gap-2 bg-transparent p-0 sm:bg-muted sm:p-[3px] xl:grid-cols-4">
                     <TabsTrigger
                       value="academic"
                       className="h-auto w-full justify-start whitespace-normal rounded-md px-4 py-3 text-left text-sm leading-snug sm:h-[calc(100%-1px)]"
@@ -8205,7 +8205,7 @@ export function TeacherDashboard({
                         </TableBody>
                       </Table>
                     </div>
-                    <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="mt-4 grid max-[359px]:grid-cols-2 grid-cols-3 gap-4 xl:grid-cols-4">
                       <Card>
                         <CardContent className="p-4">
                           <div className="text-sm font-medium text-gray-600">

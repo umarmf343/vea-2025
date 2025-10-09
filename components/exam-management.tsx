@@ -1122,7 +1122,7 @@ export default function ExamManagement() {
                 <div className="space-y-6">
                   {examResultsSummary && (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="grid max-[359px]:grid-cols-2 grid-cols-3 gap-4 md:grid-cols-4">
                         <Card className="bg-[#2d682d]/5">
                           <CardContent className="p-4">
                             <p className="text-sm text-gray-600">Average Score</p>

@@ -452,7 +452,7 @@ export function LibrarianDashboard({ librarian }: LibrarianDashboardProps) {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid max-[359px]:grid-cols-2 grid-cols-3 gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center space-x-2">

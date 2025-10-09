@@ -339,7 +339,7 @@ export default function GradeManagement() {
         </DialogContent>
       </Dialog>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid max-[359px]:grid-cols-2 grid-cols-3 gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-green-600">{students.filter((s) => s.grade === "A").length}</div>
