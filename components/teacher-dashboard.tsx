@@ -1676,15 +1676,6 @@ export function TeacherDashboard({
   const currentRemarkOption = selectedRemarkValue
     ? CLASS_TEACHER_REMARK_OPTION_MAP[selectedRemarkValue] ?? null
     : null
-  const hasRemarkSubjects = availableSubjectOptions.length > 0
-  const isStudentSelectDisabledForRemarks = !selectedSubjectKey || marksData.length === 0
-  const studentSelectPlaceholder = !selectedSubjectKey
-    ? "Select a subject first"
-    : marksData.length === 0
-      ? "No students available"
-      : "Select student"
-  const studentDropdownStatusMessage =
-    selectedSubjectKey && marksData.length === 0 ? "No students in this class." : null
 
   const assignmentInsights = useMemo(() => {
     if (assignments.length === 0) {
@@ -2197,6 +2188,16 @@ export function TeacherDashboard({
     () => availableSubjectOptions.map((option) => option.subject),
     [availableSubjectOptions],
   )
+
+  const hasRemarkSubjects = availableSubjectOptions.length > 0
+  const isStudentSelectDisabledForRemarks = !selectedSubjectKey || marksData.length === 0
+  const studentSelectPlaceholder = !selectedSubjectKey
+    ? "Select a subject first"
+    : marksData.length === 0
+      ? "No students available"
+      : "Select student"
+  const studentDropdownStatusMessage =
+    selectedSubjectKey && marksData.length === 0 ? "No students in this class." : null
 
   const hasAvailableSubjects = availableSubjectOptions.length > 0
   const hasCachedSubjectOptions =
