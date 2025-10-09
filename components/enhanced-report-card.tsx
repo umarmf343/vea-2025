@@ -3301,8 +3301,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
         .signature-item.headmaster-signature {
           margin-left: 0;
-          align-items: flex-end;
-          text-align: right;
+          align-items: flex-start;
+          text-align: left;
         }
 
         @media (max-width: 600px) {
