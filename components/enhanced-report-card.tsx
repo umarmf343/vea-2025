@@ -127,6 +127,16 @@ interface NormalizedReportCard {
   }
 }
 
+type StoredClassTeacherRemarkEntry = {
+  label?: string
+  remark?: string
+}
+
+type StoredClassTeacherRemarkRecord = {
+  remark?: string
+  remarksBySubject?: Record<string, StoredClassTeacherRemarkEntry>
+}
+
 const STORAGE_KEYS_TO_WATCH = [
   "studentMarks",
   "behavioralAssessments",
@@ -682,7 +692,27 @@ const normalizeReportCard = (
       }
     | undefined
 
-  const remarkRecord = remarksStore[storageKey] as { remark?: string } | undefined
+  const remarkRecord = remarksStore[storageKey] as StoredClassTeacherRemarkRecord | undefined
+
+  const storedRemarkSummaryFromSubjects = remarkRecord?.remarksBySubject
+    ? (() => {
+        const summary = Object.values(remarkRecord.remarksBySubject ?? {})
+          .map((entry) => {
+            const label = entry?.label?.trim()
+            const remark = entry?.remark?.trim()
+
+            if (!label || !remark) {
+              return null
+            }
+
+            return `${label}: ${remark}`
+          })
+          .filter((value): value is string => Boolean(value))
+          .join(" • ")
+
+        return summary.length > 0 ? summary : undefined
+      })()
+    : undefined
 
   const normalizedSubjects = normalizeSubjects(source.subjects, columns)
   const hasConfiguredColumns = columns.length > 0
@@ -960,6 +990,7 @@ const normalizeReportCard = (
     remarks: {
       classTeacher:
         remarkRecord?.remark?.trim() ??
+        storedRemarkSummaryFromSubjects ??
         source.classTeacherRemarks?.trim() ??
         source.remarks?.classTeacher?.trim() ??
         "",
