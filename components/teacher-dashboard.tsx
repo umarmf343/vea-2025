@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
+import { ChangeEvent, FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -56,6 +56,7 @@ import {
   UserPlus,
   ArrowRightLeft,
   Check,
+  UploadCloud,
 } from "lucide-react"
 import { StudyMaterials } from "@/components/study-materials"
 import { Noticeboard } from "@/components/noticeboard"
@@ -65,14 +66,7 @@ import { TutorialLink } from "@/components/tutorial-link"
 import { ExamScheduleOverview } from "@/components/exam-schedule-overview"
 import { EnhancedReportCard } from "@/components/enhanced-report-card"
 import { ReportCardPreviewOverlay } from "@/components/report-card-preview-overlay"
-import {
-  CONTINUOUS_ASSESSMENT_MAXIMUMS,
-  calculateContinuousAssessmentTotal,
-  calculateGrandTotal,
-  deriveGradeFromScore,
-  mapTermKeyToLabel,
-  normalizeAssessmentScores,
-} from "@/lib/grade-utils"
+import { CONTINUOUS_ASSESSMENT_MAXIMUMS, deriveGradeFromScore, mapTermKeyToLabel } from "@/lib/grade-utils"
 import { safeStorage } from "@/lib/safe-storage"
 import { dbManager } from "@/lib/database-manager"
 import { logger } from "@/lib/logger"
@@ -117,6 +111,14 @@ import {
 } from "@/lib/assignment-reminders"
 import { resolveStudentPassportFromCache } from "@/lib/student-passport"
 import { resolveCachedAdmissionNumber } from "@/lib/student-cache"
+import {
+  DEFAULT_REPORT_CARD_COLUMNS,
+  buildResolvedColumns,
+  getColumnMaximum,
+  normalizeColumnType,
+  normalizeColumnsFromResponse,
+  type ReportCardColumnConfig,
+} from "@/lib/report-card-columns"
 
 type BrowserRuntime = typeof globalThis & Partial<Window>
 
@@ -499,6 +501,41 @@ type TeacherScopedStudent = {
 const TEACHER_STUDENTS_CACHE_KEY = "vea_teacher_students_cache"
 const TEACHER_STUDENTS_CACHE_NOTICE =
   "Showing the last known student roster because the live student service is temporarily unavailable."
+const TEACHER_SIGNATURE_STORAGE_KEY = "teacherSignatures"
+const TEACHER_SIGNATURE_EVENT = "teacherSignatureUpdated"
+
+interface TeacherSignatureStoreEntry {
+  url: string
+  fileName?: string
+  uploadedAt?: string
+}
+
+const readTeacherSignatureStore = (): Record<string, TeacherSignatureStoreEntry> => {
+  const raw = safeStorage.getItem(TEACHER_SIGNATURE_STORAGE_KEY)
+  if (!raw) {
+    return {}
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, TeacherSignatureStoreEntry>
+    if (!parsed || typeof parsed !== "object") {
+      return {}
+    }
+
+    return parsed
+  } catch (error) {
+    logger.warn("Failed to parse teacher signature store", { error })
+    return {}
+  }
+}
+
+const persistTeacherSignatureStore = (store: Record<string, TeacherSignatureStoreEntry>) => {
+  try {
+    safeStorage.setItem(TEACHER_SIGNATURE_STORAGE_KEY, JSON.stringify(store))
+  } catch (error) {
+    logger.warn("Failed to persist teacher signature store", { error })
+  }
+}
 
 interface TeacherDashboardProps {
   teacher: {
@@ -674,7 +711,267 @@ export function TeacherDashboard({
     classes: cachedAssignments?.classes ?? teacher.classes,
     updatedAt: cachedAssignments?.updatedAt ?? new Date(0).toISOString(),
   })
+  const [columnConfig, setColumnConfig] = useState<ReportCardColumnConfig[]>(DEFAULT_REPORT_CARD_COLUMNS)
+  const resolvedColumns = useMemo(() => buildResolvedColumns(columnConfig), [columnConfig])
+  const [teacherSignature, setTeacherSignature] = useState(() => {
+    const store = readTeacherSignatureStore()
+    const entry = store[teacher.id]
+
+    return {
+      url: entry?.url ?? null,
+      fileName: entry?.fileName ?? null,
+      uploadedAt: entry?.uploadedAt ?? null,
+    }
+  })
+  const [isUploadingSignature, setIsUploadingSignature] = useState(false)
+  const signatureFileInputRef = useRef<HTMLInputElement | null>(null)
   const hasScheduledAuthRedirectRef = useRef(false)
+  const firstTestColumn = useMemo(() => {
+    return (
+      resolvedColumns.find(
+        (column) => !column.isExam && normalizeColumnType(column.config.type) === "test" && column.occurrence === 1,
+      ) ?? null
+    )
+  }, [resolvedColumns])
+  const secondTestColumn = useMemo(() => {
+    return (
+      resolvedColumns.find(
+        (column) => !column.isExam && normalizeColumnType(column.config.type) === "test" && column.occurrence === 2,
+      ) ?? null
+    )
+  }, [resolvedColumns])
+  const assignmentColumn = useMemo(() => {
+    return (
+      resolvedColumns.find(
+        (column) => !column.isExam && normalizeColumnType(column.config.type) === "assignment",
+      ) ?? null
+    )
+  }, [resolvedColumns])
+  const examColumn = useMemo(() => resolvedColumns.find((column) => column.isExam) ?? null, [resolvedColumns])
+  const firstTestMaximum = useMemo(
+    () => (firstTestColumn ? getColumnMaximum(firstTestColumn.config) : 0),
+    [firstTestColumn],
+  )
+  const secondTestMaximum = useMemo(
+    () => (secondTestColumn ? getColumnMaximum(secondTestColumn.config) : 0),
+    [secondTestColumn],
+  )
+  const assignmentMaximum = useMemo(
+    () => (assignmentColumn ? getColumnMaximum(assignmentColumn.config) : 0),
+    [assignmentColumn],
+  )
+  const examMaximum = useMemo(() => (examColumn ? getColumnMaximum(examColumn.config) : 0), [examColumn])
+  const hasFirstTestColumn = firstTestMaximum > 0
+  const hasSecondTestColumn = secondTestMaximum > 0
+  const hasAssignmentColumn = assignmentMaximum > 0
+  const hasExamColumn = examMaximum > 0
+  const continuousAssessmentMaximum = firstTestMaximum + secondTestMaximum + assignmentMaximum
+  const hasContinuousColumns = hasFirstTestColumn || hasSecondTestColumn || hasAssignmentColumn
+  const fallbackTotalMaximum =
+    CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1 +
+    CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2 +
+    CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment +
+    CONTINUOUS_ASSESSMENT_MAXIMUMS.exam
+  const defaultTotalMaximum = useMemo(() => {
+    const total = firstTestMaximum + secondTestMaximum + assignmentMaximum + examMaximum
+    return total > 0 ? total : fallbackTotalMaximum
+  }, [assignmentMaximum, examMaximum, fallbackTotalMaximum, firstTestMaximum, secondTestMaximum])
+  const firstTestLabel = firstTestColumn?.config.name ?? "1st Continuous Assessment"
+  const secondTestLabel = secondTestColumn?.config.name ?? "2nd Continuous Assessment"
+  const assignmentLabel = assignmentColumn?.config.name ?? "Note / Assignment"
+  const examLabel = examColumn?.config.name ?? "Exam"
+  const assessmentWeightingSummary = useMemo(() => {
+    const segments: string[] = []
+    if (hasFirstTestColumn) {
+      segments.push(`${firstTestLabel} ${firstTestMaximum}`)
+    }
+    if (hasSecondTestColumn) {
+      segments.push(`${secondTestLabel} ${secondTestMaximum}`)
+    }
+    if (hasAssignmentColumn) {
+      segments.push(`${assignmentLabel} ${assignmentMaximum}`)
+    }
+    if (hasExamColumn) {
+      segments.push(`${examLabel} ${examMaximum}`)
+    }
+    return segments.join(", ")
+  }, [
+    assignmentLabel,
+    assignmentMaximum,
+    examLabel,
+    examMaximum,
+    firstTestLabel,
+    firstTestMaximum,
+    hasAssignmentColumn,
+    hasExamColumn,
+    hasFirstTestColumn,
+    hasSecondTestColumn,
+    secondTestLabel,
+    secondTestMaximum,
+  ])
+  const teacherSignatureUploadedAtLabel = useMemo(() => {
+    if (!teacherSignature.uploadedAt) {
+      return null
+    }
+
+    const parsed = new Date(teacherSignature.uploadedAt)
+    if (Number.isNaN(parsed.getTime())) {
+      return null
+    }
+
+    return parsed.toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    })
+  }, [teacherSignature.uploadedAt])
+  useEffect(() => {
+    let isMounted = true
+
+    const loadColumns = async () => {
+      try {
+        const response = await fetch("/api/report-cards/config")
+        if (!response.ok) {
+          throw new Error("Unable to load report card configuration")
+        }
+
+        const payload = (await response.json()) as { columns?: unknown }
+        if (!isMounted) {
+          return
+        }
+
+        const normalized = normalizeColumnsFromResponse(payload.columns)
+        setColumnConfig((previous) => {
+          const prevSerialized = JSON.stringify(previous)
+          const nextSerialized = JSON.stringify(normalized)
+          if (prevSerialized === nextSerialized) {
+            return previous
+          }
+          return normalized
+        })
+      } catch (error) {
+        logger.warn("Unable to load report card columns configuration for teacher dashboard", { error })
+        if (!isMounted) {
+          return
+        }
+        setColumnConfig(DEFAULT_REPORT_CARD_COLUMNS)
+      }
+    }
+
+    void loadColumns()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+  useEffect(() => {
+    const handleSignatureEvent = (payload: unknown) => {
+      if (!payload || typeof payload !== "object") {
+        return
+      }
+
+      const eventPayload = payload as {
+        teacherId?: string
+        signatureUrl?: string | null
+        fileName?: string | null
+        uploadedAt?: string | null
+      }
+
+      if (eventPayload.teacherId !== teacher.id) {
+        return
+      }
+
+      setTeacherSignature({
+        url: eventPayload.signatureUrl ?? null,
+        fileName: eventPayload.fileName ?? null,
+        uploadedAt: eventPayload.uploadedAt ?? null,
+      })
+    }
+
+    const handleStorageEvent = (event: StorageEvent) => {
+      if (event.key && event.key !== TEACHER_SIGNATURE_STORAGE_KEY) {
+        return
+      }
+
+      const store = readTeacherSignatureStore()
+      const entry = store[teacher.id]
+
+      setTeacherSignature({
+        url: entry?.url ?? null,
+        fileName: entry?.fileName ?? null,
+        uploadedAt: entry?.uploadedAt ?? null,
+      })
+    }
+
+    dbManager.on(TEACHER_SIGNATURE_EVENT, handleSignatureEvent)
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("storage", handleStorageEvent)
+    }
+
+    return () => {
+      dbManager.off(TEACHER_SIGNATURE_EVENT, handleSignatureEvent)
+      if (typeof window !== "undefined") {
+        window.removeEventListener("storage", handleStorageEvent)
+      }
+    }
+  }, [teacher.id])
+  const normalizeScores = useCallback(
+    (input: Partial<{ ca1: number; ca2: number; assignment: number; exam: number }>) => {
+      const clampValue = (raw: unknown, max: number) => {
+        if (!Number.isFinite(max) || max <= 0) {
+          return 0
+        }
+
+        const numeric = typeof raw === "number" ? raw : Number(raw)
+        if (!Number.isFinite(numeric)) {
+          return 0
+        }
+
+        if (numeric <= 0) {
+          return 0
+        }
+
+        if (numeric >= max) {
+          return Math.round(max)
+        }
+
+        return Math.round(numeric)
+      }
+
+      return {
+        ca1: hasFirstTestColumn ? clampValue(input.ca1, firstTestMaximum) : 0,
+        ca2: hasSecondTestColumn ? clampValue(input.ca2, secondTestMaximum) : 0,
+        assignment: hasAssignmentColumn ? clampValue(input.assignment, assignmentMaximum) : 0,
+        exam: hasExamColumn ? clampValue(input.exam, examMaximum) : 0,
+      }
+    },
+    [assignmentMaximum, examMaximum, firstTestMaximum, hasAssignmentColumn, hasExamColumn, hasFirstTestColumn, hasSecondTestColumn, secondTestMaximum],
+  )
+
+  const calculateScoreTotals = useCallback(
+    (input: Partial<{ ca1: number; ca2: number; assignment: number; exam: number }>) => {
+      const normalized = normalizeScores(input)
+      const caTotal = normalized.ca1 + normalized.ca2 + normalized.assignment
+      const grandTotal = caTotal + normalized.exam
+
+      return { normalized, caTotal, grandTotal }
+    },
+    [normalizeScores],
+  )
+
+  const deriveGradeForTotals = useCallback(
+    (total: number, obtainable: number) => {
+      const safeTotal = Number.isFinite(total) ? Math.max(0, Math.round(total)) : 0
+      const safeObtainable = Number.isFinite(obtainable) && obtainable > 0 ? Math.round(obtainable) : defaultTotalMaximum
+      if (safeObtainable <= 0) {
+        return deriveGradeFromScore(safeTotal)
+      }
+
+      const percentage = Math.max(0, Math.min(Math.round((safeTotal / safeObtainable) * 100), 100))
+      return deriveGradeFromScore(percentage)
+    },
+    [defaultTotalMaximum],
+  )
 
   const scheduleAuthRedirect = useCallback(() => {
     if (hasScheduledAuthRedirectRef.current) {
@@ -718,6 +1015,118 @@ export function TeacherDashboard({
       performRedirect()
     }
   }, [])
+  const handleTeacherSignatureUpload = useCallback(
+    async (file: File | null) => {
+      if (!file) {
+        return
+      }
+
+      if (!file.type.startsWith("image/")) {
+        toast({
+          variant: "destructive",
+          title: "Unsupported file",
+          description: "Please upload an image file (PNG, JPG, or SVG).",
+        })
+        return
+      }
+
+      const MAX_FILE_SIZE_BYTES = 1.5 * 1024 * 1024
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        toast({
+          variant: "destructive",
+          title: "File too large",
+          description: "Please upload a signature image smaller than 1.5MB.",
+        })
+        return
+      }
+
+      setIsUploadingSignature(true)
+
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => {
+            if (typeof reader.result === "string") {
+              resolve(reader.result)
+            } else {
+              reject(new Error("Unable to read the selected signature file."))
+            }
+          }
+          reader.onerror = () => reject(new Error("Unable to process the selected signature file."))
+          reader.readAsDataURL(file)
+        })
+
+        const uploadedAt = new Date().toISOString()
+        const store = readTeacherSignatureStore()
+        store[teacher.id] = {
+          url: dataUrl,
+          fileName: file.name,
+          uploadedAt,
+        }
+        persistTeacherSignatureStore(store)
+
+        setTeacherSignature({ url: dataUrl, fileName: file.name, uploadedAt })
+        dbManager.triggerEvent(TEACHER_SIGNATURE_EVENT, {
+          teacherId: teacher.id,
+          signatureUrl: dataUrl,
+          fileName: file.name,
+          uploadedAt,
+        })
+
+        toast({
+          title: "Signature updated",
+          description: "Your digital signature will now appear on report cards and previews.",
+        })
+      } catch (error) {
+        logger.warn("Failed to upload teacher signature", { error })
+        toast({
+          variant: "destructive",
+          title: "Upload failed",
+          description:
+            error instanceof Error
+              ? error.message
+              : "We couldn't process this signature file. Please try again with a different image.",
+        })
+      } finally {
+        setIsUploadingSignature(false)
+      }
+    },
+    [teacher.id, toast],
+  )
+
+  const handleRemoveTeacherSignature = useCallback(() => {
+    const store = readTeacherSignatureStore()
+    if (store[teacher.id]) {
+      delete store[teacher.id]
+      persistTeacherSignatureStore(store)
+    }
+
+    setTeacherSignature({ url: null, fileName: null, uploadedAt: null })
+    dbManager.triggerEvent(TEACHER_SIGNATURE_EVENT, {
+      teacherId: teacher.id,
+      signatureUrl: null,
+      fileName: null,
+      uploadedAt: null,
+    })
+
+    if (signatureFileInputRef.current) {
+      signatureFileInputRef.current.value = ""
+    }
+
+    toast({
+      title: "Signature removed",
+      description: "Your report cards will no longer display a signature until you upload a new one.",
+    })
+  }, [teacher.id, toast])
+
+  const handleTeacherSignatureFileChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0] ?? null
+      void handleTeacherSignatureUpload(file ?? null)
+      event.target.value = ""
+    },
+    [handleTeacherSignatureUpload],
+  )
   const teacherClasses = useMemo(() => {
     const deduped: TeacherClassAssignment[] = []
     const idIndex = new Map<string, number>()
@@ -1132,7 +1541,11 @@ export function TeacherDashboard({
   const [previewData, setPreviewData] = useState<RawReportCardData | null>(null)
   const [isPreviewDownloading, setIsPreviewDownloading] = useState(false)
 
-  const defaultAssignmentMaximum = CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment ?? 20
+  const assignmentFormDefaultMaximum = useMemo(() => {
+    const fallback = CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment ?? 20
+    return assignmentMaximum > 0 ? assignmentMaximum : fallback
+  }, [assignmentMaximum])
+  const assignmentDefaultSyncRef = useRef(assignmentFormDefaultMaximum)
 
   const [assignmentForm, setAssignmentForm] = useState(() => ({
     title: "",
@@ -1141,7 +1554,7 @@ export function TeacherDashboard({
     subject: firstTeacherClass?.subjects[0] ?? teacherSubjects[0] ?? "",
     classId: firstTeacherClass?.id ?? "",
     className: firstTeacherClass?.name ?? "",
-    maximumScore: String(defaultAssignmentMaximum),
+    maximumScore: String(assignmentFormDefaultMaximum),
     file: null as File | null,
     resourceName: "",
     resourceType: "",
@@ -1163,14 +1576,36 @@ export function TeacherDashboard({
   const [marksData, setMarksData] = useState<MarksRecord[]>([])
   const [selectedRemarkStudentId, setSelectedRemarkStudentId] = useState<string>("")
   const [addStudentDialogSubjectKey, setAddStudentDialogSubjectKey] = useState<string>("")
+  const signatureInputId = useId()
   const assignmentSubjectFieldId = useId()
   const assignmentClassFieldId = useId()
 
-  const assignmentMaximum = defaultAssignmentMaximum
   const resolvedAssignmentMaximum = (() => {
     const parsed = Number(assignmentForm.maximumScore)
-    return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : assignmentMaximum
+    return Number.isFinite(parsed) && parsed > 0
+      ? Math.round(parsed)
+      : assignmentFormDefaultMaximum
   })()
+  useEffect(() => {
+    setAssignmentForm((prev) => {
+      const previousDefault = assignmentDefaultSyncRef.current
+      assignmentDefaultSyncRef.current = assignmentFormDefaultMaximum
+
+      if (prev.maximumScore === String(assignmentFormDefaultMaximum)) {
+        return prev
+      }
+
+      const parsed = Number(prev.maximumScore)
+      if (prev.maximumScore && Number.isFinite(parsed) && parsed > 0 && Math.round(parsed) !== previousDefault) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        maximumScore: String(assignmentFormDefaultMaximum),
+      }
+    })
+  }, [assignmentFormDefaultMaximum])
   const isEditingAssignment = assignmentDialogMode === "edit"
   const assignmentDialogTitle = isEditingAssignment ? "Update Assignment" : "Create New Assignment"
   const assignmentDialogDescription = isEditingAssignment
@@ -2588,28 +3023,27 @@ export function TeacherDashboard({
     [],
   )
 
-  const calculatePositionsAndAverages = useCallback((data: MarksRecord[]) => {
-    // Sort by grand total descending to determine positions
-    const sorted = [...data].sort((a, b) => b.grandTotal - a.grandTotal)
+  const calculatePositionsAndAverages = useCallback(
+    (data: MarksRecord[]) => {
+      const sorted = [...data].sort((a, b) => b.totalMarksObtained - a.totalMarksObtained)
 
-    return data.map((student) => {
-      const position = sorted.findIndex((s) => s.studentId === student.studentId) + 1
-      const averageScore =
-        student.totalMarksObtained > 0 && student.totalMarksObtainable > 0
-          ? Math.round((student.totalMarksObtained / student.totalMarksObtainable) * 100)
-          : 0
+      return data.map((student) => {
+        const position = sorted.findIndex((s) => s.studentId === student.studentId) + 1
+        const averageScore =
+          student.totalMarksObtained > 0 && student.totalMarksObtainable > 0
+            ? Math.round((student.totalMarksObtained / student.totalMarksObtainable) * 100)
+            : 0
 
-      return {
-        ...student,
-        position,
-        averageScore,
-        totalMarksObtained: student.grandTotal, // Update obtained marks to match grand total
-        grade: deriveGradeFromScore(student.grandTotal),
-      }
-    })
-  }, [])
-
-  const calculateGrade = (total: number) => deriveGradeFromScore(total)
+        return {
+          ...student,
+          position,
+          averageScore,
+          grade: deriveGradeForTotals(student.totalMarksObtained, student.totalMarksObtainable),
+        }
+      })
+    },
+    [deriveGradeForTotals],
+  )
 
   const handleConfirmAddStudents = useCallback(() => {
     const preferredOption = addStudentDialogSubjectKey
@@ -2678,38 +3112,50 @@ export function TeacherDashboard({
     const storedSubject = storedRecord ? storedRecord.subjects?.[effectiveSubject] : null
     const resolvedSubjectKey = resolvedOption?.key ?? selectedSubjectKey
 
-    const initialFirstCA = storedSubject?.ca1 ?? 0
-    const initialSecondCA = storedSubject?.ca2 ?? 0
-    const initialAssignment = storedSubject?.assignment ?? 0
-    const initialExam = storedSubject?.exam ?? 0
-    const caTotal =
-      storedSubject?.caTotal ??
-      calculateContinuousAssessmentTotal(initialFirstCA, initialSecondCA, initialAssignment)
-    const grandTotal = storedSubject?.total ??
-      calculateGrandTotal(initialFirstCA, initialSecondCA, initialAssignment, initialExam)
-    const totalObtainable = storedSubject?.totalObtainable ?? 100
-    const totalObtained = storedSubject?.totalObtained ?? grandTotal
+    const initialScores = normalizeScores({
+      ca1: storedSubject?.ca1 ?? 0,
+      ca2: storedSubject?.ca2 ?? 0,
+      assignment: storedSubject?.assignment ?? 0,
+      exam: storedSubject?.exam ?? 0,
+    })
+    const totals = calculateScoreTotals(initialScores)
+    const storedTotalObtainable =
+      typeof storedSubject?.totalObtainable === "number" && Number.isFinite(storedSubject.totalObtainable)
+        ? Math.round(storedSubject.totalObtainable)
+        : null
+    const storedTotalObtained =
+      typeof storedSubject?.totalObtained === "number" && Number.isFinite(storedSubject.totalObtained)
+        ? Math.round(storedSubject.totalObtained)
+        : null
+    const totalObtainable = storedTotalObtainable && storedTotalObtainable > 0
+      ? storedTotalObtainable
+      : defaultTotalMaximum
+    const totalObtained = storedTotalObtained !== null ? storedTotalObtained : totals.grandTotal
     const averageScore =
       typeof storedSubject?.averageScore === "number" && totalObtainable > 0
-        ? Math.round((totalObtained / totalObtainable) * 100)
+        ? Math.round(storedSubject.averageScore)
         : totalObtainable > 0
-          ? Math.round((grandTotal / totalObtainable) * 100)
+          ? Math.round((totalObtained / totalObtainable) * 100)
           : 0
+    const initialGrade =
+      typeof storedSubject?.grade === "string" && storedSubject.grade.trim().length > 0
+        ? storedSubject.grade
+        : deriveGradeForTotals(totalObtained, totalObtainable)
 
     const newRecord: MarksRecord = {
       studentId: candidate.id,
       studentName: candidate.name ?? `Student ${candidate.id}`,
-      firstCA: initialFirstCA,
-      secondCA: initialSecondCA,
-      noteAssignment: initialAssignment,
-      caTotal,
-      exam: initialExam,
-      grandTotal,
+      firstCA: initialScores.ca1,
+      secondCA: initialScores.ca2,
+      noteAssignment: initialScores.assignment,
+      caTotal: totals.caTotal,
+      exam: initialScores.exam,
+      grandTotal: totals.grandTotal,
       totalMarksObtainable: totalObtainable,
       totalMarksObtained: totalObtained,
       averageScore,
       position: typeof storedSubject?.position === "number" ? storedSubject.position : 0,
-      grade: storedSubject?.grade ?? deriveGradeFromScore(grandTotal),
+      grade: initialGrade,
       teacherRemark: storedSubject?.remark ?? "",
     }
 
@@ -2884,6 +3330,11 @@ export function TeacherDashboard({
           nextTermFees: additionalData.termInfo.nextTermFees,
           feesBalance: additionalData.termInfo.feesBalance,
         },
+        teacher: {
+          id: teacher.id,
+          name: teacher.name,
+          signatureUrl: teacherSignature.url,
+        },
       }
 
       if (!aggregatedRaw) {
@@ -2929,6 +3380,11 @@ export function TeacherDashboard({
         },
         attendance: basePreview.attendance,
         termInfo: basePreview.termInfo,
+        teacher: {
+          id: teacher.id,
+          name: teacher.name,
+          signatureUrl: teacherSignature.url,
+        },
       }
     },
     [
@@ -2939,6 +3395,9 @@ export function TeacherDashboard({
       selectedClass,
       selectedSession,
       selectedSubject,
+      teacher.id,
+      teacher.name,
+      teacherSignature.url,
     ],
   )
 
@@ -2955,51 +3414,40 @@ export function TeacherDashboard({
 
         if (field === "totalMarksObtainable") {
           const numericValue = typeof value === "number" ? value : Number(value)
-          const safeValue = Number.isFinite(numericValue) && numericValue > 0 ? Math.round(numericValue) : 100
-          return { ...student, totalMarksObtainable: safeValue }
+          const safeValue = Number.isFinite(numericValue) && numericValue > 0 ? Math.round(numericValue) : defaultTotalMaximum
+          return {
+            ...student,
+            totalMarksObtainable: safeValue,
+            grade: deriveGradeForTotals(student.totalMarksObtained, safeValue),
+          }
         }
 
         const numericValue = typeof value === "number" ? value : Number(value)
-        const safeValue = Number.isFinite(numericValue) ? numericValue : 0
-        let updatedStudent: MarksRecord = { ...student, [field]: safeValue }
-
-        const normalizedScores = normalizeAssessmentScores({
-          ca1: updatedStudent.firstCA,
-          ca2: updatedStudent.secondCA,
-          assignment: updatedStudent.noteAssignment,
-          exam: updatedStudent.exam,
-        })
-
-        updatedStudent = {
-          ...updatedStudent,
-          firstCA: normalizedScores.ca1,
-          secondCA: normalizedScores.ca2,
-          noteAssignment: normalizedScores.assignment,
-          exam: normalizedScores.exam,
+        const safeValue = Number.isFinite(numericValue) ? Number(numericValue) : 0
+        const currentScores = {
+          ca1: field === "firstCA" ? safeValue : student.firstCA,
+          ca2: field === "secondCA" ? safeValue : student.secondCA,
+          assignment: field === "noteAssignment" ? safeValue : student.noteAssignment,
+          exam: field === "exam" ? safeValue : student.exam,
         }
+        const { normalized, caTotal, grandTotal } = calculateScoreTotals(currentScores)
+        const totalMarksObtained = grandTotal
 
-        const caTotal = calculateContinuousAssessmentTotal(
-          normalizedScores.ca1,
-          normalizedScores.ca2,
-          normalizedScores.assignment,
-        )
-        const grandTotal = calculateGrandTotal(
-          normalizedScores.ca1,
-          normalizedScores.ca2,
-          normalizedScores.assignment,
-          normalizedScores.exam,
-        )
-
-        updatedStudent.caTotal = caTotal
-        updatedStudent.grandTotal = grandTotal
-        updatedStudent.totalMarksObtained = grandTotal
-        updatedStudent.grade = calculateGrade(grandTotal)
-
-        return updatedStudent
+        return {
+          ...student,
+          firstCA: normalized.ca1,
+          secondCA: normalized.ca2,
+          noteAssignment: normalized.assignment,
+          exam: normalized.exam,
+          caTotal,
+          grandTotal,
+          totalMarksObtained,
+          grade: deriveGradeForTotals(totalMarksObtained, student.totalMarksObtainable),
+        }
       })
 
-    return calculatePositionsAndAverages(updated)
-  })
+      return calculatePositionsAndAverages(updated)
+    })
   }
 
   const handleClassTeacherRemarkSelection = useCallback(
@@ -3450,27 +3898,21 @@ export function TeacherDashboard({
       setIsSyncingGrades(true)
 
       const resultsPayload = marksData.map((student) => {
-        const normalizedScores = normalizeAssessmentScores({
+        const { normalized, grandTotal } = calculateScoreTotals({
           ca1: student.firstCA,
           ca2: student.secondCA,
           assignment: student.noteAssignment,
           exam: student.exam,
         })
-        const total = calculateGrandTotal(
-          normalizedScores.ca1,
-          normalizedScores.ca2,
-          normalizedScores.assignment,
-          normalizedScores.exam,
-        )
 
         return {
           studentId: String(student.studentId),
           studentName: student.studentName,
-          ca1: normalizedScores.ca1,
-          ca2: normalizedScores.ca2,
-          assignment: normalizedScores.assignment,
-          exam: normalizedScores.exam,
-          grade: deriveGradeFromScore(total),
+          ca1: normalized.ca1,
+          ca2: normalized.ca2,
+          assignment: normalized.assignment,
+          exam: normalized.exam,
+          grade: deriveGradeForTotals(grandTotal, student.totalMarksObtainable),
           position: student.position,
           remarks: student.teacherRemark.trim() ? student.teacherRemark.trim() : undefined,
           totalStudents: marksData.length,
@@ -3535,24 +3977,19 @@ export function TeacherDashboard({
                 (result) => normalizeClassName(result.className ?? "") === normalizedClass,
               )
               .forEach((result) => {
-                const normalizedScores = normalizeAssessmentScores({
+                const { normalized, caTotal, grandTotal } = calculateScoreTotals({
                   ca1: result.ca1 ?? 0,
                   ca2: result.ca2 ?? 0,
                   assignment: result.assignment ?? 0,
                   exam: result.exam ?? 0,
                 })
 
-                const caTotal = calculateContinuousAssessmentTotal(
-                  normalizedScores.ca1,
-                  normalizedScores.ca2,
-                  normalizedScores.assignment,
-                )
-                const grandTotal = calculateGrandTotal(
-                  normalizedScores.ca1,
-                  normalizedScores.ca2,
-                  normalizedScores.assignment,
-                  normalizedScores.exam,
-                )
+                const totalMarksObtainable = defaultTotalMaximum > 0 ? defaultTotalMaximum : fallbackTotalMaximum
+                const totalMarksObtained = grandTotal
+                const resolvedGrade =
+                  typeof result.grade === "string" && result.grade.trim().length > 0
+                    ? result.grade.trim().toUpperCase()
+                    : deriveGradeForTotals(totalMarksObtained, totalMarksObtainable)
 
                 liveRecords.push({
                   studentId: result.studentId,
@@ -3560,23 +3997,20 @@ export function TeacherDashboard({
                     typeof result.studentName === "string" && result.studentName.trim().length > 0
                       ? result.studentName
                       : `Student ${result.studentId}`,
-                  firstCA: normalizedScores.ca1,
-                  secondCA: normalizedScores.ca2,
-                  noteAssignment: normalizedScores.assignment,
+                  firstCA: normalized.ca1,
+                  secondCA: normalized.ca2,
+                  noteAssignment: normalized.assignment,
                   caTotal,
-                  exam: normalizedScores.exam,
+                  exam: normalized.exam,
                   grandTotal,
-                  totalMarksObtainable: 100,
-                  totalMarksObtained: grandTotal,
+                  totalMarksObtainable,
+                  totalMarksObtained,
                   averageScore: 0,
                   position:
                     typeof result.position === "number" && Number.isFinite(result.position)
                       ? result.position
                       : 0,
-                  grade:
-                    typeof result.grade === "string" && result.grade.trim().length > 0
-                      ? result.grade.trim().toUpperCase()
-                      : deriveGradeFromScore(grandTotal),
+                  grade: resolvedGrade,
                   teacherRemark:
                     typeof result.remarks === "string" ? result.remarks : "",
                 })
@@ -3624,33 +4058,21 @@ export function TeacherDashboard({
               return
             }
 
-            const normalizedScores = normalizeAssessmentScores({
+            const { normalized, caTotal, grandTotal } = calculateScoreTotals({
               ca1: subjectRecord.ca1 ?? 0,
               ca2: subjectRecord.ca2 ?? 0,
               assignment: subjectRecord.assignment ?? 0,
               exam: subjectRecord.exam ?? 0,
             })
 
-            const caTotal = calculateContinuousAssessmentTotal(
-              normalizedScores.ca1,
-              normalizedScores.ca2,
-              normalizedScores.assignment,
-            )
-            const grandTotal = calculateGrandTotal(
-              normalizedScores.ca1,
-              normalizedScores.ca2,
-              normalizedScores.assignment,
-              normalizedScores.exam,
-            )
-
             const totalMarksObtainable =
-              typeof subjectRecord.totalObtainable === "number" &&
-              Number.isFinite(subjectRecord.totalObtainable)
+              typeof subjectRecord.totalObtainable === "number" && Number.isFinite(subjectRecord.totalObtainable)
                 ? subjectRecord.totalObtainable
-                : 100
+                : defaultTotalMaximum > 0
+                  ? defaultTotalMaximum
+                  : fallbackTotalMaximum
             const totalMarksObtained =
-              typeof subjectRecord.totalObtained === "number" &&
-              Number.isFinite(subjectRecord.totalObtained)
+              typeof subjectRecord.totalObtained === "number" && Number.isFinite(subjectRecord.totalObtained)
                 ? subjectRecord.totalObtained
                 : grandTotal
 
@@ -3663,11 +4085,11 @@ export function TeacherDashboard({
                 typeof record.studentName === "string" && record.studentName.trim().length > 0
                   ? record.studentName
                   : `Student ${record.studentId}`,
-              firstCA: normalizedScores.ca1,
-              secondCA: normalizedScores.ca2,
-              noteAssignment: normalizedScores.assignment,
+              firstCA: normalized.ca1,
+              secondCA: normalized.ca2,
+              noteAssignment: normalized.assignment,
               caTotal,
-              exam: normalizedScores.exam,
+              exam: normalized.exam,
               grandTotal,
               totalMarksObtainable,
               totalMarksObtained,
@@ -3682,7 +4104,7 @@ export function TeacherDashboard({
               grade:
                 typeof subjectRecord.grade === "string" && subjectRecord.grade.trim().length > 0
                   ? subjectRecord.grade.trim().toUpperCase()
-                  : deriveGradeFromScore(grandTotal),
+                  : deriveGradeForTotals(totalMarksObtained, totalMarksObtainable),
               teacherRemark,
             })
           })
@@ -4218,7 +4640,7 @@ export function TeacherDashboard({
       subject: teacherClasses[0]?.subjects[0] ?? teacherSubjects[0] ?? "",
       classId: teacherClasses[0]?.id ?? "",
       className: teacherClasses[0]?.name ?? "",
-      maximumScore: String(defaultAssignmentMaximum),
+      maximumScore: String(assignmentFormDefaultMaximum),
       file: null,
       resourceName: "",
       resourceType: "",
@@ -4227,7 +4649,7 @@ export function TeacherDashboard({
     })
     setEditingAssignmentId(null)
     setAssignmentDialogMode("create")
-  }, [defaultAssignmentMaximum, teacherClasses, teacherSubjects])
+  }, [assignmentFormDefaultMaximum, teacherClasses, teacherSubjects])
 
   const openCreateAssignmentDialog = () => {
     resetAssignmentForm()
@@ -4247,7 +4669,9 @@ export function TeacherDashboard({
       subject: assignment.subject,
       classId: matchedClass?.id ?? assignment.classId ?? "",
       className: matchedClass?.name ?? assignment.className,
-      maximumScore: assignment.maximumScore ? String(assignment.maximumScore) : String(defaultAssignmentMaximum),
+      maximumScore: assignment.maximumScore
+        ? String(assignment.maximumScore)
+        : String(assignmentFormDefaultMaximum),
       file: null,
       resourceName: assignment.resourceName ?? "",
       resourceType: assignment.resourceType ?? "",
@@ -4620,35 +5044,23 @@ export function TeacherDashboard({
           return student
         }
 
-        const normalizedScores = normalizeAssessmentScores({
+        const { normalized, caTotal, grandTotal } = calculateScoreTotals({
           ca1: student.firstCA,
           ca2: student.secondCA,
           assignment: score,
           exam: student.exam,
         })
 
-        const caTotal = calculateContinuousAssessmentTotal(
-          normalizedScores.ca1,
-          normalizedScores.ca2,
-          normalizedScores.assignment,
-        )
-        const grandTotal = calculateGrandTotal(
-          normalizedScores.ca1,
-          normalizedScores.ca2,
-          normalizedScores.assignment,
-          normalizedScores.exam,
-        )
-
         const recalculated: MarksRecord = {
           ...student,
-          firstCA: normalizedScores.ca1,
-          secondCA: normalizedScores.ca2,
-          noteAssignment: normalizedScores.assignment,
-          exam: normalizedScores.exam,
+          firstCA: normalized.ca1,
+          secondCA: normalized.ca2,
+          noteAssignment: normalized.assignment,
+          exam: normalized.exam,
           caTotal,
           grandTotal,
           totalMarksObtained: grandTotal,
-          grade: calculateGrade(grandTotal),
+          grade: deriveGradeForTotals(grandTotal, student.totalMarksObtainable),
         }
 
         updatedRecord = recalculated
@@ -4712,20 +5124,33 @@ export function TeacherDashboard({
           updatedAt: previousRecord?.subjects?.[subject]?.updatedAt,
         }
 
-        const caTotal = calculateContinuousAssessmentTotal(baseline.ca1, baseline.ca2, score)
-        const total = calculateGrandTotal(baseline.ca1, baseline.ca2, score, baseline.exam)
+        const { normalized, caTotal, grandTotal } = calculateScoreTotals({
+          ca1: baseline.ca1,
+          ca2: baseline.ca2,
+          assignment: score,
+          exam: baseline.exam,
+        })
+        const subjectTotalObtainable =
+          typeof baseline.totalObtainable === "number" && baseline.totalObtainable > 0
+            ? baseline.totalObtainable
+            : defaultTotalMaximum > 0
+              ? defaultTotalMaximum
+              : fallbackTotalMaximum
         const resolvedGrade =
-          grade ?? (maximumScore > 0 ? deriveGradeFromScore((score / maximumScore) * 100) : baseline.grade)
+          grade ??
+          (maximumScore > 0
+            ? deriveGradeFromScore((score / maximumScore) * 100)
+            : deriveGradeForTotals(grandTotal, subjectTotalObtainable))
 
         const updatedSubject: StoredSubjectRecord = {
           ...baseline,
           subject,
           className: className ?? baseline.className,
-          assignment: score,
+          assignment: normalized.assignment,
           caTotal,
-          total,
+          total: grandTotal,
           grade: resolvedGrade,
-          totalObtained: total,
+          totalObtained: grandTotal,
           teacherId: teacher.id,
           teacherName: teacher.name,
           updatedAt: timestamp,
@@ -5616,6 +6041,92 @@ export function TeacherDashboard({
               </div>
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-[#2d682d]">Digital Signature</CardTitle>
+              <CardDescription>
+                Upload a clear scan of your handwritten signature to personalise report cards.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                <div className="flex h-32 w-32 items-center justify-center rounded-md border border-dashed border-[#2d682d]/40 bg-muted/40 p-3">
+                  {teacherSignature.url ? (
+                    <img
+                      src={teacherSignature.url}
+                      alt="Uploaded teacher signature"
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  ) : (
+                    <span className="text-center text-xs text-gray-500">
+                      No signature uploaded yet
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-2 text-sm text-gray-600">
+                  <p>
+                    This signature appears in the <strong>Teacher&apos;s Signature</strong> section of every generated
+                    report card preview.
+                  </p>
+                  {teacherSignature.fileName ? (
+                    <div className="rounded-md border border-dashed border-[#2d682d]/30 bg-[#f8faf8] p-3 text-xs text-gray-600">
+                      <p>
+                        <span className="font-semibold text-gray-700">File:</span> {teacherSignature.fileName}
+                      </p>
+                      {teacherSignatureUploadedAtLabel ? (
+                        <p>
+                          <span className="font-semibold text-gray-700">Uploaded:</span> {teacherSignatureUploadedAtLabel}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">Accepted formats: PNG, JPG or SVG up to 1.5MB.</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={signatureFileInputRef}
+                  id={signatureInputId}
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/svg+xml"
+                  className="hidden"
+                  onChange={handleTeacherSignatureFileChange}
+                  disabled={isUploadingSignature}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => signatureFileInputRef.current?.click()}
+                  disabled={isUploadingSignature}
+                  className="inline-flex items-center gap-2"
+                >
+                  {isUploadingSignature ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <UploadCloud className="h-4 w-4" />
+                  )}
+                  {isUploadingSignature
+                    ? "Uploading..."
+                    : teacherSignature.url
+                      ? "Replace Signature"
+                      : "Upload Signature"}
+                </Button>
+                {teacherSignature.url ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleRemoveTeacherSignature}
+                    disabled={isUploadingSignature}
+                    className="inline-flex items-center gap-2 text-red-600 hover:text-red-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Remove
+                  </Button>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="marks" className="space-y-4">
@@ -5861,8 +6372,9 @@ export function TeacherDashboard({
                   <TabsContent value="academic" className="space-y-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-xs leading-relaxed text-gray-500">
-                        Grade Management weighting: 1st CA {CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1}, 2nd CA {CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2},
-                        note/assignment {CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment}, exam {CONTINUOUS_ASSESSMENT_MAXIMUMS.exam}.
+                        {assessmentWeightingSummary
+                          ? `Assessment weighting: ${assessmentWeightingSummary}.`
+                          : "Assessment columns will appear once your administrator configures them."}
                       </p>
                       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                         <Button
@@ -5913,27 +6425,37 @@ export function TeacherDashboard({
                             <TableHead className="w-56 text-[11px] font-semibold uppercase tracking-wide text-gray-600">
                               Student Name
                             </TableHead>
+                            {hasFirstTestColumn && (
+                              <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                                {firstTestMaximum > 0 ? `${firstTestLabel} (${firstTestMaximum})` : firstTestLabel}
+                              </TableHead>
+                            )}
+                            {hasSecondTestColumn && (
+                              <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                                {secondTestMaximum > 0 ? `${secondTestLabel} (${secondTestMaximum})` : secondTestLabel}
+                              </TableHead>
+                            )}
+                            {hasAssignmentColumn && (
+                              <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                                {assignmentMaximum > 0 ? `${assignmentLabel} (${assignmentMaximum})` : assignmentLabel}
+                              </TableHead>
+                            )}
+                            {hasContinuousColumns && (
+                              <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                                {continuousAssessmentMaximum > 0
+                                  ? `C.A. Total (${continuousAssessmentMaximum})`
+                                  : "C.A. Total"}
+                              </TableHead>
+                            )}
+                            {hasExamColumn && (
+                              <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                                {examMaximum > 0 ? `${examLabel} (${examMaximum})` : examLabel}
+                              </TableHead>
+                            )}
                             <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                              1st C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1})
-                            </TableHead>
-                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                              2nd C.A. ({CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2})
-                            </TableHead>
-                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                              Note/Assign ({CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment})
-                            </TableHead>
-                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                              C.A. Total ({
-                                CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1 +
-                                CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2 +
-                                CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment
-                              })
-                            </TableHead>
-                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                              Exam ({CONTINUOUS_ASSESSMENT_MAXIMUMS.exam})
-                            </TableHead>
-                            <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                              Grand Total (100)
+                              {defaultTotalMaximum > 0
+                                ? `Grand Total (${defaultTotalMaximum})`
+                                : "Grand Total"}
                             </TableHead>
                             <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-600">
                               Total Obtainable
@@ -5964,61 +6486,71 @@ export function TeacherDashboard({
                               <TableCell className="font-medium text-gray-800">
                                 {student.studentName}
                               </TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number"
-                                  max={CONTINUOUS_ASSESSMENT_MAXIMUMS.ca1}
-                                  value={student.firstCA}
-                                  onChange={(e) =>
-                                    handleMarksUpdate(student.studentId, "firstCA", Number.parseInt(e.target.value) || 0)
-                                  }
-                                  className="h-9 w-full text-xs"
-                                  disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number"
-                                  max={CONTINUOUS_ASSESSMENT_MAXIMUMS.ca2}
-                                  value={student.secondCA}
-                                  onChange={(e) =>
-                                    handleMarksUpdate(student.studentId, "secondCA", Number.parseInt(e.target.value) || 0)
-                                  }
-                                  className="h-9 w-full text-xs"
-                                  disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number"
-                                  max={CONTINUOUS_ASSESSMENT_MAXIMUMS.assignment}
-                                  value={student.noteAssignment}
-                                  onChange={(e) =>
-                                    handleMarksUpdate(
-                                      student.studentId,
-                                      "noteAssignment",
-                                      Number.parseInt(e.target.value) || 0,
-                                    )
-                                  }
-                                  className="h-9 w-full text-xs"
-                                  disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
-                                />
-                              </TableCell>
-                              <TableCell className="text-center font-semibold text-[#2d682d]">
-                                {student.caTotal}
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number"
-                                  max={CONTINUOUS_ASSESSMENT_MAXIMUMS.exam}
-                                  value={student.exam}
-                                  onChange={(e) =>
-                                    handleMarksUpdate(student.studentId, "exam", Number.parseInt(e.target.value) || 0)
-                                  }
-                                  className="h-9 w-full text-xs"
-                                  disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
-                                />
-                              </TableCell>
+                              {hasFirstTestColumn && (
+                                <TableCell>
+                                  <Input
+                                    type="number"
+                                    max={firstTestMaximum || undefined}
+                                    value={student.firstCA}
+                                    onChange={(e) =>
+                                      handleMarksUpdate(student.studentId, "firstCA", Number.parseInt(e.target.value) || 0)
+                                    }
+                                    className="h-9 w-full text-xs"
+                                    disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                  />
+                                </TableCell>
+                              )}
+                              {hasSecondTestColumn && (
+                                <TableCell>
+                                  <Input
+                                    type="number"
+                                    max={secondTestMaximum || undefined}
+                                    value={student.secondCA}
+                                    onChange={(e) =>
+                                      handleMarksUpdate(student.studentId, "secondCA", Number.parseInt(e.target.value) || 0)
+                                    }
+                                    className="h-9 w-full text-xs"
+                                    disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                  />
+                                </TableCell>
+                              )}
+                              {hasAssignmentColumn && (
+                                <TableCell>
+                                  <Input
+                                    type="number"
+                                    max={assignmentMaximum || undefined}
+                                    value={student.noteAssignment}
+                                    onChange={(e) =>
+                                      handleMarksUpdate(
+                                        student.studentId,
+                                        "noteAssignment",
+                                        Number.parseInt(e.target.value) || 0,
+                                      )
+                                    }
+                                    className="h-9 w-full text-xs"
+                                    disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                  />
+                                </TableCell>
+                              )}
+                              {hasContinuousColumns && (
+                                <TableCell className="text-center font-semibold text-[#2d682d]">
+                                  {student.caTotal}
+                                </TableCell>
+                              )}
+                              {hasExamColumn && (
+                                <TableCell>
+                                  <Input
+                                    type="number"
+                                    max={examMaximum || undefined}
+                                    value={student.exam}
+                                    onChange={(e) =>
+                                      handleMarksUpdate(student.studentId, "exam", Number.parseInt(e.target.value) || 0)
+                                    }
+                                    className="h-9 w-full text-xs"
+                                    disabled={currentStatus.status === "pending" || currentStatus.status === "approved"}
+                                  />
+                                </TableCell>
+                              )}
                               <TableCell className="text-center font-semibold text-[#b29032]">
                                 {student.grandTotal}
                               </TableCell>
