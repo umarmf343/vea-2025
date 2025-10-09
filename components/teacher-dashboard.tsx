@@ -143,7 +143,7 @@ const CLASS_TEACHER_REMARK_OPTIONS = [
   {
     value: "Poor" as const,
     label: "Poor",
-    badgeClass: "border-rose-200 bg-rose-50 text-rose-700",
+    badgeClass: "border-red-200 bg-red-50 text-red-700",
   },
 ] as const
 
@@ -299,7 +299,7 @@ const buildTeacherSubjectOptions = (
       subject: normalizedSubject,
       classId,
       className,
-      label: className ? `${normalizedSubject} (${className})` : normalizedSubject,
+      label: normalizedSubject,
     })
   }
 
@@ -2066,8 +2066,7 @@ export function TeacherDashboard({
           }
 
           const subjectOption = subjectOptionByKey.get(subjectKey)
-          const label = subjectOption?.label ??
-            (subjectKey === "general" ? "General" : subjectOption?.subject ?? subjectKey)
+          const label = subjectOption?.subject ?? (subjectKey === "general" ? "General" : subjectKey)
 
           return `${label}: ${value}`
         })
@@ -5610,8 +5609,7 @@ export function TeacherDashboard({
             [subjectKey, remarkValue],
           ) => {
             const subjectOption = subjectOptionByKey.get(subjectKey)
-            const label = subjectOption?.label ??
-              (subjectKey === "general" ? "General" : subjectOption?.subject ?? subjectKey)
+            const label = subjectOption?.subject ?? (subjectKey === "general" ? "General" : subjectKey)
             acc[subjectKey] = { label, remark: remarkValue }
             return acc
           },
