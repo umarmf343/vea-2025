@@ -27,6 +27,16 @@ import {
   DEFAULT_REPORT_CARD_LAYOUT_CONFIG,
   type ReportCardLayoutConfig,
 } from "@/lib/report-card-layout-config"
+import {
+  DEFAULT_REPORT_CARD_COLUMNS,
+  buildResolvedColumns,
+  clampScoreToColumn,
+  getColumnMaximum,
+  normalizeColumnType,
+  normalizeColumnsFromResponse,
+  type ReportCardColumnConfig,
+  type ResolvedReportCardColumn,
+} from "@/lib/report-card-columns"
 import { logger } from "@/lib/logger"
 
 interface SubjectScore {
@@ -105,6 +115,11 @@ interface NormalizedReportCard {
     headmasterName: string
     defaultRemark: string
   }
+  teacher: {
+    id: string | null
+    name: string | null
+    signatureUrl: string | null
+  } | null
   assessmentMaximums: {
     continuousAssessment: number
     exam: number
@@ -122,154 +137,31 @@ const STORAGE_KEYS_TO_WATCH = [
 ]
 
 const LAYOUT_STORAGE_KEY = "reportCardLayoutConfig"
+const TEACHER_SIGNATURE_STORAGE_KEY = "teacherSignatures"
 const DEFAULT_LAYOUT_REFERENCE = applyLayoutDefaults(DEFAULT_REPORT_CARD_LAYOUT_CONFIG)
-
-interface ReportCardColumnConfig {
-  id: string
-  name: string
-  type: string
-  maxScore: number
-  weight: number
-  isRequired: boolean
-  order: number
-}
-
-interface ResolvedReportCardColumn {
-  config: ReportCardColumnConfig
-  occurrence: number
-  keyCandidates: string[]
-  isExam: boolean
-}
-
-const DEFAULT_REPORT_CARD_COLUMNS: ReportCardColumnConfig[] = [
-  { id: "column_ca1", name: "1st Test", type: "test", maxScore: 10, weight: 10, isRequired: true, order: 1 },
-  { id: "column_ca2", name: "2nd Test", type: "test", maxScore: 10, weight: 10, isRequired: true, order: 2 },
-  {
-    id: "column_assignment",
-    name: "Note / Assignment",
-    type: "assignment",
-    maxScore: 20,
-    weight: 20,
-    isRequired: true,
-    order: 3,
-  },
-  { id: "column_exam", name: "Exam", type: "exam", maxScore: 60, weight: 60, isRequired: true, order: 4 },
-]
 
 const sanitizeKey = (value: string) => value.replace(/[^a-z0-9]+/gi, "").toLowerCase()
 
-const toCamelCase = (value: string) =>
-  value
-    .split(/[^a-z0-9]+/i)
-    .filter(Boolean)
-    .map((segment, index) =>
-      index === 0 ? segment.toLowerCase() : segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase(),
-    )
-    .join("")
-
-const createKeyVariants = (value: string) => {
-  const trimmed = value.trim()
-  if (trimmed.length === 0) {
-    return []
+const readNonEmptyString = (value: unknown): string | null => {
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
   }
 
-  const normalized = trimmed.toLowerCase()
-  const tokens = normalized.split(/[^a-z0-9]+/i).filter(Boolean)
-  const slug = tokens.join("-")
-  const snake = tokens.join("_")
-  const compact = tokens.join("")
-  const camel = toCamelCase(trimmed)
-  const pascal = camel.charAt(0).toUpperCase() + camel.slice(1)
-
-  return Array.from(
-    new Set(
-      [
-        trimmed,
-        normalized,
-        compact,
-        slug,
-        snake,
-        camel,
-        pascal,
-        sanitizeKey(trimmed),
-        sanitizeKey(normalized),
-      ].filter((entry) => entry && entry.length > 0),
-    ),
-  )
+  return null
 }
 
-const getColumnMaximum = (column: ReportCardColumnConfig) => {
-  const maxFromScore = Number.isFinite(column.maxScore) ? Number(column.maxScore) : 0
-  if (maxFromScore > 0) {
-    return maxFromScore
+const normalizeIdentifier = (value: unknown): string | null => {
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
   }
 
-  const maxFromWeight = Number.isFinite(column.weight) ? Number(column.weight) : 0
-  return maxFromWeight > 0 ? maxFromWeight : 0
-}
-
-const normalizeColumnType = (type: string) => type?.toLowerCase?.() ?? "custom"
-
-const isExamColumnType = (type: string) => normalizeColumnType(type) === "exam"
-
-const createTypeSpecificCandidates = (type: string, occurrence: number) => {
-  const normalized = normalizeColumnType(type)
-  const index = Math.max(occurrence, 1)
-
-  switch (normalized) {
-    case "test":
-      return [
-        `ca${index}`,
-        `ca_${index}`,
-        index === 1 ? "ca1" : `ca${index}`,
-        index === 2 ? "ca2" : `ca${index}`,
-        index === 1 ? "firstca" : `ca${index}`,
-        index === 2 ? "secondca" : `ca${index}`,
-        index === 1 ? "first_ca" : `ca_${index}`,
-        index === 2 ? "second_ca" : `ca_${index}`,
-        `test${index}`,
-        `test_${index}`,
-      ]
-    case "assignment":
-      return ["assignment", "noteAssignment", "note_assignment", "continuousAssessment", "continuous_assessment", "ca3"]
-    case "project":
-      return ["project", `project${index}`, `project_${index}`, "projectScore", "project_score"]
-    case "exam":
-      if (index === 1) {
-        return ["exam", "examScore", "exam_score", "finalExam", "final_exam"]
-      }
-      return [`exam${index}`, `exam_${index}`]
-    default:
-      return []
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value)
   }
-}
 
-const buildResolvedColumns = (columns: ReportCardColumnConfig[]): ResolvedReportCardColumn[] => {
-  const counters = new Map<string, number>()
-
-  return columns
-    .slice()
-    .sort((a, b) => a.order - b.order)
-    .map((column) => {
-      const type = normalizeColumnType(column.type)
-      const occurrence = (counters.get(type) ?? 0) + 1
-      counters.set(type, occurrence)
-
-      const variants = new Set<string>([
-        column.id,
-        ...createKeyVariants(column.id),
-        column.name,
-        ...createKeyVariants(column.name),
-        ...createTypeSpecificCandidates(type, occurrence),
-      ])
-
-      return {
-        config: column,
-        occurrence,
-        keyCandidates: Array.from(variants).filter((entry) => entry && entry.length > 0),
-        isExam: isExamColumnType(type),
-      }
-    })
+  return null
 }
 
 const parseScoreInput = (value: unknown): number | null => {
@@ -317,18 +209,6 @@ const resolveValueFromSource = (source: Record<string, unknown>, candidate: stri
   }
 
   return null
-}
-
-const clampScoreToColumn = (value: number, column: ReportCardColumnConfig) => {
-  const maxScore = getColumnMaximum(column)
-  const safeValue = Number.isFinite(value) ? value : 0
-  const nonNegative = safeValue < 0 ? 0 : safeValue
-
-  if (maxScore <= 0) {
-    return nonNegative
-  }
-
-  return Math.min(nonNegative, maxScore)
 }
 
 const resolveColumnScore = (subject: Record<string, unknown>, column: ResolvedReportCardColumn): number => {
@@ -383,53 +263,6 @@ const resolveColumnScore = (subject: Record<string, unknown>, column: ResolvedRe
   }
 
   return 0
-}
-
-const coerceNumber = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number.parseFloat(value)
-    if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
-      return parsed
-    }
-  }
-
-  return null
-}
-
-const normalizeColumnsFromResponse = (input: unknown): ReportCardColumnConfig[] => {
-  if (!Array.isArray(input)) {
-    return DEFAULT_REPORT_CARD_COLUMNS
-  }
-
-  const normalized = (input as Array<Partial<ReportCardColumnConfig>>).map((column, index) => {
-    const id =
-      typeof column.id === "string" && column.id.trim().length > 0 ? column.id : `column_${index + 1}`
-    const name =
-      typeof column.name === "string" && column.name.trim().length > 0 ? column.name : `Column ${index + 1}`
-    const type =
-      typeof column.type === "string" && column.type.trim().length > 0 ? column.type : "custom"
-    const maxScore = coerceNumber(column.maxScore) ?? coerceNumber(column.weight) ?? 0
-    const weight = coerceNumber(column.weight) ?? coerceNumber(column.maxScore) ?? 0
-    const order = coerceNumber(column.order) ?? index + 1
-    const isRequired = Boolean(column.isRequired ?? false)
-
-    return {
-      id,
-      name,
-      type,
-      maxScore,
-      weight,
-      isRequired,
-      order,
-    }
-  })
-
-  const sorted = normalized.sort((a, b) => a.order - b.order)
-  return sorted.length > 0 ? sorted : DEFAULT_REPORT_CARD_COLUMNS
 }
 
 const formatBehavioralLabel = (value: string) =>
@@ -1044,6 +877,49 @@ const normalizeReportCard = (
 
   const resolvedPhotoUrl = cachedPhotoUrl ?? passportUrl ?? null
 
+  const teacherSource = source.teacher
+  const teacherRecord =
+    teacherSource && typeof teacherSource === "object"
+      ? (teacherSource as Record<string, unknown>)
+      : typeof teacherSource === "string"
+        ? { name: teacherSource }
+        : null
+  const teacherId =
+    normalizeIdentifier(teacherRecord?.id) ??
+    normalizeIdentifier((teacherRecord as { teacherId?: unknown } | null)?.teacherId)
+  const teacherName =
+    readNonEmptyString(teacherRecord?.name) ??
+    readNonEmptyString((teacherRecord as { teacherName?: unknown } | null)?.teacherName) ??
+    readNonEmptyString((teacherRecord as { fullName?: unknown } | null)?.fullName) ??
+    readNonEmptyString(source.remarks?.classTeacher) ??
+    readNonEmptyString(source.classTeacherRemarks)
+  const teacherSignatureFromSource =
+    readNonEmptyString(teacherRecord?.signatureUrl) ??
+    readNonEmptyString((teacherRecord as { signature?: unknown } | null)?.signature) ??
+    readNonEmptyString((teacherRecord as { signatureURL?: unknown } | null)?.signatureURL) ??
+    readNonEmptyString((teacherRecord as { url?: unknown } | null)?.url)
+
+  let teacherSignatureUrl = teacherSignatureFromSource
+
+  if (!teacherSignatureUrl && teacherId) {
+    const signatureStore = parseJsonRecord(safeStorage.getItem(TEACHER_SIGNATURE_STORAGE_KEY))
+    if (signatureStore && typeof signatureStore === "object") {
+      const entry = signatureStore[teacherId] as { url?: unknown } | undefined
+      if (entry && typeof entry === "object") {
+        teacherSignatureUrl = readNonEmptyString(entry.url)
+      }
+    }
+  }
+
+  const normalizedTeacher =
+    teacherId || teacherName || teacherSignatureUrl
+      ? {
+          id: teacherId ?? null,
+          name: teacherName ?? null,
+          signatureUrl: teacherSignatureUrl ?? null,
+        }
+      : null
+
   return {
     student: {
       id: String(studentId),
@@ -1091,6 +967,7 @@ const normalizeReportCard = (
     },
     termInfo,
     branding: resolvedBranding,
+    teacher: normalizedTeacher,
     assessmentMaximums: {
       continuousAssessment: continuousAssessmentMaximum,
       exam: examMaximum,
@@ -1893,6 +1770,27 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     "head_signature_label",
     getDefaultFieldLabel("signatures", "head_signature_label"),
   )
+  const teacherSignatureUrl = readNonEmptyString(reportCardData.teacher?.signatureUrl)
+  const teacherSignatureName = readNonEmptyString(reportCardData.teacher?.name)
+  const renderTeacherSignature = () => {
+    if (!teacherSignatureEnabled) {
+      return null
+    }
+
+    return (
+      <div className="signature-item">
+        <span className="signature-label">{teacherSignatureLabel}</span>
+        {teacherSignatureUrl ? (
+          <div className="signature-image">
+            <img src={teacherSignatureUrl} alt="Teacher's signature" />
+          </div>
+        ) : (
+          <div className="signature-line" />
+        )}
+        {teacherSignatureName ? <span className="signature-name">{teacherSignatureName}</span> : null}
+      </div>
+    )
+  }
   const headNameField = getFieldConfig("signatures", "head_name_label")
   const headSignatureName =
     headNameField && headNameField.label.trim().length > 0
@@ -2301,12 +2199,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                   </table>
                   {(teacherSignatureEnabled || headSignatureEnabled) && (
                     <div className="affective-signatures">
-                      {teacherSignatureEnabled ? (
-                        <div className="signature-item">
-                          <span className="signature-label">{teacherSignatureLabel}</span>
-                          <div className="signature-line" />
-                        </div>
-                      ) : null}
+                      {renderTeacherSignature()}
                       {headSignatureEnabled ? (
                         <div className="signature-item headmaster-signature">
                           <span className="signature-label">{headSignatureLabel}</span>
@@ -2365,12 +2258,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
           {(teacherSignatureEnabled || headSignatureEnabled) && !showAffectiveBlock && (
             <div className="signatures-box">
-              {teacherSignatureEnabled && (
-                <div className="signature-item">
-                  <span className="signature-label">{teacherSignatureLabel}</span>
-                  <div className="signature-line" />
-                </div>
-              )}
+              {renderTeacherSignature()}
               {headSignatureEnabled && (
                 <div className="signature-item headmaster-signature">
                   <span className="signature-label">{headSignatureLabel}</span>

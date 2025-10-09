@@ -52,6 +52,15 @@ export interface RawReportCardBranding {
   defaultRemark?: string
 }
 
+export interface RawReportCardTeacher {
+  id?: string | number | null
+  name?: string | null
+  signatureUrl?: string | null
+  signature?: string | null
+  fileName?: string | null
+  uploadedAt?: string | null
+}
+
 export interface RawReportCardData {
   student: RawReportCardStudent
   subjects?: Array<Record<string, unknown>>
@@ -76,6 +85,7 @@ export interface RawReportCardData {
     nextTerm?: string
     outstanding?: string
   }
+  teacher?: RawReportCardTeacher | null
 }
 
 export interface StoredSubjectRecord {
