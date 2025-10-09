@@ -7712,9 +7712,10 @@ export function TeacherDashboard({
                         </p>
                       </div>
                     )}
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
                     <Button
                       variant="outline"
+                      className="w-full justify-center sm:w-auto sm:justify-start"
                       onClick={() => void handleSaveDraft()}
                       disabled={isSavingDraft || isSubmittingForApproval}
                     >
@@ -7726,7 +7727,7 @@ export function TeacherDashboard({
                       Save Progress
                     </Button>
                     <Button
-                      className="bg-[#2d682d] hover:bg-[#1f4a1f] text-white"
+                      className="w-full justify-center bg-[#2d682d] text-white hover:bg-[#1f4a1f] sm:w-auto sm:justify-start"
                       onClick={() => void handleSubmitForApproval()}
                       disabled={
                         isSavingDraft ||
@@ -7749,6 +7750,7 @@ export function TeacherDashboard({
                     {currentStatus.status === "revoked" && (
                       <Button
                         variant="outline"
+                        className="w-full justify-center sm:w-auto sm:justify-start"
                         onClick={() => void handleSubmitForApproval()}
                         disabled={isSavingDraft || isSubmittingForApproval}
                       >
@@ -7758,6 +7760,7 @@ export function TeacherDashboard({
                     {currentStatus.status === "pending" && (
                       <Button
                         variant="ghost"
+                        className="w-full justify-center sm:w-auto sm:justify-start"
                         onClick={() => void handleCancelSubmission()}
                         disabled={isCancellingSubmission}
                       >
