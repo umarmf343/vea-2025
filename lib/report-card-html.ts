@@ -157,6 +157,26 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
   }
 
   const summary = data.summary ?? {}
+  const teacherSignatureLabel = "Teacher's Signature"
+  const headSignatureLabel = "Headmaster's Signature"
+  const teacherSignatureImage =
+    typeof data.teacher?.signatureUrl === "string" && data.teacher.signatureUrl.trim().length > 0
+      ? data.teacher.signatureUrl.trim()
+      : typeof data.teacher?.signature === "string" && data.teacher.signature.trim().length > 0
+        ? data.teacher.signature.trim()
+        : null
+  const teacherSignatureName =
+    typeof data.teacher?.name === "string" && data.teacher.name.trim().length > 0
+      ? data.teacher.name.trim()
+      : ""
+  const headSignatureImage =
+    typeof data.branding?.signature === "string" && data.branding.signature.trim().length > 0
+      ? data.branding.signature.trim()
+      : null
+  const headSignatureName =
+    typeof data.branding?.headmasterName === "string" && data.branding.headmasterName.trim().length > 0
+      ? data.branding.headmasterName.trim()
+      : ""
 
   return `<!DOCTYPE html>
   <html lang="en">
@@ -303,20 +323,6 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
           gap: 20px;
         }
-        .signature {
-          margin-top: 40px;
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-end;
-          gap: 40px;
-          flex-wrap: wrap;
-        }
-        .signature > div {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          min-width: 200px;
-        }
         .signature-line {
           border-bottom: 1px solid #d1d5db;
           width: 200px;
@@ -361,7 +367,7 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           width: 100%;
           max-width: 100%;
           table-layout: fixed;
-          margin: 12px 0 0;
+          margin: 12px 0 12px;
           box-sizing: border-box;
         }
         .holistic-grid th,
@@ -380,6 +386,31 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           color: #047857;
           font-weight: 700;
           font-size: 16px;
+        }
+        .affective-signatures {
+          margin-top: 12px;
+          padding-top: 12px;
+          border-top: 1px dashed #2d682d;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 20px;
+          justify-content: space-between;
+          align-items: flex-start;
+        }
+        .affective-signature-item {
+          flex: 1 1 200px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          font-weight: 600;
+          color: #1b4332;
+        }
+        .affective-signature-item.head {
+          text-align: right;
+          align-items: flex-end;
+        }
+        .affective-signature-label {
+          font-size: 14px;
         }
       </style>
     </head>
@@ -514,6 +545,34 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
                 ${affectiveRows || "<tr><td colspan=\"2\">No affective selections recorded.</td></tr>"}
               </tbody>
             </table>
+            <div class="affective-signatures">
+              <div class="affective-signature-item">
+                <span class="affective-signature-label">${escapeHtml(teacherSignatureLabel)}</span>
+                ${
+                  teacherSignatureImage
+                    ? `<div class="signature-image"><img src="${escapeHtml(teacherSignatureImage)}" alt="Teacher signature" /></div>`
+                    : '<div class="signature-line"></div>'
+                }
+                ${
+                  teacherSignatureName
+                    ? `<div class="signature-name">${escapeHtml(teacherSignatureName)}</div>`
+                    : ""
+                }
+              </div>
+              <div class="affective-signature-item head">
+                <span class="affective-signature-label">${escapeHtml(headSignatureLabel)}</span>
+                ${
+                  headSignatureImage
+                    ? `<div class="signature-image"><img src="${escapeHtml(headSignatureImage)}" alt="Headmaster signature" /></div>`
+                    : '<div class="signature-placeholder">Signature Pending</div>'
+                }
+                ${
+                  headSignatureName
+                    ? `<div class="signature-name">${escapeHtml(headSignatureName)}</div>`
+                    : ""
+                }
+              </div>
+            </div>
           </div>
           <div>
             <h3>Psychomotor Domain</h3>
@@ -585,26 +644,6 @@ export const buildReportCardHtml = (data: RawReportCardData) => {
           </div>
         </div>
       </section>
-
-      <div class="signature">
-        <div>
-          <div class="muted">Class Teacher Signature</div>
-          <div class="signature-line"></div>
-        </div>
-        <div>
-          <div class="muted">Head Teacher Signature</div>
-          ${
-            data.branding?.signature
-              ? `<div class="signature-image"><img src="${escapeHtml(data.branding.signature)}" alt="Head Teacher signature" /></div>`
-              : '<div class="signature-placeholder">Signature Pending</div>'
-          }
-          ${
-            data.branding?.headmasterName
-              ? `<div class="signature-name">${escapeHtml(data.branding.headmasterName)}</div>`
-              : ""
-          }
-        </div>
-      </div>
 
       <footer class="footer">
         <span>Generated on ${new Date().toLocaleDateString()}</span>

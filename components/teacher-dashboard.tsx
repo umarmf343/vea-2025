@@ -136,28 +136,28 @@ const SUBJECT_REMARK_VISUAL_STYLES: Record<
   }
 > = {
   Excellent: {
-    container: "border-[#16a34a]/70 bg-[#16a34a]/10",
-    label: "text-[#16a34a]",
+    container: "border-[#16a34a] bg-[#dcfce7]",
+    label: "text-[#166534]",
     radio:
-      "data-[state=checked]:border-[#16a34a] data-[state=checked]:text-[#16a34a] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#16a34a]",
+      "data-[state=checked]:border-[#16a34a] data-[state=checked]:bg-[#16a34a]/15 data-[state=checked]:text-[#16a34a] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#16a34a]",
   },
   "V. Good": {
-    container: "border-[#0d9488]/70 bg-[#0d9488]/10",
-    label: "text-[#0d9488]",
+    container: "border-[#0d9488] bg-[#ccfbf1]",
+    label: "text-[#0f766e]",
     radio:
-      "data-[state=checked]:border-[#0d9488] data-[state=checked]:text-[#0d9488] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#0d9488]",
+      "data-[state=checked]:border-[#0d9488] data-[state=checked]:bg-[#0d9488]/15 data-[state=checked]:text-[#0d9488] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#0d9488]",
   },
   Good: {
-    container: "border-[#2563eb]/70 bg-[#2563eb]/10",
-    label: "text-[#2563eb]",
+    container: "border-[#2563eb] bg-[#dbeafe]",
+    label: "text-[#1d4ed8]",
     radio:
-      "data-[state=checked]:border-[#2563eb] data-[state=checked]:text-[#2563eb] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#2563eb]",
+      "data-[state=checked]:border-[#2563eb] data-[state=checked]:bg-[#2563eb]/15 data-[state=checked]:text-[#2563eb] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#2563eb]",
   },
   Poor: {
-    container: "border-[#dc2626]/70 bg-[#dc2626]/10",
-    label: "text-[#dc2626]",
+    container: "border-[#dc2626] bg-[#fee2e2]",
+    label: "text-[#b91c1c]",
     radio:
-      "data-[state=checked]:border-[#dc2626] data-[state=checked]:text-[#dc2626] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#dc2626]",
+      "data-[state=checked]:border-[#dc2626] data-[state=checked]:bg-[#dc2626]/15 data-[state=checked]:text-[#dc2626] data-[state=checked]:[&_[data-slot=radio-group-indicator]_svg]:fill-[#dc2626]",
   },
 }
 
@@ -6986,10 +6986,10 @@ export function TeacherDashboard({
                                       <div
                                         key={option}
                                         className={cn(
-                                          "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 transition-colors",
+                                          "flex items-center gap-2 rounded-md border px-3 py-2 text-xs transition-colors",
                                           isSelected
                                             ? styles.container
-                                            : "border-muted bg-muted/20 text-muted-foreground",
+                                            : "border-slate-300 bg-white text-slate-500",
                                           isDisabled && !isSelected && "opacity-60",
                                           isDisabled && "cursor-not-allowed",
                                         )}
@@ -6999,7 +6999,7 @@ export function TeacherDashboard({
                                           id={optionId}
                                           disabled={isDisabled}
                                           className={cn(
-                                            "border-muted text-muted-foreground transition-colors",
+                                            "border-slate-300 text-slate-400 transition-colors",
                                             styles.radio,
                                             isDisabled && "cursor-not-allowed",
                                           )}
@@ -7007,8 +7007,8 @@ export function TeacherDashboard({
                                         <Label
                                           htmlFor={optionId}
                                           className={cn(
-                                            "cursor-pointer text-xs font-medium transition-colors",
-                                            isSelected ? styles.label : "text-muted-foreground",
+                                            "cursor-pointer text-xs font-semibold transition-colors",
+                                            isSelected ? styles.label : "text-slate-500",
                                             isDisabled && "cursor-not-allowed",
                                           )}
                                         >
