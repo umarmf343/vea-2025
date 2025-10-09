@@ -2168,6 +2168,14 @@ export function TeacherDashboard({
     [availableSubjectOptions],
   )
 
+  const selectedSubjectOption = selectedSubjectKey
+    ? subjectOptionByKey.get(selectedSubjectKey) ?? null
+    : null
+  const selectedSubjectHasClassAssignment = Boolean(
+    selectedSubjectOption &&
+      ((selectedSubjectOption.classId && selectedSubjectOption.classId.trim().length > 0) ||
+        (selectedSubjectOption.className && selectedSubjectOption.className.trim().length > 0)),
+  )
   const hasRemarkSubjects = availableSubjectOptions.length > 0
   const remarkStudentOptions = useMemo(() => {
     if (!selectedSubjectKey) {
@@ -2175,6 +2183,9 @@ export function TeacherDashboard({
     }
 
     const subjectOption = subjectOptionByKey.get(selectedSubjectKey) ?? null
+    if (subjectOption && !selectedSubjectHasClassAssignment) {
+      return [] as RemarkStudentOption[]
+    }
     const classTokens = new Set<string>()
 
     const registerClassToken = (value: string | null | undefined) => {
@@ -2317,6 +2328,7 @@ export function TeacherDashboard({
     marksData,
     normalizeClassName,
     normalizeClassToken,
+    selectedSubjectHasClassAssignment,
     selectedSubjectKey,
     subjectOptionByKey,
     teacherStudents,
@@ -2366,18 +2378,22 @@ export function TeacherDashboard({
     ? CLASS_TEACHER_REMARK_OPTION_MAP[selectedRemarkValue] ?? null
     : null
 
-  const isStudentSelectDisabledForRemarks = !selectedSubjectKey
+  const isStudentSelectDisabledForRemarks = !selectedSubjectKey || !selectedSubjectHasClassAssignment
   const hasRemarkStudentsForSelection = remarkStudentOptions.length > 0
   const studentSelectPlaceholder = !selectedSubjectKey
     ? "Select a subject first"
-    : hasRemarkStudentsForSelection
+    : !selectedSubjectHasClassAssignment
+      ? "Subject has no class"
+      : hasRemarkStudentsForSelection
       ? "Select student"
       : "No students available"
   const studentDropdownStatusMessage = !selectedSubjectKey
     ? null
-    : hasRemarkStudentsForSelection
-      ? "Remarks are saved per student and subject."
-      : "No students found for the selected subject's class."
+    : !selectedSubjectHasClassAssignment
+      ? "This subject is not assigned to a class."
+      : hasRemarkStudentsForSelection
+        ? "Remarks are saved per student and subject."
+        : "No students found for the selected subject's class."
 
   const hasAvailableSubjects = availableSubjectOptions.length > 0
   const hasCachedSubjectOptions =
@@ -2396,9 +2412,6 @@ export function TeacherDashboard({
       ? "No subjects assigned"
       : "Select subject"
 
-  const selectedSubjectOption = selectedSubjectKey
-    ? subjectOptionByKey.get(selectedSubjectKey) ?? null
-    : null
   const addStudentDialogOption = addStudentDialogSubjectKey
     ? subjectOptionByKey.get(addStudentDialogSubjectKey) ?? null
     : null
@@ -2444,6 +2457,30 @@ export function TeacherDashboard({
     },
     [handleSelectSubject],
   )
+
+  useEffect(() => {
+    if (!selectedSubjectKey) {
+      return
+    }
+
+    const subjectOption = subjectOptionByKey.get(selectedSubjectKey)
+    if (!subjectOption) {
+      return
+    }
+
+    const resolvedClassId = subjectOption.classId?.trim() ?? ""
+    const resolvedClassName = subjectOption.className?.trim() ?? ""
+
+    if (resolvedClassId !== selectedClassId) {
+      setSelectedClassId(resolvedClassId)
+    }
+
+    if (resolvedClassName && resolvedClassName !== selectedClass) {
+      setSelectedClass(resolvedClassName)
+    } else if (!resolvedClassName && selectedClass) {
+      setSelectedClass("")
+    }
+  }, [selectedClass, selectedClassId, selectedSubjectKey, subjectOptionByKey])
 
   useEffect(() => {
     if (teacherClasses.length === 0) {
@@ -7416,20 +7453,17 @@ export function TeacherDashboard({
                                 >
                                   {CLASS_TEACHER_REMARK_OPTIONS.map((option) => {
                                     const optionId = `${selectedRemarkStudent.studentId}-${selectedSubjectKey}-${option.value}`
-                                    const isDisabled =
-                                      currentStatus.status === "pending" || currentStatus.status === "approved"
                                     return (
                                       <Label
                                         key={option.value}
                                         htmlFor={optionId}
                                         className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold shadow-sm transition ${
                                           option.badgeClass
-                                        } ${isDisabled ? "opacity-60" : "hover:shadow-md"}`}
+                                        } hover:shadow-md`}
                                       >
                                         <RadioGroupItem
                                           value={option.value}
                                           id={optionId}
-                                          disabled={isDisabled}
                                           className="border-muted-foreground text-[#2d682d] focus-visible:ring-[#2d682d]"
                                         />
                                         <span>{option.label}</span>
