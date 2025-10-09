@@ -2843,7 +2843,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
         .affective-signatures {
           margin-top: 16px;
           display: flex;
-          align-items: flex-end;
+          align-items: baseline;
           justify-content: space-between;
           gap: 24px;
           flex-wrap: wrap;
@@ -2867,7 +2867,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
           gap: 24px;
           margin-top: 6px;
           font-size: 1em;
-          align-items: flex-end;
+          align-items: baseline;
           justify-content: space-between;
           padding: 0 15px 8px;
           flex-wrap: wrap;
@@ -2886,8 +2886,8 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
         .signature-item.headmaster-signature {
           margin-left: 0;
-          align-items: flex-start;
-          text-align: left;
+          align-items: flex-end;
+          text-align: right;
         }
 
         .signature-label {
