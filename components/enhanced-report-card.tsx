@@ -40,6 +40,7 @@ interface SubjectScore {
   grade: string
   remarks: string
   position?: string
+  columnScores: Record<string, number>
 }
 
 interface AttendanceSummary {
@@ -104,6 +105,11 @@ interface NormalizedReportCard {
     headmasterName: string
     defaultRemark: string
   }
+  assessmentMaximums: {
+    continuousAssessment: number
+    exam: number
+    total: number
+  }
 }
 
 const STORAGE_KEYS_TO_WATCH = [
@@ -117,6 +123,314 @@ const STORAGE_KEYS_TO_WATCH = [
 
 const LAYOUT_STORAGE_KEY = "reportCardLayoutConfig"
 const DEFAULT_LAYOUT_REFERENCE = applyLayoutDefaults(DEFAULT_REPORT_CARD_LAYOUT_CONFIG)
+
+interface ReportCardColumnConfig {
+  id: string
+  name: string
+  type: string
+  maxScore: number
+  weight: number
+  isRequired: boolean
+  order: number
+}
+
+interface ResolvedReportCardColumn {
+  config: ReportCardColumnConfig
+  occurrence: number
+  keyCandidates: string[]
+  isExam: boolean
+}
+
+const DEFAULT_REPORT_CARD_COLUMNS: ReportCardColumnConfig[] = [
+  { id: "column_ca1", name: "1st Test", type: "test", maxScore: 10, weight: 10, isRequired: true, order: 1 },
+  { id: "column_ca2", name: "2nd Test", type: "test", maxScore: 10, weight: 10, isRequired: true, order: 2 },
+  {
+    id: "column_assignment",
+    name: "Note / Assignment",
+    type: "assignment",
+    maxScore: 20,
+    weight: 20,
+    isRequired: true,
+    order: 3,
+  },
+  { id: "column_exam", name: "Exam", type: "exam", maxScore: 60, weight: 60, isRequired: true, order: 4 },
+]
+
+const sanitizeKey = (value: string) => value.replace(/[^a-z0-9]+/gi, "").toLowerCase()
+
+const toCamelCase = (value: string) =>
+  value
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean)
+    .map((segment, index) =>
+      index === 0 ? segment.toLowerCase() : segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase(),
+    )
+    .join("")
+
+const createKeyVariants = (value: string) => {
+  const trimmed = value.trim()
+  if (trimmed.length === 0) {
+    return []
+  }
+
+  const normalized = trimmed.toLowerCase()
+  const tokens = normalized.split(/[^a-z0-9]+/i).filter(Boolean)
+  const slug = tokens.join("-")
+  const snake = tokens.join("_")
+  const compact = tokens.join("")
+  const camel = toCamelCase(trimmed)
+  const pascal = camel.charAt(0).toUpperCase() + camel.slice(1)
+
+  return Array.from(
+    new Set(
+      [
+        trimmed,
+        normalized,
+        compact,
+        slug,
+        snake,
+        camel,
+        pascal,
+        sanitizeKey(trimmed),
+        sanitizeKey(normalized),
+      ].filter((entry) => entry && entry.length > 0),
+    ),
+  )
+}
+
+const getColumnMaximum = (column: ReportCardColumnConfig) => {
+  const maxFromScore = Number.isFinite(column.maxScore) ? Number(column.maxScore) : 0
+  if (maxFromScore > 0) {
+    return maxFromScore
+  }
+
+  const maxFromWeight = Number.isFinite(column.weight) ? Number(column.weight) : 0
+  return maxFromWeight > 0 ? maxFromWeight : 0
+}
+
+const normalizeColumnType = (type: string) => type?.toLowerCase?.() ?? "custom"
+
+const isExamColumnType = (type: string) => normalizeColumnType(type) === "exam"
+
+const createTypeSpecificCandidates = (type: string, occurrence: number) => {
+  const normalized = normalizeColumnType(type)
+  const index = Math.max(occurrence, 1)
+
+  switch (normalized) {
+    case "test":
+      return [
+        `ca${index}`,
+        `ca_${index}`,
+        index === 1 ? "ca1" : `ca${index}`,
+        index === 2 ? "ca2" : `ca${index}`,
+        index === 1 ? "firstca" : `ca${index}`,
+        index === 2 ? "secondca" : `ca${index}`,
+        index === 1 ? "first_ca" : `ca_${index}`,
+        index === 2 ? "second_ca" : `ca_${index}`,
+        `test${index}`,
+        `test_${index}`,
+      ]
+    case "assignment":
+      return ["assignment", "noteAssignment", "note_assignment", "continuousAssessment", "continuous_assessment", "ca3"]
+    case "project":
+      return ["project", `project${index}`, `project_${index}`, "projectScore", "project_score"]
+    case "exam":
+      if (index === 1) {
+        return ["exam", "examScore", "exam_score", "finalExam", "final_exam"]
+      }
+      return [`exam${index}`, `exam_${index}`]
+    default:
+      return []
+  }
+}
+
+const buildResolvedColumns = (columns: ReportCardColumnConfig[]): ResolvedReportCardColumn[] => {
+  const counters = new Map<string, number>()
+
+  return columns
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((column) => {
+      const type = normalizeColumnType(column.type)
+      const occurrence = (counters.get(type) ?? 0) + 1
+      counters.set(type, occurrence)
+
+      const variants = new Set<string>([
+        column.id,
+        ...createKeyVariants(column.id),
+        column.name,
+        ...createKeyVariants(column.name),
+        ...createTypeSpecificCandidates(type, occurrence),
+      ])
+
+      return {
+        config: column,
+        occurrence,
+        keyCandidates: Array.from(variants).filter((entry) => entry && entry.length > 0),
+        isExam: isExamColumnType(type),
+      }
+    })
+}
+
+const parseScoreInput = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (trimmed.length === 0) {
+      return null
+    }
+
+    const parsed = Number.parseFloat(trimmed)
+    if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+
+  return null
+}
+
+const resolveValueFromSource = (source: Record<string, unknown>, candidate: string): number | null => {
+  if (candidate in source) {
+    const direct = parseScoreInput(source[candidate])
+    if (direct !== null) {
+      return direct
+    }
+  }
+
+  const normalizedCandidate = candidate.toLowerCase()
+  const sanitizedCandidate = sanitizeKey(candidate)
+
+  for (const [key, raw] of Object.entries(source)) {
+    if (typeof key !== "string") {
+      continue
+    }
+
+    if (key === candidate || key.toLowerCase() === normalizedCandidate || sanitizeKey(key) === sanitizedCandidate) {
+      const parsed = parseScoreInput(raw)
+      if (parsed !== null) {
+        return parsed
+      }
+    }
+  }
+
+  return null
+}
+
+const clampScoreToColumn = (value: number, column: ReportCardColumnConfig) => {
+  const maxScore = getColumnMaximum(column)
+  const safeValue = Number.isFinite(value) ? value : 0
+  const nonNegative = safeValue < 0 ? 0 : safeValue
+
+  if (maxScore <= 0) {
+    return nonNegative
+  }
+
+  return Math.min(nonNegative, maxScore)
+}
+
+const resolveColumnScore = (subject: Record<string, unknown>, column: ResolvedReportCardColumn): number => {
+  const sources: Record<string, unknown>[] = [subject]
+
+  const nestedCandidates = ["scores", "assessments", "tests", "columns", "marks", "components"]
+  nestedCandidates.forEach((key) => {
+    const nested = subject[key as keyof typeof subject]
+    if (nested && typeof nested === "object") {
+      sources.push(nested as Record<string, unknown>)
+    }
+  })
+
+  for (const source of sources) {
+    for (const candidate of column.keyCandidates) {
+      const resolved = resolveValueFromSource(source, candidate)
+      if (resolved !== null) {
+        return clampScoreToColumn(resolved, column.config)
+      }
+    }
+  }
+
+  const type = normalizeColumnType(column.config.type)
+  const occurrence = column.occurrence
+
+  const fallbackKeys: string[] = []
+  if (type === "test") {
+    fallbackKeys.push(`ca${occurrence}`)
+    if (occurrence === 1) {
+      fallbackKeys.push("firstCA", "first_ca")
+    }
+    if (occurrence === 2) {
+      fallbackKeys.push("secondCA", "second_ca")
+    }
+  } else if (type === "assignment") {
+    fallbackKeys.push("assignment", "noteAssignment", "note_assignment", "continuousAssessment")
+  } else if (type === "project") {
+    fallbackKeys.push("project", "projectScore", "project_score")
+  } else if (type === "exam") {
+    if (occurrence === 1) {
+      fallbackKeys.push("exam", "examScore", "exam_score")
+    } else {
+      fallbackKeys.push(`exam${occurrence}`, `exam_${occurrence}`)
+    }
+  }
+
+  for (const key of fallbackKeys) {
+    const resolved = resolveValueFromSource(subject, key)
+    if (resolved !== null) {
+      return clampScoreToColumn(resolved, column.config)
+    }
+  }
+
+  return 0
+}
+
+const coerceNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value)
+    if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+
+  return null
+}
+
+const normalizeColumnsFromResponse = (input: unknown): ReportCardColumnConfig[] => {
+  if (!Array.isArray(input)) {
+    return DEFAULT_REPORT_CARD_COLUMNS
+  }
+
+  const normalized = (input as Array<Partial<ReportCardColumnConfig>>).map((column, index) => {
+    const id =
+      typeof column.id === "string" && column.id.trim().length > 0 ? column.id : `column_${index + 1}`
+    const name =
+      typeof column.name === "string" && column.name.trim().length > 0 ? column.name : `Column ${index + 1}`
+    const type =
+      typeof column.type === "string" && column.type.trim().length > 0 ? column.type : "custom"
+    const maxScore = coerceNumber(column.maxScore) ?? coerceNumber(column.weight) ?? 0
+    const weight = coerceNumber(column.weight) ?? coerceNumber(column.maxScore) ?? 0
+    const order = coerceNumber(column.order) ?? index + 1
+    const isRequired = Boolean(column.isRequired ?? false)
+
+    return {
+      id,
+      name,
+      type,
+      maxScore,
+      weight,
+      isRequired,
+      order,
+    }
+  })
+
+  const sorted = normalized.sort((a, b) => a.order - b.order)
+  return sorted.length > 0 ? sorted : DEFAULT_REPORT_CARD_COLUMNS
+}
 
 const formatBehavioralLabel = (value: string) =>
   value
@@ -394,18 +708,58 @@ const PRIMARY_PSYCHOMOTOR_SKILLS = [
   { key: "handwriting", label: "Handwriting" },
 ] as const
 
-const normalizeSubjects = (subjects: Array<Record<string, unknown>> | undefined): SubjectScore[] => {
+const normalizeSubjects = (
+  subjects: Array<Record<string, unknown>> | undefined,
+  columns: ResolvedReportCardColumn[],
+): SubjectScore[] => {
   if (!Array.isArray(subjects)) {
     return []
   }
 
-  return subjects.map((subject) => {
-    const ca1 = Number(subject.ca1 ?? subject.firstCA ?? subject.first_ca ?? 0)
-    const ca2 = Number(subject.ca2 ?? subject.secondCA ?? subject.second_ca ?? 0)
-    const assignment = Number(subject.assignment ?? subject.noteAssignment ?? subject.continuousAssessment ?? 0)
-    const exam = Number(subject.exam ?? subject.examScore ?? subject.exam_score ?? 0)
-    const caTotal = Number(subject.caTotal ?? ca1 + ca2 + assignment)
-    const total = Number(subject.total ?? subject.grandTotal ?? caTotal + exam)
+  const assessmentColumns = columns.filter((column) => !column.isExam)
+  const examColumns = columns.filter((column) => column.isExam)
+
+  return subjects.map((subjectEntry) => {
+    const subject = subjectEntry as Record<string, unknown>
+
+    const fallbackCa1 = Number(subject.ca1 ?? subject.firstCA ?? subject.first_ca ?? 0)
+    const fallbackCa2 = Number(subject.ca2 ?? subject.secondCA ?? subject.second_ca ?? 0)
+    const fallbackAssignment = Number(
+      subject.assignment ?? subject.noteAssignment ?? subject.continuousAssessment ?? 0,
+    )
+    const fallbackExam = Number(subject.exam ?? subject.examScore ?? subject.exam_score ?? 0)
+
+    const columnScores: Record<string, number> = {}
+    columns.forEach((column) => {
+      columnScores[column.config.id] = resolveColumnScore(subject, column)
+    })
+
+    const continuousAssessmentTotal = assessmentColumns.reduce(
+      (sum, column) => sum + (columnScores[column.config.id] ?? 0),
+      0,
+    )
+    const examTotal = examColumns.reduce((sum, column) => sum + (columnScores[column.config.id] ?? 0), 0)
+    const computedTotal = continuousAssessmentTotal + examTotal
+
+    const firstTestColumn = assessmentColumns.find(
+      (column) => normalizeColumnType(column.config.type) === "test" && column.occurrence === 1,
+    )
+    const secondTestColumn = assessmentColumns.find(
+      (column) => normalizeColumnType(column.config.type) === "test" && column.occurrence === 2,
+    )
+    const assignmentColumn = assessmentColumns.find(
+      (column) => normalizeColumnType(column.config.type) === "assignment",
+    )
+
+    const ca1 = firstTestColumn ? columnScores[firstTestColumn.config.id] ?? fallbackCa1 : fallbackCa1
+    const ca2 = secondTestColumn ? columnScores[secondTestColumn.config.id] ?? fallbackCa2 : fallbackCa2
+    const assignment = assignmentColumn
+      ? columnScores[assignmentColumn.config.id] ?? fallbackAssignment
+      : fallbackAssignment
+
+    const caTotal = assessmentColumns.length > 0 ? continuousAssessmentTotal : Number(subject.caTotal ?? ca1 + ca2 + assignment)
+    const exam = examColumns.length > 0 ? examTotal : fallbackExam
+    const total = columns.length > 0 ? computedTotal : Number(subject.total ?? subject.grandTotal ?? caTotal + exam)
     const grade = String(subject.grade ?? subject.letterGrade ?? "").toUpperCase()
     const remarks = String(subject.remarks ?? subject.teacherRemark ?? "")
     const rawPosition = parsePositionValue(
@@ -423,6 +777,7 @@ const normalizeSubjects = (subjects: Array<Record<string, unknown>> | undefined)
       total,
       grade,
       remarks,
+      columnScores,
       position:
         positionLabel ??
         (typeof subject.position === "string" && subject.position.trim().length > 0
@@ -463,6 +818,7 @@ const normalizeReportCard = (
   source: RawReportCardData | undefined,
   defaultBranding: ReturnType<typeof useBranding>,
   layoutConfig: ReportCardLayoutConfig,
+  columns: ResolvedReportCardColumn[],
 ): NormalizedReportCard | null => {
   if (!source || !source.student) {
     return null
@@ -495,15 +851,27 @@ const normalizeReportCard = (
 
   const remarkRecord = remarksStore[storageKey] as { remark?: string } | undefined
 
-  const normalizedSubjects = normalizeSubjects(source.subjects)
+  const normalizedSubjects = normalizeSubjects(source.subjects, columns)
+  const hasConfiguredColumns = columns.length > 0
+  const computedContinuousMaximum = columns
+    .filter((column) => !column.isExam)
+    .reduce((sum, column) => sum + getColumnMaximum(column.config), 0)
+  const computedExamMaximum = columns
+    .filter((column) => column.isExam)
+    .reduce((sum, column) => sum + getColumnMaximum(column.config), 0)
+  const continuousAssessmentMaximum = hasConfiguredColumns ? computedContinuousMaximum : 40
+  const examMaximum = hasConfiguredColumns ? computedExamMaximum : 60
+  const totalMaximum = hasConfiguredColumns
+    ? continuousAssessmentMaximum + examMaximum
+    : continuousAssessmentMaximum + examMaximum
+
   const computedTotalObtained = normalizedSubjects.reduce((sum, subject) => sum + subject.total, 0)
-  const computedTotalObtainable = normalizedSubjects.length * 100
+  const computedTotalObtainable = normalizedSubjects.length * totalMaximum
   const computedAverage = computedTotalObtainable > 0 ? (computedTotalObtained / computedTotalObtainable) * 100 : 0
 
-  const summaryTotalObtainable =
-    source.summary?.totalMarksObtainable ?? source.totalObtainable ?? computedTotalObtainable
-  const summaryTotalObtained = source.summary?.totalMarksObtained ?? source.totalObtained ?? computedTotalObtained
-  const summaryAverageScore = source.summary?.averageScore ?? source.average ?? computedAverage
+  const summaryTotalObtainable = computedTotalObtainable
+  const summaryTotalObtained = computedTotalObtained
+  const summaryAverageScore = computedAverage
 
   const positionNumber =
     parsePositionValue(attendanceRecord?.position) ??
@@ -723,6 +1091,11 @@ const normalizeReportCard = (
     },
     termInfo,
     branding: resolvedBranding,
+    assessmentMaximums: {
+      continuousAssessment: continuousAssessmentMaximum,
+      exam: examMaximum,
+      total: totalMaximum,
+    },
   }
 }
 
@@ -742,8 +1115,10 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
 
     return applyLayoutDefaults(DEFAULT_LAYOUT_REFERENCE)
   })
+  const [columnConfig, setColumnConfig] = useState<ReportCardColumnConfig[]>(DEFAULT_REPORT_CARD_COLUMNS)
+  const resolvedColumns = useMemo(() => buildResolvedColumns(columnConfig), [columnConfig])
   const [reportCardData, setReportCardData] = useState<NormalizedReportCard | null>(() =>
-    normalizeReportCard(data, branding, layoutConfig),
+    normalizeReportCard(data, branding, layoutConfig, resolvedColumns),
   )
   const [studentPhoto, setStudentPhoto] = useState<string>("")
   const [isDownloading, setIsDownloading] = useState(false)
@@ -788,6 +1163,53 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
   }, [])
 
   useEffect(() => {
+    let isMounted = true
+
+    const loadColumns = async () => {
+      try {
+        const response = await fetch("/api/report-cards/config")
+        if (!response.ok) {
+          throw new Error("Failed to load report card configuration")
+        }
+
+        const payload = (await response.json()) as { columns?: unknown }
+        if (!isMounted) {
+          return
+        }
+
+        const normalized = normalizeColumnsFromResponse(payload.columns)
+        setColumnConfig((previous) => {
+          const prevSerialized = JSON.stringify(previous)
+          const nextSerialized = JSON.stringify(normalized)
+          if (prevSerialized === nextSerialized) {
+            return previous
+          }
+          return normalized
+        })
+      } catch (error) {
+        logger.warn("Unable to load report card columns configuration", { error })
+        if (!isMounted) {
+          return
+        }
+        setColumnConfig((previous) => {
+          const prevSerialized = JSON.stringify(previous)
+          const fallbackSerialized = JSON.stringify(DEFAULT_REPORT_CARD_COLUMNS)
+          if (prevSerialized === fallbackSerialized) {
+            return previous
+          }
+          return DEFAULT_REPORT_CARD_COLUMNS
+        })
+      }
+    }
+
+    void loadColumns()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
     try {
       safeStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layoutConfig))
     } catch (error) {
@@ -802,7 +1224,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     }
 
     const updateData = () => {
-      const normalized = normalizeReportCard(data, branding, layoutConfig)
+      const normalized = normalizeReportCard(data, branding, layoutConfig, resolvedColumns)
       setReportCardData(normalized)
 
       if (!normalized) {
@@ -840,7 +1262,7 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
     return () => {
       browserWindow.removeEventListener("storage", handleStorageChange)
     }
-  }, [data, branding, layoutConfig])
+  }, [data, branding, layoutConfig, resolvedColumns])
 
   const affectiveTraits = useMemo(() => {
     if (!reportCardData) {
@@ -1021,19 +1443,34 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
       return null
     }
 
-    return reportCardData.subjects.reduce(
-      (totals, subject) => {
-        totals.ca1 += subject.ca1
-        totals.ca2 += subject.ca2
-        totals.assignment += subject.assignment
-        totals.caTotal += subject.caTotal
-        totals.exam += subject.exam
-        totals.total += subject.total
-        return totals
-      },
-      { ca1: 0, ca2: 0, assignment: 0, caTotal: 0, exam: 0, total: 0 },
-    )
-  }, [reportCardData])
+    const columnTotals: Record<string, number> = {}
+
+    reportCardData.subjects.forEach((subject) => {
+      Object.entries(subject.columnScores).forEach(([columnId, value]) => {
+        columnTotals[columnId] = (columnTotals[columnId] ?? 0) + value
+      })
+    })
+
+    const continuousAssessment = resolvedColumns
+      .filter((column) => !column.isExam)
+      .reduce((sum, column) => sum + (columnTotals[column.config.id] ?? 0), 0)
+    const exam = resolvedColumns
+      .filter((column) => column.isExam)
+      .reduce((sum, column) => sum + (columnTotals[column.config.id] ?? 0), 0)
+
+    return {
+      columnTotals,
+      continuousAssessment,
+      exam,
+      overall: continuousAssessment + exam,
+    }
+  }, [reportCardData, resolvedColumns])
+
+  const hasContinuousAssessmentColumns = useMemo(
+    () => resolvedColumns.some((column) => !column.isExam),
+    [resolvedColumns],
+  )
+  const hasExamColumns = useMemo(() => resolvedColumns.some((column) => column.isExam), [resolvedColumns])
 
   const preparePdfDocument = useCallback(async () => {
     const target = containerRef.current
@@ -1651,24 +2088,41 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
             <thead>
               <tr>
                 <th>Subject</th>
+                {resolvedColumns.map((column) => {
+                  const columnMax = getColumnMaximum(column.config)
+                  return (
+                    <th key={column.config.id}>
+                      <span>{column.config.name}</span>
+                      {columnMax > 0 ? (
+                        <>
+                          <br />
+                          <span>({formatTotalValue(columnMax)})</span>
+                        </>
+                      ) : null}
+                    </th>
+                  )
+                })}
+                {hasContinuousAssessmentColumns ? (
+                  <th>
+                    Continuous
+                    <br />
+                    Assessment
+                    <br />
+                    ({formatTotalValue(reportCardData.assessmentMaximums.continuousAssessment)})
+                  </th>
+                ) : null}
+                {hasExamColumns ? (
+                  <th>
+                    Exam
+                    <br />
+                    ({formatTotalValue(reportCardData.assessmentMaximums.exam)})
+                  </th>
+                ) : null}
                 <th>
-                  1<sup>st</sup>
+                  Total
                   <br />
-                  C.A
-                  <br />
-                  10
+                  ({formatTotalValue(reportCardData.assessmentMaximums.total)})
                 </th>
-                <th>
-                  2<sup>nd</sup>
-                  <br />
-                  C.A
-                  <br />
-                  10
-                </th>
-                <th>NOTE/<br />ASSIGNMENT (20)</th>
-                <th>TOTAL<br />40</th>
-                <th>EXAM<br />60</th>
-                <th>TOTAL<br />100</th>
                 <th>Subject<br />Position</th>
                 <th>Teacher&apos;s<br />Remarks</th>
               </tr>
@@ -1679,11 +2133,17 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                   {reportCardData.subjects.map((subject, index) => (
                     <tr key={`${subject.name}-${index}`}>
                       <td className="subject-name">{subject.name}</td>
-                      <td>{formatScoreValue(subject.ca1)}</td>
-                      <td>{formatScoreValue(subject.ca2)}</td>
-                      <td>{formatScoreValue(subject.assignment)}</td>
-                      <td>{formatScoreValue(subject.caTotal)}</td>
-                      <td>{formatScoreValue(subject.exam)}</td>
+                      {resolvedColumns.map((column) => (
+                        <td key={column.config.id}>
+                          {formatScoreValue(subject.columnScores[column.config.id])}
+                        </td>
+                      ))}
+                      {hasContinuousAssessmentColumns ? (
+                        <td>{formatScoreValue(subject.caTotal)}</td>
+                      ) : null}
+                      {hasExamColumns ? (
+                        <td>{formatScoreValue(subject.exam)}</td>
+                      ) : null}
                       <td>{formatScoreValue(subject.total)}</td>
                       <td>{subject.position ?? ""}</td>
                       <td>{subject.remarks || ""}</td>
@@ -1691,19 +2151,34 @@ export function EnhancedReportCard({ data }: { data?: RawReportCardData }) {
                   ))}
                   <tr className="total-row">
                     <td className="total-label">TOTAL</td>
-                    <td>{formatTotalValue(totalsRow?.ca1)}</td>
-                    <td>{formatTotalValue(totalsRow?.ca2)}</td>
-                    <td>{formatTotalValue(totalsRow?.assignment)}</td>
-                    <td>{formatTotalValue(totalsRow?.caTotal)}</td>
-                    <td>{formatTotalValue(totalsRow?.exam)}</td>
-                    <td>{formatTotalValue(totalsRow?.total)}</td>
+                    {resolvedColumns.map((column) => (
+                      <td key={column.config.id}>
+                        {formatTotalValue(totalsRow?.columnTotals[column.config.id] ?? 0)}
+                      </td>
+                    ))}
+                    {hasContinuousAssessmentColumns ? (
+                      <td>{formatTotalValue(totalsRow?.continuousAssessment ?? 0)}</td>
+                    ) : null}
+                    {hasExamColumns ? (
+                      <td>{formatTotalValue(totalsRow?.exam ?? 0)}</td>
+                    ) : null}
+                    <td>{formatTotalValue(totalsRow?.overall ?? 0)}</td>
                     <td></td>
                     <td></td>
                   </tr>
                 </>
               ) : (
                 <tr>
-                  <td colSpan={9}>No subject scores have been recorded for this student.</td>
+                  <td
+                    colSpan={
+                      resolvedColumns.length +
+                      (hasContinuousAssessmentColumns ? 1 : 0) +
+                      (hasExamColumns ? 1 : 0) +
+                      4
+                    }
+                  >
+                    No subject scores have been recorded for this student.
+                  </td>
                 </tr>
               )}
             </tbody>

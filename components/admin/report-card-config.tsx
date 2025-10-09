@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -26,6 +26,8 @@ const FALLBACK_COLUMNS: ReportCardColumn[] = [
   { id: "column_ca2", name: "2nd Test", type: "test", maxScore: 20, weight: 20, isRequired: true, order: 2 },
   { id: "column_exam", name: "Exam", type: "exam", maxScore: 60, weight: 60, isRequired: true, order: 3 },
 ]
+
+const getColumnMaximumValue = (column: ReportCardColumn) => (column.maxScore > 0 ? column.maxScore : column.weight)
 
 export function ReportCardConfig() {
   const [columns, setColumns] = useState<ReportCardColumn[]>([])
@@ -110,6 +112,32 @@ export function ReportCardConfig() {
   }
 
   const getTotalWeight = () => columns.reduce((sum, col) => sum + col.weight, 0)
+
+  const orderedColumns = useMemo(
+    () => [...columns].sort((a, b) => a.order - b.order),
+    [columns],
+  )
+  const previewContinuousColumns = useMemo(
+    () => orderedColumns.filter((column) => column.type !== "exam"),
+    [orderedColumns],
+  )
+  const previewExamColumns = useMemo(
+    () => orderedColumns.filter((column) => column.type === "exam"),
+    [orderedColumns],
+  )
+  const previewContinuousMax = useMemo(
+    () => previewContinuousColumns.reduce((sum, column) => sum + getColumnMaximumValue(column), 0),
+    [previewContinuousColumns],
+  )
+  const previewExamMax = useMemo(
+    () => previewExamColumns.reduce((sum, column) => sum + getColumnMaximumValue(column), 0),
+    [previewExamColumns],
+  )
+  const previewTotalMax = useMemo(
+    () => previewContinuousMax + previewExamMax,
+    [previewContinuousMax, previewExamMax],
+  )
+  const numberFormatter = useMemo(() => new Intl.NumberFormat(), [])
 
   const getColumnTypeColor = (type: ReportCardColumn["type"]) => {
     switch (type) {
@@ -395,6 +423,115 @@ export function ReportCardConfig() {
           </CardContent>
         </Card>
       </div>
+
+      {previewMode && (
+        <Card className="border-[#2d682d]/20">
+          <CardHeader>
+            <CardTitle className="text-[#2d682d]">Report Card Preview</CardTitle>
+            <p className="text-sm text-gray-600">
+              This live preview reflects how the configuration will appear on student report cards.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {orderedColumns.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full table-auto border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-[#f5faf5] text-[#2d682d]">
+                      <th className="border border-[#2d682d]/20 px-3 py-2 text-left">Subject</th>
+                      {orderedColumns.map((column) => (
+                        <th key={column.id} className="border border-[#2d682d]/20 px-3 py-2 text-left">
+                          <div className="flex flex-col">
+                            <span className="font-medium">{column.name}</span>
+                            <span className="text-xs text-gray-500">
+                              Max: {numberFormatter.format(getColumnMaximumValue(column))}
+                            </span>
+                          </div>
+                        </th>
+                      ))}
+                      {previewContinuousColumns.length > 0 && (
+                        <th className="border border-[#2d682d]/20 px-3 py-2 text-left">
+                          CA Total
+                          <div className="text-xs text-gray-500">
+                            Max: {numberFormatter.format(previewContinuousMax)}
+                          </div>
+                        </th>
+                      )}
+                      {previewExamColumns.length > 0 && (
+                        <th className="border border-[#2d682d]/20 px-3 py-2 text-left">
+                          Exam
+                          <div className="text-xs text-gray-500">
+                            Max: {numberFormatter.format(previewExamMax)}
+                          </div>
+                        </th>
+                      )}
+                      <th className="border border-[#2d682d]/20 px-3 py-2 text-left">
+                        Overall
+                        <div className="text-xs text-gray-500">
+                          Max: {numberFormatter.format(previewTotalMax)}
+                        </div>
+                      </th>
+                      <th className="border border-[#2d682d]/20 px-3 py-2 text-left">Position</th>
+                      <th className="border border-[#2d682d]/20 px-3 py-2 text-left">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="text-gray-600">
+                      <td className="border border-[#2d682d]/20 px-3 py-2 font-medium text-gray-700">
+                        English Language
+                      </td>
+                      {orderedColumns.map((column) => (
+                        <td key={`preview-${column.id}`} className="border border-[#2d682d]/20 px-3 py-2 text-center">
+                          —
+                        </td>
+                      ))}
+                      {previewContinuousColumns.length > 0 && (
+                        <td className="border border-[#2d682d]/20 px-3 py-2 text-center">—</td>
+                      )}
+                      {previewExamColumns.length > 0 && (
+                        <td className="border border-[#2d682d]/20 px-3 py-2 text-center">—</td>
+                      )}
+                      <td className="border border-[#2d682d]/20 px-3 py-2 text-center">—</td>
+                      <td className="border border-[#2d682d]/20 px-3 py-2 text-center">—</td>
+                      <td className="border border-[#2d682d]/20 px-3 py-2 text-left">Awaiting scores</td>
+                    </tr>
+                    <tr className="bg-[#f9faf5] font-semibold text-[#2d682d]">
+                      <td className="border border-[#2d682d]/20 px-3 py-2">Totals</td>
+                      {orderedColumns.map((column) => (
+                        <td
+                          key={`preview-total-${column.id}`}
+                          className="border border-[#2d682d]/20 px-3 py-2 text-center"
+                        >
+                          {numberFormatter.format(getColumnMaximumValue(column))}
+                        </td>
+                      ))}
+                      {previewContinuousColumns.length > 0 && (
+                        <td className="border border-[#2d682d]/20 px-3 py-2 text-center">
+                          {numberFormatter.format(previewContinuousMax)}
+                        </td>
+                      )}
+                      {previewExamColumns.length > 0 && (
+                        <td className="border border-[#2d682d]/20 px-3 py-2 text-center">
+                          {numberFormatter.format(previewExamMax)}
+                        </td>
+                      )}
+                      <td className="border border-[#2d682d]/20 px-3 py-2 text-center">
+                        {numberFormatter.format(previewTotalMax)}
+                      </td>
+                      <td className="border border-[#2d682d]/20 px-3 py-2"></td>
+                      <td className="border border-[#2d682d]/20 px-3 py-2"></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">
+                Add at least one assessment column to see a live preview of the report card layout.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-[#2d682d]/20">
         <CardContent className="flex justify-end gap-3 py-4">
