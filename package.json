@@ -108,5 +108,6 @@
     "overrides": {
       "babel-plugin-istanbul>test-exclude": "7.0.1"
     }
-  }
+  },
+  "packageManager": "npm@11.4.2"
 }
