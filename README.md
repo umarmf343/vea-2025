@@ -219,3 +219,20 @@ docker-compose logs -f
 ---
 
 **Built with ❤️ for Victory Educational Academy**
+
+### Optional: Downloading Brand Fonts Locally
+The project now falls back to system fonts by default so that `npm run build` works without internet access. If you want to keep the original Inter and Playfair Display typography, download the variable font files directly into `public/fonts`:
+
+```
+mkdir -p public/fonts
+
+# Inter (variable slant/weight)
+curl -L -o public/fonts/Inter-VariableFont_slnt,wght.ttf \
+  https://github.com/google/fonts/raw/main/ofl/inter/Inter-VariableFont_slnt,wght.ttf
+
+# Playfair Display (variable weight)
+curl -L -o public/fonts/PlayfairDisplay-VariableFont_wght.ttf \
+  https://github.com/google/fonts/raw/main/ofl/playfairdisplay/PlayfairDisplay-VariableFont_wght.ttf
+```
+
+After downloading the files, the browser will automatically load them from `/fonts` if available.
