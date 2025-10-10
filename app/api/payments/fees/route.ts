@@ -8,6 +8,9 @@ import {
 } from "@/lib/database"
 import { sanitizeInput } from "@/lib/security"
 
+export const dynamic = "force-dynamic"
+export const revalidate = 0
+
 const TERM_LABEL_MAP: Record<string, string> = {
   "first": "First Term",
   "first term": "First Term",

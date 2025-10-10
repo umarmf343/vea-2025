@@ -1,36 +1,4 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-echo "🔍 Running pre-commit checks..."
-
-# Run ESLint
-echo "📋 Checking for SSR-unsafe patterns..."
-npx eslint . --ext .ts,.tsx --max-warnings 0
-
-# Check for direct localStorage/sessionStorage usage
-echo "🔒 Checking for unsafe storage access..."
-if grep -r "localStorage\|sessionStorage" --include="*.ts" --include="*.tsx" app/api/ lib/ 2>/dev/null | grep -v "safe-storage"; then
-  echo "❌ Found unsafe storage access in server-side files!"
-  echo "Use safeStorage from @/lib/safe-storage instead"
-  exit 1
-fi
-
-# Check for window/document usage in server files
-echo "🪟 Checking for window/document usage in server files..."
-if grep -r "window\.\|document\." --include="*.ts" --include="*.tsx" app/api/ lib/ 2>/dev/null | grep -v "typeof window\|typeof document"; then
-  echo "❌ Found unsafe window/document access in server-side files!"
-  echo "Wrap in 'typeof window !== \"undefined\"' check"
-  exit 1
-fi
-
-# Run TypeScript check
-echo "🔧 Running TypeScript check..."
-npx tsc --noEmit
-
-# Check for console.log in production files
-echo "📝 Checking for console statements..."
-if grep -r "console\." --include="*.ts" --include="*.tsx" . | grep -v "console.log(\"\[v0\]" | grep -v node_modules | grep -v ".next"; then
-  echo "⚠️  Found console statements - consider removing for production"
-fi
-
-echo "✅ Pre-commit checks passed!"
+pnpm run pre-commit
