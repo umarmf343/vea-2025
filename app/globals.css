@@ -91,10 +91,12 @@ body {
 
 @layer base {
   * {
-    @apply border-border outline-ring;
+    border-color: var(--border);
+    outline-color: var(--ring);
   }
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--background);
+    color: var(--foreground);
   }
 
   /* Enhanced typography and spacing for VEA 2025 */
