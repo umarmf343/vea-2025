@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import "tailwindcss/theme";
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -399,7 +401,7 @@
 
   body {
     -webkit-print-color-adjust: exact !important;
-    color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .print\:text-black {
