@@ -19,6 +19,8 @@ import { publishNotification } from "@/lib/realtime-hub"
 import { recordDeveloperSplit } from "@/lib/developer-audit"
 
 export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
+export const revalidate = 0
 
 const PAYSTACK_SECRET_KEY = getPaystackSecretKey()
 
