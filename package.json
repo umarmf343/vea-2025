@@ -14,7 +14,7 @@
     "deploy:server": "next build && echo 'Build complete! Upload .next/standalone, .next/static, public, package.json, and server.js to your cPanel Node.js app folder.'",
     "prepare:production": "./scripts/prepare-production.sh",
     "pre-commit": "npm run lint && npm run type-check && npm run ssr-check",
-    "prepare": "husky"
+    "prepare": "node scripts/run-husky-install.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
