@@ -1,10 +1,27 @@
+const fs = require("fs")
+const path = require("path")
 const { createServer } = require("http")
-const { parse } = require("url")
 const next = require("next")
 
 const dev = process.env.NODE_ENV !== "production"
 const hostname = "localhost"
 const port = process.env.PORT || 3000
+
+const standaloneServerPath = path.join(
+  __dirname,
+  ".next",
+  "standalone",
+  "server.js",
+)
+
+if (!dev && fs.existsSync(standaloneServerPath)) {
+  console.log(
+    "Detected standalone Next.js build. Delegating to .next/standalone/server.js.",
+  )
+  // eslint-disable-next-line import/no-dynamic-require, global-require
+  require(standaloneServerPath)
+  return
+}
 
 const app = next({ dev, hostname, port })
 const handle = app.getRequestHandler()
@@ -27,8 +44,17 @@ app.prepare().then(() => {
         return
       }
 
-      const parsedUrl = parse(req.url, true)
-      await handle(req, res, parsedUrl)
+      const host = req.headers.host || `${hostname}:${port}`
+      const parsedUrl = req.url
+        ? new URL(req.url, `http://${host}`)
+        : undefined
+      await handle(req, res, {
+        pathname: parsedUrl?.pathname,
+        query: parsedUrl
+          ? Object.fromEntries(parsedUrl.searchParams.entries())
+          : {},
+        search: parsedUrl?.search,
+      })
     } catch (err) {
       console.error("Error occurred handling", req.url, err)
       res.statusCode = 500
