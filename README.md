@@ -68,6 +68,14 @@ cp .env.example .env.local
 npm run dev
 \`\`\`
 
+#### Troubleshooting
+
+- **"Autoprefixer is not installed" warning** – install the PostCSS plugin locally so vendor prefixes are generated automatically:
+
+  ```bash
+  npm install --save-dev autoprefixer
+  ```
+
 #### Production Deployment
 \`\`\`bash
 # Build for production
