@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "preinstall": "node scripts/cleanup-legacy-installs.cjs",
     "predev": "node scripts/check-typescript.cjs",
     "dev": "next dev",
     "build": "next build",
