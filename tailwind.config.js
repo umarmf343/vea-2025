@@ -1,4 +1,5 @@
 const { fontFamily } = require("tailwindcss/defaultTheme")
+const twAnimate = require("tw-animate").default
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -89,5 +90,5 @@ module.exports = {
       },
     },
   },
-  plugins: [require("tailwindcss-animate"), require("tw-animate")],
+  plugins: [require("tailwindcss-animate"), twAnimate],
 }
