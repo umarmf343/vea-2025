@@ -1,5 +1,7 @@
 import mysql from "mysql2/promise"
 
+import { normalizeDatabaseUrl } from "./database-url"
+
 // Server-only database connector
 export class DatabaseConnector {
   private static instance: DatabaseConnector
@@ -20,8 +22,10 @@ export class DatabaseConnector {
 
   private initializePool() {
     if (process.env.DATABASE_URL) {
+      const databaseUrl = normalizeDatabaseUrl(process.env.DATABASE_URL)
+
       this.pool = mysql.createPool({
-        uri: process.env.DATABASE_URL,
+        uri: databaseUrl,
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0,

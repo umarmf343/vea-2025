@@ -8,6 +8,7 @@ import mysql, {
   type ResultSetHeader,
   type RowDataPacket,
 } from "mysql2/promise"
+import { normalizeDatabaseUrl } from "./database-url"
 import { safeStorage } from "./safe-storage"
 import { logger } from "./logger"
 import { deriveGradeFromScore } from "./grade-utils"
@@ -7056,8 +7057,10 @@ function getPool(): Pool {
       throw new Error("DATABASE_URL environment variable is not set")
     }
 
+    const normalizedUrl = normalizeDatabaseUrl(databaseUrl)
+
     cachedPool = mysql.createPool({
-      uri: databaseUrl,
+      uri: normalizedUrl,
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
