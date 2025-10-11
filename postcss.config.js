@@ -5,9 +5,18 @@ try {
   require.resolve("@tailwindcss/postcss")
   plugins["@tailwindcss/postcss"] = {}
 } catch (error) {
-  // Fall back to the Tailwind v3 + Autoprefixer setup if the v4 plugin isn't available
+  // Fall back to the Tailwind v3 setup if the v4 plugin isn't available
   plugins.tailwindcss = {}
-  plugins.autoprefixer = {}
+
+  try {
+    // Autoprefixer is optional on this path, so only include it when installed
+    require.resolve("autoprefixer")
+    plugins.autoprefixer = {}
+  } catch (autoprefixerError) {
+    console.warn(
+      "Autoprefixer is not installed; continuing without automatic vendor prefixing.",
+    )
+  }
 }
 
 module.exports = {
