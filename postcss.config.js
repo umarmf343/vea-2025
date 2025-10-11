@@ -14,7 +14,11 @@ try {
     plugins.autoprefixer = {}
   } catch (autoprefixerError) {
     console.warn(
-      "Autoprefixer is not installed; continuing without automatic vendor prefixing.",
+      [
+        "Autoprefixer is not installed; continuing without automatic vendor prefixing.",
+        "To restore vendor prefix support, install it by running:",
+        "  npm install --save-dev autoprefixer",
+      ].join("\n"),
     )
   }
 }
