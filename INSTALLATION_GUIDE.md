@@ -118,6 +118,8 @@ npm install
 npm install --unsafe-perm=true --allow-root
 
 > **Note:** The project automatically removes any legacy `node_modules/.pnpm` directories before installing packages. This prevents stale pnpm-managed dependencies (which ship in some archives) from conflicting with the npm lockfile and breaking the production build.
+>
+> **Why all dependencies install even with `NODE_ENV=production`:** Some hosting dashboards set `NODE_ENV=production` globally, which makes npm skip `devDependencies` by default. The build needs tools such as `autoprefixer`, `postcss` and `tailwindcss`, so the repository ships an `.npmrc` file with `production=false` to keep those packages available. Keep this file in place when deploying so production builds do not fail with missing module errors.
 \`\`\`
 
 ## Step 5: Database Setup
