@@ -116,6 +116,8 @@ npm install
 
 # If you get permission errors, try:
 npm install --unsafe-perm=true --allow-root
+
+> **Note:** The project automatically removes any legacy `node_modules/.pnpm` directories before installing packages. This prevents stale pnpm-managed dependencies (which ship in some archives) from conflicting with the npm lockfile and breaking the production build.
 \`\`\`
 
 ## Step 5: Database Setup
