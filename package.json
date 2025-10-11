@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "preinstall": "node scripts/cleanup-legacy-installs.cjs",
+    "preinstall": "node -e \"const fs=require('node:fs');const path=require('node:path');const projectRoot=process.env.INIT_CWD||(process.env.npm_package_json?path.dirname(process.env.npm_package_json):process.cwd());const script=path.resolve(projectRoot,'scripts','cleanup-legacy-installs.cjs');if(fs.existsSync(script)){require(script);}else{console.warn('Skipping legacy install cleanup: script not found at',script);}\"",
     "predev": "node scripts/check-typescript.cjs",
     "dev": "next dev",
     "build": "next build",
