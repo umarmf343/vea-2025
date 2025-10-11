@@ -3,7 +3,7 @@
 import Link from "next/link"
 
 import { StudentGameHub } from "@/components/student-game-hub"
-import CodingChallenge from "@/components/games/coding-challenge"
+import TypingGalaxy from "@/components/games/typing-galaxy"
 import MathRacing from "@/components/games/math-racing"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -47,7 +47,7 @@ export default function StudentGamesPageClient() {
 
         <div className="grid gap-6">
           <MathRacing />
-          <CodingChallenge />
+          <TypingGalaxy />
         </div>
       </section>
 
