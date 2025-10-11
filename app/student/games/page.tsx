@@ -3,8 +3,8 @@
 import Link from "next/link"
 
 import { StudentGameHub } from "@/components/student-game-hub"
-import CodingChallenge from "@/components/games/coding-challenge"
 import MathRacing from "@/components/games/math-racing"
+import TypingBlaster from "@/components/games/typing-blaster"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
@@ -16,8 +16,8 @@ export default function StudentGamesPage() {
           <div className="space-y-2">
             <CardTitle className="text-3xl font-bold text-[#2d682d]">Student Game Arcade</CardTitle>
             <CardDescription className="text-slate-600">
-              Boost your skills with quick coding builds and lightning-fast math races designed to power up your classroom
-              confidence.
+              Boost your skills with lightning-fast math races and a cosmic typing battle inspired by zType to power up your
+              classroom confidence.
             </CardDescription>
           </div>
           <Button
@@ -47,7 +47,7 @@ export default function StudentGamesPage() {
 
         <div className="grid gap-6">
           <MathRacing />
-          <CodingChallenge />
+          <TypingBlaster />
         </div>
       </section>
 
