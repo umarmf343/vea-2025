@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 import path from "node:path"
 
+const buildTarget = process.env.NEXT_BUILD_TARGET === "export" ? "export" : "standalone"
+
 const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
@@ -11,7 +13,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  output: 'standalone',
+  output: buildTarget,
   experimental: {
     serverComponentsExternalPackages: ['mysql2'],
   },

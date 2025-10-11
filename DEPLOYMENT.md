@@ -9,7 +9,7 @@ Best for shared hosting with file manager access.
 1. **Build locally:**
    \`\`\`bash
    npm install
-   npm run build
+   npm run export
    \`\`\`
 
 2. **Upload to cPanel:**
@@ -18,6 +18,8 @@ Best for shared hosting with file manager access.
    - Extract all files in the subdomain root
 
 3. **Access:** `https://portal2.victoryeducationalacademy.com.ng`
+
+> **Note:** `npm run export` temporarily disables server-only API routes and builds a static snapshot of the public pages (`/`, `/payment/callback`, `/student/games`). Dynamic features that depend on the API layer require the Node.js deployment option.
 
 ### Option B: Node.js Server (For Advanced Users)
 For cPanel with Node.js support.
