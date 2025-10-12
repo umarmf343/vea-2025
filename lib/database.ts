@@ -2576,11 +2576,21 @@ async function deleteUserFromDatabase(id: string): Promise<boolean> {
 
 export async function getUserByEmail(email: string): Promise<StoredUser | null> {
   if (isDatabaseConfigured()) {
-    const databaseUser = await getUserByEmailFromDatabase(email)
-    return databaseUser ? await augmentUserWithTeachingAssignments(databaseUser) : null
+    try {
+      const databaseUser = await getUserByEmailFromDatabase(email)
+      if (databaseUser) {
+        return await augmentUserWithTeachingAssignments(databaseUser)
+      }
+    } catch (error) {
+      logger.error("Failed to fetch user by email from database", { email, error })
+    }
   }
 
   const normalized = email.trim().toLowerCase()
+  if (!normalized) {
+    return null
+  }
+
   const users = ensureCollection<StoredUser>(STORAGE_KEYS.USERS, createDefaultUsers)
   const match = users.find((user) => user.email.toLowerCase() === normalized)
   return match ? await augmentUserWithTeachingAssignments(match) : null
