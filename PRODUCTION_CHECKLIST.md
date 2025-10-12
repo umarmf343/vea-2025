@@ -3,7 +3,7 @@
 ## ✅ Pre-Deployment Tasks
 
 ### 1. Environment Configuration
-- [ ] Replace test Paystack keys with live keys in `.env.local`
+- [ ] Replace test Paystack keys with live keys in `.env.production`
 - [ ] Confirm Paystack split configuration routes 1% to Umar Umar Muhammad (First Bank 3066490309)
 - [ ] Update `NEXT_PUBLIC_APP_URL` to production domain
 - [ ] Set `NODE_ENV=production`
@@ -32,25 +32,26 @@
 ## 🔧 Deployment Steps
 
 ### 1. Build and Package
-\`\`\`bash
-npm run build
+```bash
 ./scripts/prepare-production.sh
-\`\`\`
+npm run deploy:server
+./deploy.sh
+```
 
 ### 2. Upload to cPanel
 1. Login to cPanel File Manager
 2. Navigate to `public_html/portal2.victoryeducationalacademy.com.ng/`
-3. Upload `vea-2025-production.zip`
+3. Upload `vea-portal-node-deployment.zip`
 4. Extract the zip file
 5. Delete the zip file after extraction
 
 ### 3. Server Configuration
-\`\`\`bash
-# SSH into your server
-cd public_html/portal2.victoryeducationalacademy.com.ng
-npm install --production
-npm start
-\`\`\`
+```bash
+# From the cPanel terminal or SSH session
+cd ~/public_html/portal2.victoryeducationalacademy.com.ng
+npm install --omit=dev
+NODE_ENV=production npm start
+```
 
 ### 4. SSL Certificate
 - Ensure SSL certificate is installed for the subdomain
