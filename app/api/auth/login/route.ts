@@ -112,8 +112,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
     }
 
-    // Verify password
-    const isValidPassword = await verifyPassword(password, user.passwordHash)
+    const passwordHash = typeof user.passwordHash === "string" ? user.passwordHash.trim() : ""
+    if (!passwordHash) {
+      logger.warn("User record is missing a valid password hash", { userId: user.id, email: user.email })
+      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
+    }
+
+    let isValidPassword = false
+    try {
+      isValidPassword = await verifyPassword(password, passwordHash)
+    } catch (verificationError) {
+      logger.error("Password verification failed", {
+        userId: user.id,
+        email: user.email,
+        error: verificationError,
+      })
+      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
+    }
+
     if (!isValidPassword) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
     }
