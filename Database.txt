@@ -1,7 +1,8 @@
 # VEA 2025 Database Setup
 
 ## Connection
-- **Database URL:** mysql://baladre1_UmarMF:k4bLPvPRk?7Nwj-L@localhost/baladre1_new_vea_2025
+- **Database URL:** mysql://baladre1_umar:N@UW&-&0frVbM;Ce@localhost/baladre1_vea
+- If you need to URL-encode the password for tooling, replace `@` with `%40`.
 - Ensure MySQL 8.0+ with `utf8mb4` character set.
 
 ## Initialization Steps
@@ -10,8 +11,8 @@
 
 ```sql
 -- Create database and switch context
-CREATE DATABASE IF NOT EXISTS baladre1_new_vea_2025 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE baladre1_new_vea_2025;
+CREATE DATABASE IF NOT EXISTS baladre1_vea CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE baladre1_vea;
 
 -- Core identity tables
 CREATE TABLE IF NOT EXISTS users (

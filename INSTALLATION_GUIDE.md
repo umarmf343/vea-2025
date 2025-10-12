@@ -14,20 +14,20 @@
 ### 1.2 Create Database
 1. Click "MySQL Databases"
 2. Under "Create New Database":
-   - Database Name: `vea_portal_2025`
+   - Database Name: `baladre1_vea`
    - Click "Create Database"
-3. Note down the full database name (usually: `yourusername_vea_portal_2025`)
+3. Note down the full database name (currently: `baladre1_vea`)
 
 ### 1.3 Create Database User
 1. Under "MySQL Users" section:
-   - Username: `vea_admin`
-   - Password: Create a strong password (save this!)
+   - Username: `baladre1_umar`
+   - Password: Use `N@UW&-&0frVbM;Ce` (keep this secure!)
    - Click "Create User"
 
 ### 1.4 Add User to Database
 1. Under "Add User to Database":
-   - Select your user: `vea_admin`
-   - Select your database: `vea_portal_2025`
+   - Select your user: `baladre1_umar`
+   - Select your database: `baladre1_vea`
    - Click "Add"
 2. Grant ALL PRIVILEGES
 3. Click "Make Changes"
@@ -39,7 +39,7 @@ Create a file named `.env.local` with the following content:
 
 \`\`\`env
 # Database Configuration
-DATABASE_URL="mysql://yourusername_vea_admin:YOUR_PASSWORD@localhost:3306/yourusername_vea_portal_2025"
+DATABASE_URL="mysql://baladre1_umar:N@UW&-&0frVbM;Ce@localhost/baladre1_vea"
 
 # JWT Secret (generate a random 32-character string)
 JWT_SECRET="your-super-secret-jwt-key-32-chars"
@@ -61,9 +61,11 @@ SMTP_USER="your-email@domain.com"
 SMTP_PASS="your-email-password"
 \`\`\`
 
-**Important**: Replace the placeholders with your actual values:
-- `yourusername` with your cPanel username
-- `YOUR_PASSWORD` with the database password you created
+**Important**: Update the values if your hosting provider requires different credentials:
+- Keep the database name as `baladre1_vea`
+- Keep the database user as `baladre1_umar`
+- Ensure the password `N@UW&-&0frVbM;Ce` is entered exactly (including the `@` and `;` characters)
+- If any tool rejects the `@` symbol, use the URL-encoded password `N%40UW&-&0frVbM;Ce`
 - Get Paystack keys from your Paystack dashboard (leave the public key empty until you are ready to use it)
 - If you already created the 1% revenue share on Paystack, populate `PAYSTACK_PARTNER_SUBACCOUNT_CODE` and `PAYSTACK_PARTNER_SPLIT_CODE`
 
@@ -134,7 +136,7 @@ npm run db:migrate
 
 ### 5.2 Using phpMyAdmin (Manual Setup)
 1. In cPanel, open "phpMyAdmin"
-2. Select your database: `yourusername_vea_portal_2025`
+2. Select your database: `baladre1_vea`
 3. Run this SQL to create basic tables:
 
 \`\`\`sql

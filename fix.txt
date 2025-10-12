@@ -42,19 +42,20 @@ Fix for `npm run build` failing on Windows
 5. Provide Next.js with a reachable MySQL database so the analytics probes do not throw `ECONNREFUSED`. You can start one quickly with Docker (Docker Desktop must be running):
 
    ```cmd
-   docker run --name vea-mysql -p 3306:3306 -e MYSQL_DATABASE=vea_portal_2025 \
-     -e MYSQL_USER=vea_admin -e MYSQL_PASSWORD="Himmacolage343#" \
+   docker run --name vea-mysql -p 3306:3306 -e MYSQL_DATABASE=baladre1_vea \
+     -e MYSQL_USER=baladre1_umar -e MYSQL_PASSWORD="N@UW&-&0frVbM;Ce" \
      -e MYSQL_ROOT_PASSWORD="Himmacolage343#" -d mysql:8.0
    ```
 
-   If you do not have Docker, start any MySQL 8.x server manually using the same credentials (database `vea_portal_2025`, user `vea_admin`, password `Himmacolage343#`).
+   If you do not have Docker, start any MySQL 8.x server manually using the same credentials (database `baladre1_vea`, user `baladre1_umar`, password `N@UW&-&0frVbM;Ce`).
 
-6. Create or update the project `.env` file so Next.js knows how to reach the database. The `#` in the password must be URL encoded as `%23` in the connection string:
+6. Create or update the project `.env` file so Next.js knows how to reach the database. The `@` in the password may need to be URL encoded as `%40` in the connection string:
 
    ```env
    # .env
    NODE_ENV=production
-   DATABASE_URL=mysql://vea_admin:Himmacolage343%23@127.0.0.1:3306/vea_portal_2025
+   DATABASE_URL=mysql://baladre1_umar:N@UW&-&0frVbM;Ce@127.0.0.1:3306/baladre1_vea
+   # If the @ in the password causes issues, use N%40UW&-&0frVbM;Ce instead.
    NEXT_PUBLIC_APP_URL=http://localhost:3000
    PAYSTACK_SECRET_KEY=your-paystack-secret
    ```
