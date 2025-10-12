@@ -1,4 +1,5 @@
 /* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-var-requires */
 export type LogLevel = "debug" | "info" | "warn" | "error"
 
 export interface LogContext {
@@ -15,6 +16,79 @@ function serializeContext(context?: LogContext): unknown[] {
   } catch (error) {
     return [context]
   }
+}
+
+const isServerRuntime = typeof window === "undefined"
+
+type WriteStream = import("fs").WriteStream
+
+let fsModule: typeof import("fs") | undefined
+let pathModule: typeof import("path") | undefined
+let logStream: WriteStream | undefined
+let streamInitializationFailed = false
+
+function ensureLogStream(): WriteStream | undefined {
+  if (!isServerRuntime) {
+    return undefined
+  }
+
+  if (logStream || streamInitializationFailed) {
+    return logStream
+  }
+
+  try {
+    fsModule = fsModule ?? require("fs")
+    pathModule = pathModule ?? require("path")
+
+    const fs = fsModule
+    const path = pathModule
+
+    if (!fs || !path) {
+      streamInitializationFailed = true
+      return undefined
+    }
+
+    const logDirectory = process.env.LOG_DIRECTORY
+      ? path.resolve(process.env.LOG_DIRECTORY)
+      : path.join(process.cwd(), "logs")
+    const logFileName = process.env.LOG_FILE_NAME || "application.log"
+    const logFilePath = path.join(logDirectory, logFileName)
+
+    fs.mkdirSync(logDirectory, { recursive: true })
+
+    logStream = fs.createWriteStream(logFilePath, { flags: "a" })
+    logStream.on("error", (error) => {
+      streamInitializationFailed = true
+      console.error("Logger failed to write to log file", { error })
+    })
+
+    return logStream
+  } catch (error) {
+    streamInitializationFailed = true
+    console.error("Logger failed to initialize file stream", { error })
+    return undefined
+  }
+}
+
+function appendToLogFile(level: LogLevel, message: string, serializedContext: unknown[]): void {
+  const stream = ensureLogStream()
+  if (!stream) {
+    return
+  }
+
+  const timestamp = new Date().toISOString()
+  let contextString = ""
+
+  if (serializedContext.length > 0) {
+    try {
+      contextString = ` ${JSON.stringify(serializedContext[0])}`
+    } catch (error) {
+      contextString = ""
+      console.warn("Logger failed to serialize context for file output", { error })
+    }
+  }
+
+  stream.write(`${timestamp} [${level.toUpperCase()}] ${message}${contextString}\n`)
 }
 
 function log(level: LogLevel, message: string, context?: LogContext): void {
@@ -35,6 +109,8 @@ function log(level: LogLevel, message: string, context?: LogContext): void {
       console.error(message, ...serializedContext)
       break
   }
+
+  appendToLogFile(level, message, serializedContext)
 }
 
 export const logger = {
