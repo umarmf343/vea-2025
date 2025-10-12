@@ -1,62 +1,95 @@
 #!/bin/bash
 
-# VEA 2025 Portal - cPanel Deployment Script
-echo "🚀 Starting VEA 2025 Portal deployment for cPanel..."
+# VEA 2025 Portal - cPanel Node.js Deployment Script
+set -e
 
-# Check if Node.js is available
-if ! command -v node &> /dev/null; then
-    echo "❌ Node.js is not installed. Please install Node.js first."
-    exit 1
-fi
+ZIP_NAME="vea-portal-node-deployment.zip"
+APP_ROOT="$(pwd)"
 
-# Check if npm is available
-if ! command -v npm &> /dev/null; then
-    echo "❌ npm is not installed. Please install npm first."
-    exit 1
-fi
+function require_command() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "❌ Required command '$1' is not installed. Please install it and rerun the script."
+        exit 1
+    fi
+}
 
-# Install dependencies
+echo "🚀 Starting VEA 2025 Portal Node.js deployment build..."
+
+require_command node
+require_command npm
+require_command zip
+
 echo "📦 Installing dependencies..."
 npm install
 
-if [ $? -ne 0 ]; then
-    echo "❌ Failed to install dependencies"
+echo "🔨 Building standalone production bundle..."
+npm run deploy:server
+
+STANDALONE_DIR="${APP_ROOT}/.next/standalone"
+STATIC_DIR="${APP_ROOT}/.next/static"
+SERVER_ENTRY="${APP_ROOT}/server.js"
+PACKAGE_JSON="${APP_ROOT}/package.json"
+LOCKFILE="${APP_ROOT}/package-lock.json"
+PUBLIC_DIR="${APP_ROOT}/public"
+
+if [ ! -d "${STANDALONE_DIR}" ]; then
+    echo "❌ Standalone build not found at ${STANDALONE_DIR}."
     exit 1
 fi
 
-# Build the application for static export
-echo "🔨 Building application for cPanel deployment..."
-npm run build
-
-if [ $? -ne 0 ]; then
-    echo "❌ Build failed"
+if [ ! -d "${STATIC_DIR}" ]; then
+    echo "❌ Static assets not found at ${STATIC_DIR}."
     exit 1
 fi
 
-# Check if out directory was created
-if [ ! -d "out" ]; then
-    echo "❌ Build output directory 'out' not found"
+if [ ! -f "${SERVER_ENTRY}" ]; then
+    echo "❌ server.js not found in project root."
     exit 1
 fi
 
-# Create deployment package
-echo "📦 Creating deployment package..."
-cd out
-zip -r ../vea-portal-deployment.zip .
-cd ..
+if [ ! -f "${PACKAGE_JSON}" ]; then
+    echo "❌ package.json not found in project root."
+    exit 1
+fi
 
-echo "✅ VEA 2025 Portal build completed successfully!"
+if [ ! -d "${PUBLIC_DIR}" ]; then
+    echo "❌ public directory not found in project root."
+    exit 1
+fi
+
+if [ -f "${ZIP_NAME}" ]; then
+    echo "🧹 Removing previous archive ${ZIP_NAME}..."
+    rm -f "${ZIP_NAME}"
+fi
+
+echo "📦 Creating deployment archive ${ZIP_NAME}..."
+ZIP_CONTENTS=(
+    .next/standalone
+    .next/static
+    public
+    server.js
+    package.json
+    package-lock.json
+)
+
+if [ -f "${APP_ROOT}/.env.production" ]; then
+    ZIP_CONTENTS+=(.env.production)
+fi
+
+zip -r "${ZIP_NAME}" "${ZIP_CONTENTS[@]}"
+echo "✅ Deployment bundle created: ${ZIP_NAME}"
 echo ""
 echo "📋 Next Steps:"
-echo "1. Upload 'vea-portal-deployment.zip' to your cPanel File Manager"
-echo "2. Navigate to: public_html/portal2.victoryeducationalacademy.com.ng/"
-echo "3. Extract the zip file contents in that directory"
-echo "4. Access your portal at: https://portal2.victoryeducationalacademy.com.ng"
+echo "1. Upload '${ZIP_NAME}' to your cPanel application directory."
+echo "2. Extract the archive inside 'public_html/portal2.victoryeducationalacademy.com.ng/'."
+echo "3. In the cPanel Node.js Application UI, set the startup file to 'server.js'."
+echo "4. Configure environment variables (JWT secrets, Paystack keys, etc.)."
+echo "5. Run 'npm install --omit=dev' from the cPanel terminal, then restart the app."
 echo ""
 echo "🔑 Default Login Credentials:"
-echo "   Super Admin: admin / admin123"
-echo "   Teacher: teacher / teacher123"
-echo "   Parent: parent / parent123"
-echo "   Student: student / student123"
+echo "   Super Admin: admin@vea.edu.ng / admin123"
+echo "   Teacher: teacher@vea.edu.ng / teacher123"
+echo "   Parent: parent@vea.edu.ng / parent123"
+echo "   Student: student@vea.edu.ng / student123"
 echo ""
-echo "🎉 Deployment package ready!"
+echo "🎉 Node.js deployment package ready!"

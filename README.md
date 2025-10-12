@@ -85,16 +85,19 @@ npm run dev
   missing assets.
 
 #### Production Deployment
-\`\`\`bash
-# Build for production
-npm run build
+```bash
+# Prepare standalone build (includes server bundle for cPanel)
+npm run deploy:server
 
-# Start production server
+# Start production server locally (uses the .next output)
 npm start
+
+# Package the build for cPanel hosting (creates vea-portal-node-deployment.zip)
+./deploy.sh
 
 # Or use Docker
 docker-compose up -d
-\`\`\`
+```
 
 ### Environment Variables
 \`\`\`env

@@ -1,49 +1,69 @@
-# VEA 2025 Portal - cPanel Deployment Guide
+# VEA 2025 Portal - cPanel Node.js Deployment Guide
 
-## 🚀 Two Deployment Options
+This guide walks you through running the full Next.js application (including all API routes and dynamic features) on a cPanel host that supports Node.js applications.
 
-### Option A: Static Export (Recommended for cPanel)
-Best for shared hosting with file manager access.
+## 🚀 Prepare the production build locally
 
-#### Steps:
-1. **Build locally:**
-   \`\`\`bash
-   npm install
-   npm run export
-   \`\`\`
-
-2. **Upload to cPanel:**
-   - Compress the `out/` folder contents
-   - Upload to: `public_html/portal2.victoryeducationalacademy.com.ng/`
-   - Extract all files in the subdomain root
-
-3. **Access:** `https://portal2.victoryeducationalacademy.com.ng`
-
-> **Note:** `npm run export` temporarily disables server-only API routes and builds a static snapshot of the public pages (`/`, `/payment/callback`, `/student/games`). Dynamic features that depend on the API layer require the Node.js deployment option.
-
-### Option B: Node.js Server (For Advanced Users)
-For cPanel with Node.js support.
-
-#### Steps:
-1. **Build locally:**
-   \`\`\`bash
+1. **Install dependencies and build the standalone bundle**
+   ```bash
    npm install
    npm run deploy:server
-   \`\`\`
+   ```
 
-2. **Upload files:**
+   The `deploy:server` script runs `next build` and produces a standalone Node.js server inside `.next/standalone` together with the required static assets in `.next/static`.
+
+2. **Package the deployment artifacts**
+   Create an archive containing the following paths from your project root:
    - `.next/standalone/` (entire folder)
    - `.next/static/` (entire folder)
    - `public/` (entire folder)
-   - `package.json`
+   - `package.json` and `package-lock.json`
    - `server.js`
+   - `.env.production` (or copy of `.env.example` configured for production)
 
-3. **Setup on cPanel:**
-   - Create Node.js app
-   - Point to project folder
-   - Set startup file: `server.js`
-   - Set environment variables (see below)
-   - Start app
+   > Tip: run `./deploy.sh` to automatically build the project and generate `vea-portal-node-deployment.zip` with these contents.
+
+## 📁 Upload files to cPanel
+
+1. Open the cPanel **File Manager** (or use SFTP).
+2. Navigate to `public_html/portal2.victoryeducationalacademy.com.ng/` (or the directory configured for your Node.js app).
+3. Upload the archive created in the previous step and extract it.
+4. Verify the extracted structure looks like:
+   ```
+   public_html/portal2.victoryeducationalacademy.com.ng/
+   ├── .next/
+   │   ├── standalone/
+   │   └── static/
+   ├── public/
+   ├── package.json
+   ├── package-lock.json
+   ├── server.js
+   └── .env.production
+   ```
+
+## ⚙️ Configure the cPanel Node.js application
+
+1. **Create / edit the Node.js app** in cPanel:
+   - Select Node.js 18 or higher.
+   - Set the application root to `public_html/portal2.victoryeducationalacademy.com.ng`.
+   - Set the startup file to `server.js`.
+   - Set the application mode to **Production**.
+
+2. **Install production dependencies** from the app terminal:
+   ```bash
+   cd ~/public_html/portal2.victoryeducationalacademy.com.ng
+   npm install --omit=dev
+   ```
+
+3. **Define environment variables** in the cPanel interface (see list below).
+
+4. **Restart** the Node.js application to apply the new build.
+
+## 🛠 Ongoing maintenance
+
+- Re-run `npm run deploy:server` before every release and upload the fresh `.next` and `public` folders.
+- After each deployment, restart the Node.js application from the cPanel dashboard.
+- Use the cPanel “Run JS Script” console to tail logs or clear the `.next/cache` directory if you ever need to invalidate cached pages.
 
 ## 🔐 Default Login Credentials
 
@@ -86,7 +106,7 @@ For cPanel with Node.js support.
 
 Set these in your cPanel Node.js app environment:
 
-\`\`\`env
+```env
 # Database (Optional - uses localStorage by default)
 DATABASE_URL=mysql://baladre1_umar:N@UW&-&0frVbM;Ce@localhost/baladre1_vea
 # If required by your tooling, URL-encode the @ symbol in the password as %40
@@ -105,7 +125,7 @@ NEXT_PUBLIC_APP_URL=https://portal2.victoryeducationalacademy.com.ng
 
 # Disable telemetry
 NEXT_TELEMETRY_DISABLED=1
-\`\`\`
+```
 
 ## ✅ Features Ready for Use
 
@@ -158,49 +178,3 @@ NEXT_TELEMETRY_DISABLED=1
 ### SSR-Safe Architecture
 - No localStorage access during server render
 - Client-side hydration for browser APIs
-- Standalone server build for Node.js deployment
-- Local fonts (no external dependencies)
-
-### Performance Optimizations
-- Compressed assets with gzip
-- Cached static resources
-- Optimized images
-- Minimal JavaScript bundles
-
-### Security Features
-- XSS protection headers
-- Content type validation
-- Frame options security
-- Input sanitization
-
-## 🆘 Troubleshooting
-
-### Build Issues
-- **Font errors:** Fonts are now local, no internet required
-- **localStorage errors:** Fixed with SSR-safe storage utility
-- **Memory issues:** Standalone build reduces memory usage
-
-### Runtime Issues
-- **Report cards not showing:** Ensure teachers have entered marks
-- **Payment not working:** Check Paystack environment variables
-- **Access denied:** Verify admin has approved report cards
-
-## 📞 Support
-
-For technical support:
-1. Check the troubleshooting section above
-2. Verify environment variables are set correctly
-3. Ensure all files were uploaded properly
-4. Contact the development team with specific error messages
-
-## 🔄 Updates
-
-To update the portal:
-1. Download the latest build
-2. Backup your current installation
-3. Replace files (keeping any custom configurations)
-4. Test all functionality
-
----
-
-**Victory Educational Academy - Excellence in Education Since 2020**
