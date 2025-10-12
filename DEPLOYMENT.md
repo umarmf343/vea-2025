@@ -88,7 +88,8 @@ Set these in your cPanel Node.js app environment:
 
 \`\`\`env
 # Database (Optional - uses localStorage by default)
-DATABASE_URL=mysql://username:password@localhost:3306/vea_portal
+DATABASE_URL=mysql://baladre1_umar:N@UW&-&0frVbM;Ce@localhost/baladre1_vea
+# If required by your tooling, URL-encode the @ symbol in the password as %40
 
 # JWT Secret (Required for Node.js)
 JWT_SECRET=your-super-secret-jwt-key-here

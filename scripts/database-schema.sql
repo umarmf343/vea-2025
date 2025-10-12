@@ -1,7 +1,7 @@
 -- Creating actual MySQL database schema for VEA Portal
 
-CREATE DATABASE IF NOT EXISTS vea_portal;
-USE vea_portal;
+CREATE DATABASE IF NOT EXISTS baladre1_vea;
+USE baladre1_vea;
 
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
