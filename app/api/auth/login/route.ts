@@ -3,6 +3,69 @@ import { verifyPassword, generateToken, sanitizeInput } from "@/lib/security"
 import { getUserByEmail, type StoredUser } from "@/lib/database"
 import { logger } from "@/lib/logger"
 
+type ParsedLoginPayload = {
+  email: unknown
+  password: unknown
+}
+
+const parseLoginPayload = async (request: NextRequest): Promise<ParsedLoginPayload | null> => {
+  const contentTypeHeader = request.headers.get("content-type") ?? ""
+  const contentType = contentTypeHeader.toLowerCase()
+
+  const extractCredentials = (values: { email: unknown; password: unknown }) => values
+
+  try {
+    if (contentType.includes("application/json")) {
+      const body = await request.json()
+      if (body && typeof body === "object") {
+        const record = body as Record<string, unknown>
+        return extractCredentials({ email: record.email, password: record.password })
+      }
+      return null
+    }
+
+    if (contentType.includes("application/x-www-form-urlencoded")) {
+      const bodyText = await request.text()
+      const params = new URLSearchParams(bodyText)
+      return extractCredentials({ email: params.get("email"), password: params.get("password") })
+    }
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData()
+      return extractCredentials({ email: formData.get("email"), password: formData.get("password") })
+    }
+
+    const jsonClone = request.clone()
+    const fallbackJson = await jsonClone
+      .json()
+      .then((value) => (value && typeof value === "object" ? (value as Record<string, unknown>) : null))
+      .catch(() => null)
+
+    if (fallbackJson) {
+      if ("email" in fallbackJson || "password" in fallbackJson) {
+        return extractCredentials({ email: fallbackJson.email, password: fallbackJson.password })
+      }
+    }
+
+    const fallbackText = await request.text()
+    if (fallbackText) {
+      try {
+        const params = new URLSearchParams(fallbackText)
+        if (params.has("email") || params.has("password")) {
+          return extractCredentials({ email: params.get("email"), password: params.get("password") })
+        }
+      } catch (error) {
+        logger.warn("Failed to interpret login payload as URLSearchParams", { error })
+      }
+    }
+
+    return null
+  } catch (error) {
+    logger.warn("Failed to parse login request body", { error })
+    return null
+  }
+}
+
 const normalizeString = (value: unknown): string => {
   if (typeof value !== "string") {
     return ""
@@ -95,11 +158,18 @@ const collectTeacherClassContext = (teacher: StoredUser | null | undefined) => {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const parsedPayload = await parseLoginPayload(request)
+
+    if (!parsedPayload) {
+      return NextResponse.json({ error: "Invalid request payload" }, { status: 400 })
+    }
 
     // Sanitize inputs
-    const email = typeof body.email === "string" ? sanitizeInput(body.email) : ""
-    const password = typeof body.password === "string" ? body.password.trim() : ""
+    const emailInput = typeof parsedPayload.email === "string" ? parsedPayload.email : ""
+    const passwordInput = typeof parsedPayload.password === "string" ? parsedPayload.password : ""
+
+    const email = sanitizeInput(emailInput)
+    const password = passwordInput.trim()
 
     // Validate input
     if (!email || !password) {
