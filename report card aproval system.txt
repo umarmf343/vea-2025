@@ -1,0 +1,121 @@
+Report Card Approval System Prompt Guide
+=======================================
+
+Use the following detailed brief to recreate the report card approval workflow exactly as it operates in the reference project. The implementation must mirror the behaviour, storage strategy, events, and UI responsibilities described below. Do not invent alternatives – replicate every concept, field, event, and interaction as outlined.
+
+1. Core Concepts & Data Contracts
+---------------------------------
+* Implement a client-side workflow registry stored in safe browser storage (key: `vea_report_card_workflow`). Each record tracks a single student/subject submission and must contain every field described in the model: identifiers, teacher/admin metadata, workflow status ("draft" | "pending" | "approved" | "revoked"), timestamps (`submittedAt`, `updatedAt`, `publishedAt`), optional `feedback`, optional `publishedTo` recipients, and optional cumulative summary metrics (`average`, `grade`, `position`, `totalStudents`).
+* Derive deterministic record IDs via the concatenation of studentId, className, subject, term, and session using lowercase snake-case segments separated by `::`. This is used for merges and updates.
+* Normalize term labels everywhere with a shared helper that maps variations (e.g., "first" → "First Term"). All features rely on consistent term casing.
+* Broadcast workflow changes through a `CustomEvent` named `vea:report-card-workflow` to keep teacher and admin dashboards synchronized.
+* Maintain two additional safeStorage keys derived from workflow records: `approvedReports` (set of student/class/session identifiers for approved releases) and `releasedCumulativeReports` (set of identifiers for cumulative snapshots). Keep these caches synchronized every time the workflow store is mutated.
+* Provide a `dbManager.saveNotification` hook to broadcast status changes to admins, teachers, and parents with descriptive messages and metadata.
+
+2. Teacher Submission Experience
+--------------------------------
+* On load, teacher dashboard pulls existing workflow records and listens for `vea:report-card-workflow` events to stay in sync.
+* Teachers work against locally cached report card drafts (`reportCards` and associated mark storage). Ensure saving drafts persists to safe storage and surfaces success/failure toasts.
+* Before submission, validate that a class and subject are selected and that student marks exist; surface destructive toasts if not.
+* Submitting for approval must:
+  - Persist the latest academic marks to storage.
+  - Generate per-student cumulative summaries (when available) and include them in the payload.
+  - Call the workflow submission helper with teacher metadata, class/subject/term/session context, and the student roster.
+  - Set every involved record’s status to `pending`, stamp `submittedAt`/`updatedAt`, and preserve any existing admin assignments or previously published recipients.
+  - Notify admins and super-admins via `dbManager.saveNotification` describing the batch submission.
+  - Update local state and toast a success message indicating whether cumulative snapshots were generated.
+* Provide a "Cancel submission" affordance that resets workflow entries back to `draft` by purging matching records (teacher + class + subject + term + session). Show spinner state and toasts for success/failure.
+* Surface the current status badge by summarizing filtered workflow records through a helper that prioritizes `revoked` (with feedback message and submitted date), then `pending`, then `approved`, otherwise `draft`.
+
+3. Admin Approval Console
+-------------------------
+* Build an admin-facing dashboard that:
+  - Loads workflow records from safe storage and reacts to workflow events for live updates.
+  - Defaults to filtering `pending` records but supports status and class filters. Compute stats for pending/published/revisions.
+  - Displays actionable cards only for non-`draft` records.
+* Include a preview dialog:
+  - Resolve raw report card data by scanning the `reportCards` safeStorage payload (converted to `RawReportCardData`). Show friendly errors if missing or corrupted.
+  - Use an `EnhancedReportCard` component to render previews in a modal overlay and allow HTML download via `buildReportCardHtml` when the document context exists.
+* Manage deadlines:
+  - Persist administrator-selected submission deadlines to safe storage key `reportCardDeadline` and expose toggles for display.
+  - Flag whether the deadline has passed for contextual messaging.
+* Implement approval publishing flow:
+  - When "Publish" is clicked, open a dialog that fetches parent and student directories (via `/api/users?role=parent` and `/api/students`) and merges them with cached safeStorage copies when network data is missing.
+  - Resolve eligible parent recipients by matching student IDs across multiple variants (raw ID, numeric ID, trimmed `student_` prefixes, directory lookup by student name) and include any previously published contacts.
+  - Allow selecting/deselecting all recipients with checkboxes, defaulting to prior selections when available.
+  - On confirm, call `grantReportCardAccess` for each chosen parent with `grantedBy: "manual"`, then promote the workflow record to `approved`, stamping `publishedAt`, storing parent recipient metadata, and recording admin ID/name (`admin-panel`, "Administrator").
+  - Display success toast referencing whether cumulative summaries were included; handle errors gracefully with destructive toasts.
+* Implement revocation flow:
+  - Opening the revoke dialog pre-fills any existing feedback.
+  - Require non-empty feedback before submission. When confirmed, update workflow status to `revoked`, attach feedback, and show confirmation toast.
+* Track processing states (`processingRecordId`, `downloadingRecordId`, `isPublishing`, etc.) to disable controls and show spinners as operations run.
+
+4. Parent Dashboard & Access Gating
+-----------------------------------
+* Parents rely on safe storage to determine access and approval state:
+  - Access records come from `vea_report_card_access` and dispatch `vea:report-card-access-updated` events (detailed in the next section).
+  - Approval status is calculated by reading `approvedReports` and `releasedCumulativeReports` lists. Build match keys from the active student ID, a linked fallback student ID, and a literal `"1"` fallback; deduplicate before evaluation.
+* Viewing report cards must enforce both access and approval:
+  - If the parent lacks access, show contextual notices (distinguishing between awaiting release vs. payment required) and optionally prompt for payment.
+  - If access exists but approval is still pending, block preview with a warning notice.
+  - Only when access and approval are confirmed should the dashboard load report card data, augmenting it with branding defaults, attendance, and summary fallbacks before showing the viewer modal.
+* Keep the dashboard reactive by listening to both access and workflow events, updating local state in response.
+
+5. Report Card Access Controller
+--------------------------------
+* Maintain a dedicated library that encapsulates all manual/payment access grants:
+  - Storage key: `vea_report_card_access`.
+  - Records include parentId, studentId, normalized term, session, grant source (`payment` or `manual`), and timestamp.
+  - Emit `vea:report-card-access-updated` events on every mutation.
+  - Provide helpers to grant, revoke, sync by period, check access, and clear the store.
+  - Guarantee idempotency by replacing existing records with the same composite key (parentId + studentId + session + term).
+* Deliver accompanying Jest tests covering granting, syncing across terms, targeted revocation, and manual overrides replacing automated grants. Ensure tests assert event dispatch counts and payload shapes.
+
+6. Payment Verification Auto-Grant
+----------------------------------
+* Payment callback flow must verify transactions via `/api/payments/verify?reference=...` and, on success:
+  - Store a `paymentSuccess` flag and raw `paymentData` JSON in safe storage.
+  - Retrieve the logged-in parent from `vea_current_user` safe storage, fall back to metadata-provided student IDs when needed, normalize the term from payment metadata, assume session `2024/2025` if absent, and grant report card access with source `payment`.
+  - Handle errors silently but log to console.
+* Provide UI states for loading, success, and failure with context-specific icons/messages and a continuation button returning to the dashboard.
+
+7. Manual Access Administration
+-------------------------------
+* Implement a `ParentAccessManager` component reused in admin financial tools that:
+  - Loads parents, students, and system settings (current term/session) via API, falling back to cached safeStorage data when API calls fail.
+  - Displays each parent/student pair with a toggle switch reflecting access state. Show grant source badges (manual vs payment) and handle missing student links with disabled toggles and instructional toasts.
+  - Uses the access controller helpers to grant (`grantedBy: "manual"`) or revoke access and responds to emitted events to stay in sync.
+  - Surfaces loading, error, and empty states with styled cards consistent with the reference UI.
+
+8. System Settings Integration
+------------------------------
+* Provide UI allowing administrators to manage registration toggles, academic year, current term, and the report card deadline. Persist values through `/api/system/settings` GET/PUT endpoints that sanitize inputs and allow `reportCardDeadline` to be nullable.
+* Cache selected settings (e.g., registrationEnabled) in safe storage for reuse across the portal.
+* Ensure super-admin views embed this settings card alongside the approval dashboard, maintaining consistent styling and shared state.
+
+9. Super Admin Workspace Wiring
+-------------------------------
+* Embed the admin approval dashboard, manual access management, and system settings panels within the super-admin tab structure (`approval`, `receipts`, `system`, etc.). Reuse the same components so workflows remain synchronized across roles.
+* Guarantee that switching tabs retains state and that components continue to react to workflow/access events while mounted.
+
+10. Notifications & Logging
+---------------------------
+* Wrap critical operations (submission, approval, revocation) in try/catch blocks to log errors with the shared `logger` utility and display descriptive toasts.
+* All workflow transitions should trigger contextual notifications:
+  - Submission → notify admin/super-admin audiences of new pending records.
+  - Approval → notify teachers and parents of publication, with student/class metadata.
+  - Revocation → notify teachers that revisions are required.
+
+11. Storage & Event Hygiene
+---------------------------
+* Use `safeStorage` abstraction to guard against SSR/localStorage availability issues across all reads/writes.
+* When registering event listeners, add cleanup callbacks on unmount to avoid memory leaks.
+* Ensure background state watchers (e.g., setTimeouts, async loaders) respect component mount flags to prevent state updates after unmount.
+
+12. Quality Expectations
+------------------------
+* Mirror the styling tone (emerald/gold palette, descriptive toasts, badge vocabulary) and structural patterns (Cards, Tabs, Dialogs, Tables) observed in the reference components.
+* Provide comprehensive inline comments or self-descriptive function names so future engineers understand the full approval lifecycle.
+* Validate behaviour through automated tests (at minimum, replicate the report-card access test suite) and manual smoke tests covering submission → approval → parent release → revocation → resubmission paths.
+
+Deliverable: Use this prompt as the authoritative implementation checklist when instructing Codex to recreate the report card approval system in a new project.
