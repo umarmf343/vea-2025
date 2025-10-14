@@ -1,5 +1,5 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
 import { randomBytes as nodeRandomBytes, randomUUID as nodeRandomUUID } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import bcrypt from "bcryptjs"
 import mysql, {
@@ -776,6 +776,31 @@ const STORAGE_KEYS = {
   SYSTEM_SETTINGS: "systemSettings",
 } as const
 
+type FsModule = typeof import("node:fs")
+
+let fsModule: FsModule | null = null
+
+function getFsModule(): FsModule | null {
+  if (!isServer()) {
+    return null
+  }
+
+  if (fsModule) {
+    return fsModule
+  }
+
+  try {
+    fsModule = require("node:fs") as FsModule
+  } catch (error) {
+    fsModule = null
+    if (process.env.NODE_ENV !== "production") {
+      logger.warn("Failed to load Node fs module on server", { error })
+    }
+  }
+
+  return fsModule
+}
+
 const serverCollections = new Map<string, unknown[]>()
 const DATA_DIRECTORY = join(process.cwd(), ".vea-data")
 
@@ -797,13 +822,18 @@ const EXPENSE_CATEGORY_SET = new Set(EXPENSE_CATEGORY_VALUES.map((category) => c
 export const EXPENSE_CATEGORIES: readonly ExpenseCategory[] = EXPENSE_CATEGORY_VALUES
 
 function ensureDataDirectoryExists(): void {
-  if (hasEnsuredDataDirectory) {
+  if (hasEnsuredDataDirectory || !isServer()) {
+    return
+  }
+
+  const fs = getFsModule()
+  if (!fs) {
     return
   }
 
   try {
-    if (!existsSync(DATA_DIRECTORY)) {
-      mkdirSync(DATA_DIRECTORY, { recursive: true })
+    if (!fs.existsSync(DATA_DIRECTORY)) {
+      fs.mkdirSync(DATA_DIRECTORY, { recursive: true })
     }
     hasEnsuredDataDirectory = true
   } catch (error) {
@@ -834,9 +864,13 @@ function readCollection<T>(key: string): T[] | undefined {
 
     try {
       ensureDataDirectoryExists()
+      const fs = getFsModule()
+      if (!fs) {
+        return undefined
+      }
       const filePath = getCollectionFilePath(key)
-      if (existsSync(filePath)) {
-        const contents = readFileSync(filePath, "utf8")
+      if (fs.existsSync(filePath)) {
+        const contents = fs.readFileSync(filePath, "utf8")
         if (contents.trim().length > 0) {
           const parsed = JSON.parse(contents) as T[]
           serverCollections.set(key, deepClone(parsed))
@@ -871,8 +905,12 @@ function persistCollection<T>(key: string, data: T[]): void {
 
     try {
       ensureDataDirectoryExists()
+      const fs = getFsModule()
+      if (!fs) {
+        return
+      }
       const filePath = getCollectionFilePath(key)
-      writeFileSync(filePath, JSON.stringify(cloned, null, 2), "utf8")
+      fs.writeFileSync(filePath, JSON.stringify(cloned, null, 2), "utf8")
     } catch (error) {
       logger.error(`Failed to persist ${key} to local data directory`, { error })
     }
