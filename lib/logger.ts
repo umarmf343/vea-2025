@@ -20,12 +20,34 @@ function serializeContext(context?: LogContext): unknown[] {
 
 const isServerRuntime = typeof window === "undefined"
 
-type WriteStream = import("fs").WriteStream
+type WriteStream = {
+  write: (chunk: string) => void
+  on: (event: "error", listener: (error: unknown) => void) => void
+}
 
-let fsModule: typeof import("fs") | undefined
-let pathModule: typeof import("path") | undefined
+type NodeRequireFunction = (specifier: string) => unknown
+
+let nodeRequireFn: NodeRequireFunction | undefined
+let fsModule: typeof import("node:fs") | undefined
+let pathModule: typeof import("node:path") | undefined
 let logStream: WriteStream | undefined
 let streamInitializationFailed = false
+
+function loadNodeModule<T>(specifier: string): T | undefined {
+  if (!isServerRuntime) {
+    return undefined
+  }
+
+  try {
+    nodeRequireFn = nodeRequireFn ?? (eval("require") as NodeRequireFunction)
+    return nodeRequireFn(specifier) as T
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(`Logger failed to load module: ${specifier}`, { error })
+    }
+    return undefined
+  }
+}
 
 function ensureLogStream(): WriteStream | undefined {
   if (!isServerRuntime) {
@@ -37,8 +59,8 @@ function ensureLogStream(): WriteStream | undefined {
   }
 
   try {
-    fsModule = fsModule ?? require("fs")
-    pathModule = pathModule ?? require("path")
+    fsModule = fsModule ?? loadNodeModule<typeof import("node:fs")>("node:fs")
+    pathModule = pathModule ?? loadNodeModule<typeof import("node:path")>("node:path")
 
     const fs = fsModule
     const path = pathModule
