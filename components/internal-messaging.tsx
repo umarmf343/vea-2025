@@ -233,6 +233,43 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
   const notificationAudioRef = useRef<HTMLAudioElement | null>(null)
 
+  useEffect(() => {
+    function attemptUnlock() {
+      const audio = notificationAudioRef.current
+      if (!audio) {
+        return
+      }
+
+      audio.muted = true
+      const playPromise = audio.play()
+
+      if (!playPromise) {
+        audio.muted = false
+        return
+      }
+
+      void playPromise
+        .then(() => {
+          audio.pause()
+          audio.currentTime = 0
+          audio.muted = false
+          window.removeEventListener("pointerdown", attemptUnlock)
+          window.removeEventListener("keydown", attemptUnlock)
+        })
+        .catch(() => {
+          audio.muted = false
+        })
+    }
+
+    window.addEventListener("pointerdown", attemptUnlock)
+    window.addEventListener("keydown", attemptUnlock)
+
+    return () => {
+      window.removeEventListener("pointerdown", attemptUnlock)
+      window.removeEventListener("keydown", attemptUnlock)
+    }
+  }, [])
+
   const directory = useMemo(() => {
     const source = Array.isArray(participants) && participants.length > 0 ? participants : DIRECTORY
     const seen = new Set<string>()
@@ -1366,7 +1403,7 @@ export function InternalMessaging({ currentUser, participants }: InternalMessagi
           </div>
         </div>
       </CardContent>
-      <audio ref={notificationAudioRef} className="hidden">
+      <audio ref={notificationAudioRef} className="hidden" preload="auto">
         <source src="/sounds/notification.mp3" type="audio/mpeg" />
       </audio>
     </Card>
