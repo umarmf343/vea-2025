@@ -1,6 +1,7 @@
 import mysql from "mysql2/promise"
 
 import { normalizeDatabaseUrl } from "./database-url"
+import { resolveDatabaseSslOption } from "./database-ssl"
 
 // Server-only database connector
 export class DatabaseConnector {
@@ -29,7 +30,7 @@ export class DatabaseConnector {
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0,
-        ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+        ssl: resolveDatabaseSslOption(databaseUrl),
       })
     }
   }

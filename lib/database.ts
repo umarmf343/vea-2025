@@ -9,6 +9,7 @@ import mysql, {
   type RowDataPacket,
 } from "mysql2/promise"
 import { normalizeDatabaseUrl } from "./database-url"
+import { resolveDatabaseSslOption } from "./database-ssl"
 import { safeStorage } from "./safe-storage"
 import { logger } from "./logger"
 import { deriveGradeFromScore } from "./grade-utils"
@@ -7112,12 +7113,7 @@ function getPool(): Pool {
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
-      ssl:
-        process.env.NODE_ENV === "production"
-          ? {
-              rejectUnauthorized: false,
-            }
-          : undefined,
+      ssl: resolveDatabaseSslOption(normalizedUrl),
     })
   }
 
