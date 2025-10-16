@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 
 import { getParentDashboardSnapshot } from "@/lib/database"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/logger.server"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"

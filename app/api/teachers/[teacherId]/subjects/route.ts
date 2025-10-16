@@ -4,7 +4,7 @@ import { type NextRequest, NextResponse } from "next/server"
 
 import { getUserByIdFromDb } from "@/lib/database"
 import { summarizeTeacherAssignments } from "@/lib/teacher-assignment"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/logger.server"
 import { verifyToken } from "@/lib/security"
 
 const normalizeRole = (value: unknown): string => {

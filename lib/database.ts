@@ -11,7 +11,7 @@ import mysql, {
 import { normalizeDatabaseUrl } from "./database-url"
 import { resolveDatabaseSslOption } from "./database-ssl"
 import { safeStorage } from "./safe-storage"
-import { logger } from "./logger"
+import { logger } from "./logger.server"
 import { deriveGradeFromScore } from "./grade-utils"
 import { normalizeSubjectList } from "./subject-utils"
 import {

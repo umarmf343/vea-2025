@@ -9,7 +9,7 @@ import {
   type CreateFeePaymentPayload,
 } from "@/lib/database"
 import { requireUserWithRole } from "@/lib/api-auth"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/logger.server"
 
 const normalizeString = (value: unknown): string => {
   if (typeof value !== "string") {

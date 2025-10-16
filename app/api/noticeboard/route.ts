@@ -8,7 +8,7 @@ import {
   type NoticeRecord,
 } from "@/lib/database"
 import { publishNotification } from "@/lib/realtime-hub"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/logger.server"
 
 export const runtime = "nodejs"
 

@@ -4,7 +4,7 @@ import { statfs } from "node:fs/promises"
 import { NextResponse } from "next/server"
 
 import { getSystemUsageSnapshot, measureDatabaseLatency } from "@/lib/database"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/logger.server"
 
 export const runtime = "nodejs"
 
