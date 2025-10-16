@@ -6,7 +6,7 @@ import {
   getTimetableSlots,
   updateTimetableSlot,
 } from "@/lib/database"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/logger.server"
 import {
   mapTimetableRecordToResponse,
   normaliseTimeRangeLabel,

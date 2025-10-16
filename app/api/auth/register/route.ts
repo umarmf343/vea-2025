@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { auth, type UserRole } from "@/lib/auth"
 import { getClassRecordById, getUserByIdFromDb } from "@/lib/database"
 import { sanitizeInput, validateEmail, validatePassword } from "@/lib/security"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/logger.server"
 
 export const runtime = "nodejs"
 

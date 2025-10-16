@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 
 import { getReportCardLayoutConfig, updateReportCardLayoutConfig } from "@/lib/database"
 import { applyLayoutDefaults } from "@/lib/report-card-layout-config"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/logger.server"
 
 export const runtime = "nodejs"
 

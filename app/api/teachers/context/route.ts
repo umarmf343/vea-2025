@@ -5,7 +5,7 @@ export const revalidate = 0
 import { type NextRequest, NextResponse } from "next/server"
 
 import { getUserByIdFromDb } from "@/lib/database"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/logger.server"
 import { verifyToken } from "@/lib/security"
 import { summarizeTeacherAssignments } from "@/lib/teacher-assignment"
 

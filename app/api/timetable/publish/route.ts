@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 
 import { getTimetableSlots } from "@/lib/database"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/logger.server"
 import { publishNotification } from "@/lib/realtime-hub"
 import { mapTimetableRecordToResponse } from "@/lib/timetable"
 

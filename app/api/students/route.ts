@@ -18,7 +18,7 @@ import {
   updateUserRecord,
 } from "@/lib/database"
 import { hashPassword, sanitizeInput, verifyToken } from "@/lib/security"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/logger.server"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"

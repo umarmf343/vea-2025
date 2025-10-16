@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { verifyPassword, generateToken, sanitizeInput } from "@/lib/security"
 import { getUserByEmail, type StoredUser } from "@/lib/database"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/logger.server"
 
 type ParsedLoginPayload = {
   email: unknown
