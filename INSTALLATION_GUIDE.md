@@ -196,7 +196,7 @@ npm start
 
 # Or use PM2 for process management (recommended)
 npm install -g pm2
-pm2 start npm --name "vea-portal" -- start
+pm2 start ecosystem.config.cjs --env production
 pm2 save
 pm2 startup
 \`\`\`
@@ -244,7 +244,7 @@ pm2 startup
 ### 9.3 Monitor Logs
 \`\`\`bash
 # Check application logs
-pm2 logs vea-portal
+pm2 logs vea-2025-portal
 
 # Check error logs
 tail -f /path/to/error.log
@@ -276,7 +276,7 @@ tail -f /path/to/error.log
    - Check if domain is whitelisted in Paystack
 
 ### Getting Help:
-- Check application logs: `pm2 logs vea-portal`
+- Check application logs: `pm2 logs vea-2025-portal`
 - Contact your hosting provider for server-specific issues
 - Ensure all environment variables are correctly set
 
