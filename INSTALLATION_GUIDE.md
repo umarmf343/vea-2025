@@ -196,9 +196,15 @@ npm start
 
 # Or use PM2 for process management (recommended)
 npm install -g pm2
-pm2 start npm --name "vea-portal" -- start
+# Start the app with the provided ecosystem file so PM2 uses the
+# correct working directory and production port.
+pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
+
+> **Tip:** Update the `PUBLIC_URL` environment variable in PM2 (or your hosting
+> control panel) so runtime logs display the live domain instead of a localhost
+> address.
 \`\`\`
 
 ## Step 7: Configure Domain and SSL

@@ -50,7 +50,11 @@ npm run deploy:server
 # From the cPanel terminal or SSH session
 cd ~/public_html/portal2.victoryeducationalacademy.com.ng
 npm install --omit=dev
-NODE_ENV=production npm start
+PORT=3100 NODE_ENV=production npm start
+
+# Or keep the app running with PM2 using the included ecosystem file
+pm2 start ecosystem.config.cjs
+pm2 save
 ```
 
 ### 4. SSL Certificate

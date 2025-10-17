@@ -13,7 +13,8 @@ const next = require("next")
 
 const dev = process.env.NODE_ENV !== "production"
 const hostname = process.env.HOST || "0.0.0.0"
-const port = Number.parseInt(process.env.PORT, 10) || 3000
+const defaultPort = dev ? 3000 : 3100
+const port = Number.parseInt(process.env.PORT, 10) || defaultPort
 
 const standaloneServerPath = path.join(
   __dirname,
@@ -74,6 +75,8 @@ app.prepare().then(() => {
       process.exit(1)
     })
     .listen(port, hostname, () => {
-      console.log(`> Ready on http://${hostname}:${port}`)
+      const publicUrl = process.env.PUBLIC_URL
+      const displayAddress = publicUrl || `http://${hostname}:${port}`
+      console.log(`> Ready on ${displayAddress}`)
     })
 })
