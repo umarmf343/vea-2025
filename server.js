@@ -12,8 +12,8 @@ const { createServer } = require("http")
 const next = require("next")
 
 const dev = process.env.NODE_ENV !== "production"
-const hostname = "localhost"
-const port = process.env.PORT || 3000
+const hostname = process.env.HOST || "0.0.0.0"
+const port = Number.parseInt(process.env.PORT, 10) || 3000
 
 const standaloneServerPath = path.join(
   __dirname,
@@ -73,7 +73,7 @@ app.prepare().then(() => {
       console.error(err)
       process.exit(1)
     })
-    .listen(port, () => {
+    .listen(port, hostname, () => {
       console.log(`> Ready on http://${hostname}:${port}`)
     })
 })
