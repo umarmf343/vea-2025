@@ -68,6 +68,7 @@ ZIP_CONTENTS=(
     .next/static
     public
     server.js
+    ecosystem.config.cjs
     package.json
     package-lock.json
 )
@@ -85,6 +86,7 @@ echo "2. Extract the archive inside 'public_html/portal2.victoryeducationalacade
 echo "3. In the cPanel Node.js Application UI, set the startup file to 'server.js'."
 echo "4. Configure environment variables (JWT secrets, Paystack keys, etc.)."
 echo "5. Run 'npm install --omit=dev' from the cPanel terminal, then restart the app."
+echo "6. (Optional) Start the app with PM2: 'pm2 start ecosystem.config.cjs && pm2 save'."
 echo ""
 echo "🔑 Default Login Credentials:"
 echo "   Super Admin: admin@vea.edu.ng / admin123"

@@ -174,6 +174,9 @@ CREATE TABLE student_marks (
 );
 
 -- Insert default Super Admin user
+);
+
+-- Insert default Super Admin user
 INSERT INTO users (email, password, name, role) VALUES 
 ('admin@victoryeducationalacademy.com.ng', '$2b$10$hashedpassword', 'Super Administrator', 'super_admin');
 \`\`\`
@@ -196,9 +199,15 @@ npm start
 
 # Or use PM2 for process management (recommended)
 npm install -g pm2
-pm2 start ecosystem.config.cjs --env production
+# Start the app with the provided ecosystem file so PM2 uses the
+# correct working directory and production port.
+pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
+
+> **Tip:** Update the `PUBLIC_URL` environment variable in PM2 (or your hosting
+> control panel) so runtime logs display the live domain instead of a localhost
+> address.
 \`\`\`
 
 ## Step 7: Configure Domain and SSL
@@ -212,6 +221,18 @@ pm2 startup
 1. In cPanel, go to "SSL/TLS"
 2. Enable "Let's Encrypt" for your subdomain
 3. Force HTTPS redirect
+
+## Step 8: Test the Installation
+
+### 8.1 Access the Portal
+1. Visit: `https://portal2.victoryeducationalacademy.com.ng`
+2. You should see the login page
+
+### 8.2 Default Login Credentials
+- **Super Admin**: 
+  - Email: `admin@victoryeducationalacademy.com.ng`
+  - Password: `admin123` (change this immediately!)
+
 
 ## Step 8: Test the Installation
 

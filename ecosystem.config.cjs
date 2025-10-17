@@ -2,19 +2,18 @@ module.exports = {
   apps: [
     {
       name: "vea-2025-portal",
-      script: "npm",
-      args: "start",
       cwd: __dirname,
-      interpreter: "none",
-      exec_mode: "fork",
+      script: "server.js",
       instances: 1,
+      exec_mode: "fork",
       watch: false,
-      autorestart: true,
       env: {
-        NODE_ENV: process.env.NODE_ENV || "production",
-        PORT: process.env.PORT || 3000,
-        HOST: process.env.HOST || "0.0.0.0"
-      }
-    }
-  ]
+        NODE_ENV: "production",
+        HOST: "0.0.0.0",
+        PORT: String(process.env.PORT || 3100),
+        PUBLIC_URL:
+          process.env.PUBLIC_URL || "https://portal.victoryeducationalacademy.com.ng",
+      },
+    },
+  ],
 }
