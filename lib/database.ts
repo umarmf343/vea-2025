@@ -2149,6 +2149,7 @@ async function fetchUsersFromDatabase(
   expectSingle = false,
 ): Promise<StoredUser[] | StoredUser | null> {
   const pool = getPool()
+  await ensureUsersTable(pool)
   const [rows] = await pool.query<DbUserRow[]>(query, params)
 
   if (expectSingle) {
@@ -2320,6 +2321,7 @@ async function createUserInDatabase(
   const connection = await getPool().getConnection()
 
   try {
+    await ensureUsersTable(connection)
     if (normalizedRole === "teacher") {
       await ensureTeacherClassAssignmentsTable(connection)
     }
@@ -2532,6 +2534,7 @@ async function updateUserInDatabase(id: string, updates: UpdateUserPayload): Pro
   const connection = await getPool().getConnection()
 
   try {
+    await ensureUsersTable(connection)
     if (nextRole === "teacher" || shouldClearAssignments || shouldReplaceAssignments) {
       await ensureTeacherClassAssignmentsTable(connection)
     }
@@ -2597,6 +2600,7 @@ async function deleteUserFromDatabase(id: string): Promise<boolean> {
   const connection = await getPool().getConnection()
 
   try {
+    await ensureUsersTable(connection)
     await ensureTeacherClassAssignmentsTable(connection)
     await connection.beginTransaction()
 
@@ -5803,10 +5807,12 @@ export async function computeFinancialDefaulters(
   return snapshot.defaulters
 }
 
+const USERS_TABLE = "users"
 const NOTICEBOARD_TABLE = "noticeboard_notices"
 const TIMETABLE_TABLE = "class_timetable_slots"
 const ANALYTICS_TABLE = "analytics_reports"
 
+let usersTableEnsured = false
 let noticesTableEnsured = false
 let timetableTableEnsured = false
 let analyticsTableEnsured = false
@@ -5823,6 +5829,43 @@ function getPoolSafe(): Pool | null {
       poolWarningLogged = true
     }
     return null
+  }
+}
+
+async function ensureUsersTable(executor?: SqlExecutor | null) {
+  if (usersTableEnsured) {
+    return
+  }
+
+  const pool = executor ?? getPoolSafe()
+  if (!pool) {
+    return
+  }
+
+  try {
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS ${USERS_TABLE} (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        role ENUM('super_admin', 'admin', 'teacher', 'student', 'parent', 'librarian', 'accountant') NOT NULL DEFAULT 'student',
+        status ENUM('active', 'inactive', 'suspended') NOT NULL DEFAULT 'active',
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        class_id VARCHAR(255) NULL,
+        subjects JSON NULL,
+        student_ids JSON NULL,
+        metadata JSON NULL,
+        profile_image TEXT NULL,
+        last_login DATETIME NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    )
+
+    usersTableEnsured = true
+  } catch (error) {
+    logger.error("Failed to ensure users table exists", { error })
   }
 }
 
@@ -7005,6 +7048,7 @@ export async function getSystemUsageSnapshot(): Promise<SystemUsageSnapshot> {
 
   if (pool) {
     try {
+      await ensureUsersTable(pool)
       const [userRows] = await pool.query<RowDataPacket[]>(
         "SELECT COUNT(*) AS totalUsers, SUM(CASE WHEN (is_active = 1 OR status = 'active') THEN 1 ELSE 0 END) AS activeUsers FROM users",
       )
