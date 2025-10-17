@@ -40,7 +40,7 @@ npm run deploy:server
 
 ### 2. Upload to cPanel
 1. Login to cPanel File Manager
-2. Navigate to `public_html/portal2.victoryeducationalacademy.com.ng/`
+2. Navigate to `public_html/portal.victoryeducationalacademy.com.ng/`
 3. Upload `vea-portal-node-deployment.zip`
 4. Extract the zip file
 5. Delete the zip file after extraction
@@ -48,14 +48,18 @@ npm run deploy:server
 ### 3. Server Configuration
 ```bash
 # From the cPanel terminal or SSH session
-cd ~/public_html/portal2.victoryeducationalacademy.com.ng
+cd ~/public_html/portal.victoryeducationalacademy.com.ng
 npm install --omit=dev
-PORT=3100 NODE_ENV=production npm start
+PORT=3000 NODE_ENV=production npm start
 
 # Or keep the app running with PM2 using the included ecosystem file
 pm2 start ecosystem.config.cjs
 pm2 save
 ```
+
+> ℹ️ Keep the Node.js service listening on port `3000` and place nginx or the
+> cPanel proxy in front of it so that visitors reach the app through
+> `https://portal.victoryeducationalacademy.com.ng` on the default web ports.
 
 ### 4. SSL Certificate
 - Ensure SSL certificate is installed for the subdomain

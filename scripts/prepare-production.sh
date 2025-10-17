@@ -16,8 +16,8 @@ find . -name "*.tsx" -o -name "*.ts" | grep -v node_modules | xargs sed -i 's/al
 
 # Replace localhost URLs with production URLs
 echo "🌐 Updating URLs for production..."
-find . -name "*.tsx" -o -name "*.ts" -o -name "*.js" | grep -v node_modules | xargs sed -i 's/localhost:3000/portal2.victoryeducationalacademy.com.ng/g'
-find . -name "*.tsx" -o -name "*.ts" -o -name "*.js" | grep -v node_modules | xargs sed -i 's/http:\/\/portal2/https:\/\/portal2/g'
+find . -name "*.tsx" -o -name "*.ts" -o -name "*.js" | grep -v node_modules | xargs sed -i 's/localhost:3000/portal.victoryeducationalacademy.com.ng/g'
+find . -name "*.tsx" -o -name "*.ts" -o -name "*.js" | grep -v node_modules | xargs sed -i 's/http:\/\/portal/https:\/\/portal/g'
 
 # Remove mock data comments and TODO items
 echo "🧹 Cleaning up development comments..."
@@ -40,7 +40,7 @@ zip -r vea-2025-production.zip .next public package.json server.js lib component
 echo "✅ Production preparation complete!"
 echo "📋 Next steps:"
 echo "1. Upload vea-2025-production.zip to your cPanel File Manager"
-echo "2. Extract to public_html/portal2.victoryeducationalacademy.com.ng/"
+echo "2. Extract to public_html/portal.victoryeducationalacademy.com.ng/"
 echo "3. Update .env.local with your live Paystack keys"
 echo "4. Run 'npm install --production' and 'npm start' via SSH"
 echo ""
