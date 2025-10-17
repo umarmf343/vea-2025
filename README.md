@@ -106,7 +106,7 @@ PAYSTACK_SECRET_KEY=sk_test_7dd51e291a986b6462d0f4198668ce07c296eb5d
 NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY=
 PAYSTACK_PARTNER_SUBACCOUNT_CODE=
 PAYSTACK_PARTNER_SPLIT_CODE=
-NEXT_PUBLIC_APP_URL=https://portal2.victoryeducationalacademy.com.ng
+NEXT_PUBLIC_APP_URL=https://portal.victoryeducationalacademy.com.ng
 
 # Authentication
 JWT_SECRET=your_jwt_secret_key
@@ -207,6 +207,14 @@ docker-compose logs -f
 3. Set up reverse proxy (Nginx configuration included)
 4. Start the application: `npm start`
 
+#### Expose the portal on the main domain
+
+- Keep the Node.js process listening on port `3000` (or any unprivileged port).
+- Point nginx or the cPanel Application Manager proxy at that internal port so
+  visitors can reach `https://portal.victoryeducationalacademy.com.ng` without
+  appending `:3000` to the URL. The repository ships an `nginx.conf` example
+  that forwards HTTP/HTTPS traffic to the app.
+
 ### Monitoring & Maintenance
 
 #### System Health
@@ -229,7 +237,7 @@ docker-compose logs -f
 
 #### Contact Information
 - **School**: Victory Educational Academy
-- **Portal URL**: https://portal2.victoryeducationalacademy.com.ng
+- **Portal URL**: https://portal.victoryeducationalacademy.com.ng
 - **Technical Support**: Contact system administrator
 
 ### License

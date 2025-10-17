@@ -26,11 +26,11 @@ This guide walks you through running the full Next.js application (including all
 ## 📁 Upload files to cPanel
 
 1. Open the cPanel **File Manager** (or use SFTP).
-2. Navigate to `public_html/portal2.victoryeducationalacademy.com.ng/` (or the directory configured for your Node.js app).
+2. Navigate to `public_html/portal.victoryeducationalacademy.com.ng/` (or the directory configured for your Node.js app).
 3. Upload the archive created in the previous step and extract it.
 4. Verify the extracted structure looks like:
    ```
-   public_html/portal2.victoryeducationalacademy.com.ng/
+   public_html/portal.victoryeducationalacademy.com.ng/
    ├── .next/
    │   ├── standalone/
    │   └── static/
@@ -45,19 +45,44 @@ This guide walks you through running the full Next.js application (including all
 
 1. **Create / edit the Node.js app** in cPanel:
    - Select Node.js 18 or higher.
-   - Set the application root to `public_html/portal2.victoryeducationalacademy.com.ng`.
+   - Set the application root to `public_html/portal.victoryeducationalacademy.com.ng`.
    - Set the startup file to `server.js`.
    - Set the application mode to **Production**.
 
 2. **Install production dependencies** from the app terminal:
    ```bash
-   cd ~/public_html/portal2.victoryeducationalacademy.com.ng
+   cd ~/public_html/portal.victoryeducationalacademy.com.ng
    npm install --omit=dev
    ```
 
 3. **Define environment variables** in the cPanel interface (see list below).
 
 4. **Restart** the Node.js application to apply the new build.
+
+## 🌐 Point the public domain at the Node.js app
+
+The Node.js process continues to listen on port `3000`, but the public domain
+(`portal.victoryeducationalacademy.com.ng`) should answer on the standard HTTP
+ports `80`/`443`. Configure a reverse proxy so that requests on the public
+domain are forwarded to the application port:
+
+### Option A – nginx (recommended)
+
+1. Install nginx on the server or use the nginx container from
+   `docker-compose.yml`.
+2. Copy `nginx.conf` from this repository to `/etc/nginx/nginx.conf` (or the
+   appropriate include directory). The configuration already forwards
+   `portal.victoryeducationalacademy.com.ng` to the Node.js app.
+3. If you are running the Node.js app directly on the host instead of Docker,
+   edit the `upstream vea-portal` block and replace `vea-portal:3000` with
+   `127.0.0.1:3000` (or the port configured in your Node.js app).
+4. Reload nginx: `sudo nginx -s reload`.
+
+### Option B – Apache (cPanel proxy)
+
+If nginx is not available, enable the cPanel **Application Manager** proxy for
+the domain and point it at the internal Node.js port (typically `3000`). cPanel
+will automatically create the required Apache reverse proxy rules.
 
 ## 🛠 Ongoing maintenance
 
@@ -121,7 +146,7 @@ PAYSTACK_PARTNER_SUBACCOUNT_CODE=
 PAYSTACK_PARTNER_SPLIT_CODE=
 
 # App URL
-NEXT_PUBLIC_APP_URL=https://portal2.victoryeducationalacademy.com.ng
+NEXT_PUBLIC_APP_URL=https://portal.victoryeducationalacademy.com.ng
 
 # Disable telemetry
 NEXT_TELEMETRY_DISABLED=1

@@ -3,7 +3,7 @@
 ## Prerequisites
 - cPanel hosting account with Node.js support
 - SSH access (which you have)
-- Domain: portal2.victoryeducationalacademy.com.ng
+- Domain: portal.victoryeducationalacademy.com.ng
 
 ## Step 1: Create Database
 
@@ -51,8 +51,8 @@ PAYSTACK_PARTNER_SUBACCOUNT_CODE=""
 PAYSTACK_PARTNER_SPLIT_CODE=""
 
 # App Configuration
-NEXT_PUBLIC_APP_URL="https://portal2.victoryeducationalacademy.com.ng"
-NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL="https://portal2.victoryeducationalacademy.com.ng"
+NEXT_PUBLIC_APP_URL="https://portal.victoryeducationalacademy.com.ng"
+NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL="https://portal.victoryeducationalacademy.com.ng"
 
 # Email Configuration (optional - for notifications)
 SMTP_HOST="your-smtp-host"
@@ -73,7 +73,7 @@ SMTP_PASS="your-email-password"
 
 ### 3.1 Using File Manager (Easier for beginners)
 1. In cPanel, open "File Manager"
-2. Navigate to `public_html/portal2.victoryeducationalacademy.com.ng`
+2. Navigate to `public_html/portal.victoryeducationalacademy.com.ng`
 3. Upload all project files (you can zip them first, then extract)
 4. Make sure `.env.local` is in the root directory
 
@@ -83,7 +83,7 @@ SMTP_PASS="your-email-password"
 ssh yourusername@your-server-ip
 
 # Navigate to the directory
-cd public_html/portal2.victoryeducationalacademy.com.ng
+cd public_html/portal.victoryeducationalacademy.com.ng
 
 # Upload files using scp or git clone
 # If using git:
@@ -111,7 +111,7 @@ If Node.js is not installed or version is too old:
 ### 4.3 Install Project Dependencies
 \`\`\`bash
 # Navigate to your project directory
-cd public_html/portal2.victoryeducationalacademy.com.ng
+cd public_html/portal.victoryeducationalacademy.com.ng
 
 # Install dependencies
 npm install
@@ -214,18 +214,29 @@ pm2 startup
 
 ### 7.1 Domain Configuration
 1. In cPanel, go to "Subdomains"
-2. Create subdomain: `portal2`
-3. Point it to: `public_html/portal2.victoryeducationalacademy.com.ng`
+2. Create subdomain: `portal`
+3. Point it to: `public_html/portal.victoryeducationalacademy.com.ng`
 
 ### 7.2 SSL Certificate
 1. In cPanel, go to "SSL/TLS"
 2. Enable "Let's Encrypt" for your subdomain
 3. Force HTTPS redirect
 
+### 7.3 Forward traffic to the Node.js port
+
+By default the Node.js app listens on port `3000`. To serve the portal on the
+root domain without the port suffix, configure a reverse proxy:
+
+- **Using cPanel (Apache proxy):** In the **Application Manager**, enable
+  "Proxy Subdomain" for `portal.victoryeducationalacademy.com.ng` and point it
+  to the internal application URL (for example `http://127.0.0.1:3000`).
+- **Using nginx:** Upload the provided `nginx.conf` and reload nginx. The
+  configuration listens on ports `80`/`443` and forwards traffic to the app.
+
 ## Step 8: Test the Installation
 
 ### 8.1 Access the Portal
-1. Visit: `https://portal2.victoryeducationalacademy.com.ng`
+1. Visit: `https://portal.victoryeducationalacademy.com.ng`
 2. You should see the login page
 
 ### 8.2 Default Login Credentials
@@ -237,7 +248,7 @@ pm2 startup
 ## Step 8: Test the Installation
 
 ### 8.1 Access the Portal
-1. Visit: `https://portal2.victoryeducationalacademy.com.ng`
+1. Visit: `https://portal.victoryeducationalacademy.com.ng`
 2. You should see the login page
 
 ### 8.2 Default Login Credentials
