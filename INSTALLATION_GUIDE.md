@@ -174,6 +174,9 @@ CREATE TABLE student_marks (
 );
 
 -- Insert default Super Admin user
+);
+
+-- Insert default Super Admin user
 INSERT INTO users (email, password, name, role) VALUES 
 ('admin@victoryeducationalacademy.com.ng', '$2b$10$hashedpassword', 'Super Administrator', 'super_admin');
 \`\`\`
@@ -230,6 +233,18 @@ pm2 startup
   - Email: `admin@victoryeducationalacademy.com.ng`
   - Password: `admin123` (change this immediately!)
 
+
+## Step 8: Test the Installation
+
+### 8.1 Access the Portal
+1. Visit: `https://portal2.victoryeducationalacademy.com.ng`
+2. You should see the login page
+
+### 8.2 Default Login Credentials
+- **Super Admin**: 
+  - Email: `admin@victoryeducationalacademy.com.ng`
+  - Password: `admin123` (change this immediately!)
+
 ### 8.3 Test Basic Functionality
 1. Login as Super Admin
 2. Create test users for each role
@@ -250,7 +265,7 @@ pm2 startup
 ### 9.3 Monitor Logs
 \`\`\`bash
 # Check application logs
-pm2 logs vea-portal
+pm2 logs vea-2025-portal
 
 # Check error logs
 tail -f /path/to/error.log
@@ -282,7 +297,7 @@ tail -f /path/to/error.log
    - Check if domain is whitelisted in Paystack
 
 ### Getting Help:
-- Check application logs: `pm2 logs vea-portal`
+- Check application logs: `pm2 logs vea-2025-portal`
 - Contact your hosting provider for server-specific issues
 - Ensure all environment variables are correctly set
 
