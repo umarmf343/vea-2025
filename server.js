@@ -1,4 +1,12 @@
-const fs = require("fs")
+let fs
+try {
+  fs = require("fs-extra")
+} catch (error) {
+  if (error && typeof error === "object" && "code" in error && error.code !== "MODULE_NOT_FOUND") {
+    throw error
+  }
+  fs = require("fs")
+}
 const path = require("path")
 const { createServer } = require("http")
 const next = require("next")
