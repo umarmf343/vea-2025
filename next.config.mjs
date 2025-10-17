@@ -23,6 +23,15 @@ const nextConfig = {
       '@': path.resolve(process.cwd()),
     }
 
+    config.output = {
+      ...config.output,
+      // Allow slower environments (e.g. shared hosting) more time to prepare
+      // on-demand chunks before the client gives up trying to load them.
+      // The default timeout (120s) was causing ChunkLoadError failures for
+      // the large home page bundle during the initial build step.
+      chunkLoadTimeout: 300000,
+    }
+
     return config
   },
 }
