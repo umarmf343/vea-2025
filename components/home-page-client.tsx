@@ -78,12 +78,6 @@ type UserRole = "super-admin" | "admin" | "teacher" | "student" | "parent" | "li
 
 const SELECTABLE_LOGIN_ROLES: readonly UserRole[] = ["teacher", "student", "parent"]
 
-const CONTACT_DEVELOPER_URL =
-  "https://wa.me/8100362023?text=" +
-  encodeURIComponent(
-    "Hello! I'd love to learn more about the Advanced SchoolPortal and how it can elevate our school's experience.",
-  )
-
 interface User {
   id: string
   email: string
@@ -721,6 +715,23 @@ export default function HomePageClient() {
     }
   }, [])
 
+  const handleContactDeveloper = useCallback(() => {
+    const name = window.prompt("Please enter your name:")
+
+    if (!name) {
+      window.alert("You need to enter your name to proceed.")
+      return
+    }
+
+    const encodedMessage = encodeURIComponent(
+      `Hello! My name is ${name} I want to know more about the school portal.`,
+    )
+
+    const whatsappLink = `https://wa.me/2348100362023?text=${encodedMessage}`
+
+    window.open(whatsappLink, "_blank")
+  }, [])
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoginError(null)
@@ -1043,13 +1054,12 @@ export default function HomePageClient() {
                   </Button>
                   <div className="pt-2 text-center">
                     <Button
+                      type="button"
                       variant="link"
                       className="h-auto p-0 text-sm text-[#2d682d] hover:text-[#b29032]"
-                      asChild
+                      onClick={handleContactDeveloper}
                     >
-                      <a href={CONTACT_DEVELOPER_URL} target="_blank" rel="noopener noreferrer">
-                        Contact Developer
-                      </a>
+                      Contact Developer
                     </Button>
                   </div>
                 </form>
