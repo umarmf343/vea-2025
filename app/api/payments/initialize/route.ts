@@ -324,7 +324,9 @@ export async function POST(request: NextRequest) {
       email: sanitizedEmail,
       amount: amountInKobo,
       metadata: sanitizedMetadata,
-      callback_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/payment/callback`,
+      callback_url: `${
+        process.env.NEXT_PUBLIC_APP_URL || "https://portal.victoryeducationalacademy.com.ng"
+      }/payment/callback`,
       split_code: splitConfiguration.splitCode,
     }
 
