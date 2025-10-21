@@ -24,17 +24,37 @@ function run() {
     return
   }
 
+  const deprecatedFfmpegPackages = [
+    path.join(nodeModulesPath, "fluent-ffmpeg"),
+    path.join(nodeModulesPath, "@ffmpeg-installer"),
+    path.join(nodeModulesPath, "@ffprobe-installer"),
+  ]
+
   const legacyDirectories = [
     path.join(nodeModulesPath, ".pnpm"),
     path.join(nodeModulesPath, "pnpm-global"),
+    ...deprecatedFfmpegPackages,
   ]
 
   const removed = legacyDirectories.filter((dir) => removeIfExists(dir))
 
   if (removed.length > 0) {
+    const relativePaths = removed.map((dir) => path.relative(projectRoot, dir))
     console.log(
       "Removed legacy pnpm install artifacts to ensure a clean npm dependency tree:",
-      removed.map((dir) => path.relative(projectRoot, dir)),
+      relativePaths,
+    )
+    return
+  }
+
+  const missingDeprecatedPackages = deprecatedFfmpegPackages
+    .filter((dir) => !fs.existsSync(dir))
+    .map((dir) => path.relative(projectRoot, dir))
+
+  if (missingDeprecatedPackages.length === deprecatedFfmpegPackages.length) {
+    console.log(
+      "Verified that deprecated ffmpeg helper packages are not present in node_modules:",
+      missingDeprecatedPackages,
     )
   }
 }
