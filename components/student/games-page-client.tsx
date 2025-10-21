@@ -7,6 +7,7 @@ import TypingGalaxy from "@/components/games/typing-galaxy"
 import MathRacing from "@/components/games/math-racing"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { QuranVerseCard } from "@/components/student/quran-verse-card"
 
 export default function StudentGamesPageClient() {
   return (
@@ -49,6 +50,10 @@ export default function StudentGamesPageClient() {
           <MathRacing />
           <TypingGalaxy />
         </div>
+      </section>
+
+      <section className="rounded-3xl border border-emerald-100 bg-white/70 p-6 shadow-sm">
+        <QuranVerseCard />
       </section>
 
       <StudentGameHub />
