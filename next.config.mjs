@@ -23,6 +23,37 @@ const nextConfig = {
       '@': path.resolve(process.cwd()),
     }
 
+    const existingIgnored = config.watchOptions?.ignored
+    const normalizedIgnored = Array.isArray(existingIgnored)
+      ? existingIgnored.filter((pattern) => {
+          if (typeof pattern === "string") {
+            return pattern.trim().length > 0
+          }
+
+          return Boolean(pattern)
+        })
+      : existingIgnored
+
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: [
+        ...(
+          Array.isArray(normalizedIgnored)
+            ? normalizedIgnored
+            : normalizedIgnored
+              ? [normalizedIgnored]
+              : []
+        ),
+        "**/.git/**",
+        "**/.next/**",
+        "**/node_modules/**",
+        "**/out/**",
+        "**/coverage/**",
+        "**/.turbo/**",
+        "**/tmp/**",
+      ],
+    }
+
     config.output = {
       ...config.output,
       // Allow slower environments (e.g. shared hosting) more time to prepare
