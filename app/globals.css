@@ -196,6 +196,22 @@ body {
   color: #f97316;
 }
 
+/* Quran verse navigation buttons positioning */
+button[aria-label="Next ayah"],
+button[aria-label="Previous ayah"] {
+  bottom: -1rem;
+}
+
+@media (min-width: 768px) {
+  button[aria-label="Next ayah"] {
+    right: -1.5rem;
+  }
+
+  button[aria-label="Previous ayah"] {
+    left: -1.5rem;
+  }
+}
+
 @media print {
   @page {
     size: A4 portrait;
